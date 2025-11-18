@@ -328,7 +328,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
   const [, params] = useRoute("/projects/:code");
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   
   const projectCode = params?.code || "";
@@ -342,7 +342,7 @@ export default function ProjectDetailPage() {
         <AppHeader
           userName={user?.firstName || "User"}
           userRole={user?.role || ""}
-          onLogout={() => setLocation('/login')}
+          onLogout={logout}
         />
         <div className="flex items-center justify-center h-96">
           <div className="text-muted-foreground">Loading project...</div>
@@ -357,7 +357,7 @@ export default function ProjectDetailPage() {
         <AppHeader
           userName={user?.firstName || "User"}
           userRole={user?.role || ""}
-          onLogout={() => setLocation('/login')}
+          onLogout={logout}
         />
         <div className="flex flex-col items-center justify-center h-96">
           <p className="text-muted-foreground mb-4">Project not found</p>
@@ -374,7 +374,7 @@ export default function ProjectDetailPage() {
       <AppHeader
         userName={user?.firstName || "User"}
         userRole={user?.role || ""}
-        onLogout={() => setLocation('/login')}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

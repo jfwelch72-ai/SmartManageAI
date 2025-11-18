@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import FileUploadZone from "@/components/FileUploadZone";
 import { Building2, MapPin, Mail, Phone, Calendar, DollarSign } from "lucide-react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 //todo: remove mock functionality
 const mockBid = {
@@ -23,6 +24,7 @@ const mockBid = {
 
 export default function BidDetailPage() {
   const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
 
   const handleMarkAsAwarded = () => {
     if (confirm(`Mark bid ${mockBid.code} as awarded and convert to active project?`)) {
@@ -35,9 +37,9 @@ export default function BidDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="Sarah Williams"
-        userRole="Estimator"
-        onLogout={() => setLocation('/login')}
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

@@ -1,16 +1,18 @@
 import AppHeader from "@/components/AppHeader";
 import TMDailyForm from "@/components/TMDailyForm";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function TMDailyPage() {
   const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="Mike Johnson"
-        userRole="Superintendent"
-        onLogout={() => setLocation('/login')}
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-4xl px-6 py-8">

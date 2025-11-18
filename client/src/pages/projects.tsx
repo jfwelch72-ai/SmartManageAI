@@ -17,7 +17,7 @@ import { useProjects } from "@/hooks/use-data";
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
@@ -39,7 +39,7 @@ export default function ProjectsPage() {
       <AppHeader
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
-        onLogout={() => setLocation('/login')}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Plus } from "lucide-react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 //todo: remove mock functionality
 const mockBids = [
@@ -52,6 +53,7 @@ const mockBids = [
 
 export default function BidsPage() {
   const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredBids = mockBids.filter(bid => 
@@ -69,9 +71,9 @@ export default function BidsPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="Sarah Williams"
-        userRole="Estimator"
-        onLogout={() => setLocation('/login')}
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

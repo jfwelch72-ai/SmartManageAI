@@ -4,6 +4,7 @@ import TimeEntryForm from "@/components/TimeEntryForm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 //todo: remove mock functionality
 const mockProjects = [
@@ -35,13 +36,14 @@ const mockTimeEntries = [
 
 export default function TimeEntryPage() {
   const [, setLocation] = useLocation();
+  const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="John Martinez"
-        userRole="Hourly Employee"
-        onLogout={() => setLocation('/login')}
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-4xl px-6 py-8">

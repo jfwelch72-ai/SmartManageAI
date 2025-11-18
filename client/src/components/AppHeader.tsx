@@ -18,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface AppHeaderProps {
   userName: string;
   userRole: string;
-  onLogout: () => void;
+  onLogout: () => Promise<void>;
 }
 
 export default function AppHeader({ userName, userRole, onLogout }: AppHeaderProps) {
@@ -42,6 +42,11 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
 
   const handleMarkAllAsRead = () => {
     markAllAsRead.mutate();
+  };
+
+  const handleLogout = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    await onLogout();
   };
 
   return (
@@ -141,7 +146,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                 Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onLogout} data-testid="menu-logout">
+              <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
               </DropdownMenuItem>

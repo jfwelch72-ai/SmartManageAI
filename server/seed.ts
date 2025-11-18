@@ -6,30 +6,50 @@ import { eq } from "drizzle-orm";
 async function seed() {
   console.log("🌱 Seeding database...");
 
-  // Check if admin user already exists
-  const [existingAdmin] = await db.select().from(users).where(eq(users.email, "admin@tfrllc.com")).limit(1);
+  // Check if users already exist
+  const existingUsers = await db.select().from(users).limit(1);
 
-  if (existingAdmin) {
-    console.log("✅ Admin user already exists");
+  if (existingUsers.length > 0) {
+    console.log("✅ Users already exist, skipping seed");
     return;
   }
 
-  // Create admin user
+  // Create demo users
   const adminPasswordHash = await hashPassword("admin123");
+  const demoPasswordHash = await hashPassword("password123");
   
-  await db.insert(users).values({
-    firstName: "Admin",
-    lastName: "User",
-    email: "admin@tfrllc.com",
-    role: "ADMIN",
-    isActive: true,
-    passwordHash: adminPasswordHash,
-  });
+  await db.insert(users).values([
+    {
+      firstName: "Admin",
+      lastName: "User",
+      email: "admin@tfrllc.com",
+      role: "ADMIN",
+      isActive: true,
+      passwordHash: adminPasswordHash,
+    },
+    {
+      firstName: "Sarah",
+      lastName: "Williams",
+      email: "sarah@tfrconst.com",
+      role: "MANAGER",
+      isActive: true,
+      passwordHash: demoPasswordHash,
+    },
+    {
+      firstName: "Jake",
+      lastName: "Brown",
+      email: "jake@tfrconstructionohio.com",
+      role: "SUPERINTENDENT",
+      isActive: true,
+      passwordHash: demoPasswordHash,
+    },
+  ]);
 
-  console.log("✅ Admin user created:");
-  console.log("   Email: admin@tfrllc.com");
-  console.log("   Password: admin123");
-  console.log("   Please change this password in production!");
+  console.log("✅ Demo users created:");
+  console.log("   1. admin@tfrllc.com / admin123 (ADMIN)");
+  console.log("   2. sarah@tfrconst.com / password123 (MANAGER)");
+  console.log("   3. jake@tfrconstructionohio.com / password123 (SUPERINTENDENT)");
+  console.log("   Please change these passwords in production!");
 }
 
 seed()

@@ -10,7 +10,7 @@ import { useDashboardStats, useProjects } from "@/hooks/use-data";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
 
@@ -21,7 +21,7 @@ export default function DashboardPage() {
       <AppHeader
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
-        onLogout={() => setLocation('/login')}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

@@ -17,7 +17,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSam
 
 export default function CalendarPage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showRequestDialog, setShowRequestDialog] = useState(false);
@@ -85,7 +85,7 @@ export default function CalendarPage() {
       <AppHeader
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
-        onLogout={() => setLocation('/login')}
+        onLogout={logout}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">
