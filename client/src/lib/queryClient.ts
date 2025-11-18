@@ -44,7 +44,20 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
+      queryFn: async ({ queryKey }) => {
+        const url = queryKey.join("/") as string;
+        const res = await fetch(url, {
+          credentials: "include",
+        });
+
+        // For /api/auth/me, return null on 401 instead of throwing
+        if (res.status === 401 && url.includes("/api/auth/me")) {
+          return null;
+        }
+
+        await throwIfResNotOk(res);
+        return await res.json();
+      },
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,

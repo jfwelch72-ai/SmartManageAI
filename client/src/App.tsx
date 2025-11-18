@@ -1,8 +1,9 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
@@ -13,18 +14,37 @@ import ProjectDetailPage from "@/pages/project-detail";
 import TimeEntryPage from "@/pages/time-entry";
 import TMDailyPage from "@/pages/tm-daily";
 
+function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
+  const { user, isLoading } = useAuth();
+  const [location] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Redirect to={`/login?redirect=${encodeURIComponent(location)}`} />;
+  }
+
+  return <Component />;
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => <Redirect to="/login" />} />
+      <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={LoginPage} />
-      <Route path="/dashboard" component={DashboardPage} />
-      <Route path="/bids" component={BidsPage} />
-      <Route path="/bids/:code" component={BidDetailPage} />
-      <Route path="/projects" component={ProjectsPage} />
-      <Route path="/projects/:code" component={ProjectDetailPage} />
-      <Route path="/time-entry" component={TimeEntryPage} />
-      <Route path="/tm-daily" component={TMDailyPage} />
+      <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
+      <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} />} />
+      <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} />} />
+      <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
+      <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
+      <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} />} />
+      <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} />} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -33,10 +53,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
