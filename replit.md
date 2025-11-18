@@ -21,7 +21,15 @@ The platform is built with a modern web stack:
     - **Time & Materials**: Time entry system with a role-based approval workflow and T&M daily sheets for client billing.
     - **Calendar & Time-Off**: Monthly calendar view for events, with time-off request creation, approval workflows, and networking event tracking.
     - **Dashboard**: Real-time Key Performance Indicator (KPI) metrics and quick navigation to active projects, pending change orders, and time-off requests.
-    - **File Storage**: Integration with Replit Object Storage for managing various file types (media, documents, receipts) with role-based access control and presigned URL uploads.
+    - **File Storage & Permissions**: Comprehensive file management system with Replit Object Storage (Google Cloud Storage backend) for media, documents, and receipts. Features include:
+        - Presigned URL uploads with Uppy progress tracking
+        - Granular permission-based ACL: Admins/managers have full access; superintendents/hourly employees require explicit permission grants
+        - filePermissions table tracking manager-granted access with fileTypeEnum (MEDIA, DOCUMENT, RECEIPT)
+        - Private visibility for all uploads with automatic permission grants to uploaders
+        - Permission management API endpoints for granting/revoking file access
+        - ObjectUploader component integrated into project detail tabs with metadata dialogs
+        - Security helpers (fileAccessHelpers.ts) for permission checks, file resolution, and listing filters
+        - Orphaned object protection: download route blocks files not tracked in database
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database for all application data.
