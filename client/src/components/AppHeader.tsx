@@ -14,6 +14,7 @@ import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Link } from "wouter";
 
 interface AppHeaderProps {
   userName: string;
@@ -52,13 +53,15 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-between px-6">
-        <div className="flex items-center gap-3">
-          <Building2 className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="text-xl font-bold text-foreground">TFR Construction</h1>
-            <p className="text-xs text-muted-foreground">Management Platform</p>
+        <Link href="/dashboard" data-testid="link-dashboard">
+          <div className="flex items-center gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md -ml-2 pl-2 pr-3 py-2">
+            <Building2 className="w-8 h-8 text-primary" />
+            <div>
+              <h1 className="text-xl font-bold text-foreground">TFR Construction</h1>
+              <p className="text-xs text-muted-foreground">Management Platform</p>
+            </div>
           </div>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-2">
           <DropdownMenu>
