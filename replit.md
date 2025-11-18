@@ -66,9 +66,13 @@ A comprehensive internal construction management platform for TFR Construction b
 - media
 
 ## Security Notes
-- **Default Admin Account**: For initial setup, an admin account is created with email `admin@tfrllc.com` and password `admin123`. 
-  - **IMPORTANT**: Change this password immediately after first login via the user management interface
-  - This is acceptable for internal development/MVP but should be changed before production use
+- **Demo Accounts**: The seed script creates three demo accounts for testing:
+  - Admin: `admin@tfrllc.com` / `admin123` (ADMIN role)
+  - Manager: `sarah@tfrconst.com` / `password123` (MANAGER role)
+  - Superintendent: `jake@tfrconstructionohio.com` / `password123` (SUPERINTENDENT role)
+  - **IMPORTANT**: Change these passwords before production use
+- All passwords are properly hashed with bcrypt before storage
+- Logout functionality properly clears session state across all pages
 
 ## API Routes
 All routes are prefixed with `/api` and require authentication unless specified.
@@ -157,6 +161,10 @@ npm run db:push  # Push schema changes to database
 ```
 
 ## Recent Changes
+- 2025-11-18: Fixed critical authentication bugs
+  - Updated seed.ts to create all three demo accounts with properly hashed passwords
+  - Fixed logout functionality to properly clear session state on all pages
+  - Updated AppHeader to await logout Promise for reliable single-click logout
 - 2025-11-18: Complete backend API implementation with authentication, authorization, and all CRUD operations
 - 2025-11-18: Frontend authentication integration with protected routes
 - 2025-11-18: Database schema creation with 12 tables covering all project lifecycle needs
