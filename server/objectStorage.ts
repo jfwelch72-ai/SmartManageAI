@@ -207,17 +207,23 @@ export class ObjectStorageService {
     objectFile,
     requestedPermission,
     userRole,
+    fileId,
+    fileType,
   }: {
     userId?: string;
     objectFile: File;
     requestedPermission?: ObjectPermission;
     userRole?: string;
+    fileId?: string;
+    fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
   }): Promise<boolean> {
     return canAccessObject({
       userId,
       objectFile,
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
       userRole,
+      fileId,
+      fileType,
     });
   }
 }

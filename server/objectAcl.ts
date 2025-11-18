@@ -1,4 +1,7 @@
 import { File } from "@google-cloud/storage";
+import { db } from "./db";
+import { filePermissions } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
 const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
 
@@ -55,11 +58,15 @@ export async function canAccessObject({
   objectFile,
   requestedPermission,
   userRole,
+  fileId,
+  fileType,
 }: {
   userId?: string;
   objectFile: File;
   requestedPermission: ObjectPermission;
   userRole?: string;
+  fileId?: string;
+  fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);
   if (!aclPolicy) {
@@ -83,6 +90,25 @@ export async function canAccessObject({
 
   if (userRole === "ADMIN" || userRole === "MANAGER") {
     return true;
+  }
+
+  // Check explicit permissions in database for SUPERINTENDENT and HOURLY_EMPLOYEE
+  if (fileId && fileType && (userRole === "SUPERINTENDENT" || userRole === "HOURLY_EMPLOYEE")) {
+    const permission = await db
+      .select()
+      .from(filePermissions)
+      .where(
+        and(
+          eq(filePermissions.fileId, fileId),
+          eq(filePermissions.fileType, fileType),
+          eq(filePermissions.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (permission.length > 0) {
+      return true;
+    }
   }
 
   return false;
