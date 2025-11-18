@@ -1,55 +1,26 @@
-import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
-import { Briefcase, Clock, DollarSign, Users, Plus } from "lucide-react";
+import { Briefcase, Clock, AlertCircle, CalendarClock, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
-
-//todo: remove mock functionality
-const mockProjects = [
-  {
-    code: "TFR-240639",
-    name: "OSU Outpatient East – Parking Lot",
-    clientName: "Ohio State University",
-    status: "ACTIVE" as const,
-    location: "Columbus, OH",
-    superintendent: "Mike Johnson",
-  },
-  {
-    code: "TFR-240512",
-    name: "Downtown Office Tower Foundation",
-    clientName: "Cityscape Developers",
-    status: "PLANNING" as const,
-    location: "Columbus, OH",
-    superintendent: "Sarah Williams",
-  },
-  {
-    code: "TFR-240420",
-    name: "Riverside Apartment Complex",
-    clientName: "Riverside Properties LLC",
-    status: "BID" as const,
-    location: "Dublin, OH",
-  },
-  {
-    code: "TFR-240301",
-    name: "Hilltop Shopping Center Expansion",
-    clientName: "Retail Ventures Inc",
-    status: "ACTIVE" as const,
-    location: "Columbus, OH",
-    superintendent: "Tom Anderson",
-  },
-];
+import { useAuth } from "@/hooks/use-auth";
+import { useDashboardStats, useProjects } from "@/hooks/use-data";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const { data: stats, isLoading: statsLoading } = useDashboardStats();
+  const { data: projects = [], isLoading: projectsLoading } = useProjects();
+
+  const activeProjects = projects.filter(p => p.status === 'ACTIVE');
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="Sarah Williams"
-        userRole="Project Manager"
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
         onLogout={() => setLocation('/login')}
       />
       
@@ -68,30 +39,30 @@ export default function DashboardPage() {
         </div>
 
         <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <KPICard
-              title="Active Projects"
-              value={12}
-              icon={Briefcase}
-              trend={{ value: "2 from last month", isPositive: true }}
-            />
-            <KPICard
-              title="Open Bids"
-              value={5}
-              icon={DollarSign}
-            />
-            <KPICard
-              title="Hours This Week"
-              value="1,247"
-              icon={Clock}
-              trend={{ value: "5% from last week", isPositive: true }}
-            />
-            <KPICard
-              title="Active Employees"
-              value={48}
-              icon={Users}
-            />
-          </div>
+          {statsLoading ? (
+            <div className="text-center py-12 text-muted-foreground">Loading dashboard...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <KPICard
+                title="Active Projects"
+                value={stats?.activeProjectsCount || 0}
+                icon={Briefcase}
+                data-testid="kpi-active-projects"
+              />
+              <KPICard
+                title="Pending Change Orders"
+                value={stats?.pendingChangeOrdersCount || 0}
+                icon={AlertCircle}
+                data-testid="kpi-pending-change-orders"
+              />
+              <KPICard
+                title="Pending Time-Off Requests"
+                value={stats?.pendingTimeOffCount || 0}
+                icon={CalendarClock}
+                data-testid="kpi-pending-time-off"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div>
@@ -128,15 +99,21 @@ export default function DashboardPage() {
                   View All
                 </Button>
               </div>
-              <div className="space-y-4">
-                {mockProjects.filter(p => p.status === 'ACTIVE').slice(0, 2).map((project) => (
-                  <ProjectCard
-                    key={project.code}
-                    {...project}
-                    onClick={() => setLocation(`/projects/${project.code}`)}
-                  />
-                ))}
-              </div>
+              {projectsLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading projects...</div>
+              ) : activeProjects.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No active projects</div>
+              ) : (
+                <div className="space-y-4">
+                  {activeProjects.slice(0, 2).map((project) => (
+                    <ProjectCard
+                      key={project.code}
+                      {...project}
+                      onClick={() => setLocation(`/projects/${project.code}`)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
