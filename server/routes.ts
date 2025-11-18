@@ -952,6 +952,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertTimeEntrySchema.extend({
         userId: z.string().optional(),
+        date: z.coerce.date(),
       }).safeParse({
         ...req.body,
         userId: req.user!.id,
