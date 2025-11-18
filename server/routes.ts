@@ -1028,6 +1028,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validationResult = insertTMDailySheetSchema.extend({
         createdById: z.string().optional(),
+        date: z.coerce.date(),
       }).safeParse({
         ...req.body,
         createdById: req.user!.id,
@@ -1507,17 +1508,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create calendar event (All authenticated users)
   app.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
     try {
-      // Convert date strings to Date objects
-      const payload = {
-        ...req.body,
-        createdById: req.user!.id,
-        startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
-        endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
-      };
-      
       const validationResult = insertCalendarEventSchema.extend({
         createdById: z.string().optional(),
-      }).safeParse(payload);
+        startDate: z.coerce.date(),
+        endDate: z.coerce.date().optional(),
+      }).safeParse({
+        ...req.body,
+        createdById: req.user!.id,
+      });
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });

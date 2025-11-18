@@ -13,7 +13,7 @@ import { useLocation } from "wouter";
 import { useCalendarEvents, useCreateCalendarEvent, useApproveTimeOff } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Calendar as CalendarIcon, CheckCircle } from "lucide-react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfDay } from "date-fns";
 
 export default function CalendarPage() {
   const [, setLocation] = useLocation();
@@ -37,8 +37,8 @@ export default function CalendarPage() {
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   const handleCreateEvent = async () => {
-    if (!title || !startDate || !endDate) {
-      toast({ title: "Error", description: "All fields are required", variant: "destructive" });
+    if (!title || !startDate) {
+      toast({ title: "Error", description: "Title and start date are required", variant: "destructive" });
       return;
     }
 
@@ -46,8 +46,8 @@ export default function CalendarPage() {
       await createEvent.mutateAsync({
         title,
         description,
-        startDate,
-        endDate,
+        startDate: new Date(startDate),
+        ...(endDate && { endDate: new Date(endDate) }),
         eventType: eventType as any,
       });
       toast({ title: "Success", description: "Event created successfully" });
@@ -75,7 +75,7 @@ export default function CalendarPage() {
   const getEventsForDay = (date: Date) => {
     return events.filter(event => {
       const eventStart = new Date(event.startDate);
-      const eventEnd = new Date(event.endDate);
+      const eventEnd = event.endDate ? new Date(event.endDate) : eventStart;
       return isWithinInterval(date, { start: eventStart, end: eventEnd }) || isSameDay(date, eventStart);
     });
   };
@@ -143,7 +143,7 @@ export default function CalendarPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="start-date">Start Date</Label>
+                    <Label htmlFor="start-date">Start Date *</Label>
                     <Input
                       id="start-date"
                       type="date"
@@ -153,7 +153,7 @@ export default function CalendarPage() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="end-date">End Date</Label>
+                    <Label htmlFor="end-date">End Date (optional)</Label>
                     <Input
                       id="end-date"
                       type="date"
@@ -270,7 +270,7 @@ export default function CalendarPage() {
                 ) : (
                   <div className="space-y-3">
                     {events
-                      .filter(e => new Date(e.startDate) >= new Date())
+                      .filter(e => startOfDay(new Date(e.startDate)) >= startOfDay(new Date()))
                       .slice(0, 10)
                       .map(event => (
                         <Card key={event.id} className="p-3" data-testid={`event-${event.id}`}>
@@ -291,7 +291,7 @@ export default function CalendarPage() {
                                 {event.eventType.replace(/_/g, " ")}
                               </Badge>
                               <p className="text-xs text-muted-foreground mt-2">
-                                {format(new Date(event.startDate), "MMM d")} - {format(new Date(event.endDate), "MMM d, yyyy")}
+                                {format(new Date(event.startDate), "MMM d")} - {event.endDate ? format(new Date(event.endDate), "MMM d, yyyy") : ""}
                               </p>
                               {event.description && (
                                 <p className="text-xs text-muted-foreground mt-1">{event.description}</p>

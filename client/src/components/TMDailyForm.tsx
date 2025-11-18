@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,25 +7,46 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface TMDailyFormProps {
   projectName: string;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: {
+    date: string;
+    tfrRepName: string;
+    clientRepName: string;
+    weather: string;
+    descriptionOfWork: string;
+    crewSize: number;
+  }) => void;
 }
 
-export default function TMDailyForm({ projectName, onSubmit }: TMDailyFormProps) {
+export interface TMDailyFormRef {
+  reset: () => void;
+}
+
+const TMDailyForm = forwardRef<TMDailyFormRef, TMDailyFormProps>(({ projectName, onSubmit }, ref) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [tfrRep, setTfrRep] = useState("");
-  const [clientRep, setClientRep] = useState("");
+  const [tfrRepName, setTfrRepName] = useState("");
+  const [clientRepName, setClientRepName] = useState("");
   const [weather, setWeather] = useState("");
-  const [description, setDescription] = useState("");
+  const [descriptionOfWork, setDescriptionOfWork] = useState("");
   const [crewSize, setCrewSize] = useState("");
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      setTfrRepName("");
+      setClientRepName("");
+      setWeather("");
+      setDescriptionOfWork("");
+      setCrewSize("");
+    }
+  }));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       date,
-      tfrRep,
-      clientRep,
+      tfrRepName,
+      clientRepName,
       weather,
-      description,
+      descriptionOfWork,
       crewSize: parseInt(crewSize) || 0,
     });
   };
@@ -65,24 +86,24 @@ export default function TMDailyForm({ projectName, onSubmit }: TMDailyFormProps)
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tfrRep">TFR Representative</Label>
+              <Label htmlFor="tfrRepName">TFR Representative</Label>
               <Input
-                id="tfrRep"
+                id="tfrRepName"
                 placeholder="John Smith"
-                value={tfrRep}
-                onChange={(e) => setTfrRep(e.target.value)}
+                value={tfrRepName}
+                onChange={(e) => setTfrRepName(e.target.value)}
                 required
                 data-testid="input-tfr-rep"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="clientRep">Client Representative</Label>
+              <Label htmlFor="clientRepName">Client Representative</Label>
               <Input
-                id="clientRep"
+                id="clientRepName"
                 placeholder="Jane Doe"
-                value={clientRep}
-                onChange={(e) => setClientRep(e.target.value)}
+                value={clientRepName}
+                onChange={(e) => setClientRepName(e.target.value)}
                 data-testid="input-client-rep"
               />
             </div>
@@ -99,12 +120,12 @@ export default function TMDailyForm({ projectName, onSubmit }: TMDailyFormProps)
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="description">Description of Work</Label>
+              <Label htmlFor="descriptionOfWork">Description of Work</Label>
               <Textarea
-                id="description"
+                id="descriptionOfWork"
                 placeholder="Detail the work performed today..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={descriptionOfWork}
+                onChange={(e) => setDescriptionOfWork(e.target.value)}
                 required
                 className="min-h-32"
                 data-testid="textarea-description"
@@ -119,4 +140,8 @@ export default function TMDailyForm({ projectName, onSubmit }: TMDailyFormProps)
       </CardContent>
     </Card>
   );
-}
+});
+
+TMDailyForm.displayName = "TMDailyForm";
+
+export default TMDailyForm;

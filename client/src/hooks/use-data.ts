@@ -236,7 +236,7 @@ export function useProjectTMSheets(code: string) {
 
 export function useCreateTMSheet() {
   return useMutation({
-    mutationFn: async (data: Partial<TMDailySheet> & { projectCode: string }) => {
+    mutationFn: async (data: Partial<TMDailySheet> & { projectCode: string; projectId: string }) => {
       const { projectCode, ...sheetData } = data;
       const response = await apiRequest("POST", "/api/tm-sheets", sheetData);
       return response.json();
