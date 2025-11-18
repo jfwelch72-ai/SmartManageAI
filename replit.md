@@ -166,6 +166,12 @@ npm run db:push  # Push schema changes to database
 ```
 
 ## Recent Changes
+- 2025-11-18: **Phase 2 Task 4 COMPLETE** - Time Entry System with Approvals
+  - Rebuilt time-entry.tsx with full real data integration
+  - Role-based UI: employees see form + own entries, managers see all entries with approval buttons
+  - Fixed backend validation to accept ISO date strings via z.coerce.date()
+  - E2E test passed: employees can submit, managers can approve, status updates correctly
+  - Bug fix: backend now properly coerces date strings to Date objects for validation
 - 2025-11-18: **Phase 1 COMPLETE** - Project Detail Page Fully Functional
   - Added all missing data hooks (useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectReceipts)
   - Fixed mutation hooks to properly accept both projectCode (cache) and projectId (API payload)
