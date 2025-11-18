@@ -9,16 +9,20 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 ## System Architecture
 The platform is built with a modern web stack:
 - **Frontend**: React with TypeScript, utilizing Wouter for routing, TanStack Query for data fetching, and styled with Tailwind CSS alongside shadcn/ui components for a consistent and responsive user interface.
-- **Backend**: An Express.js server written in TypeScript.
-- **Database**: PostgreSQL, hosted on Neon, managed with Drizzle ORM.
-- **Authentication**: JWT-based authentication using httpOnly cookies for security, with bcrypt for password hashing.
+- **Backend**: An Express.js server written in TypeScript with comprehensive security middleware including CORS (localhost:5173), rate limiting (auth/sensitive/API), and JWT token versioning for session revocation.
+- **Database**: PostgreSQL, hosted on Neon, managed with Drizzle ORM. 19 tables including audit_log, billing_events, time_clock_shifts, and time_clock_events for complete compliance tracking.
+- **Authentication**: JWT-based authentication using httpOnly cookies with bcrypt password hashing. Token versioning enables "logout all devices" functionality. All passwords require 8+ characters.
+- **Security**: Multi-layer protection with rate limiting (5 auth attempts/15min, 100 sensitive/15min, 1000 API/15min), comprehensive audit logging for all sensitive operations, and file validation (MIME types, size limits).
 - **UI/UX**: Emphasis on a clean, functional interface using shadcn/ui components and Tailwind CSS for rapid development and maintainability.
 - **Key Features**:
-    - **Authentication & Authorization**: Secure JWT-based system with six distinct user roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE), self-service registration, and admin-controlled user activation/role assignment.
-    - **User Management**: Comprehensive admin interface for managing user accounts, roles, and activation status.
+    - **Authentication & Authorization**: Secure JWT-based system with token versioning for session revocation. Six distinct user roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE) with RBAC enforcement. Self-service registration with admin activation. Password change and token revocation endpoints.
+    - **User Management**: Comprehensive admin interface for managing user accounts, roles, activation status, and force-logout capabilities via token revocation.
+    - **Time-Clock System (NEW)**: BusyBusy-style native time-clock with GPS coordinate tracking, shift management, clock-in/clock-out, auto-clock-out API endpoint (requires scheduled task/cron setup for 16-hour automation), manager approval workflows, shift adjustments, admin overrides, and time-entry generation integration.
+    - **Audit & Compliance (NEW)**: Comprehensive audit logging system tracking all CREATE, UPDATE, DELETE, APPROVE, REJECT, and custom actions across all entities. Includes IP address, user agent, timestamps, and full before/after snapshots. Admin-accessible query interface with filtering by entity, user, action, and date range.
+    - **Billing Events (NEW)**: Financial tracking system for INVOICE_SENT, PAYMENT_RECEIVED, CHANGE_ORDER_INVOICED, RETENTION_RELEASED, and LIEN_WAIVER_RECEIVED events with project linkage and reference tracking.
     - **Project Lifecycle Management**: Full CRUD operations for Bids, Projects, Estimates, Procurement items, and Change Orders, including bid-to-project conversion and project status tracking.
     - **Daily Operations**: Features for project notes, media uploads (photos/videos), and daily progress updates.
-    - **Time & Materials**: Time entry system with a role-based approval workflow and T&M daily sheets for client billing.
+    - **Time & Materials**: Time entry system with approval-based locking (approved entries require admin override to edit/delete), role-based approval workflow, and T&M daily sheets for client billing.
     - **Calendar & Time-Off**: Monthly calendar view for events, with time-off request creation, approval workflows, and networking event tracking.
     - **Dashboard**: Real-time Key Performance Indicator (KPI) metrics and quick navigation to active projects, pending change orders, and time-off requests.
     - **File Storage & Permissions**: Comprehensive file management system with Replit Object Storage (Google Cloud Storage backend) for media, documents, and receipts. Features include:
@@ -37,3 +41,14 @@ The platform is built with a modern web stack:
 - **JWT (JSON Web Tokens)**: For secure user authentication.
 - **Bcrypt**: For hashing user passwords securely.
 - **Uppy**: Frontend library for robust file upload progress tracking.
+
+## Recent Changes (November 2025 - Major Security & Time-Clock Upgrade)
+- **Security Infrastructure**: Added CORS with localhost:5173 default, three-tier rate limiting (auth 10/15min, sensitive 100/15min, API 1000/15min), JWT token versioning for session management with null-safe implementation, and comprehensive audit logging for compliance.
+- **Time-Clock System**: Complete BusyBusy-style implementation with 13+ endpoints for clock-in/out, GPS tracking, shift management, approvals, adjustments, live monitoring, and auto-clock-out worker endpoint (requires external cron/scheduler for automation).
+- **Time-Entry Locking**: Approved time entries are locked and require explicit admin override to modify or delete, ensuring billing integrity.
+- **Audit Logging**: All sensitive operations logged with entity type, action, old/new values, IP address, user agent, and timestamps. Query endpoints with pagination and filtering.
+- **Billing Events**: Financial milestone tracking system integrated with projects for comprehensive billing history.
+- **User Token Revocation**: Admin capability to force-logout users across all devices by incrementing tokenVersion. Fully null-safe with defensive coalescing in both token generation and auth middleware. Migration 001_backfill_token_version.sql ensures all users have valid tokenVersion values. See server/RUNBOOK_TOKEN_REVOCATION.md for operational procedures.
+- **File Validation**: MIME type whitelisting and size limits enforced for all uploads (100MB media, 50MB documents, 10MB receipts).
+- **Backend Modules**: Created rateLimiter.ts, auditLogger.ts, fileValidation.ts, timeClockRoutes.ts, and migrations/ directory for organized, maintainable code.
+- **Password Security**: Minimum password length increased from 6 to 8 characters for registration and password changes.

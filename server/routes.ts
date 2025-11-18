@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { db } from "./db";
-import { users, insertUserSchema, type InsertUser, type SelectUser } from "@shared/schema";
+import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts } from "@shared/schema";
 import { 
   projects, bids, estimates, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
@@ -21,14 +21,25 @@ import {
   generateToken, 
   setAuthCookie, 
   clearAuthCookie,
+  revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
+import { logCreate, logUpdate, logDelete, logApprove, logReject } from "./auditLogger";
+import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
+import { registerTimeClockRoutes } from "./timeClockRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
   app.use(authMiddleware);
+
+  // Apply general API rate limiter to all API routes BEFORE registering any routes
+  app.use("/api", apiLimiter);
+
+  // Register time-clock routes (now protected by rate limiter)
+  registerTimeClockRoutes(app);
 
   // ====================
   // Auth Routes
@@ -46,11 +57,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     lastName: z.string().min(1, "Last name is required"),
     email: z.string().email("Invalid email address"),
     phone: z.string().optional(),
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
   });
 
   // Register new user
-  app.post("/api/auth/register", async (req: AuthRequest, res) => {
+  app.post("/api/auth/register", authLimiter, async (req: AuthRequest, res) => {
     try {
       const validationResult = registerSchema.safeParse(req.body);
       
@@ -94,7 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Login
-  app.post("/api/auth/login", async (req: AuthRequest, res) => {
+  app.post("/api/auth/login", authLimiter, async (req: AuthRequest, res) => {
     try {
       const validationResult = loginSchema.safeParse(req.body);
       
@@ -119,10 +130,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const token = generateToken(user.id);
+      const token = generateToken(user.id, user.tokenVersion);
       setAuthCookie(res, token);
 
-      const { passwordHash, ...userWithoutPassword } = user;
+      const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error) {
       console.error("Login error:", error);
@@ -180,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   // Get dashboard statistics
-  app.get("/api/dashboard/stats", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
     try {
       // Count active projects
       const activeProjectsResult = await db
@@ -330,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const { passwordHash, ...userWithoutPassword } = updatedUser;
+      const { passwordHash, tokenVersion, ...userWithoutPassword } = updatedUser;
       res.json(userWithoutPassword);
     } catch (error: any) {
       console.error("Update user error:", error);
@@ -339,6 +350,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ error: "Failed to update user" });
       }
+    }
+  });
+
+  // Revoke all user tokens (logout all devices) - Admin only
+  app.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res) => {
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+      
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      await revokeUserTokens(req.params.id);
+
+      // Audit log
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "USER",
+        entityId: req.params.id,
+        action: "REVOKE_TOKENS",
+        oldValue: null,
+        newValue: JSON.stringify({ revokedBy: req.user!.email }),
+      }, req);
+
+      res.json({ success: true, message: "All tokens revoked. User will need to log in again." });
+    } catch (error) {
+      console.error("Revoke tokens error:", error);
+      res.status(500).json({ error: "Failed to revoke tokens" });
+    }
+  });
+
+  // Change own password
+  app.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
+    try {
+      const schema = z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(8, "Password must be at least 8 characters"),
+      });
+
+      const data = schema.parse(req.body);
+
+      const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
+      
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      const isValid = await verifyPassword(data.currentPassword, user.passwordHash);
+      
+      if (!isValid) {
+        res.status(401).json({ error: "Current password is incorrect" });
+        return;
+      }
+
+      const newPasswordHash = await hashPassword(data.newPassword);
+
+      await db
+        .update(users)
+        .set({ passwordHash: newPasswordHash, updatedAt: new Date() })
+        .where(eq(users.id, req.user!.id));
+
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      res.status(500).json({ error: "Failed to change password" });
     }
   });
 
@@ -997,6 +1075,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const [newEntry] = await db.insert(timeEntries).values(validationResult.data).returning();
+      
+      // Audit log
+      await logCreate(req.user!.id, "TIME_ENTRY", newEntry.id, JSON.stringify(newEntry), req);
+      
       res.status(201).json(newEntry);
     } catch (error: any) {
       console.error("Create time entry error:", error);
@@ -1004,9 +1086,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update time entry (with locking)
+  app.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const schema = z.object({
+        date: z.coerce.date().optional(),
+        hoursRegular: z.string().optional(),
+        hoursOvertime: z.string().optional(),
+        costCode: z.string().optional(),
+        notes: z.string().optional(),
+        adminOverride: z.boolean().optional(),
+      });
+
+      const data = schema.parse(req.body);
+
+      // Get existing entry
+      const [existingEntry] = await db
+        .select()
+        .from(timeEntries)
+        .where(eq(timeEntries.id, req.params.id))
+        .limit(1);
+
+      if (!existingEntry) {
+        res.status(404).json({ error: "Time entry not found" });
+        return;
+      }
+
+      // Check locking: if approved (has approvedAt or approvedById), only ADMIN can modify with explicit override
+      if (existingEntry.approvedAt || existingEntry.approvedById) {
+        if (req.user!.role !== "ADMIN" || !data.adminOverride) {
+          res.status(403).json({ 
+            error: "This time entry has been approved and is locked. Only administrators can modify approved entries with explicit override." 
+          });
+          return;
+        }
+      }
+
+      // Verify ownership (unless admin)
+      if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER" && existingEntry.userId !== req.user!.id) {
+        res.status(403).json({ error: "You can only edit your own time entries" });
+        return;
+      }
+
+      const updates: any = { updatedAt: new Date() };
+      
+      if (data.date) updates.date = data.date;
+      if (data.hoursRegular !== undefined) updates.hoursRegular = data.hoursRegular;
+      if (data.hoursOvertime !== undefined) updates.hoursOvertime = data.hoursOvertime;
+      if (data.costCode !== undefined) updates.costCode = data.costCode;
+      if (data.notes !== undefined) updates.notes = data.notes;
+
+      const [updatedEntry] = await db
+        .update(timeEntries)
+        .set(updates)
+        .where(eq(timeEntries.id, req.params.id))
+        .returning();
+
+      // Audit log
+      await logUpdate(
+        req.user!.id,
+        "TIME_ENTRY",
+        req.params.id,
+        JSON.stringify(existingEntry),
+        JSON.stringify({ ...updates, adminOverride: data.adminOverride }),
+        req
+      );
+
+      res.json(updatedEntry);
+    } catch (error) {
+      console.error("Update time entry error:", error);
+      res.status(500).json({ error: "Failed to update time entry" });
+    }
+  });
+
+  // Delete time entry (with locking)
+  app.delete("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      // Get existing entry
+      const [existingEntry] = await db
+        .select()
+        .from(timeEntries)
+        .where(eq(timeEntries.id, req.params.id))
+        .limit(1);
+
+      if (!existingEntry) {
+        res.status(404).json({ error: "Time entry not found" });
+        return;
+      }
+
+      // Check locking: if approved (has approvedAt or approvedById), only ADMIN can delete
+      if ((existingEntry.approvedAt || existingEntry.approvedById) && req.user!.role !== "ADMIN") {
+        res.status(403).json({ 
+          error: "This time entry has been approved and is locked. Only administrators can delete approved entries." 
+        });
+        return;
+      }
+
+      // Verify ownership (unless admin/manager)
+      if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER" && existingEntry.userId !== req.user!.id) {
+        res.status(403).json({ error: "You can only delete your own time entries" });
+        return;
+      }
+
+      await db.delete(timeEntries).where(eq(timeEntries.id, req.params.id));
+
+      // Audit log
+      await logDelete(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify(existingEntry), req);
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete time entry error:", error);
+      res.status(500).json({ error: "Failed to delete time entry" });
+    }
+  });
+
   // Approve time entry (Admin/Manager only)
   app.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const [existingEntry] = await db
+        .select()
+        .from(timeEntries)
+        .where(eq(timeEntries.id, req.params.id))
+        .limit(1);
+
+      if (!existingEntry) {
+        res.status(404).json({ error: "Time entry not found" });
+        return;
+      }
+
       const [updatedEntry] = await db
         .update(timeEntries)
         .set({
@@ -1017,10 +1224,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(timeEntries.id, req.params.id))
         .returning();
 
-      if (!updatedEntry) {
-        res.status(404).json({ error: "Time entry not found" });
-        return;
-      }
+      // Audit log
+      await logApprove(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify({ approver: req.user!.email }), req);
 
       res.json(updatedEntry);
     } catch (error) {
@@ -1917,6 +2122,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Mark all notifications read error:", error);
       res.status(500).json({ error: "Failed to mark all notifications as read" });
+    }
+  });
+
+  // ====================
+  // Billing Events Routes
+  // ====================
+
+  // Get billing events for a project
+  app.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const events = await db
+        .select()
+        .from(billingEvents)
+        .where(eq(billingEvents.projectId, req.params.projectId))
+        .orderBy(desc(billingEvents.eventDate));
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get billing events error:", error);
+      res.status(500).json({ error: "Failed to fetch billing events" });
+    }
+  });
+
+  // Create billing event
+  app.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const schema = z.object({
+        projectId: z.string(),
+        eventType: z.enum(["INVOICE_SENT", "PAYMENT_RECEIVED", "CHANGE_ORDER_INVOICED", "RETENTION_RELEASED", "LIEN_WAIVER_RECEIVED"]),
+        eventDate: z.coerce.date(),
+        amount: z.string(),
+        description: z.string().optional(),
+        invoiceNumber: z.string().optional(),
+        referenceId: z.string().optional(),
+      });
+
+      const data = schema.parse(req.body);
+
+      const [newEvent] = await db.insert(billingEvents).values({
+        ...data,
+        createdById: req.user!.id,
+      }).returning();
+
+      // Audit log
+      await logCreate(req.user!.id, "BILLING_EVENT", newEvent.id, JSON.stringify(newEvent), req);
+
+      res.status(201).json(newEvent);
+    } catch (error) {
+      console.error("Create billing event error:", error);
+      res.status(500).json({ error: "Failed to create billing event" });
+    }
+  });
+
+  // ====================
+  // Audit Log Routes
+  // ====================
+
+  // Get audit logs (Admin only)
+  app.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const { entityType, entityId, userId, action, page = "1", pageSize = "100" } = req.query;
+
+      const pageNum = parseInt(page as string);
+      const pageSizeNum = parseInt(pageSize as string);
+      const offset = (pageNum - 1) * pageSizeNum;
+
+      let query = db.select().from(auditLog);
+
+      const conditions = [];
+      if (entityType) conditions.push(eq(auditLog.entityType, entityType as string));
+      if (entityId) conditions.push(eq(auditLog.entityId, entityId as string));
+      if (userId) conditions.push(eq(auditLog.userId, userId as string));
+      if (action) conditions.push(eq(auditLog.action, action as any));
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+
+      const logs = await query
+        .orderBy(desc(auditLog.timestamp))
+        .limit(pageSizeNum)
+        .offset(offset);
+
+      res.json(logs);
+    } catch (error) {
+      console.error("Get audit logs error:", error);
+      res.status(500).json({ error: "Failed to fetch audit logs" });
+    }
+  });
+
+  // Get audit logs for specific entity (Admin/Manager)
+  app.get("/api/audit-logs/:entityType/:entityId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const logs = await db
+        .select()
+        .from(auditLog)
+        .where(and(
+          eq(auditLog.entityType, req.params.entityType),
+          eq(auditLog.entityId, req.params.entityId)
+        ))
+        .orderBy(desc(auditLog.timestamp))
+        .limit(100);
+
+      res.json(logs);
+    } catch (error) {
+      console.error("Get entity audit logs error:", error);
+      res.status(500).json({ error: "Failed to fetch audit logs" });
     }
   });
 

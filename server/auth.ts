@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { users, type User, type SelectUser } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "your-secret-key-change-in-production";
 const COOKIE_NAME = "auth_token";
@@ -22,15 +22,15 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-// Generate JWT token
-export function generateToken(userId: string): string {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
+// Generate JWT token with tokenVersion (handle null defensively)
+export function generateToken(userId: string, tokenVersion: number | null): string {
+  return jwt.sign({ userId, tokenVersion: tokenVersion ?? 0 }, JWT_SECRET, { expiresIn: "7d" });
 }
 
 // Verify JWT token
-export function verifyToken(token: string): { userId: string } | null {
+export function verifyToken(token: string): { userId: string; tokenVersion: number } | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { userId: string };
+    return jwt.verify(token, JWT_SECRET) as { userId: string; tokenVersion: number };
   } catch {
     return null;
   }
@@ -59,8 +59,19 @@ export async function authMiddleware(
   const [user] = await db.select().from(users).where(eq(users.id, payload.userId)).limit(1);
   
   if (user && user.isActive) {
-    // Omit password hash from user object
-    const { passwordHash, ...userWithoutPassword } = user;
+    // Check tokenVersion - reject if it doesn't match (token revocation)
+    // Handle null tokenVersion defensively (legacy users) by treating null as 0
+    const userTokenVersion = user.tokenVersion ?? 0;
+    const payloadTokenVersion = payload.tokenVersion ?? 0;
+    
+    if (userTokenVersion !== payloadTokenVersion) {
+      res.clearCookie(COOKIE_NAME);
+      next();
+      return;
+    }
+
+    // Omit password hash and tokenVersion from user object
+    const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
     req.user = userWithoutPassword;
   }
 
@@ -76,21 +87,32 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-// Middleware to require specific roles
-export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "HOURLY_EMPLOYEE">) {
+// Middleware to require specific roles (all 6 roles supported)
+export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE">) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(req.user.role as any)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
 
     next();
   };
+}
+
+// Helper function to increment tokenVersion (revokes all existing tokens)
+export async function revokeUserTokens(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ 
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      updatedAt: new Date()
+    })
+    .where(eq(users.id, userId));
 }
 
 // Set auth cookie

@@ -1,9 +1,19 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Trust proxy - Required for accurate IP detection behind Replit proxy
+app.set("trust proxy", 1);
+
+// CORS Configuration - Fixed default to localhost:5173
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true,
+}));
 
 declare module 'http' {
   interface IncomingMessage {
