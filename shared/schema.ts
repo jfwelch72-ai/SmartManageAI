@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, decimal, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, decimal, integer, pgEnum, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -12,10 +12,13 @@ export const documentTypeEnum = pgEnum("document_type", ["PLANS", "SPECS", "TAKE
 export const noteTypeEnum = pgEnum("note_type", ["GENERAL", "FIELD_NOTE", "SAFETY", "CLIENT_MEETING"]);
 export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
-export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
+export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
 export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
+export const auditActionEnum = pgEnum("audit_action", ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", "CLOCK_IN", "CLOCK_OUT", "ADJUST"]);
+export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
+export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -27,6 +30,7 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").notNull().default("HOURLY_EMPLOYEE"),
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash").notNull(),
+  tokenVersion: integer("token_version").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -272,9 +276,70 @@ export const filePermissions = pgTable("file_permissions", {
   grantedAt: timestamp("granted_at").notNull().defaultNow(),
 });
 
+// Audit Log table
+export const auditLog = pgTable("audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  entityType: text("entity_type").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  action: auditActionEnum("action").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Billing Events table
+export const billingEvents = pgTable("billing_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Time Clock Shifts table
+export const timeClockShifts = pgTable("time_clock_shifts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  clockIn: timestamp("clock_in").notNull(),
+  clockOut: timestamp("clock_out"),
+  clockInLatitude: doublePrecision("clock_in_latitude"),
+  clockInLongitude: doublePrecision("clock_in_longitude"),
+  clockOutLatitude: doublePrecision("clock_out_latitude"),
+  clockOutLongitude: doublePrecision("clock_out_longitude"),
+  notes: text("notes"),
+  autoClockOut: boolean("auto_clock_out").notNull().default(false),
+  approvalStatus: shiftApprovalStatusEnum("approval_status").notNull().default("PENDING"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  totalHours: decimal("total_hours", { precision: 6, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Time Clock Events table
+export const timeClockEvents = pgTable("time_clock_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shiftId: varchar("shift_id").notNull().references(() => timeClockShifts.id, { onDelete: "cascade" }),
+  eventType: clockEventTypeEnum("event_type").notNull(),
+  timestamp: timestamp("timestamp").notNull(),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  notes: text("notes"),
+  performedById: varchar("performed_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Insert and Select Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
+  tokenVersion: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -414,3 +479,37 @@ export type Notification = typeof notifications.$inferSelect;
 
 export type InsertFilePermission = z.infer<typeof insertFilePermissionSchema>;
 export type FilePermission = typeof filePermissions.$inferSelect;
+
+export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBillingEventSchema = createInsertSchema(billingEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTimeClockShiftSchema = createInsertSchema(timeClockShifts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+});
+
+export const insertTimeClockEventSchema = createInsertSchema(timeClockEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type AuditLog = typeof auditLog.$inferSelect;
+
+export type InsertBillingEvent = z.infer<typeof insertBillingEventSchema>;
+export type BillingEvent = typeof billingEvents.$inferSelect;
+
+export type InsertTimeClockShift = z.infer<typeof insertTimeClockShiftSchema>;
+export type TimeClockShift = typeof timeClockShifts.$inferSelect;
+
+export type InsertTimeClockEvent = z.infer<typeof insertTimeClockEventSchema>;
+export type TimeClockEvent = typeof timeClockEvents.$inferSelect;

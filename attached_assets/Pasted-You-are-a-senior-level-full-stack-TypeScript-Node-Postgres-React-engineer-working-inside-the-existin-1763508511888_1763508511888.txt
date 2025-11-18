@@ -1,0 +1,43 @@
+You are a senior-level full-stack TypeScript/Node/Postgres/React engineer working inside the existing TFR Construction Platform repository. Do not create a new project. Your job is to fully analyze the entire codebase, repair all bugs, harden all systems, complete all missing features, enforce security, fix role issues, strengthen data integrity, enhance performance, and add a complete native time-clock system similar to BusyBusy. Follow every instruction below exactly and perform all work directly in the existing repo.
+
+First, scan the entire repository for: TypeScript errors, missing imports, broken schemas, outdated enums, mismatched types, incorrect API routes, missing dependencies, incorrect CORS settings, incorrect environment defaults, orphaned or missing foreign keys, missing validation logic, missing pagination, missing role checks, broken file-upload logic, incomplete error handling, duplicated code, unused files, and any other technical debt. Fix all findings automatically.
+
+Next, fix all user-role inconsistencies. Update all RBAC logic to match the full userRoleEnum from the schema, including ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, and HOURLY_EMPLOYEE. Ensure requireRole() accepts the complete union of roles and enforce correct access on every endpoint. Cross-check route permissions against the documentation and correct any mismatch.
+
+Fix the incorrect default CORS origin. Replace any fallback default of “http://localhost:5000” with “http://localhost:5173” unless overridden by FRONTEND_URL. Ensure production CORS only allows configured origins and remove any permissive wildcard configurations.
+
+Fix the filePermissions and notification polymorphic foreign-key inconsistencies. Add validation on creation ensuring that fileId references an actual media/document/receipt row. Enforce soft-delete cascading: deleting any file automatically removes related filePermissions and notifications. Implement helper validation utilities and use them in all relevant routes.
+
+Tighten file-upload security. Enforce per-route max file sizes, MIME-type whitelisting, safe upload transactions (delete uploaded storage objects if DB write fails), and ensure canAccessFile(user, fileRecord) is used everywhere any file is read or listed. Ensure the backend denies access if user permissions do not match.
+
+Fix authentication and session logic. Add tokenVersion to the users table if missing. Reject tokens when tokenVersion changes. Increment tokenVersion on password resets, user disablement, or security-related actions. Maintain 7-day JWT tokens but enforce tokenVersion checks to immediately revoke old tokens.
+
+Add rate limiting to all sensitive endpoints including /api/auth/login, /api/auth/register, /api/reports/, and /api/dashboard/ using express-rate-limit or a custom mechanism. Include IP + user-agent in the rate-limit key.
+
+Enforce time-entry locking. If a time entry has approvedAt set, reject any modification request unless the acting user is ADMIN with explicit override logic. Ensure the UI reflects locking and disable editing in the frontend once approved.
+
+Standardize TanStack Query usage across the frontend. Fix incorrect query keys and ensure each query includes all filters (projectId, status, dates, search, pagination). After every mutation, add invalidateQueries for relevant keys to ensure correct UI refresh.
+
+Add pagination and filtering to all heavy endpoints including project lists, time entries, media/documents/receipts, and change orders. Add indexes on projectId, createdAt, date, status, and billingStatus where needed. Refactor backend endpoints to support page, pageSize, sort, and optional filtering arguments.
+
+Add full audit logging. Create an audit_log table with id, user_id, entity_type, entity_id, action, old_value, new_value, created_at. Every sensitive change must write to audit_log, including time-entry modifications, scopeItem updates, change order changes, billing events, and project-level edits.
+
+Now add a full native time-clock system (BusyBusy-style) fully inside the TFR app, without external services. Create tables time_clock_shifts (id, user_id fk, project_id fk nullable, clock_in timestamp, clock_out timestamp, clock_in_location geography point optional, clock_out_location geography point optional, notes text, auto_clock_out boolean default false, created_at, updated_at) and time_clock_events (shift_id fk, event_type enum: CLOCK_IN, CLOCK_OUT, ADJUSTMENT, ADMIN_OVERRIDE, old_value jsonb, new_value jsonb, performed_by fk, timestamp). Add time_clock_settings (require_geo boolean default true, allowed_radius_meters int default 200, auto_clock_out_hours int default 14). Generate the required migrations.
+
+Implement backend time-clock endpoints: POST /time-clock/clock-in, POST /time-clock/clock-out, GET /time-clock/my-current-shift, GET /time-clock/my-shifts, PATCH /time-clock/my-shifts/:id/notes, GET /time-clock/employee/:id/shifts, PATCH /time-clock/shift/:id/adjust, POST /time-clock/shift/:id/admin-clock-out, POST /time-clock/approve/:id, and GET /time-clock/live. Implement full validation including geolocation radius checks, preventing double clock-in, preventing clock-out without active shift, and generating time_clock_events entries for edits and overrides.
+
+Implement automation: cron-style scheduled tasks to auto-clock-out employees after the configured max hours, send reminders for missing clock-outs, and generate daily activity reports. If Replit does not support CRON natively, use a persistent interval worker inside the backend server.
+
+Integrate time-clock with time-entries. When a user clocks out, automatically create a corresponding time-entry unless disabled by admin settings. Ensure time entries inherit projectId, timestamps, and notes.
+
+Build full React UI for employees: Clock In/Out page with geolocation map, active shift banner, My Shifts history table, notes editor, and compliance messages. Build manager UI: live monitor of who’s clocked in, per-employee timesheet views, shift adjustment modals, GPS radius map validation, approval tools, and filters by date and user.
+
+Fix SOV and billing logic. Replace manual billedQuantity editing with a new billing_events table (id, scope_item_id fk, quantity numeric, unit_price numeric, created_by user_id fk, created_at timestamp). Calculate billedQuantity as SUM of billing_events. Automatically update billingStatus to READY_TO_BILL when completedQuantity > billedQuantity. Enforce audit logging for all events.
+
+Implement a change-order state machine: DRAFT → SUBMITTED → APPROVED → REJECTED with required validations and audit logging. Ensure frontend reflects correct workflow.
+
+After implementing all fixes and features, ensure the entire system builds and passes type-checking: run pnpm install, pnpm build, tsc –noEmit, and fix any errors. Ensure migrations apply cleanly. Ensure backend boots without crashing and frontend builds successfully. Resolve all schema mismatches, broken types, incorrect imports, and unhandled edge cases.
+
+Finally, generate the following deliverables automatically: list of all changed files, list of all added files, list of all new migrations, updated API documentation including new time-clock endpoints, updated ERD diagram (as code or markdown), updated RBAC matrix, and a final confirmation summary that the app now builds cleanly, runs correctly, and is production-ready.
+
+Perform all tasks above in full. Do not skip or summarize anything. Apply every fix directly to the current repository
