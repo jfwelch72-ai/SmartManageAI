@@ -857,7 +857,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newMedia] = await db.insert(media).values(validationResult.data).returning();
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      
+      const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+        validationResult.data.fileUrl,
+        {
+          owner: req.user!.id,
+          visibility: "public",
+        }
+      );
+
+      const [newMedia] = await db.insert(media).values({
+        ...validationResult.data,
+        objectKey,
+      }).returning();
+      
       res.status(201).json(newMedia);
     } catch (error: any) {
       console.error("Create media error:", error);
@@ -1218,7 +1233,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newReceipt] = await db.insert(receipts).values(validationResult.data).returning();
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      
+      const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+        validationResult.data.fileUrl,
+        {
+          owner: req.user!.id,
+          visibility: "public",
+        }
+      );
+
+      const [newReceipt] = await db.insert(receipts).values({
+        ...validationResult.data,
+        objectKey,
+      }).returning();
+      
       res.status(201).json(newReceipt);
     } catch (error: any) {
       console.error("Create receipt error:", error);
@@ -1268,7 +1298,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newDoc] = await db.insert(planDocuments).values(validationResult.data).returning();
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      
+      const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+        validationResult.data.fileUrl,
+        {
+          owner: req.user!.id,
+          visibility: "public",
+        }
+      );
+
+      const [newDoc] = await db.insert(planDocuments).values({
+        ...validationResult.data,
+        objectKey,
+      }).returning();
+      
       res.status(201).json(newDoc);
     } catch (error: any) {
       console.error("Create document error:", error);
@@ -1717,6 +1762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
         userId: req.user!.id,
+        userRole: req.user!.role,
         requestedPermission: ObjectPermission.READ,
       });
 

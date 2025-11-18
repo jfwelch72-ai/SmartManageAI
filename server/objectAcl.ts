@@ -54,10 +54,12 @@ export async function canAccessObject({
   userId,
   objectFile,
   requestedPermission,
+  userRole,
 }: {
   userId?: string;
   objectFile: File;
   requestedPermission: ObjectPermission;
+  userRole?: string;
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);
   if (!aclPolicy) {
@@ -76,6 +78,10 @@ export async function canAccessObject({
   }
 
   if (aclPolicy.owner === userId) {
+    return true;
+  }
+
+  if (userRole === "ADMIN" || userRole === "MANAGER") {
     return true;
   }
 

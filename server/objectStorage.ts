@@ -206,15 +206,18 @@ export class ObjectStorageService {
     userId,
     objectFile,
     requestedPermission,
+    userRole,
   }: {
     userId?: string;
     objectFile: File;
     requestedPermission?: ObjectPermission;
+    userRole?: string;
   }): Promise<boolean> {
     return canAccessObject({
       userId,
       objectFile,
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
+      userRole,
     });
   }
 }
