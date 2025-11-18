@@ -12,7 +12,7 @@ import MediaGallery from "@/components/MediaGallery";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder } from "@/hooks/use-data";
+import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -227,103 +227,6 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
   );
 }
 
-//todo: remove mock functionality
-const mockProject = {
-  code: "TFR-240639",
-  name: "OSU Outpatient East – Parking Lot",
-  clientName: "Ohio State University",
-  clientContact: "Dr. Jennifer Martinez",
-  clientEmail: "martinez.123@osu.edu",
-  clientPhone: "(614) 555-0123",
-  status: "ACTIVE" as const,
-  location: "421 Medical Center Dr, Columbus, OH 43210",
-  startDate: "2024-03-15",
-  endDate: "2024-08-30",
-  description: "Concrete work for new parking structure and connecting walkways at OSU Medical Center East campus.",
-  superintendent: "Mike Johnson",
-  estimator: "Sarah Williams",
-};
-
-const mockEstimates = [
-  {
-    id: '1',
-    version: 1,
-    status: 'WON' as const,
-    amount: '$487,500',
-    date: '2024-02-10',
-  },
-];
-
-const mockProcurement = [
-  {
-    id: '1',
-    description: 'Ready-mix concrete 4000 PSI',
-    vendor: 'Columbus Concrete Supply',
-    quantity: 450,
-    unit: 'CY',
-    status: 'ORDERED' as const,
-  },
-  {
-    id: '2',
-    description: 'Rebar #5 Grade 60',
-    vendor: 'Steel Solutions Inc',
-    quantity: 12000,
-    unit: 'LF',
-    status: 'DELIVERED' as const,
-  },
-];
-
-const mockDocuments = [
-  { id: '1', title: 'Site Plans Rev 3.pdf', type: 'PLANS', uploadedBy: 'Sarah Williams', date: '2024-03-01' },
-  { id: '2', title: 'Structural Drawings.pdf', type: 'PLANS', uploadedBy: 'Sarah Williams', date: '2024-03-01' },
-  { id: '3', title: 'Concrete Specifications.pdf', type: 'SPECS', uploadedBy: 'Mike Johnson', date: '2024-03-05' },
-];
-
-const mockScopeItems = [
-  { id: '1', description: 'Sidewalk', unit: 'SF', totalQuantity: 5000, completedQuantity: 3200 },
-  { id: '2', description: 'Curb', unit: 'LF', totalQuantity: 800, completedQuantity: 650 },
-  { id: '3', description: 'Slab on Grade', unit: 'SF', totalQuantity: 12000, completedQuantity: 8500 },
-  { id: '4', description: 'Bollards', unit: 'EA', totalQuantity: 24, completedQuantity: 18 },
-];
-
-const mockDailyNotes = [
-  {
-    id: '1',
-    author: 'Mike Johnson',
-    authorRole: 'Superintendent',
-    date: '2024-01-18',
-    time: '4:30 PM',
-    content: 'Completed 1,200 SF of sidewalk today. Weather was clear. Concrete delivery arrived on time at 8:15 AM. No safety incidents. Crew of 8 performed well.',
-  },
-  {
-    id: '2',
-    author: 'Sarah Williams',
-    authorRole: 'Project Manager',
-    date: '2024-01-17',
-    time: '3:15 PM',
-    content: 'Met with client rep regarding schedule adjustment for upcoming rain forecast. Agreed to shift curb work to next week. Updated project timeline accordingly.',
-  },
-];
-
-const mockMediaItems = [
-  {
-    id: '1',
-    type: 'image' as const,
-    url: '/placeholder1.jpg',
-    caption: 'Foundation excavation complete',
-    uploadedBy: 'Mike Johnson',
-    uploadedAt: '2024-01-18',
-  },
-  {
-    id: '2',
-    type: 'image' as const,
-    url: '/placeholder2.jpg',
-    caption: 'Concrete pour in progress - Section A',
-    uploadedBy: 'Mike Johnson',
-    uploadedAt: '2024-01-17',
-  },
-];
-
 export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
@@ -335,6 +238,14 @@ export default function ProjectDetailPage() {
   const { data: project, isLoading: projectLoading } = useProject(projectCode);
   const { data: scopeItems = [], isLoading: scopeLoading } = useScopeItems(projectCode);
   const { data: changeOrders = [], isLoading: changeOrdersLoading } = useChangeOrders(projectCode);
+  const { data: projectNotes = [], isLoading: notesLoading } = useProjectNotes(projectCode);
+  const { data: mediaItems = [], isLoading: mediaLoading } = useProjectMedia(projectCode);
+  const { data: estimates = [], isLoading: estimatesLoading } = useProjectEstimates(projectCode);
+  const { data: procurementItems = [], isLoading: procurementLoading } = useProjectProcurement(projectCode);
+  const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
+  const { data: timeEntries = [], isLoading: timeEntriesLoading } = useProjectTimeEntries(projectCode);
+  const { data: tmSheets = [], isLoading: tmSheetsLoading } = useProjectTMSheets(projectCode);
+  const { data: receipts = [], isLoading: receiptsLoading } = useProjectReceipts(projectCode);
 
   if (projectLoading) {
     return (
@@ -436,28 +347,30 @@ export default function ProjectDetailPage() {
                     <User className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium">Contact</p>
-                      <p className="text-sm text-muted-foreground">{project.clientContact || "N/A"}</p>
+                      <p className="text-sm text-muted-foreground">{project.clientContactName || "N/A"}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <Mail className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium">Email</p>
-                      <p className="text-sm text-muted-foreground">{project.clientEmail || "N/A"}</p>
+                      <p className="text-sm text-muted-foreground">{project.clientContactEmail || "N/A"}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <Phone className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium">Phone</p>
-                      <p className="text-sm text-muted-foreground">{project.clientPhone || "N/A"}</p>
+                      <p className="text-sm text-muted-foreground">{project.clientContactPhone || "N/A"}</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div>
                       <p className="text-sm font-medium">Location</p>
-                      <p className="text-sm text-muted-foreground">{project.location || "N/A"}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {[project.locationAddress, project.city, project.state].filter(Boolean).join(", ") || "N/A"}
+                      </p>
                     </div>
                   </div>
                 </CardContent>
@@ -570,23 +483,68 @@ export default function ProjectDetailPage() {
           />
 
           <TabsContent value="daily-notes">
-            <DailyNoteFeed
-              notes={mockDailyNotes}
-              onAddNote={(content) => console.log('New daily note:', content)}
-            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Daily Notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {notesLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading notes...</div>
+                ) : projectNotes.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No daily notes yet</div>
+                ) : (
+                  <div className="space-y-4">
+                    {projectNotes.map((note) => (
+                      <Card key={note.id} data-testid={`note-${note.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4 mb-2">
+                            <p className="text-sm font-medium">{note.noteType.replace("_", " ")}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(note.createdAt), "MMM d, yyyy h:mm a")}
+                            </p>
+                          </div>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{note.text}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="media">
-            <MediaGallery
-              items={mockMediaItems}
-              onUpload={(files) => console.log('Media uploaded:', files)}
-              onDelete={(id) => console.log('Delete media:', id)}
-            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Photos & Videos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {mediaLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading media...</div>
+                ) : mediaItems.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No media uploaded yet</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {mediaItems.map((item) => (
+                      <Card key={item.id} data-testid={`media-${item.id}`}>
+                        <CardContent className="p-4">
+                          <Badge variant="outline" className="mb-2">{item.type}</Badge>
+                          <p className="text-sm font-medium mb-1">{item.caption || "Untitled"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(item.uploadedAt), "MMM d, yyyy")}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="estimate">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Estimates</CardTitle>
                 <Button size="sm" data-testid="button-new-estimate">
                   <Plus className="w-4 h-4 mr-2" />
@@ -594,29 +552,44 @@ export default function ProjectDetailPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockEstimates.map(estimate => (
-                    <div key={estimate.id} className="flex items-center justify-between p-4 border rounded-md hover-elevate">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium">Version {estimate.version}</span>
-                          <StatusBadge status={estimate.status} type="estimate" />
+                {estimatesLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading estimates...</div>
+                ) : estimates.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No estimates yet</div>
+                ) : (
+                  <div className="space-y-4">
+                    {estimates.map(estimate => (
+                      <div key={estimate.id} className="flex items-center justify-between p-4 border rounded-md hover-elevate" data-testid={`estimate-${estimate.id}`}>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium">Version {estimate.versionNumber}</span>
+                            <Badge variant={estimate.status === "WON" ? "default" : "secondary"}>
+                              {estimate.status}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(estimate.createdAt), "MMM d, yyyy")}
+                          </p>
+                          {estimate.notes && (
+                            <p className="text-xs text-muted-foreground mt-1">{estimate.notes}</p>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground">{estimate.date}</p>
+                        <div className="text-right">
+                          <p className="text-xl font-bold font-mono">
+                            {estimate.baseBidAmount ? `$${parseFloat(estimate.baseBidAmount).toLocaleString()}` : "TBD"}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xl font-bold font-mono">{estimate.amount}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="procurement">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Procurement Items</CardTitle>
                 <Button size="sm" data-testid="button-new-procurement">
                   <Plus className="w-4 h-4 mr-2" />
@@ -624,79 +597,146 @@ export default function ProjectDetailPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {mockProcurement.map(item => (
-                    <div key={item.id} className="flex items-center justify-between p-4 border rounded-md">
-                      <div className="flex-1">
-                        <p className="font-medium mb-1">{item.description}</p>
-                        <p className="text-sm text-muted-foreground">{item.vendor}</p>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="font-mono text-sm">{item.quantity} {item.unit}</p>
+                {procurementLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading procurement...</div>
+                ) : procurementItems.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No procurement items yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {procurementItems.map(item => (
+                      <div key={item.id} className="flex items-center justify-between p-4 border rounded-md" data-testid={`procurement-${item.id}`}>
+                        <div className="flex-1">
+                          <p className="font-medium mb-1">{item.description}</p>
+                          <p className="text-sm text-muted-foreground">{item.vendor || "No vendor"}</p>
                         </div>
-                        <StatusBadge status={item.status} type="procurement" />
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="font-mono text-sm">
+                              {item.quantity} {item.unit}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              item.status === "DELIVERED" ? "default" :
+                              item.status === "ORDERED" ? "secondary" :
+                              "outline"
+                            }
+                          >
+                            {item.status}
+                          </Badge>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="plans">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Upload Documents</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <FileUploadZone
-                    onFileSelect={(files) => console.log('Files selected:', files)}
-                    accept=".pdf,.dwg,.jpg,.png"
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Documents</CardTitle>
-                </CardHeader>
-                <CardContent>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardTitle>Documents</CardTitle>
+                <Button size="sm" data-testid="button-upload-document">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Upload Document
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {documentsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading documents...</div>
+                ) : documents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No documents uploaded yet</div>
+                ) : (
                   <div className="space-y-2">
-                    {mockDocuments.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate">
+                    {documents.map(doc => (
+                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate" data-testid={`document-${doc.id}`}>
                         <div>
                           <p className="font-medium text-sm">{doc.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            Uploaded by {doc.uploadedBy} on {doc.date}
+                            Uploaded {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
                           </p>
                         </div>
                         <Badge variant="outline">{doc.type}</Badge>
                       </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="time">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Time & Material Tracking</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Time entries and T&M daily sheets will appear here.
-                </p>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Time Entries</h3>
+                    {timeEntriesLoading ? (
+                      <div className="text-center py-4 text-muted-foreground">Loading time entries...</div>
+                    ) : timeEntries.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">No time entries yet</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {timeEntries.map((entry) => {
+                          const totalHours = parseFloat(entry.hoursRegular) + parseFloat(entry.hoursOvertime || "0");
+                          return (
+                            <div key={entry.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`time-entry-${entry.id}`}>
+                              <div>
+                                <p className="text-sm font-medium">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                                {entry.notes && (
+                                  <p className="text-xs text-muted-foreground">{entry.notes}</p>
+                                )}
+                                {entry.costCode && (
+                                  <p className="text-xs text-muted-foreground">Cost Code: {entry.costCode}</p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <p className="font-mono text-sm">{totalHours} hours</p>
+                                <Badge variant={entry.approvedAt ? "default" : "secondary"}>
+                                  {entry.approvedAt ? "Approved" : "Pending"}
+                                </Badge>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">T&M Daily Sheets</h3>
+                    {tmSheetsLoading ? (
+                      <div className="text-center py-4 text-muted-foreground">Loading T&M sheets...</div>
+                    ) : tmSheets.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground">No T&M sheets yet</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {tmSheets.map((sheet) => (
+                          <div key={sheet.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`tm-sheet-${sheet.id}`}>
+                            <div>
+                              <p className="text-sm font-medium">{format(new Date(sheet.date), "MMM d, yyyy")}</p>
+                              <p className="text-xs text-muted-foreground">TFR Rep: {sheet.tfrRepName}</p>
+                              {sheet.clientRepName && (
+                                <p className="text-xs text-muted-foreground">Client Rep: {sheet.clientRepName}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="receipts">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Receipts</CardTitle>
                 <Button size="sm" data-testid="button-upload-receipt">
                   <Plus className="w-4 h-4 mr-2" />
@@ -704,9 +744,30 @@ export default function ProjectDetailPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  No receipts uploaded yet.
-                </p>
+                {receiptsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading receipts...</div>
+                ) : receipts.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No receipts uploaded yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {receipts.map((receipt) => (
+                      <div key={receipt.id} className="flex items-center justify-between p-4 border rounded-md" data-testid={`receipt-${receipt.id}`}>
+                        <div className="flex-1">
+                          <p className="font-medium mb-1">{receipt.vendor || "Unknown vendor"}</p>
+                          <p className="text-sm text-muted-foreground">{receipt.category}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(receipt.date), "MMM d, yyyy")}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold font-mono">
+                            ${parseFloat(receipt.amount).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

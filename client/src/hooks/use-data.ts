@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid } from "@shared/schema";
+import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt } from "@shared/schema";
 
 // Dashboard
 interface DashboardStats {
@@ -297,6 +297,102 @@ export function useDeleteMedia() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "media"] });
+    },
+  });
+}
+
+// Estimates
+export function useProjectEstimates(code: string) {
+  return useQuery<Estimate[]>({
+    queryKey: ["/api/projects", code, "estimates"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateEstimate() {
+  return useMutation({
+    mutationFn: async (data: Partial<Estimate> & { projectCode: string; projectId: string }) => {
+      const { projectCode, ...estimateData } = data;
+      const response = await apiRequest("POST", "/api/estimates", estimateData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "estimates"] });
+    },
+  });
+}
+
+// Procurement
+export function useProjectProcurement(code: string) {
+  return useQuery<ProcurementItem[]>({
+    queryKey: ["/api/projects", code, "procurement"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateProcurementItem() {
+  return useMutation({
+    mutationFn: async (data: Partial<ProcurementItem> & { projectCode: string; projectId: string }) => {
+      const { projectCode, ...itemData } = data;
+      const response = await apiRequest("POST", "/api/procurement", itemData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "procurement"] });
+    },
+  });
+}
+
+export function useUpdateProcurementItem() {
+  return useMutation({
+    mutationFn: async ({ id, data, projectCode }: { id: string; data: Partial<ProcurementItem>; projectCode: string }) => {
+      const response = await apiRequest("PATCH", `/api/procurement/${id}`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "procurement"] });
+    },
+  });
+}
+
+// Documents
+export function useProjectDocuments(code: string) {
+  return useQuery<PlanDocument[]>({
+    queryKey: ["/api/projects", code, "documents"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateDocument() {
+  return useMutation({
+    mutationFn: async (data: Partial<PlanDocument> & { projectCode: string; projectId: string }) => {
+      const { projectCode, ...docData } = data;
+      const response = await apiRequest("POST", "/api/documents", docData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "documents"] });
+    },
+  });
+}
+
+// Receipts
+export function useProjectReceipts(code: string) {
+  return useQuery<Receipt[]>({
+    queryKey: ["/api/projects", code, "receipts"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateReceipt() {
+  return useMutation({
+    mutationFn: async (data: Partial<Receipt> & { projectCode: string; projectId: string }) => {
+      const { projectCode, ...receiptData } = data;
+      const response = await apiRequest("POST", "/api/receipts", receiptData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "receipts"] });
     },
   });
 }
