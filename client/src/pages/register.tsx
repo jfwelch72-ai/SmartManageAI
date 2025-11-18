@@ -26,10 +26,8 @@ export default function RegisterPage() {
     password: string;
   }) => {
     try {
-      const response = await apiRequest("/api/auth/register", {
-        method: "POST",
-        body: data,
-      });
+      const res = await apiRequest("POST", "/api/auth/register", data);
+      const response = await res.json();
 
       setRegistrationComplete(true);
       

@@ -53,10 +53,7 @@ export default function UsersPage() {
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, data }: { userId: string; data: Partial<SelectUser> }) => {
-      return await apiRequest(`/api/users/${userId}`, {
-        method: "PATCH",
-        body: data,
-      });
+      return await apiRequest("PATCH", `/api/users/${userId}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
