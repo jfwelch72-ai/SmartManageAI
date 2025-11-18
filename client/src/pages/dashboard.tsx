@@ -6,15 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useDashboardStats, useProjects } from "@/hooks/use-data";
+import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { data: bids = [], isLoading: bidsLoading } = useBids();
 
   const activeProjects = projects.filter(p => p.status === 'ACTIVE');
+  // All bids in the bids table are considered "active" (not yet converted to projects)
+  const activeBids = bids;
 
   return (
     <div className="min-h-screen bg-background">
@@ -72,24 +75,31 @@ export default function DashboardPage() {
                   View All
                 </Button>
               </div>
-              <div className="space-y-4">
-                <div className="p-4 border rounded-md hover-elevate cursor-pointer" onClick={() => setLocation('/bids/BID-240815')}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="font-mono text-xs">BID-240815</Badge>
-                    <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">BID</Badge>
-                  </div>
-                  <p className="font-medium mb-1">City Hall Renovation - Phase 2</p>
-                  <p className="text-sm text-muted-foreground">City of Columbus • Due: 2024-02-15</p>
+              {bidsLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading bids...</div>
+              ) : activeBids.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">No active bids</div>
+              ) : (
+                <div className="space-y-4">
+                  {activeBids.slice(0, 2).map((bid) => (
+                    <div
+                      key={bid.code}
+                      className="p-4 border rounded-md hover-elevate cursor-pointer"
+                      onClick={() => setLocation(`/bids/${encodeURIComponent(bid.code)}`)}
+                      data-testid={`bid-${encodeURIComponent(bid.code)}`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline" className="font-mono text-xs">{bid.code}</Badge>
+                        <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">BID</Badge>
+                      </div>
+                      <p className="font-medium mb-1">{bid.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {bid.clientName}{bid.dueDate && ` • Due: ${new Date(bid.dueDate).toLocaleDateString()}`}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-                <div className="p-4 border rounded-md hover-elevate cursor-pointer" onClick={() => setLocation('/bids/BID-240722')}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="font-mono text-xs">BID-240722</Badge>
-                    <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">BID</Badge>
-                  </div>
-                  <p className="font-medium mb-1">Shopping Plaza Foundation</p>
-                  <p className="text-sm text-muted-foreground">Retail Development Corp • Due: 2024-02-20</p>
-                </div>
-              </div>
+              )}
             </div>
 
             <div>
