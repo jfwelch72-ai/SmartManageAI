@@ -166,6 +166,13 @@ npm run db:push  # Push schema changes to database
 ```
 
 ## Recent Changes
+- 2025-11-18: Phase 0 & Phase 1 Complete - Projects Page with Real Data
+  - Created comprehensive seed data with 4 demo users, 3 projects, 2 bids, scope items (varying billing statuses), time entries, change orders, calendar events, and notifications
+  - Enhanced GET /api/projects endpoint to join with users table and return estimator/superintendent names using inArray
+  - Created ProjectWithNames type extending Project with optional estimator/superintendent fields
+  - Updated useProjects() hook to return ProjectWithNames[] for proper typing
+  - Projects page now displays real data including assigned personnel names
+  - E2E test verified: login → projects page → superintendent and estimator columns populated correctly
 - 2025-11-18: Implemented self-service user registration and admin user management
   - Added ESTIMATOR and OFFICE_MANAGER roles (total 6 roles now)
   - Created registration page at `/register` with form validation
@@ -181,7 +188,9 @@ npm run db:push  # Push schema changes to database
 - 2025-11-18: Database schema creation with 12 tables covering all project lifecycle needs
 
 ## Next Steps
-- Connect frontend pages to backend API endpoints
+- Phase 1: Build/Update Project Detail page with tabbed interface (Overview, Scope of Work, Notes, Media, Time Entries, Change Orders)
+- Phase 2: Implement Time Entry system with approval workflows and T&M Daily Sheet submission
+- Phase 3: Build Calendar with time-off requests and approvals
+- Phase 4: Add Dashboard with real KPIs from aggregated data
 - Implement file upload handling for documents, receipts, and media
-- Add dashboard KPIs with real aggregated data
 - Implement role-based UI filtering
