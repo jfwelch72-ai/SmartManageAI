@@ -14,6 +14,7 @@ import { Search, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 
 //todo: remove mock functionality
+// Note: This page only shows ACTIVE projects (not bids)
 const mockProjects = [
   {
     id: '1',
@@ -32,14 +33,6 @@ const mockProjects = [
     status: 'PLANNING' as const,
     superintendent: 'Tom Anderson',
     estimator: 'Sarah Williams',
-  },
-  {
-    id: '3',
-    code: 'TFR-240420',
-    name: 'Riverside Apartment Complex',
-    clientName: 'Riverside Properties LLC',
-    status: 'BID' as const,
-    estimator: 'David Chen',
   },
   {
     id: '4',
@@ -88,15 +81,20 @@ export default function ProjectsPage() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1">Projects</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-1">Active Projects</h1>
             <p className="text-sm text-muted-foreground">
-              Manage all construction projects
+              View and manage all awarded construction projects
             </p>
           </div>
-          <Button data-testid="button-new-project">
-            <Plus className="w-4 h-4 mr-2" />
-            New Project
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
+              View Bids
+            </Button>
+            <Button data-testid="button-new-project">
+              <Plus className="w-4 h-4 mr-2" />
+              New Project
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -116,7 +114,6 @@ export default function ProjectsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Statuses</SelectItem>
-              <SelectItem value="BID">Bid</SelectItem>
               <SelectItem value="PLANNING">Planning</SelectItem>
               <SelectItem value="ACTIVE">Active</SelectItem>
               <SelectItem value="COMPLETE">Complete</SelectItem>

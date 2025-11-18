@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
+import BidsPage from "@/pages/bids";
+import BidDetailPage from "@/pages/bid-detail";
 import ProjectsPage from "@/pages/projects";
 import ProjectDetailPage from "@/pages/project-detail";
 import TimeEntryPage from "@/pages/time-entry";
@@ -17,6 +19,8 @@ function Router() {
       <Route path="/" component={() => <Redirect to="/login" />} />
       <Route path="/login" component={LoginPage} />
       <Route path="/dashboard" component={DashboardPage} />
+      <Route path="/bids" component={BidsPage} />
+      <Route path="/bids/:code" component={BidDetailPage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:code" component={ProjectDetailPage} />
       <Route path="/time-entry" component={TimeEntryPage} />

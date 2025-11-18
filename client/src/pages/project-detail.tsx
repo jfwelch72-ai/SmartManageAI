@@ -6,9 +6,11 @@ import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import FileUploadZone from "@/components/FileUploadZone";
+import ScopeOfWorkTable from "@/components/ScopeOfWorkTable";
+import DailyNoteFeed from "@/components/DailyNoteFeed";
+import MediaGallery from "@/components/MediaGallery";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus } from "lucide-react";
 import { useLocation } from "wouter";
-import { Textarea } from "@/components/ui/textarea";
 
 //todo: remove mock functionality
 const mockProject = {
@@ -62,10 +64,54 @@ const mockDocuments = [
   { id: '3', title: 'Concrete Specifications.pdf', type: 'SPECS', uploadedBy: 'Mike Johnson', date: '2024-03-05' },
 ];
 
+const mockScopeItems = [
+  { id: '1', description: 'Sidewalk', unit: 'SF', totalQuantity: 5000, completedQuantity: 3200 },
+  { id: '2', description: 'Curb', unit: 'LF', totalQuantity: 800, completedQuantity: 650 },
+  { id: '3', description: 'Slab on Grade', unit: 'SF', totalQuantity: 12000, completedQuantity: 8500 },
+  { id: '4', description: 'Bollards', unit: 'EA', totalQuantity: 24, completedQuantity: 18 },
+];
+
+const mockDailyNotes = [
+  {
+    id: '1',
+    author: 'Mike Johnson',
+    authorRole: 'Superintendent',
+    date: '2024-01-18',
+    time: '4:30 PM',
+    content: 'Completed 1,200 SF of sidewalk today. Weather was clear. Concrete delivery arrived on time at 8:15 AM. No safety incidents. Crew of 8 performed well.',
+  },
+  {
+    id: '2',
+    author: 'Sarah Williams',
+    authorRole: 'Project Manager',
+    date: '2024-01-17',
+    time: '3:15 PM',
+    content: 'Met with client rep regarding schedule adjustment for upcoming rain forecast. Agreed to shift curb work to next week. Updated project timeline accordingly.',
+  },
+];
+
+const mockMediaItems = [
+  {
+    id: '1',
+    type: 'image' as const,
+    url: '/placeholder1.jpg',
+    caption: 'Foundation excavation complete',
+    uploadedBy: 'Mike Johnson',
+    uploadedAt: '2024-01-18',
+  },
+  {
+    id: '2',
+    type: 'image' as const,
+    url: '/placeholder2.jpg',
+    caption: 'Concrete pour in progress - Section A',
+    uploadedBy: 'Mike Johnson',
+    uploadedAt: '2024-01-17',
+  },
+];
+
 export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
-  const [newNote, setNewNote] = useState("");
 
   return (
     <div className="min-h-screen bg-background">
@@ -98,12 +144,14 @@ export default function ProjectDetailPage() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+            <TabsTrigger value="scope" data-testid="tab-scope">Scope & Progress</TabsTrigger>
+            <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
+            <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
             <TabsTrigger value="estimate" data-testid="tab-estimate">Estimate</TabsTrigger>
             <TabsTrigger value="procurement" data-testid="tab-procurement">Procurement</TabsTrigger>
             <TabsTrigger value="plans" data-testid="tab-plans">Plans & Takeoff</TabsTrigger>
             <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
             <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
-            <TabsTrigger value="notes" data-testid="tab-notes">Notes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -185,6 +233,35 @@ export default function ProjectDetailPage() {
                 <p className="text-sm text-muted-foreground">{mockProject.description}</p>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="scope">
+            <Card>
+              <CardHeader>
+                <CardTitle>Scope of Work & Progress Tracking</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScopeOfWorkTable
+                  items={mockScopeItems}
+                  onUpdateProgress={(id, qty) => console.log(`Update item ${id} to ${qty}`)}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="daily-notes">
+            <DailyNoteFeed
+              notes={mockDailyNotes}
+              onAddNote={(content) => console.log('New daily note:', content)}
+            />
+          </TabsContent>
+
+          <TabsContent value="media">
+            <MediaGallery
+              items={mockMediaItems}
+              onUpload={(files) => console.log('Media uploaded:', files)}
+              onDelete={(id) => console.log('Delete media:', id)}
+            />
           </TabsContent>
 
           <TabsContent value="estimate">
@@ -312,38 +389,6 @@ export default function ProjectDetailPage() {
                 </p>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="notes">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Add Note</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Textarea
-                    placeholder="Add a project note..."
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
-                    data-testid="textarea-new-note"
-                  />
-                  <Button onClick={() => { console.log('Note:', newNote); setNewNote(''); }} data-testid="button-add-note">
-                    Add Note
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Project Notes</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    No notes yet. Add the first note above.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
         </Tabs>
       </main>
