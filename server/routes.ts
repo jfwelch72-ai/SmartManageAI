@@ -819,11 +819,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const projectMedia = await db
+      // Get all media for this project
+      const allMedia = await db
         .select()
         .from(media)
         .where(eq(media.projectId, project.id))
         .orderBy(desc(media.uploadedAt));
+
+      // Filter by permissions
+      const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+      const projectMedia = await filterFilesByPermissions(
+        allMedia,
+        req.user!.id,
+        req.user!.role,
+        "MEDIA"
+      );
 
       res.json(projectMedia);
     } catch (error) {
@@ -864,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
-          visibility: "public",
+          visibility: "private",
         }
       );
 
@@ -873,6 +883,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         objectKey,
       }).returning();
       
+      // Grant permission to uploader
+      await db.insert(filePermissions).values({
+        fileId: newMedia.id,
+        fileType: "MEDIA",
+        userId: req.user!.id,
+        grantedById: req.user!.id,
+      });
+
       res.status(201).json(newMedia);
     } catch (error: any) {
       console.error("Create media error:", error);
@@ -1205,11 +1223,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const projectReceipts = await db
+      // Get all receipts for this project
+      const allReceipts = await db
         .select()
         .from(receipts)
         .where(eq(receipts.projectId, project.id))
         .orderBy(desc(receipts.date));
+
+      // Filter by permissions
+      const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+      const projectReceipts = await filterFilesByPermissions(
+        allReceipts,
+        req.user!.id,
+        req.user!.role,
+        "RECEIPT"
+      );
 
       res.json(projectReceipts);
     } catch (error) {
@@ -1240,7 +1268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
-          visibility: "public",
+          visibility: "private",
         }
       );
 
@@ -1249,6 +1277,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         objectKey,
       }).returning();
       
+      // Grant permission to uploader
+      await db.insert(filePermissions).values({
+        fileId: newReceipt.id,
+        fileType: "RECEIPT",
+        userId: req.user!.id,
+        grantedById: req.user!.id,
+      });
+
       res.status(201).json(newReceipt);
     } catch (error: any) {
       console.error("Create receipt error:", error);
@@ -1270,11 +1306,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const docs = await db
+      // Get all documents for this project
+      const allDocs = await db
         .select()
         .from(planDocuments)
         .where(eq(planDocuments.projectId, project.id))
         .orderBy(desc(planDocuments.uploadedAt));
+
+      // Filter by permissions
+      const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+      const docs = await filterFilesByPermissions(
+        allDocs,
+        req.user!.id,
+        req.user!.role,
+        "DOCUMENT"
+      );
 
       res.json(docs);
     } catch (error) {
@@ -1305,7 +1351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
-          visibility: "public",
+          visibility: "private",
         }
       );
 
@@ -1314,6 +1360,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         objectKey,
       }).returning();
       
+      // Grant permission to uploader
+      await db.insert(filePermissions).values({
+        fileId: newDoc.id,
+        fileType: "DOCUMENT",
+        userId: req.user!.id,
+        grantedById: req.user!.id,
+      });
+
       res.status(201).json(newDoc);
     } catch (error: any) {
       console.error("Create document error:", error);
@@ -1888,11 +1942,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       
+      // Get object metadata to extract objectKey
+      const [metadata] = await objectFile.getMetadata();
+      const objectKey = objectFile.name;
+
+      // Resolve objectKey to fileId and fileType
+      const { resolveObjectKeyToFile } = await import("./fileAccessHelpers");
+      const resolvedFile = await resolveObjectKeyToFile(objectKey);
+
+      // Block orphaned objects (files not tracked in database)
+      if (!resolvedFile) {
+        res.status(404).json({ error: "File not found in system" });
+        return;
+      }
+
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
         userId: req.user!.id,
         userRole: req.user!.role,
         requestedPermission: ObjectPermission.READ,
+        fileId: resolvedFile.fileId,
+        fileType: resolvedFile.fileType,
       });
 
       if (!canAccess) {
