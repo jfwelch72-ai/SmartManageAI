@@ -4,7 +4,7 @@ import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification } fro
 
 // Projects
 export function useProject(code: string) {
-  return useQuery({
+  return useQuery<Project>({
     queryKey: ["/api/projects", code],
     enabled: !!code,
   });
@@ -26,14 +26,17 @@ export function useScopeItems(code: string) {
 
 export function useUpdateScopeItem() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<ScopeItem> }) => {
+    mutationFn: async ({ id, data, projectCode }: { id: string; data: Partial<ScopeItem>; projectCode: string }) => {
       return apiRequest(`/api/scope-items/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "scope"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 }
@@ -48,25 +51,31 @@ export function useChangeOrders(code: string) {
 
 export function useCreateChangeOrder() {
   return useMutation({
-    mutationFn: async (data: Partial<ChangeOrder>) => {
+    mutationFn: async (data: Partial<ChangeOrder> & { projectCode: string }) => {
+      const { projectCode, ...changeOrderData } = data;
       return apiRequest("/api/change-orders", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(changeOrderData),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 }
 
 export function useApproveChangeOrder() {
   return useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
       return apiRequest(`/api/change-orders/${id}/approve`, { method: "POST" });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
@@ -74,14 +83,16 @@ export function useApproveChangeOrder() {
 
 export function useRejectChangeOrder() {
   return useMutation({
-    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+    mutationFn: async ({ id, reason, projectCode }: { id: string; reason: string; projectCode: string }) => {
       return apiRequest(`/api/change-orders/${id}/reject`, {
         method: "POST",
         body: JSON.stringify({ rejectionReason: reason }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });

@@ -555,6 +555,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Get the old item to check if billing status is changing
+      const [oldItem] = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.id, req.params.id));
+
+      if (!oldItem) {
+        res.status(404).json({ error: "Scope item not found" });
+        return;
+      }
+
       const updateData: any = { ...validationResult.data, updatedAt: new Date() };
       
       const [updatedItem] = await db
@@ -566,6 +577,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updatedItem) {
         res.status(404).json({ error: "Scope item not found" });
         return;
+      }
+
+      // Create notification for office administrators if billing status changed to READY_TO_BILL
+      if (updatedItem.billingStatus === "READY_TO_BILL" && oldItem.billingStatus !== "READY_TO_BILL") {
+        const admins = await db
+          .select()
+          .from(users)
+          .where(eq(users.role, "ADMIN"));
+        
+        const notificationsToCreate = admins.map(admin => ({
+          userId: admin.id,
+          type: "BILLING_READY" as const,
+          title: "Scope Item Ready to Bill",
+          message: `Scope item "${updatedItem.description}" is ready for billing`,
+          relatedEntityId: updatedItem.id,
+          relatedEntityType: "scopeItem",
+        }));
+
+        if (notificationsToCreate.length > 0) {
+          await db.insert(notifications).values(notificationsToCreate);
+        }
       }
 
       res.json(updatedItem);
@@ -1357,12 +1389,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create calendar event (All authenticated users)
   app.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertCalendarEventSchema.extend({
-        createdById: z.string().optional(),
-      }).safeParse({
+      // Convert date strings to Date objects
+      const payload = {
         ...req.body,
         createdById: req.user!.id,
-      });
+        startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
+        endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
+      };
+      
+      const validationResult = insertCalendarEventSchema.extend({
+        createdById: z.string().optional(),
+      }).safeParse(payload);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
