@@ -8,20 +8,11 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import StatusBadge from "./StatusBadge";
-
-interface Project {
-  id: string;
-  code: string;
-  name: string;
-  clientName: string;
-  status: "BID" | "PLANNING" | "ACTIVE" | "COMPLETE" | "CLOSED";
-  superintendent?: string;
-  estimator?: string;
-}
+import type { ProjectWithNames } from "@/hooks/use-data";
 
 interface ProjectsTableProps {
-  projects: Project[];
-  onRowClick: (project: Project) => void;
+  projects: ProjectWithNames[];
+  onRowClick: (project: ProjectWithNames) => void;
 }
 
 export default function ProjectsTable({ projects, onRowClick }: ProjectsTableProps) {

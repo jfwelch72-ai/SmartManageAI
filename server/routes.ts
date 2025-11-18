@@ -496,13 +496,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   const { insertProjectSchema, scopeItems, insertScopeItemSchema } = await import("@shared/schema");
-  const { desc } = await import("drizzle-orm");
+  const { desc, inArray, sql } = await import("drizzle-orm");
 
   // Get all projects
   app.get("/api/projects", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // Get all projects
       const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
-      res.json(allProjects);
+      
+      // Get all unique user IDs
+      const userIds = new Set<string>();
+      allProjects.forEach(p => {
+        if (p.estimatorId) userIds.add(p.estimatorId);
+        if (p.superintendentId) userIds.add(p.superintendentId);
+      });
+      
+      // Fetch all relevant users (only if there are any)
+      let userMap = new Map<string, string>();
+      if (userIds.size > 0) {
+        const relevantUsers = await db.select().from(users).where(inArray(users.id, Array.from(userIds)));
+        userMap = new Map(relevantUsers.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+      }
+      
+      // Add estimator and superintendent names to projects
+      const projectsWithNames = allProjects.map(project => ({
+        ...project,
+        estimator: project.estimatorId ? userMap.get(project.estimatorId) || undefined : undefined,
+        superintendent: project.superintendentId ? userMap.get(project.superintendentId) || undefined : undefined,
+      }));
+        
+      res.json(projectsWithNames);
     } catch (error) {
       console.error("Get projects error:", error);
       res.status(500).json({ error: "Failed to fetch projects" });

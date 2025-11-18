@@ -15,6 +15,12 @@ export function useDashboardStats() {
   });
 }
 
+// Project with enriched user names from API
+export interface ProjectWithNames extends Project {
+  estimator?: string;
+  superintendent?: string;
+}
+
 // Projects
 export function useProject(code: string) {
   return useQuery<Project>({
@@ -24,7 +30,7 @@ export function useProject(code: string) {
 }
 
 export function useProjects() {
-  return useQuery<Project[]>({
+  return useQuery<ProjectWithNames[]>({
     queryKey: ["/api/projects"],
   });
 }
