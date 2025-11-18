@@ -3,6 +3,16 @@ import { createServer, type Server } from "http";
 import { db } from "./db";
 import { users, insertUserSchema, type InsertUser, type SelectUser } from "@shared/schema";
 import { 
+  projects, bids, estimates, procurementItems, planDocuments,
+  timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
+  changeOrders, calendarEvents, notifications,
+  insertProjectSchema, insertBidSchema, insertEstimateSchema,
+  insertProcurementItemSchema, insertPlanDocumentSchema, insertTimeEntrySchema,
+  insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
+  insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
+  insertCalendarEventSchema, insertNotificationSchema
+} from "@shared/schema";
+import { 
   authMiddleware, 
   requireAuth, 
   requireRole, 
@@ -13,7 +23,7 @@ import {
   clearAuthCookie,
   type AuthRequest 
 } from "./auth";
-import { eq } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1112,6 +1122,420 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Create document error:", error);
       res.status(500).json({ error: "Failed to create document" });
+    }
+  });
+
+  // ====================
+  // Change Orders Routes
+  // ====================
+
+  // Get change orders for a project
+  app.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const orders = await db
+        .select()
+        .from(changeOrders)
+        .where(eq(changeOrders.projectId, project.id))
+        .orderBy(desc(changeOrders.createdAt));
+
+      res.json(orders);
+    } catch (error) {
+      console.error("Get change orders error:", error);
+      res.status(500).json({ error: "Failed to fetch change orders" });
+    }
+  });
+
+  // Create change order (Admin/Manager/Superintendent)
+  app.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertChangeOrderSchema.extend({
+        requestedById: z.string().optional(),
+      }).safeParse({
+        ...req.body,
+        requestedById: req.user!.id,
+      });
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newOrder] = await db.insert(changeOrders).values(validationResult.data).returning();
+      
+      // Create notification for managers/admins about pending change order
+      const adminsAndManagers = await db
+        .select()
+        .from(users)
+        .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+      
+      const notificationsToCreate = adminsAndManagers.map(user => ({
+        userId: user.id,
+        type: "CHANGE_ORDER_PENDING" as const,
+        title: "New Change Order Pending",
+        message: `Change order ${newOrder.changeOrderNumber} requires approval`,
+        relatedEntityId: newOrder.id,
+        relatedEntityType: "changeOrder",
+      }));
+
+      if (notificationsToCreate.length > 0) {
+        await db.insert(notifications).values(notificationsToCreate);
+      }
+
+      res.status(201).json(newOrder);
+    } catch (error: any) {
+      console.error("Create change order error:", error);
+      res.status(500).json({ error: "Failed to create change order" });
+    }
+  });
+
+  // Update change order schema
+  const updateChangeOrderSchema = insertChangeOrderSchema.omit({ requestedById: true }).partial();
+
+  // Update change order (Admin/Manager only)
+  app.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = updateChangeOrderSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const updateData: any = { ...validationResult.data, updatedAt: new Date() };
+      
+      const [updatedOrder] = await db
+        .update(changeOrders)
+        .set(updateData)
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
+
+      if (!updatedOrder) {
+        res.status(404).json({ error: "Change order not found" });
+        return;
+      }
+
+      res.json(updatedOrder);
+    } catch (error: any) {
+      console.error("Update change order error:", error);
+      res.status(500).json({ error: "Failed to update change order" });
+    }
+  });
+
+  // Approve change order (Admin/Manager only)
+  app.post("/api/change-orders/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [order] = await db
+        .update(changeOrders)
+        .set({
+          status: "APPROVED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
+
+      if (!order) {
+        res.status(404).json({ error: "Change order not found" });
+        return;
+      }
+
+      // Notify requester
+      await db.insert(notifications).values({
+        userId: order.requestedById,
+        type: "GENERAL",
+        title: "Change Order Approved",
+        message: `Change order ${order.changeOrderNumber} has been approved`,
+        relatedEntityId: order.id,
+        relatedEntityType: "changeOrder",
+      });
+
+      res.json(order);
+    } catch (error: any) {
+      console.error("Approve change order error:", error);
+      res.status(500).json({ error: "Failed to approve change order" });
+    }
+  });
+
+  // Reject change order (Admin/Manager only)
+  app.post("/api/change-orders/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { rejectionReason } = req.body;
+
+      const [order] = await db
+        .update(changeOrders)
+        .set({
+          status: "REJECTED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          rejectionReason,
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
+
+      if (!order) {
+        res.status(404).json({ error: "Change order not found" });
+        return;
+      }
+
+      // Notify requester
+      await db.insert(notifications).values({
+        userId: order.requestedById,
+        type: "GENERAL",
+        title: "Change Order Rejected",
+        message: `Change order ${order.changeOrderNumber} has been rejected: ${rejectionReason || 'No reason provided'}`,
+        relatedEntityId: order.id,
+        relatedEntityType: "changeOrder",
+      });
+
+      res.json(order);
+    } catch (error: any) {
+      console.error("Reject change order error:", error);
+      res.status(500).json({ error: "Failed to reject change order" });
+    }
+  });
+
+  // ====================
+  // Calendar Events Routes
+  // ====================
+
+  // Get all calendar events
+  app.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { startDate, endDate, eventType } = req.query;
+      
+      let query = db.select().from(calendarEvents);
+      
+      const conditions = [];
+      if (startDate) {
+        conditions.push(sql`${calendarEvents.startDate} >= ${startDate as string}`);
+      }
+      if (endDate) {
+        conditions.push(sql`${calendarEvents.endDate} <= ${endDate as string}`);
+      }
+      if (eventType) {
+        conditions.push(eq(calendarEvents.eventType, eventType as any));
+      }
+      
+      if (conditions.length > 0) {
+        query = query.where(sql`${sql.join(conditions, sql` AND `)}`);
+      }
+      
+      const events = await query.orderBy(calendarEvents.startDate);
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get calendar events error:", error);
+      res.status(500).json({ error: "Failed to fetch calendar events" });
+    }
+  });
+
+  // Get user's calendar events
+  app.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const events = await db
+        .select()
+        .from(calendarEvents)
+        .where(eq(calendarEvents.userId, req.user!.id))
+        .orderBy(calendarEvents.startDate);
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get user calendar events error:", error);
+      res.status(500).json({ error: "Failed to fetch calendar events" });
+    }
+  });
+
+  // Create calendar event (All authenticated users)
+  app.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertCalendarEventSchema.extend({
+        createdById: z.string().optional(),
+      }).safeParse({
+        ...req.body,
+        createdById: req.user!.id,
+      });
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newEvent] = await db.insert(calendarEvents).values(validationResult.data).returning();
+      
+      // Create notification for managers if it's a time-off request
+      if (newEvent.eventType === "TIME_OFF_REQUEST") {
+        const adminsAndManagers = await db
+          .select()
+          .from(users)
+          .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+        
+        const notificationsToCreate = adminsAndManagers.map(user => ({
+          userId: user.id,
+          type: "TIME_OFF_REQUEST" as const,
+          title: "Time Off Request",
+          message: `${req.user!.firstName} ${req.user!.lastName} requested time off: ${newEvent.title}`,
+          relatedEntityId: newEvent.id,
+          relatedEntityType: "calendarEvent",
+        }));
+
+        if (notificationsToCreate.length > 0) {
+          await db.insert(notifications).values(notificationsToCreate);
+        }
+      }
+
+      res.status(201).json(newEvent);
+    } catch (error: any) {
+      console.error("Create calendar event error:", error);
+      res.status(500).json({ error: "Failed to create calendar event" });
+    }
+  });
+
+  // Approve time-off request (Admin/Manager only)
+  app.post("/api/calendar/events/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [event] = await db
+        .update(calendarEvents)
+        .set({
+          eventType: "TIME_OFF_APPROVED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+        })
+        .where(eq(calendarEvents.id, req.params.id))
+        .returning();
+
+      if (!event) {
+        res.status(404).json({ error: "Calendar event not found" });
+        return;
+      }
+
+      // Notify the requester
+      if (event.userId) {
+        await db.insert(notifications).values({
+          userId: event.userId,
+          type: "GENERAL",
+          title: "Time Off Approved",
+          message: `Your time off request has been approved: ${event.title}`,
+          relatedEntityId: event.id,
+          relatedEntityType: "calendarEvent",
+        });
+      }
+
+      res.json(event);
+    } catch (error: any) {
+      console.error("Approve time-off error:", error);
+      res.status(500).json({ error: "Failed to approve time-off request" });
+    }
+  });
+
+  // Delete calendar event
+  app.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [event] = await db
+        .select()
+        .from(calendarEvents)
+        .where(eq(calendarEvents.id, req.params.id))
+        .limit(1);
+
+      if (!event) {
+        res.status(404).json({ error: "Calendar event not found" });
+        return;
+      }
+
+      // Only creator, assigned user, or Admin/Manager can delete
+      if (event.createdById !== req.user!.id && 
+          event.userId !== req.user!.id &&
+          req.user!.role !== "ADMIN" && 
+          req.user!.role !== "MANAGER") {
+        res.status(403).json({ error: "Not authorized to delete this event" });
+        return;
+      }
+
+      await db.delete(calendarEvents).where(eq(calendarEvents.id, req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Delete calendar event error:", error);
+      res.status(500).json({ error: "Failed to delete calendar event" });
+    }
+  });
+
+  // ====================
+  // Notifications Routes
+  // ====================
+
+  // Get user's notifications
+  app.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userNotifications = await db
+        .select()
+        .from(notifications)
+        .where(eq(notifications.userId, req.user!.id))
+        .orderBy(desc(notifications.createdAt))
+        .limit(50);
+
+      res.json(userNotifications);
+    } catch (error) {
+      console.error("Get notifications error:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/unread-count", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(sql`${notifications.userId} = ${req.user!.id} AND ${notifications.isRead} = false`);
+
+      res.json({ count: result.count });
+    } catch (error) {
+      console.error("Get unread count error:", error);
+      res.status(500).json({ error: "Failed to fetch unread count" });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [notification] = await db
+        .update(notifications)
+        .set({ isRead: true })
+        .where(sql`${notifications.id} = ${req.params.id} AND ${notifications.userId} = ${req.user!.id}`)
+        .returning();
+
+      if (!notification) {
+        res.status(404).json({ error: "Notification not found" });
+        return;
+      }
+
+      res.json(notification);
+    } catch (error: any) {
+      console.error("Mark notification read error:", error);
+      res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await db
+        .update(notifications)
+        .set({ isRead: true })
+        .where(eq(notifications.userId, req.user!.id));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Mark all notifications read error:", error);
+      res.status(500).json({ error: "Failed to mark all notifications as read" });
     }
   });
 
