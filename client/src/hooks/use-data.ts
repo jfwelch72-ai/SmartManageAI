@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification } from "@shared/schema";
+import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid } from "@shared/schema";
 
 // Dashboard
 interface DashboardStats {
@@ -40,10 +40,8 @@ export function useScopeItems(code: string) {
 export function useUpdateScopeItem() {
   return useMutation({
     mutationFn: async ({ id, data, projectCode }: { id: string; data: Partial<ScopeItem>; projectCode: string }) => {
-      return apiRequest(`/api/scope-items/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
+      const response = await apiRequest("PATCH", `/api/scope-items/${id}`, data);
+      return response.json();
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -66,10 +64,8 @@ export function useCreateChangeOrder() {
   return useMutation({
     mutationFn: async (data: Partial<ChangeOrder> & { projectCode: string }) => {
       const { projectCode, ...changeOrderData } = data;
-      return apiRequest("/api/change-orders", {
-        method: "POST",
-        body: JSON.stringify(changeOrderData),
-      });
+      const response = await apiRequest("POST", "/api/change-orders", changeOrderData);
+      return response.json();
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -83,7 +79,8 @@ export function useCreateChangeOrder() {
 export function useApproveChangeOrder() {
   return useMutation({
     mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
-      return apiRequest(`/api/change-orders/${id}/approve`, { method: "POST" });
+      const response = await apiRequest("POST", `/api/change-orders/${id}/approve`);
+      return response.json();
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -97,10 +94,8 @@ export function useApproveChangeOrder() {
 export function useRejectChangeOrder() {
   return useMutation({
     mutationFn: async ({ id, reason, projectCode }: { id: string; reason: string; projectCode: string }) => {
-      return apiRequest(`/api/change-orders/${id}/reject`, {
-        method: "POST",
-        body: JSON.stringify({ rejectionReason: reason }),
-      });
+      const response = await apiRequest("POST", `/api/change-orders/${id}/reject`, { rejectionReason: reason });
+      return response.json();
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
@@ -121,10 +116,8 @@ export function useCalendarEvents() {
 export function useCreateCalendarEvent() {
   return useMutation({
     mutationFn: async (data: Partial<CalendarEvent>) => {
-      return apiRequest("/api/calendar/events", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      const response = await apiRequest("POST", "/api/calendar/events", data);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
@@ -135,7 +128,8 @@ export function useCreateCalendarEvent() {
 export function useApproveTimeOff() {
   return useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/calendar/events/${id}/approve`, { method: "POST" });
+      const response = await apiRequest("POST", `/api/calendar/events/${id}/approve`);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
@@ -160,7 +154,8 @@ export function useUnreadNotificationCount() {
 export function useMarkNotificationRead() {
   return useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/notifications/${id}/read`, { method: "PATCH" });
+      const response = await apiRequest("PATCH", `/api/notifications/${id}/read`);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -172,11 +167,247 @@ export function useMarkNotificationRead() {
 export function useMarkAllNotificationsRead() {
   return useMutation({
     mutationFn: async () => {
-      return apiRequest("/api/notifications/read-all", { method: "POST" });
+      const response = await apiRequest("POST", "/api/notifications/read-all");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+}
+
+// Time Entries
+export function useTimeEntries() {
+  return useQuery<TimeEntry[]>({
+    queryKey: ["/api/time-entries"],
+  });
+}
+
+export function useProjectTimeEntries(code: string) {
+  return useQuery<TimeEntry[]>({
+    queryKey: ["/api/projects", code, "time-entries"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateTimeEntry() {
+  return useMutation({
+    mutationFn: async (data: Partial<TimeEntry> & { projectCode?: string }) => {
+      const { projectCode, ...entryData } = data;
+      const response = await apiRequest("POST", "/api/time-entries", entryData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      if (variables.projectCode) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "time-entries"] });
+      }
+    },
+  });
+}
+
+export function useApproveTimeEntry() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/time-entries/${id}/approve`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
+// T&M Daily Sheets
+export function useProjectTMSheets(code: string) {
+  return useQuery<TMDailySheet[]>({
+    queryKey: ["/api/projects", code, "tm-sheets"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateTMSheet() {
+  return useMutation({
+    mutationFn: async (data: Partial<TMDailySheet> & { projectCode: string }) => {
+      const { projectCode, ...sheetData } = data;
+      const response = await apiRequest("POST", "/api/tm-sheets", sheetData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "tm-sheets"] });
+    },
+  });
+}
+
+// Project Notes
+export function useProjectNotes(code: string) {
+  return useQuery<ProjectNote[]>({
+    queryKey: ["/api/projects", code, "notes"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateProjectNote() {
+  return useMutation({
+    mutationFn: async (data: Partial<ProjectNote> & { projectCode: string }) => {
+      const { projectCode, ...noteData } = data;
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/notes`, noteData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "notes"] });
+    },
+  });
+}
+
+// Media
+export function useProjectMedia(code: string) {
+  return useQuery<Media[]>({
+    queryKey: ["/api/projects", code, "media"],
+    enabled: !!code,
+  });
+}
+
+export function useCreateMedia() {
+  return useMutation({
+    mutationFn: async (data: Partial<Media> & { projectCode: string }) => {
+      const { projectCode, ...mediaData } = data;
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/media`, mediaData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "media"] });
+    },
+  });
+}
+
+export function useDeleteMedia() {
+  return useMutation({
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
+      const response = await apiRequest("DELETE", `/api/media/${id}`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "media"] });
+    },
+  });
+}
+
+// Bids
+export function useBids() {
+  return useQuery<Bid[]>({
+    queryKey: ["/api/bids"],
+  });
+}
+
+export function useBid(code: string) {
+  return useQuery<Bid>({
+    queryKey: ["/api/bids", code],
+    enabled: !!code,
+  });
+}
+
+export function useCreateBid() {
+  return useMutation({
+    mutationFn: async (data: Partial<Bid>) => {
+      const response = await apiRequest("POST", "/api/bids", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+    },
+  });
+}
+
+export function useUpdateBid() {
+  return useMutation({
+    mutationFn: async ({ code, data }: { code: string; data: Partial<Bid> }) => {
+      const response = await apiRequest("PATCH", `/api/bids/${code}`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", variables.code] });
+    },
+  });
+}
+
+export function useDeleteBid() {
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const response = await apiRequest("DELETE", `/api/bids/${code}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+    },
+  });
+}
+
+export function useConvertBidToProject() {
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const response = await apiRequest("POST", `/api/bids/${code}/convert`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}
+
+// Projects mutations
+export function useCreateProject() {
+  return useMutation({
+    mutationFn: async (data: Partial<Project>) => {
+      const response = await apiRequest("POST", "/api/projects", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}
+
+export function useUpdateProject() {
+  return useMutation({
+    mutationFn: async ({ code, data }: { code: string; data: Partial<Project> }) => {
+      const response = await apiRequest("PATCH", `/api/projects/${code}`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.code] });
+    },
+  });
+}
+
+// Scope Items mutations  
+export function useCreateScopeItem() {
+  return useMutation({
+    mutationFn: async (data: Partial<ScopeItem> & { projectCode: string }) => {
+      const { projectCode, ...scopeData } = data;
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/scope`, scopeData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "scope"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
+export function useDeleteScopeItem() {
+  return useMutation({
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
+      const response = await apiRequest("DELETE", `/api/scope-items/${id}`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "scope"] });
     },
   });
 }
