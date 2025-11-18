@@ -44,9 +44,29 @@ A comprehensive internal construction management platform for TFR Construction b
 - Daily progress updates by superintendents
 
 ### Time & Materials
-- Time entry system with approval workflow
-- T&M daily sheets for client billing
+- Time entry system with approval workflow at `/time-entry`
+- Role-based UI: hourly employees submit entries and see only their own, managers see all entries with approval buttons
+- T&M daily sheets for client billing at `/tm-daily`
+- Project selection dropdown for T&M sheet creation
+- Form reset only after successful submission to prevent data loss
 - Time entry filtering by role (hourly employees see only their entries)
+
+### Calendar & Time-Off
+- Monthly calendar view at `/calendar` showing all events
+- Time-off request creation and submission
+- Networking event tracking
+- Approval workflow for time-off requests (ADMIN/MANAGER only)
+- Single-day and multi-day event support
+- Upcoming events sidebar with filtering
+
+### Dashboard
+- Real-time KPI metrics at `/dashboard` (default landing page)
+- Active Projects Count (from database query)
+- Pending Change Orders Count (from database query)
+- Pending Time-Off Requests Count (from database query)
+- Active Bids section showing recent bids (up to 2)
+- Active Projects section showing recent active projects (up to 2)
+- Quick navigation to detailed views
 
 ### Supporting Features
 - Estimates with versioning
@@ -55,11 +75,12 @@ A comprehensive internal construction management platform for TFR Construction b
 - Plan document management
 
 ## Database Schema
-12 tables covering the complete project lifecycle:
+14 tables covering the complete project lifecycle:
 - users
 - projects
 - bids
 - estimates
+- changeOrders
 - procurementItems
 - planDocuments
 - timeEntries
@@ -68,6 +89,8 @@ A comprehensive internal construction management platform for TFR Construction b
 - projectNotes
 - scopeItems
 - media
+- calendarEvents
+- notifications
 
 ## Security Notes
 - **Demo Accounts**: The seed script creates three demo accounts for testing:
@@ -150,6 +173,14 @@ All routes are prefixed with `/api` and require authentication unless specified.
 - GET `/api/projects/:code/documents` - Get documents for project
 - POST `/api/documents` - Create document (Admin/Manager)
 
+### Calendar Events
+- GET `/api/calendar/events` - Get all calendar events
+- POST `/api/calendar/events` - Create calendar event (accepts optional endDate for single-day events)
+- POST `/api/calendar/events/:id/approve` - Approve time-off request (Admin/Manager)
+
+### Dashboard
+- GET `/api/dashboard/stats` - Get dashboard KPI statistics (activeProjectsCount, pendingChangeOrdersCount, pendingTimeOffCount)
+
 ## Development
 
 ### Running the Application
@@ -166,12 +197,36 @@ npm run db:push  # Push schema changes to database
 ```
 
 ## Recent Changes
+- 2025-11-18: **Phase 4 COMPLETE** - Dashboard with Real KPIs
+  - Updated dashboard to display real-time KPI metrics from database aggregations
+  - Active Projects Count: Queries projects with status='ACTIVE'
+  - Pending Change Orders Count: Queries changeOrders with status='PENDING_APPROVAL'  
+  - Pending Time-Off Requests Count: Queries calendarEvents where eventType='TIME_OFF_REQUEST' AND approvedById IS NULL
+  - Replaced hardcoded "Active Bids" section with real bid data from useBids() hook
+  - Active Projects section uses real data from useProjects() hook filtered by status='ACTIVE'
+  - Added URL encoding for bid codes to handle special characters in navigation
+  - Dashboard provides quick overview with navigation to detailed pages
+- 2025-11-18: **Phase 3 COMPLETE** - Calendar with Events and Approvals
+  - Implemented full calendar system at /calendar with monthly view
+  - Single-day events: Only startDate required, endDate optional
+  - Multi-day events: Both startDate and endDate provided
+  - Approval workflow: ADMIN/MANAGER can approve TIME_OFF_REQUEST events
+  - Backend uses z.coerce.date() for startDate, z.coerce.date().optional() for endDate
+  - Fixed timezone handling: Upcoming events filter uses startOfDay() on both sides
+  - Fixed null handling for endDate in event display and filtering
+  - Calendar displays events on day tiles and in upcoming events sidebar
+- 2025-11-18: **Phase 2 Task 5 COMPLETE** - T&M Daily Sheet Submission
+  - Built T&M Daily Sheet page at /tm-daily with project selection dropdown
+  - Form reset fix: Uses forwardRef/useImperativeHandle to reset form only after successful submission
+  - Prevents data loss on API errors by preserving form state until mutation succeeds
+  - Backend uses z.coerce.date() for consistent date handling across all routes
+  - Form displays project selection, date, crew details, and work description fields
 - 2025-11-18: **Phase 2 Task 4 COMPLETE** - Time Entry System with Approvals
   - Rebuilt time-entry.tsx with full real data integration
   - Role-based UI: employees see form + own entries, managers see all entries with approval buttons
   - Fixed backend validation to accept ISO date strings via z.coerce.date()
-  - E2E test passed: employees can submit, managers can approve, status updates correctly
-  - Bug fix: backend now properly coerces date strings to Date objects for validation
+  - Approval workflow allows ADMIN/MANAGER to approve submitted time entries
+  - Time entries filtered by role for data security
 - 2025-11-18: **Phase 1 COMPLETE** - Project Detail Page Fully Functional
   - Added all missing data hooks (useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectReceipts)
   - Fixed mutation hooks to properly accept both projectCode (cache) and projectId (API payload)
@@ -200,10 +255,18 @@ npm run db:push  # Push schema changes to database
 - 2025-11-18: Frontend authentication integration with protected routes
 - 2025-11-18: Database schema creation with 12 tables covering all project lifecycle needs
 
+## Implementation Status
+✅ Phase 0: Data hooks foundation - COMPLETE
+✅ Phase 1: Project Detail page with 10 tabs - COMPLETE
+✅ Phase 2: Time Entry system with approvals - COMPLETE
+✅ Phase 2: T&M Daily Sheet submission - COMPLETE
+✅ Phase 3: Calendar with events and approvals - COMPLETE
+✅ Phase 4: Dashboard with real KPIs - COMPLETE
+
 ## Next Steps
-- Phase 1: Build/Update Project Detail page with tabbed interface (Overview, Scope of Work, Notes, Media, Time Entries, Change Orders)
-- Phase 2: Implement Time Entry system with approval workflows and T&M Daily Sheet submission
-- Phase 3: Build Calendar with time-off requests and approvals
-- Phase 4: Add Dashboard with real KPIs from aggregated data
-- Implement file upload handling for documents, receipts, and media
-- Implement role-based UI filtering
+- Implement file upload handling for documents, receipts, and media (object storage integration)
+- Add more comprehensive change order management workflows
+- Implement notifications system with real-time updates
+- Add reporting and analytics features
+- Implement role-based UI filtering for sensitive data
+- Add export functionality for T&M sheets and time entries
