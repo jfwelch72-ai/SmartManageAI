@@ -5,12 +5,12 @@ import { users, insertUserSchema, type InsertUser, type SelectUser } from "@shar
 import { 
   projects, bids, estimates, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
-  changeOrders, calendarEvents, notifications,
+  changeOrders, calendarEvents, notifications, filePermissions,
   insertProjectSchema, insertBidSchema, insertEstimateSchema,
   insertProcurementItemSchema, insertPlanDocumentSchema, insertTimeEntrySchema,
   insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
   insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
-  insertCalendarEventSchema, insertNotificationSchema
+  insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -23,7 +23,7 @@ import {
   clearAuthCookie,
   type AuthRequest 
 } from "./auth";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -1318,6 +1318,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Create document error:", error);
       res.status(500).json({ error: "Failed to create document" });
+    }
+  });
+
+  // ====================
+  // File Permissions Routes
+  // ====================
+
+  // Grant file access (Manager/Admin only)
+  app.post("/api/file-permissions", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertFilePermissionSchema.extend({
+        grantedById: z.string().optional(),
+      }).safeParse({
+        ...req.body,
+        grantedById: req.user!.id,
+      });
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Check if permission already exists
+      const [existing] = await db
+        .select()
+        .from(filePermissions)
+        .where(
+          and(
+            eq(filePermissions.fileId, validationResult.data.fileId),
+            eq(filePermissions.fileType, validationResult.data.fileType),
+            eq(filePermissions.userId, validationResult.data.userId)
+          )
+        )
+        .limit(1);
+
+      if (existing) {
+        res.status(400).json({ error: "Permission already exists" });
+        return;
+      }
+
+      const [newPermission] = await db
+        .insert(filePermissions)
+        .values(validationResult.data)
+        .returning();
+      
+      res.status(201).json(newPermission);
+    } catch (error: any) {
+      console.error("Grant file permission error:", error);
+      res.status(500).json({ error: "Failed to grant file permission" });
+    }
+  });
+
+  // Revoke file access (Manager/Admin only)
+  app.delete("/api/file-permissions/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [deleted] = await db
+        .delete(filePermissions)
+        .where(eq(filePermissions.id, req.params.id))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Permission not found" });
+        return;
+      }
+
+      res.json({ message: "Permission revoked successfully" });
+    } catch (error) {
+      console.error("Revoke file permission error:", error);
+      res.status(500).json({ error: "Failed to revoke file permission" });
+    }
+  });
+
+  // Get permissions for a specific file (Manager/Admin only)
+  app.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { fileType, fileId } = req.params;
+      
+      if (!["MEDIA", "DOCUMENT", "RECEIPT"].includes(fileType)) {
+        res.status(400).json({ error: "Invalid file type" });
+        return;
+      }
+
+      const permissions = await db
+        .select({
+          id: filePermissions.id,
+          userId: filePermissions.userId,
+          grantedById: filePermissions.grantedById,
+          grantedAt: filePermissions.grantedAt,
+          userFirstName: users.firstName,
+          userLastName: users.lastName,
+          userEmail: users.email,
+        })
+        .from(filePermissions)
+        .leftJoin(users, eq(filePermissions.userId, users.id))
+        .where(
+          and(
+            eq(filePermissions.fileId, fileId),
+            eq(filePermissions.fileType, fileType as "MEDIA" | "DOCUMENT" | "RECEIPT")
+          )
+        );
+
+      res.json(permissions);
+    } catch (error) {
+      console.error("Get file permissions error:", error);
+      res.status(500).json({ error: "Failed to fetch file permissions" });
+    }
+  });
+
+  // Get all files a user has access to (useful for superintendents/hourly employees)
+  app.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      // Users can only view their own permissions unless they're admin/manager
+      if (req.user!.id !== req.params.userId && 
+          req.user!.role !== "ADMIN" && 
+          req.user!.role !== "MANAGER") {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+
+      const permissions = await db
+        .select()
+        .from(filePermissions)
+        .where(eq(filePermissions.userId, req.params.userId))
+        .orderBy(desc(filePermissions.grantedAt));
+
+      res.json(permissions);
+    } catch (error) {
+      console.error("Get user file permissions error:", error);
+      res.status(500).json({ error: "Failed to fetch user file permissions" });
     }
   });
 
