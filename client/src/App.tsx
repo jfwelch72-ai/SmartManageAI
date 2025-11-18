@@ -13,6 +13,7 @@ import ProjectsPage from "@/pages/projects";
 import ProjectDetailPage from "@/pages/project-detail";
 import TimeEntryPage from "@/pages/time-entry";
 import TMDailyPage from "@/pages/tm-daily";
+import CalendarPage from "@/pages/calendar";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
   const { user, isLoading } = useAuth();
@@ -43,6 +44,7 @@ function Router() {
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
+      <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} />} />
       <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} />} />
       <Route component={NotFound} />

@@ -12,58 +12,22 @@ import {
 } from "@/components/ui/select";
 import { Search, Plus } from "lucide-react";
 import { useLocation } from "wouter";
-
-//todo: remove mock functionality
-// Note: This page only shows ACTIVE projects (not bids)
-const mockProjects = [
-  {
-    id: '1',
-    code: 'TFR-240639',
-    name: 'OSU Outpatient East – Parking Lot',
-    clientName: 'Ohio State University',
-    status: 'ACTIVE' as const,
-    superintendent: 'Mike Johnson',
-    estimator: 'Sarah Williams',
-  },
-  {
-    id: '2',
-    code: 'TFR-240512',
-    name: 'Downtown Office Tower Foundation',
-    clientName: 'Cityscape Developers',
-    status: 'PLANNING' as const,
-    superintendent: 'Tom Anderson',
-    estimator: 'Sarah Williams',
-  },
-  {
-    id: '4',
-    code: 'TFR-240301',
-    name: 'Hilltop Shopping Center Expansion',
-    clientName: 'Retail Ventures Inc',
-    status: 'ACTIVE' as const,
-    superintendent: 'Tom Anderson',
-    estimator: 'David Chen',
-  },
-  {
-    id: '5',
-    code: 'TFR-240205',
-    name: 'Central High School Renovation',
-    clientName: 'Columbus City Schools',
-    status: 'COMPLETE' as const,
-    superintendent: 'Mike Johnson',
-    estimator: 'Sarah Williams',
-  },
-];
+import { useAuth } from "@/hooks/use-auth";
+import { useProjects } from "@/hooks/use-data";
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  const filteredProjects = mockProjects.filter(project => {
+  const { data: projects = [], isLoading } = useProjects();
+
+  const filteredProjects = projects.filter(project => {
     const matchesSearch = 
       project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       project.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+      (project.clientName && project.clientName.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === "ALL" || project.status === statusFilter;
     
@@ -73,8 +37,8 @@ export default function ProjectsPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
-        userName="Sarah Williams"
-        userRole="Project Manager"
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
         onLogout={() => setLocation('/login')}
       />
       
@@ -122,10 +86,18 @@ export default function ProjectsPage() {
           </Select>
         </div>
 
-        <ProjectsTable
-          projects={filteredProjects}
-          onRowClick={(project) => setLocation(`/projects/${project.code}`)}
-        />
+        {isLoading ? (
+          <div className="text-center py-12 text-muted-foreground">Loading projects...</div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            {searchTerm || statusFilter !== "ALL" ? "No projects match your filters" : "No projects yet"}
+          </div>
+        ) : (
+          <ProjectsTable
+            projects={filteredProjects}
+            onRowClick={(project) => setLocation(`/projects/${project.code}`)}
+          />
+        )}
       </main>
     </div>
   );

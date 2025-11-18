@@ -151,6 +151,7 @@ export function useMarkNotificationRead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
 }
@@ -162,6 +163,7 @@ export function useMarkAllNotificationsRead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
   });
 }
