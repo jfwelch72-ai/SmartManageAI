@@ -123,6 +123,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Dashboard Routes
+  // ====================
+
+  // Get dashboard statistics
+  app.get("/api/dashboard/stats", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      // Count active projects
+      const activeProjectsResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(eq(projects.status, "ACTIVE"));
+      const activeProjectsCount = activeProjectsResult[0]?.count || 0;
+
+      // Count pending change orders
+      const pendingChangeOrdersResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(changeOrders)
+        .where(eq(changeOrders.status, "PENDING"));
+      const pendingChangeOrdersCount = pendingChangeOrdersResult[0]?.count || 0;
+
+      // Count pending time-off requests
+      const pendingTimeOffResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(calendarEvents)
+        .where(sql`${calendarEvents.eventType} = 'TIME_OFF' AND ${calendarEvents.status} = 'PENDING'`);
+      const pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+
+      res.json({
+        activeProjectsCount,
+        pendingChangeOrdersCount,
+        pendingTimeOffCount,
+      });
+    } catch (error) {
+      console.error("Dashboard stats error:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard statistics" });
+    }
+  });
+
+  // ====================
   // User Management Routes
   // ====================
 
