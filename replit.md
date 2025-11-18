@@ -14,14 +14,18 @@ A comprehensive internal construction management platform for TFR Construction b
 
 ### Authentication & Authorization
 - JWT-based authentication with secure httpOnly cookies
-- Role-based access control (ADMIN, MANAGER, SUPERINTENDENT, HOURLY_EMPLOYEE)
+- Six-role system: ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE
+- Self-service user registration with company email
+- New users created as inactive by default (require admin approval)
 - Protected routes on frontend with AuthProvider
 - Password hashing with bcrypt
 
 ### User Management
-- Create, read, update users (Admin only)
-- Role assignment
-- Active/inactive status management
+- Self-service registration at `/register` (no authentication required)
+- Admin user management page at `/users` showing all users
+- Admin-controlled user activation/deactivation via toggle
+- Admin-controlled role assignment via dropdown
+- Inactive users cannot log in until activated by admin
 
 ### Bid Management
 - Full CRUD operations for bids
@@ -78,7 +82,8 @@ A comprehensive internal construction management platform for TFR Construction b
 All routes are prefixed with `/api` and require authentication unless specified.
 
 ### Authentication
-- POST `/api/auth/login` - Login with email/password
+- POST `/api/auth/register` - Register new user (no auth required, creates inactive user)
+- POST `/api/auth/login` - Login with email/password (requires active account)
 - POST `/api/auth/logout` - Logout
 - GET `/api/auth/me` - Get current user
 - POST `/api/auth/init` - Initialize admin user (one-time)
@@ -161,6 +166,12 @@ npm run db:push  # Push schema changes to database
 ```
 
 ## Recent Changes
+- 2025-11-18: Implemented self-service user registration and admin user management
+  - Added ESTIMATOR and OFFICE_MANAGER roles (total 6 roles now)
+  - Created registration page at `/register` with form validation
+  - Built admin user management page at `/users` with role assignment and activation controls
+  - New users created as inactive by default, requiring admin approval before login
+  - Successfully tested complete workflow: register → admin approval → role assignment → login
 - 2025-11-18: Fixed critical authentication bugs
   - Updated seed.ts to create all three demo accounts with properly hashed passwords
   - Fixed logout functionality to properly clear session state on all pages
