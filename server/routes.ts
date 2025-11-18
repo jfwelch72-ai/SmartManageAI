@@ -40,6 +40,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     password: z.string().min(1, "Password is required"),
   });
 
+  // Registration schema
+  const registerSchema = z.object({
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    email: z.string().email("Invalid email address"),
+    phone: z.string().optional(),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+  });
+
+  // Register new user
+  app.post("/api/auth/register", async (req: AuthRequest, res) => {
+    try {
+      const validationResult = registerSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const { firstName, lastName, email, phone, password } = validationResult.data;
+
+      // Check if user already exists
+      const [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+      if (existingUser) {
+        res.status(400).json({ error: "User with this email already exists" });
+        return;
+      }
+
+      // Create new user (inactive by default, awaiting admin approval)
+      const passwordHash = await hashPassword(password);
+      
+      const [newUser] = await db.insert(users).values({
+        firstName,
+        lastName,
+        email,
+        phone,
+        role: "HOURLY_EMPLOYEE", // Default role
+        isActive: false, // Requires admin activation
+        passwordHash,
+      }).returning();
+
+      const { passwordHash: _, ...userWithoutPassword } = newUser;
+      res.status(201).json({
+        user: userWithoutPassword,
+        message: "Registration successful. Your account is pending admin approval."
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
   // Login
   app.post("/api/auth/login", async (req: AuthRequest, res) => {
     try {

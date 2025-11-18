@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link } from "wouter";
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => void;
@@ -53,6 +54,12 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
           <Button type="submit" className="w-full" data-testid="button-login">
             Sign In
           </Button>
+          <div className="text-center text-sm text-muted-foreground">
+            Don't have an account?{" "}
+            <Link href="/register" className="text-primary hover:underline" data-testid="link-register">
+              Register
+            </Link>
+          </div>
         </form>
       </CardContent>
     </Card>

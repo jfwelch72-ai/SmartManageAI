@@ -6,7 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import RegisterPage from "@/pages/register";
 import DashboardPage from "@/pages/dashboard";
+import UsersPage from "@/pages/users";
 import BidsPage from "@/pages/bids";
 import BidDetailPage from "@/pages/bid-detail";
 import ProjectsPage from "@/pages/projects";
@@ -39,7 +41,9 @@ function Router() {
     <Switch>
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={LoginPage} />
+      <Route path="/register" component={RegisterPage} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
+      <Route path="/users" component={() => <ProtectedRoute component={UsersPage} />} />
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
