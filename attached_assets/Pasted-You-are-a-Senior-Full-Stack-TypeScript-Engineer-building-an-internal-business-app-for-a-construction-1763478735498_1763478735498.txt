@@ -1,0 +1,418 @@
+You are a Senior Full-Stack TypeScript Engineer building an internal business app for a construction company.
+
+==================================================
+CONTEXT
+==================================================
+Company: TFR Construction LLC (Columbus, Ohio)
+Industry: Commercial concrete subcontractor & small GC
+Users: Owners, PMs, estimators, superintendents, and hourly field employees
+
+Goal: Build a **full company management CRM + operations platform** for TFR that runs as a web app. This is NOT a toy example; it should be structured and maintainable so we can extend it later.
+
+The app must support:
+- Secure login / role-based access control
+- Estimating & bid tracking
+- Project management & job tracking
+- Employee time card input (by day & project)
+- Daily time & material (T&M) tracking
+- Receipt uploading & association to projects
+- Document management (plans, takeoffs, etc.)
+- Per-project notes from field superintendents
+- Different permissions for leadership vs hourly employees
+
+==================================================
+HIGH-LEVEL TECH REQUIREMENTS
+==================================================
+Use a modern full-stack TypeScript stack in THIS Repl:
+
+- Backend:
+  - Node.js + Express (or a simple TS framework) with TypeScript
+  - PostgreSQL via Prisma ORM
+  - REST-style API routes under `/api/*`
+  - JWT authentication with httpOnly cookies
+- Frontend:
+  - React + TypeScript (Vite or CRA is fine, prefer Vite)
+  - Component library: basic custom components (no heavy UI lib required)
+  - React Router for navigation
+
+Project structure:
+- `/server` for backend (Express, Prisma, auth, API)
+- `/client` for frontend (React app)
+- Root `package.json` with scripts to run both dev servers or a single dev server with proxy
+
+Environment:
+- Use `.env` for DB URL, JWT secret, etc.
+- Provide clear README instructions for:
+  - `npm install`
+  - DB migration commands
+  - `npm run dev`
+
+==================================================
+USER ROLES & PERMISSIONS
+==================================================
+Implement role-based access control with a `role` field on the User model.
+
+Roles:
+- `ADMIN` (Owners / executive leadership)
+  - Full access to everything (users, projects, estimates, timecards, receipts, T&M, plans, etc.)
+- `MANAGER` (PMs, office managers)
+  - Full access to projects, estimates, timecards, receipts, T&M, documents, notes
+  - Can view user list but cannot change ADMINs
+- `SUPERINTENDENT`
+  - Can view assigned projects
+  - Can upload daily notes, T&M sheets, photos, receipts
+  - Can view plans and takeoffs
+  - Can view time entries for their projects
+- `HOURLY_EMPLOYEE`
+  - Can:
+    - Log their own time entries
+    - View their assigned projects and project plans/documents
+  - CANNOT:
+    - See estimates / financials
+    - See other employees’ time
+    - Edit project-level data
+
+Authentication:
+- Email + password login
+- Passwords hashed (e.g., bcrypt)
+- Login endpoint creates a JWT stored in an httpOnly cookie
+- Middleware to:
+  - Attach current user to request
+  - Enforce required roles per route
+
+Seed:
+- Seed one `ADMIN` user in a seed script with a known email/password for initial login.
+
+==================================================
+DATABASE SCHEMA (PRISMA MODELS)
+==================================================
+Create Prisma models roughly like this (you can refine types as needed):
+
+- User
+  - id (string/UUID)
+  - firstName
+  - lastName
+  - email (unique)
+  - phone (optional)
+  - role: enum [ADMIN, MANAGER, SUPERINTENDENT, HOURLY_EMPLOYEE]
+  - isActive (boolean)
+  - passwordHash
+  - createdAt
+  - updatedAt
+
+- Project
+  - id
+  - name (e.g., “OSU Outpatient East – Parking Lot”)
+  - code (short job number, e.g., “TFR-240639”)
+  - clientName
+  - clientContactName
+  - clientContactEmail
+  - clientContactPhone
+  - status: enum [BID, PLANNING, ACTIVE, COMPLETE, CLOSED]
+  - locationAddress
+  - city
+  - state
+  - startDate (optional)
+  - endDate (optional)
+  - description (text)
+  - estimatorId (User FK nullable)
+  - superintendentId (User FK nullable)
+  - createdAt
+  - updatedAt
+
+- Estimate
+  - id
+  - projectId (FK -> Project)
+  - versionNumber (int)
+  - status: enum [DRAFT, SUBMITTED, WON, LOST]
+  - baseBidAmount (decimal)
+  - altPricesJson (JSON for alternates/options)
+  - costBreakdownJson (JSON for labor, material, equipment breakdown)
+  - notes (text)
+  - createdById (User FK)
+  - createdAt
+  - updatedAt
+
+- ProcurementItem
+  - id
+  - projectId (FK -> Project)
+  - description
+  - vendor
+  - quantity
+  - unit
+  - unitCost (decimal)
+  - status: enum [PLANNED, QUOTED, APPROVED, ORDERED, DELIVERED]
+  - poNumber
+  - neededByDate (optional)
+  - createdAt
+  - updatedAt
+
+- PlanDocument
+  - id
+  - projectId (FK -> Project)
+  - type: enum [PLANS, SPECS, TAKEOFF, OTHER]
+  - title
+  - fileUrl
+  - uploadedById (User FK)
+  - uploadedAt
+
+- TimeEntry
+  - id
+  - userId (FK -> User)  // the hourly employee
+  - projectId (FK -> Project)
+  - date (date)
+  - hoursRegular (decimal)
+  - hoursOvertime (decimal)
+  - costCode (string, e.g., “03-300 – Concrete”)
+  - notes (text, optional)
+  - approvedById (User FK, nullable)
+  - approvedAt (optional)
+  - createdAt
+  - updatedAt
+
+- TMDailySheet (Time & Material daily)
+  - id
+  - projectId (FK -> Project)
+  - date
+  - tfrRepName
+  - clientRepName
+  - weather (string)
+  - descriptionOfWork (text)
+  - crewSize (int)
+  - laborSummaryJson (JSON: list of {role, hours, rate} if we want later)
+  - equipmentUsedJson (JSON array)
+  - materialsUsedJson (JSON array)
+  - attachmentsJson (JSON array of file URLs)
+  - clientSignatureName (string, optional)
+  - clientSignatureDate (optional)
+  - createdById (User FK)
+  - createdAt
+  - updatedAt
+
+- Receipt
+  - id
+  - projectId (FK -> Project)
+  - userId (FK -> User)  // who uploaded
+  - date
+  - vendor
+  - amount (decimal)
+  - category (string: fuel, materials, rental, etc.)
+  - fileUrl
+  - notes (optional)
+  - createdAt
+
+- ProjectNote
+  - id
+  - projectId (FK -> Project)
+  - authorId (User FK)
+  - noteType: enum [GENERAL, FIELD_NOTE, SAFETY, CLIENT_MEETING]
+  - text (text)
+  - createdAt
+
+You can add small helper tables/fields as needed, but keep it clean and pragmatic.
+
+==================================================
+CORE BACKEND API ENDPOINTS
+==================================================
+Implement REST endpoints roughly like:
+
+Auth:
+- POST `/api/auth/login`  -> email/password, set JWT cookie, return user info
+- POST `/api/auth/logout` -> clear JWT cookie
+- GET `/api/auth/me`      -> return current user from JWT
+
+Users (ADMIN-only for create/update):
+- GET `/api/users` (ADMIN, MANAGER)
+- POST `/api/users` (ADMIN)
+- PATCH `/api/users/:id` (ADMIN)
+- GET `/api/users/:id` (ADMIN, MANAGER)
+- Optionally: simple “invite user” flow can be skipped for MVP
+
+Projects:
+- GET `/api/projects` (role-based filter: HOURLY only sees projects they have time entries on or are explicitly assigned to)
+- POST `/api/projects` (ADMIN, MANAGER)
+- GET `/api/projects/:id` (authorized roles)
+- PATCH `/api/projects/:id` (ADMIN, MANAGER)
+- GET `/api/projects/:id/summary` (basic stats: total hours, total receipts, etc.)
+
+Estimates:
+- GET `/api/projects/:projectId/estimates`
+- POST `/api/projects/:projectId/estimates` (ADMIN, MANAGER, estimator role if we add)
+- GET `/api/estimates/:id`
+- PATCH `/api/estimates/:id` (ADMIN, MANAGER)
+
+Procurement:
+- GET `/api/projects/:projectId/procurement`
+- POST `/api/projects/:projectId/procurement`
+- PATCH `/api/procurement/:id`
+
+Plans & Documents:
+- POST `/api/projects/:projectId/documents` (file upload + metadata)
+- GET `/api/projects/:projectId/documents`
+- DELETE `/api/documents/:id` (ADMIN, MANAGER)
+
+Timecards:
+- POST `/api/timeentries` 
+  - HOURLY can only create for themselves
+  - Managers/Supers/Admins can log for any user if needed
+- GET `/api/timeentries/my` (HOURLY: only own)
+- GET `/api/projects/:projectId/timeentries` (MANAGER, SUPERINTENDENT, ADMIN)
+- PATCH `/api/timeentries/:id/approve` (MANAGER, ADMIN)
+
+T&M Daily:
+- POST `/api/projects/:projectId/tm-dailies`
+- GET `/api/projects/:projectId/tm-dailies`
+- GET `/api/tm-dailies/:id`
+
+Receipts:
+- POST `/api/projects/:projectId/receipts`
+- GET `/api/projects/:projectId/receipts`
+
+Notes:
+- POST `/api/projects/:projectId/notes`
+- GET `/api/projects/:projectId/notes`
+
+File Upload:
+- Implement a simple local file upload (e.g., to `/uploads`) with a middleware like `multer`.
+- Return `fileUrl` paths that frontend can use.
+- Keep code structured so we can later swap local storage for S3 or similar.
+
+==================================================
+FRONTEND PAGES & FLOWS
+==================================================
+Build a clean, simple React UI with these main sections:
+
+1) Login Page
+   - Email/password form
+   - On success, store user in global state (context or simple store) and redirect to Dashboard.
+
+2) Layout / Navigation
+   - Top navbar or sidebar with:
+     - Dashboard
+     - Projects
+     - Timecards (for HOURLY: “My Time”; for Managers: “Team Time”)
+     - Admin (only for ADMIN role: manage users)
+   - Show current user + “Log out” button.
+
+3) Dashboard
+   - Role-aware:
+     - ADMIN/MANAGER: 
+       - KPIs (e.g., # active projects, # bids, hours logged this week)
+       - List of active projects with quick links
+       - “Today’s T&M sheets” summary
+     - SUPERINTENDENT:
+       - List of their active projects
+       - Shortcuts: “Add field note”, “Create T&M for Today”
+     - HOURLY_EMPLOYEE:
+       - Quick view for “Log today’s time”
+       - List of projects they’re assigned to / recently worked on
+
+4) Projects List Page
+   - Table of projects with search and filters (status, client, etc.)
+   - Basic columns: Code, Name, Client, Status, Superintendent, Estimator
+   - Click row -> Project Detail page.
+
+5) Project Detail Page
+   Use a tabbed interface, with tabs:
+   - Overview
+     - Core data (client, address, status, superintendent, estimator, description)
+   - Estimate
+     - List existing estimates (version, status, amount)
+     - View one estimate’s details (bid amount, cost breakdown, notes)
+     - Button (Admins/Managers) to create/edit estimate
+   - Procurement
+     - Table of procurement items (description, vendor, status, needed-by)
+   - Plans & Takeoff
+     - List of PlanDocuments
+     - Upload form for PDFs/Imgs
+   - Time & T&M
+     - Summary of time entries (total hours by day)
+     - List of TMDailySheets with quick view
+   - Receipts
+     - List of receipts (date, vendor, amount)
+   - Notes
+     - Feed of ProjectNotes (author, date, type, text)
+     - “Add note” form (Superintendents, Managers, Admins)
+
+   Permission behaviour:
+   - HOURLY_EMPLOYEE can view Overview and Plans & Takeoff, but not estimates or financials.
+   - SUPERS/MANAGERS/ADMINS see all tabs and actions according to their role.
+
+6) Time Entry (My Time)
+   - For HOURLY employees:
+     - A simple weekly view or daily form:
+       - Date picker (default today)
+       - Select Project (dropdown of allowed/assigned projects)
+       - Regular hours, OT hours, cost code, notes
+       - Submit button
+     - List of recent entries (read-only) with status (pending/approved)
+   - For Managers/Admin:
+     - Filter by project, employee, date range
+     - Ability to approve entries.
+
+7) T&M Daily Sheets UI
+   - For each project:
+     - “Create T&M Daily” button (visible to Supers/Managers/Admin)
+     - Form fields matching the TMDailySheet model:
+       - Date (default today)
+       - TFR Rep Name
+       - Client Rep Name
+       - Weather
+       - Description of work
+       - Crew size
+       - Simple grid or textarea for labor/equipment/materials (for MVP can just be text fields or JSON blobs)
+       - Optional file uploads (photos, signed sheets)
+     - List view of existing T&M dailies with date, summary, and link to drill down.
+
+8) Receipt Upload
+   - Simple form:
+     - Date, Vendor, Amount, Category, Notes, File upload
+   - On success: store Receipt linked to project and user.
+
+9) Admin: User Management (ADMIN only)
+   - Table of users: name, email, role, active status
+   - Simple form to create new users (email, role, name, temp password)
+   - Toggle activation, change role, reset password stub (we can keep this minimal for MVP).
+
+==================================================
+UX & IMPLEMENTATION NOTES
+==================================================
+- Use a simple, clean design: nothing fancy, just readable tables and forms.
+- Implement a very small global store (React context) for:
+  - `currentUser`
+  - `authLoading` / `isAuthenticated`
+- Protect routes on frontend:
+  - If not logged in, redirect to `/login`.
+  - If logged in with insufficient role, show “Access denied” message.
+- Protect routes on backend:
+  - Middleware like `requireAuth`, `requireRole(roleArray)`.
+
+==================================================
+TASK FOR THIS REPL
+==================================================
+1. If this Repl is empty:
+   - Scaffold the full project structure with `/server` + `/client` as described.
+2. Configure Prisma with PostgreSQL:
+   - Create `schema.prisma` with the models listed above.
+   - Generate migrations and a seed script that:
+     - Creates one ADMIN user with email like `admin@tfrconstruction.com` and password `Admin123!` (or similar).
+3. Implement all core API endpoints described.
+4. Implement the React frontend with:
+   - Login page
+   - Dashboard (role-aware)
+   - Project list & detail pages with tabs
+   - My Time page
+   - Project T&M page
+   - Receipt upload integration
+   - Notes UI with a simple feed.
+5. Wire up file uploads for:
+   - Plan documents
+   - Receipts
+   - T&M attachments
+6. Provide a top-level README explaining:
+   - How to set up environment variables
+   - How to run migrations and seed
+   - How to start dev environment
+   - Default ADMIN login credentials.
+
+Focus on **clean, maintainable code** with clear separation of concerns and enough comments so another dev can extend this system later for TFR Construction.
