@@ -15,6 +15,7 @@ export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_T
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
 export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL"]);
+export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -261,6 +262,16 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// File Permissions table
+export const filePermissions = pgTable("file_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileId: varchar("file_id").notNull(),
+  fileType: fileTypeEnum("file_type").notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  grantedById: varchar("granted_by_id").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").notNull().defaultNow(),
+});
+
 // Insert and Select Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -331,6 +342,11 @@ export const insertMediaSchema = createInsertSchema(media).omit({
   uploadedAt: true,
 });
 
+export const insertFilePermissionSchema = createInsertSchema(filePermissions).omit({
+  id: true,
+  grantedAt: true,
+});
+
 // Type exports
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -395,3 +411,6 @@ export type CalendarEvent = typeof calendarEvents.$inferSelect;
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export type InsertFilePermission = z.infer<typeof insertFilePermissionSchema>;
+export type FilePermission = typeof filePermissions.$inferSelect;
