@@ -2,6 +2,19 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification } from "@shared/schema";
 
+// Dashboard
+interface DashboardStats {
+  activeProjectsCount: number;
+  pendingChangeOrdersCount: number;
+  pendingTimeOffCount: number;
+}
+
+export function useDashboardStats() {
+  return useQuery<DashboardStats>({
+    queryKey: ["/api/dashboard/stats"],
+  });
+}
+
 // Projects
 export function useProject(code: string) {
   return useQuery<Project>({
