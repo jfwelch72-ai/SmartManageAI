@@ -140,14 +140,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pendingChangeOrdersResult = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(changeOrders)
-        .where(eq(changeOrders.status, "PENDING"));
+        .where(eq(changeOrders.status, "PENDING_APPROVAL"));
       const pendingChangeOrdersCount = pendingChangeOrdersResult[0]?.count || 0;
 
       // Count pending time-off requests
+      // Use dual check for robustness: eventType = TIME_OFF_REQUEST AND approvedById IS NULL
+      // This ensures we only count truly pending requests that haven't been processed
       const pendingTimeOffResult = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(calendarEvents)
-        .where(sql`${calendarEvents.eventType} = 'TIME_OFF' AND ${calendarEvents.status} = 'PENDING'`);
+        .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
       const pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
 
       res.json({
