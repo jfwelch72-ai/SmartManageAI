@@ -9,7 +9,8 @@ import FileUploadZone from "@/components/FileUploadZone";
 import ScopeOfWorkTable from "@/components/ScopeOfWorkTable";
 import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
@@ -17,10 +18,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ChangeOrder } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -246,6 +249,152 @@ export default function ProjectDetailPage() {
   const { data: timeEntries = [], isLoading: timeEntriesLoading } = useProjectTimeEntries(projectCode);
   const { data: tmSheets = [], isLoading: tmSheetsLoading } = useProjectTMSheets(projectCode);
   const { data: receipts = [], isLoading: receiptsLoading } = useProjectReceipts(projectCode);
+
+  // Media upload state
+  const [showMediaDialog, setShowMediaDialog] = useState(false);
+  const [mediaType, setMediaType] = useState<"IMAGE" | "VIDEO">("IMAGE");
+  const [mediaCaption, setMediaCaption] = useState("");
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+
+  // Documents upload state
+  const [showDocumentDialog, setShowDocumentDialog] = useState(false);
+  const [documentTitle, setDocumentTitle] = useState("");
+  const [documentType, setDocumentType] = useState<"PLANS" | "SPECS" | "TAKEOFF" | "OTHER">("OTHER");
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+
+  // Receipts upload state
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [receiptVendor, setReceiptVendor] = useState("");
+  const [receiptAmount, setReceiptAmount] = useState("");
+  const [receiptCategory, setReceiptCategory] = useState("");
+  const [receiptDate, setReceiptDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+
+  // Upload handlers
+  const handleMediaUploadComplete = async (result: any) => {
+    if (!result.successful || result.successful.length === 0) {
+      toast({ title: "Error", description: "File upload failed", variant: "destructive" });
+      setIsUploadingMedia(false);
+      return;
+    }
+
+    const uploadedFile = result.successful[0];
+    const fileUrl = uploadedFile.uploadURL;
+    const fileName = uploadedFile.name;
+    const fileSize = uploadedFile.size;
+    const mimeType = uploadedFile.type;
+
+    try {
+      await apiRequest("POST", `/api/projects/${projectCode}/media`, {
+        type: mediaType,
+        caption: mediaCaption,
+        fileUrl,
+        fileName,
+        fileSize,
+        mimeType,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "media"] });
+      toast({ title: "Success", description: "Media uploaded successfully" });
+      setShowMediaDialog(false);
+      setMediaCaption("");
+      setMediaType("IMAGE");
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save media", variant: "destructive" });
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const handleDocumentUploadComplete = async (result: any) => {
+    if (!result.successful || result.successful.length === 0) {
+      toast({ title: "Error", description: "File upload failed", variant: "destructive" });
+      setIsUploadingDocument(false);
+      return;
+    }
+
+    const uploadedFile = result.successful[0];
+    const fileUrl = uploadedFile.uploadURL;
+    const fileName = uploadedFile.name;
+    const fileSize = uploadedFile.size;
+    const mimeType = uploadedFile.type;
+
+    try {
+      await apiRequest("POST", "/api/documents", {
+        projectId: project?.id,
+        title: documentTitle,
+        type: documentType,
+        fileUrl,
+        fileName,
+        fileSize,
+        mimeType,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
+      toast({ title: "Success", description: "Document uploaded successfully" });
+      setShowDocumentDialog(false);
+      setDocumentTitle("");
+      setDocumentType("OTHER");
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
+
+  const handleReceiptUploadComplete = async (result: any) => {
+    if (!result.successful || result.successful.length === 0) {
+      toast({ title: "Error", description: "File upload failed", variant: "destructive" });
+      setIsUploadingReceipt(false);
+      return;
+    }
+
+    const uploadedFile = result.successful[0];
+    const fileUrl = uploadedFile.uploadURL;
+    const fileName = uploadedFile.name;
+    const fileSize = uploadedFile.size;
+    const mimeType = uploadedFile.type;
+
+    try {
+      await apiRequest("POST", "/api/receipts", {
+        projectId: project?.id,
+        vendor: receiptVendor,
+        amount: receiptAmount,
+        category: receiptCategory,
+        date: new Date(receiptDate).toISOString(),
+        fileUrl,
+        fileName,
+        fileSize,
+        mimeType,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "receipts"] });
+      toast({ title: "Success", description: "Receipt uploaded successfully" });
+      setShowReceiptDialog(false);
+      setReceiptVendor("");
+      setReceiptAmount("");
+      setReceiptCategory("");
+      setReceiptDate(format(new Date(), "yyyy-MM-dd"));
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save receipt", variant: "destructive" });
+    } finally {
+      setIsUploadingReceipt(false);
+    }
+  };
+
+  const getUploadParameters = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/objects/upload");
+      const data = await response.json();
+      return {
+        method: "PUT" as const,
+        url: data.uploadURL,
+      };
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
+      throw error;
+    }
+  };
 
   if (projectLoading) {
     return (
@@ -515,8 +664,78 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="media">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Photos & Videos</CardTitle>
+                <Dialog open={showMediaDialog} onOpenChange={setShowMediaDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-upload-media">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Media
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent data-testid="dialog-upload-media">
+                    <DialogHeader>
+                      <DialogTitle>Upload Media</DialogTitle>
+                      <DialogDescription>
+                        Fill in the details below and then select a file to upload.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="media-type">Type</Label>
+                        <Select
+                          value={mediaType}
+                          onValueChange={(value: "IMAGE" | "VIDEO") => setMediaType(value)}
+                        >
+                          <SelectTrigger id="media-type" data-testid="select-media-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="IMAGE">Image</SelectItem>
+                            <SelectItem value="VIDEO">Video</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="media-caption">Caption (Optional)</Label>
+                        <Input
+                          id="media-caption"
+                          value={mediaCaption}
+                          onChange={(e) => setMediaCaption(e.target.value)}
+                          placeholder="Enter a caption..."
+                          data-testid="input-media-caption"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowMediaDialog(false);
+                          setMediaCaption("");
+                          setMediaType("IMAGE");
+                        }}
+                        data-testid="button-cancel-media"
+                      >
+                        Cancel
+                      </Button>
+                      <ObjectUploader
+                        maxNumberOfFiles={1}
+                        maxFileSize={104857600}
+                        allowedFileTypes={mediaType === "IMAGE" ? ["image/*"] : ["video/*"]}
+                        onGetUploadParameters={getUploadParameters}
+                        onComplete={(result) => {
+                          setIsUploadingMedia(true);
+                          handleMediaUploadComplete(result);
+                        }}
+                        buttonVariant="default"
+                        testId="button-select-media-file"
+                      >
+                        {isUploadingMedia ? "Uploading..." : "Select File"}
+                      </ObjectUploader>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 {mediaLoading ? (
@@ -637,10 +856,77 @@ export default function ProjectDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Documents</CardTitle>
-                <Button size="sm" data-testid="button-upload-document">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Upload Document
-                </Button>
+                <Dialog open={showDocumentDialog} onOpenChange={setShowDocumentDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-upload-document">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Document
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent data-testid="dialog-upload-document">
+                    <DialogHeader>
+                      <DialogTitle>Upload Document</DialogTitle>
+                      <DialogDescription>
+                        Fill in the details below and then select a file to upload.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="document-title">Title</Label>
+                        <Input
+                          id="document-title"
+                          value={documentTitle}
+                          onChange={(e) => setDocumentTitle(e.target.value)}
+                          placeholder="Enter document title..."
+                          data-testid="input-document-title"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="document-type">Type</Label>
+                        <Select
+                          value={documentType}
+                          onValueChange={(value: "PLANS" | "SPECS" | "TAKEOFF" | "OTHER") => setDocumentType(value)}
+                        >
+                          <SelectTrigger id="document-type" data-testid="select-document-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PLANS">Plans</SelectItem>
+                            <SelectItem value="SPECS">Specifications</SelectItem>
+                            <SelectItem value="TAKEOFF">Takeoff</SelectItem>
+                            <SelectItem value="OTHER">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowDocumentDialog(false);
+                          setDocumentTitle("");
+                          setDocumentType("OTHER");
+                        }}
+                        data-testid="button-cancel-document"
+                      >
+                        Cancel
+                      </Button>
+                      <ObjectUploader
+                        maxNumberOfFiles={1}
+                        maxFileSize={104857600}
+                        onGetUploadParameters={getUploadParameters}
+                        onComplete={(result) => {
+                          setIsUploadingDocument(true);
+                          handleDocumentUploadComplete(result);
+                        }}
+                        buttonVariant="default"
+                        testId="button-select-document-file"
+                      >
+                        {isUploadingDocument ? "Uploading..." : "Select File"}
+                      </ObjectUploader>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 {documentsLoading ? (
@@ -738,10 +1024,95 @@ export default function ProjectDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Receipts</CardTitle>
-                <Button size="sm" data-testid="button-upload-receipt">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Upload Receipt
-                </Button>
+                <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-upload-receipt">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Receipt
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent data-testid="dialog-upload-receipt">
+                    <DialogHeader>
+                      <DialogTitle>Upload Receipt</DialogTitle>
+                      <DialogDescription>
+                        Fill in the details below and then select a file to upload.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="receipt-vendor">Vendor</Label>
+                        <Input
+                          id="receipt-vendor"
+                          value={receiptVendor}
+                          onChange={(e) => setReceiptVendor(e.target.value)}
+                          placeholder="Enter vendor name..."
+                          data-testid="input-receipt-vendor"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="receipt-amount">Amount ($)</Label>
+                        <Input
+                          id="receipt-amount"
+                          type="number"
+                          step="0.01"
+                          value={receiptAmount}
+                          onChange={(e) => setReceiptAmount(e.target.value)}
+                          placeholder="0.00"
+                          data-testid="input-receipt-amount"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="receipt-category">Category</Label>
+                        <Input
+                          id="receipt-category"
+                          value={receiptCategory}
+                          onChange={(e) => setReceiptCategory(e.target.value)}
+                          placeholder="Enter category..."
+                          data-testid="input-receipt-category"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="receipt-date">Date</Label>
+                        <Input
+                          id="receipt-date"
+                          type="date"
+                          value={receiptDate}
+                          onChange={(e) => setReceiptDate(e.target.value)}
+                          data-testid="input-receipt-date"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShowReceiptDialog(false);
+                          setReceiptVendor("");
+                          setReceiptAmount("");
+                          setReceiptCategory("");
+                          setReceiptDate(format(new Date(), "yyyy-MM-dd"));
+                        }}
+                        data-testid="button-cancel-receipt"
+                      >
+                        Cancel
+                      </Button>
+                      <ObjectUploader
+                        maxNumberOfFiles={1}
+                        maxFileSize={104857600}
+                        allowedFileTypes={["image/*", "application/pdf"]}
+                        onGetUploadParameters={getUploadParameters}
+                        onComplete={(result) => {
+                          setIsUploadingReceipt(true);
+                          handleReceiptUploadComplete(result);
+                        }}
+                        buttonVariant="default"
+                        testId="button-select-receipt-file"
+                      >
+                        {isUploadingReceipt ? "Uploading..." : "Select File"}
+                      </ObjectUploader>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 {receiptsLoading ? (
