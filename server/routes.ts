@@ -1692,6 +1692,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Object Storage endpoints
+  const { ObjectStorageService, ObjectNotFoundError } = await import("./objectStorage");
+  const { ObjectPermission } = await import("./objectAcl");
+
+  // Get upload URL for object
+  app.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error: any) {
+      console.error("Get upload URL error:", error);
+      res.status(500).json({ error: "Failed to get upload URL" });
+    }
+  });
+
+  // Download private object with ACL check
+  app.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
+      
+      const canAccess = await objectStorageService.canAccessObjectEntity({
+        objectFile,
+        userId: req.user!.id,
+        requestedPermission: ObjectPermission.READ,
+      });
+
+      if (!canAccess) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
+      objectStorageService.downloadObject(objectFile, res);
+    } catch (error: any) {
+      console.error("Object download error:", error);
+      if (error instanceof ObjectNotFoundError) {
+        res.status(404).json({ error: "Object not found" });
+        return;
+      }
+      res.status(500).json({ error: "Failed to download object" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
