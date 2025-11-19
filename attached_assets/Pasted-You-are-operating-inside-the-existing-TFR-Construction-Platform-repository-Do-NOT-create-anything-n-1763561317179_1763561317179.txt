@@ -1,0 +1,116 @@
+You are operating inside the existing TFR Construction Platform repository. Do NOT create anything new. I need you to gather and output the ENTIRE codebase for external audit.
+
+Your task now is to perform a full repository EXPORT/DUMP of all files so they can be externally reviewed for bugs, structural issues, missed integrations, and inconsistencies.
+
+THIS IS A FULL CODE OUTPUT OPERATION.
+
+Perform a complete recursive export of:
+
+1. **All Backend Files**
+   - server/*.ts
+   - server/routes/*.ts
+   - server/ai/**/*
+   - server/services/**/*
+   - server/utils/**/*
+   - server/schedulers/**/*
+   - server/middleware/**/*
+   - openai client modules
+   - AI system prompt files
+   - AI snapshot builder
+   - AI PM/CFO engines
+   - AI daily scheduler
+   - AI roleTasks engine
+   - AI subcontractor logic
+   - profitability engine
+   - Textura/billing engines
+   - crew scheduling system
+   - cost-rate calculations
+   - subcontractor tables + payments logic
+   - all subcontractor services
+   - all controllers, validators, helpers
+
+2. **All Database-Related Files**
+   - shared/schema.ts (full file)
+   - all Drizzle schema files
+   - all migrations (manual or auto)
+   - drizzle config
+   - SQL used in backfill logic
+   - seed data (if exists)
+
+3. **All Frontend Files**
+   - client/src/pages/**/*
+   - client/src/components/**/*
+   - client/src/hooks/**/*
+   - client/src/utils/**/*
+   - client/src/context/**/*
+   - all React components for:
+     - AI PM/CFO dashboard
+     - Daily operations dashboard
+     - Superintendent dashboard
+     - Cost-rate UI
+     - Crew & skills UI
+     - Subcontractor UI
+     - Subcontractor payments UI
+     - Payables dashboard
+     - Bidboard & bid detail
+     - Project detail
+     - Profitability dashboard
+     - Textura/billing views
+     - AI data-quality scoring UI
+
+4. **All Configuration Files**
+   - package.json
+   - tsconfig.json
+   - eslint config
+   - vite config
+   - server config
+   - index.ts / server.ts
+   - .env.example or list expected env variables
+
+5. **All Shared Types / Constants**
+   - shared/constants
+   - shared/types
+   - shared/enums
+   - anything used by AI or frontend/backend bridging
+
+6. **Everything Related to AI**
+   - All system prompts
+   - All JSON schemas used by OpenAI
+   - All prompt builders
+   - All AI output validators/parsers
+   - All AI integration endpoints (daily/adhoc/chat)
+   - The entire AI PM/CFO + Role-Based Ops system exactly as implemented
+
+7. **Everything Related to Subcontractors**
+   - subcontractor tables
+   - subcontractor contracts
+   - subcontractor payments
+   - subcontractor UIs
+   - subcontractor services
+   - subcontractor profit impact logic
+   - subcontractor payable dashboard
+   - AI subcontractor logic
+
+8. **Everything Added From Prior Prompts**
+   - cost-rate system
+   - budgets + contractAmount + financial UI
+   - crew & skills system
+   - AI data-quality scoring system
+   - backfill migration logic
+   - daily AI scheduler
+   - roleTasks system
+   - AI PM/CFO integration
+   - billing reminders
+   - profitability calculations
+   - all other integrated systems
+
+INSTRUCTIONS:
+- Output EVERYTHING.
+- Do NOT summarize.
+- Do NOT skip files.
+- Do NOT abbreviate.
+- For LARGE files, split output into multiple messages but include them in full.
+- Continue until every file in the repository has been presented.
+
+This is a full repository export for code-level auditing.
+BEGIN the full recursive dump now.
