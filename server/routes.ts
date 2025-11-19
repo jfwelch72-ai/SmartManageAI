@@ -931,12 +931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update project financials (Admin only)
   app.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
-      const { budget, contractAmount } = req.body;
-
-      if (!budget || !contractAmount) {
-        res.status(400).json({ error: "Budget and contract amount are required" });
-        return;
-      }
+      const { budget, contractAmount, texturaDrawDate } = req.body;
 
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
       
@@ -944,6 +939,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      // Build update object with only provided fields
+      const updateData: any = { updatedAt: new Date() };
+      if (budget !== undefined) updateData.budget = budget;
+      if (contractAmount !== undefined) updateData.contractAmount = contractAmount;
+      if (texturaDrawDate !== undefined) updateData.texturaDrawDate = texturaDrawDate;
 
       // Audit log the change
       await logAudit({
@@ -954,10 +955,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         oldValues: {
           budget: project.budget,
           contractAmount: project.contractAmount,
+          texturaDrawDate: project.texturaDrawDate,
         },
         newValues: {
           budget,
           contractAmount,
+          texturaDrawDate,
         },
         ipAddress: req.ip || "unknown",
         userAgent: req.get("user-agent") || "unknown",
@@ -965,11 +968,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const [updated] = await db
         .update(projects)
-        .set({ 
-          budget, 
-          contractAmount,
-          updatedAt: new Date() 
-        })
+        .set(updateData)
         .where(eq(projects.code, req.params.code))
         .returning();
 
@@ -3094,40 +3093,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const payables = await db
         .select({
-          paymentId: subcontractorPayments.id,
-          paymentNumber: subcontractorPayments.paymentNumber,
-          amount: subcontractorPayments.amount,
-          retentionHeld: subcontractorPayments.retentionHeld,
-          paymentDate: subcontractorPayments.paymentDate,
-          description: subcontractorPayments.description,
-          invoiceNumber: subcontractorPayments.invoiceNumber,
-          status: subcontractorPayments.status,
-          approvedAt: subcontractorPayments.approvedAt,
-          paidAt: subcontractorPayments.paidAt,
-          createdAt: subcontractorPayments.createdAt,
-          contract: {
-            id: subcontractorContracts.id,
-            contractNumber: subcontractorContracts.contractNumber,
-            scopeOfWork: subcontractorContracts.scopeOfWork,
-            contractAmount: subcontractorContracts.contractAmount,
-            projectId: subcontractorContracts.projectId,
-          },
-          subcontractor: {
-            companyName: subcontractors.companyName,
-            contactName: subcontractors.contactName,
-            email: subcontractors.email,
-            phone: subcontractors.phone,
-          },
-          project: {
-            code: projects.code,
-            name: projects.name,
-          },
+          subcontractorId: subcontractors.id,
+          contractId: subcontractorContracts.id,
+          projectId: subcontractorContracts.projectId,
+          contractAmount: subcontractorContracts.contractAmount,
+          totalPaid: sql<number>`COALESCE(SUM(${subcontractorPayments.amount}), 0)`.as("total_paid"),
+          remainingBalance: sql<number>`${subcontractorContracts.contractAmount} - COALESCE(SUM(${subcontractorPayments.amount}), 0)`.as("remaining_balance"),
+          projectName: projects.name,
+          companyName: subcontractors.companyName,
         })
-        .from(subcontractorPayments)
-        .leftJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
-        .leftJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
-        .leftJoin(projects, eq(subcontractorContracts.projectId, projects.id))
-        .orderBy(desc(subcontractorPayments.createdAt));
+        .from(subcontractorContracts)
+        .innerJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+        .innerJoin(projects, eq(projects.id, subcontractorContracts.projectId))
+        .leftJoin(subcontractorPayments, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+        .groupBy(subcontractorContracts.id, subcontractors.id, projects.id);
 
       res.json(payables);
     } catch (error) {
@@ -3161,7 +3140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { calculateProjectDataQuality } = await import("./ai/dataQualityScorer");
 
       // Calculate data quality score
-      const qualityScore = await calculateProjectDataQuality(project.id);
+      const qualityScore = await calculateProjectDataQuality(code);
 
       res.json(qualityScore);
     } catch (error) {

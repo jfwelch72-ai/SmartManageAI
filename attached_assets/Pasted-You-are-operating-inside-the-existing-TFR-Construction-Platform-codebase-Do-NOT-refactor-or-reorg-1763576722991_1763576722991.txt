@@ -1,0 +1,271 @@
+You are operating inside the existing TFR Construction Platform codebase.  
+Do NOT refactor or reorganize anything.  
+Apply ONLY the following targeted upgrades.  
+Maintain the current architecture, schema, patterns, routes, and file structure.
+
+=============================================================================
+1) FIX CRITICAL BUG – Data Quality Route Passing Wrong Identifier
+=============================================================================
+File: server/routes.ts  
+Locate the GET route:
+
+   GET /api/projects/:code/data-quality
+
+Inside the handler you will find:
+
+   const qualityScore = await calculateProjectDataQuality(project.id);
+
+CHANGE THIS to:
+
+   const qualityScore = await calculateProjectDataQuality(code);
+
+No other changes to the route or scorer.
+
+=============================================================================
+2) ADD TEXTURA DRAW DATE FIELD + BILLING REMINDER LOGIC
+=============================================================================
+
+A) SCHEMA CHANGE  
+File: shared/schema.ts  
+Inside projects table, add the column:
+
+   texturaDrawDate: date("textura_draw_date"),
+
+MAKE IT nullable.
+
+Run `npm run db:push` after code updates.
+
+----------------------------------------------------------
+B) SERVER: Update financials endpoint to accept draw date  
+----------------------------------------------------------
+File: server/routes.ts  
+Locate:
+
+   PATCH /api/projects/:code/financials
+
+Add support for:
+
+   texturaDrawDate
+
+Ensure it is written into the database when provided.
+
+----------------------------------------------------------
+C) AI Snapshot Builder: Add draw-date + urgency logic  
+----------------------------------------------------------
+File: server/ai/snapshotBuilder.ts
+
+Inside the per-project snapshot object, add:
+
+   texturaDrawDate: project.texturaDrawDate,
+
+Below project-level computed metrics, add:
+
+   let billingUrgency = null;
+   if (project.texturaDrawDate) {
+     const now = new Date();
+     const diffDays = Math.ceil(
+       (new Date(project.texturaDrawDate).getTime() - now.getTime()) / 86400000
+     );
+     if (diffDays <= 3) billingUrgency = "CRITICAL";
+     else if (diffDays <= 7) billingUrgency = "HIGH";
+   }
+
+Include billingUrgency in the returned snapshot:
+
+   billingUrgency,
+
+----------------------------------------------------------
+D) AI SYSTEM PROMPT: Add rules for draw-date tasks  
+----------------------------------------------------------
+File: server/ai/systemPrompt.ts  
+
+Append the following to the end of the SYSTEM PROMPT text:
+
+   • If a project has a texturaDrawDate and billingUrgency = CRITICAL or HIGH, 
+     ALWAYS generate OFFICE_MANAGER tasks such as:
+       - “Prepare Textura billing package for Project {{code}}”
+       - “Submit Textura draw due in {{diffDays}} days”
+     These tasks MUST be included in AI output whenever urgency exists.
+
+=============================================================================
+3) SUBCONTRACTOR REMAINING BALANCE API + PROFITABILITY UPDATE
+=============================================================================
+
+A) UPDATE /api/subcontractor-payables TO RETURN REMAINING BALANCE  
+---------------------------------------------------------------------
+File: server/routes.ts  
+
+Replace the SELECT for subcontractor payables with:
+
+   SELECT 
+      s.id AS subcontractor_id,
+      sc.id AS contract_id,
+      sc.project_id,
+      sc.contract_amount,
+      COALESCE(SUM(sp.amount), 0) AS total_paid,
+      sc.contract_amount - COALESCE(SUM(sp.amount), 0) AS remaining_balance,
+      p.name AS project_name,
+      s.company_name
+   FROM subcontractorContracts sc
+   JOIN subcontractors s ON sc.subcontractor_id = s.id
+   JOIN projects p ON p.id = sc.project_id
+   LEFT JOIN subcontractorPayments sp ON sp.contract_id = sc.id
+   GROUP BY sc.id, s.id, p.id;
+
+Return this full object in JSON.
+
+-----------------------------------------------------------
+B) Update Profitability Engine – Use Paid Subcontractor Cost  
+-----------------------------------------------------------
+File: server/ai/profitabilityEngine.ts
+
+Replace the subcontractor cost aggregate with:
+
+   const subcontractorCost = await db
+     .select({
+       total: sql`COALESCE(SUM(sp.amount),0)`.as("total")
+     })
+     .from(subcontractorPayments as sp)
+     .where(eq(sp.projectId, project.id));
+
+Use subcontractorCost.total in the project cost calculation.
+
+=============================================================================
+4) SAFETY IMPROVEMENTS – OPENAI FAIL-FAST + RATE LIMIT MANUAL RUN
+=============================================================================
+
+A) FAIL-FAST OPENAI KEY  
+-----------------------------------
+File: server/ai/openaiClient.ts
+
+REMOVE:
+
+   console.warn("OPENAI_API_KEY missing, using placeholder");
+   apiKey: process.env.OPENAI_API_KEY ?? "placeholder-key",
+
+REPLACE WITH:
+
+   if (!process.env.OPENAI_API_KEY) {
+     throw new Error("OPENAI_API_KEY is missing. AI cannot operate.");
+   }
+
+   const client = new OpenAI({
+     apiKey: process.env.OPENAI_API_KEY,
+   });
+
+-----------------------------------
+B) RATE LIMIT MANUAL AI RUN  
+-----------------------------------
+File: server/routes.ts  
+Locate:
+
+   POST /api/ai-pm/run
+
+Wrap with the sensitiveLimiter:
+
+   app.post(
+     "/api/ai-pm/run",
+     requireAuth,
+     requireRole(["ADMIN", "MANAGER"]),
+     sensitiveLimiter,
+     async (req, res) => { ... }
+   );
+
+=============================================================================
+5) UI UPGRADES – Textura Draw Date + Sub Payables + CFO Dashboard
+=============================================================================
+
+A) PROJECT DETAIL PAGE – Add Textura Draw Date Editor  
+-----------------------------------------------------
+File: client/src/pages/project-detail.tsx
+
+1. Add a new field to the Project Financials card:
+
+   - “Textura Draw Date”
+   - Date picker component
+   - Only visible/editable to ADMIN or OFFICE_MANAGER
+
+2. When editing budget / contract fields, also include texturaDrawDate.
+
+3. Save changes via PATCH /api/projects/:code/financials.
+
+-----------------------------------------------------
+B) CFO DASHBOARD – Add Draw-Date Alerts  
+-----------------------------------------------------
+File: client/src/pages/cfo-dashboard.tsx
+
+1. For each project, display:
+
+   • “Draw Due: {{texturaDrawDate}}”  
+   • Color code:
+       - Red for ≤ 3 days
+       - Yellow for 4–7 days
+       - Gray if > 7 days or no draw date
+
+2. Add a new “Upcoming Draw Deadlines” section:
+   Sorted by nearest texturaDrawDate ascending.
+
+3. If billingUrgency = CRITICAL:
+   Display a red alert banner on top of project card.
+
+-----------------------------------------------------
+C) SUBCONTRACTOR PAYABLES UI  
+-----------------------------------------------------
+File: client/src/pages/subcontractors.tsx  
+(or equivalent subcontracts list page)
+
+1. Update table to show:
+   • Contract Amount  
+   • Paid To Date  
+   • Remaining Balance  
+   • Project Name  
+   • Subcontractor  
+
+2. Color code remaining balance:
+   • Red: remaining > 60%  
+   • Yellow: remaining 20–60%  
+   • Green: remaining < 20%  
+
+3. Show “Pay Now” / “Record Payment” button → opens dialog:
+   PATCH /api/subcontractor-payments/:id
+
+-----------------------------------------------------
+D) PROJECT DETAIL – Subcontractor Section Upgrade  
+-----------------------------------------------------
+File: client/src/pages/project-detail.tsx
+
+Inside the “Subcontractors” tab:
+
+- Add Remaining Balance field
+- Add Paid-to-Date
+- Add “Record Payment” button
+- Add payment history list
+
+=============================================================================
+6) AI PM/CFO UI – Display New Billing Tasks
+=============================================================================
+
+File: client/src/pages/ai-pm-dashboard.tsx
+
+ADD:
+
+- New category “Billing Tasks”
+- Display tasks where:
+    task.category === "BILLING" OR
+    task.title contains "Textura"
+
+Ensure they appear with standard task actions (Start, Complete).
+
+=============================================================================
+FINAL REQUIREMENTS
+=============================================================================
+
+• Do NOT rewrite or reorganize modules.  
+• Keep existing interfaces and types intact unless explicitly modified above.  
+• After finishing all steps:
+    - Run `npm run build`
+    - Run `tsc --noEmit`
+    - Run `npm run db:push`
+• All edits must be precise and limited to the instructions.
+
+BEGIN applying all changes now.

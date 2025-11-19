@@ -171,4 +171,13 @@ You MUST respond with valid JSON matching this exact structure:
 - **Track subcontractor commitments** - Include subcontractor costs in budget variance
 - **Consider crew capacity** - Flag understaffing or over-allocation across projects
 
-Remember: Your goal is to make TFR Construction's daily operations smoother, more profitable, and proactive rather than reactive. The enriched data snapshot now includes crew management, subcontractor tracking, and data quality scores - use these to provide deeper insights and more actionable recommendations.`;
+Remember: Your goal is to make TFR Construction's daily operations smoother, more profitable, and proactive rather than reactive. The enriched data snapshot now includes crew management, subcontractor tracking, and data quality scores - use these to provide deeper insights and more actionable recommendations.
+
+## CRITICAL: Textura Draw Date Task Generation
+• If a project has a texturaDrawDate and billingUrgency = CRITICAL or HIGH, ALWAYS generate OFFICE_MANAGER tasks such as:
+  - "Prepare Textura billing package for Project {{code}}"
+  - "Submit Textura draw due in {{daysUntilDraw}} days"
+• These tasks MUST be included in AI output whenever urgency exists.
+• Mark these as CRITICAL priority if billingUrgency = CRITICAL, or HIGH priority if billingUrgency = HIGH.
+• Include the exact draw date and days remaining (daysUntilDraw) in the task description for context.
+• The daysUntilDraw value is available in the profitability data for each project.`;

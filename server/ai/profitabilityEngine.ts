@@ -27,6 +27,9 @@ export interface ProjectProfitability {
   status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
   projected_completion_cost: number;
   estimated_margin: number;
+  texturaDrawDate: string | null;
+  billingUrgency: 'CRITICAL' | 'HIGH' | null;
+  daysUntilDraw: number | null;
   key_metrics: {
     labor_hours: number;
     labor_efficiency: string;
@@ -106,22 +109,16 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const totalOtherExpenses = expenseReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
-  // Calculate subcontractor costs - use inner join to ensure valid project linkage
-  const subcontractorPaymentsData = await db
+  // Calculate subcontractor costs - use only paid amounts
+  const subcontractorCost = await db
     .select({
-      amount: subcontractorPayments.amount,
-      status: subcontractorPayments.status,
-      projectId: subcontractorContracts.projectId,
+      total: sql<number>`COALESCE(SUM(${subcontractorPayments.amount}), 0)`.as("total")
     })
-    .from(subcontractorContracts)
-    .innerJoin(subcontractorPayments, eq(subcontractorPayments.contractId, subcontractorContracts.id))
-    .where(eq(subcontractorContracts.projectId, project.id))
-    .limit(1000);
+    .from(subcontractorPayments)
+    .innerJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+    .where(eq(subcontractorContracts.projectId, project.id));
 
-  // Include all subcontractor payment obligations (SCHEDULED, PENDING, APPROVED, PAID)
-  const totalSubcontractorCost = subcontractorPaymentsData
-    .filter(p => ['SCHEDULED', 'PENDING', 'APPROVED', 'PAID'].includes(p.status || ''))
-    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const totalSubcontractorCost = Number(subcontractorCost[0]?.total || 0);
 
   const subcontractorContractsData = await db
     .select({ count: sql<number>`count(*)` })
@@ -196,6 +193,20 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     ? `${Math.round((totalMaterialCost / budgetedMaterials) * 100)}% of budget`
     : 'Unknown';
 
+  // Calculate billing urgency based on textura draw date
+  let billingUrgency: 'CRITICAL' | 'HIGH' | null = null;
+  let daysUntilDraw: number | null = null;
+  if (project.texturaDrawDate) {
+    const drawDate = new Date(project.texturaDrawDate);
+    const diffDays = Math.ceil((drawDate.getTime() - now.getTime()) / 86400000);
+    daysUntilDraw = diffDays;
+    if (diffDays <= 3) {
+      billingUrgency = "CRITICAL";
+    } else if (diffDays <= 7) {
+      billingUrgency = "HIGH";
+    }
+  }
+
   return {
     project_code: projectCode,
     project_name: project.name,
@@ -212,6 +223,9 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     status,
     projected_completion_cost: Math.round(projectedCompletionCost * 100) / 100,
     estimated_margin: Math.round(estimatedMargin * 100) / 100,
+    texturaDrawDate: project.texturaDrawDate || null,
+    billingUrgency,
+    daysUntilDraw,
     key_metrics: {
       labor_hours: Math.round(totalLaborHours * 100) / 100,
       labor_efficiency: laborEfficiency,

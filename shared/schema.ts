@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, decimal, integer, pgEnum, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -56,6 +56,7 @@ export const projects = pgTable("projects", {
   description: text("description"),
   budget: decimal("budget", { precision: 12, scale: 2 }),
   contractAmount: decimal("contract_amount", { precision: 12, scale: 2 }),
+  texturaDrawDate: date("textura_draw_date"),
   estimatorId: varchar("estimator_id").references(() => users.id),
   superintendentId: varchar("superintendent_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

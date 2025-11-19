@@ -1,11 +1,11 @@
 import OpenAI from 'openai';
 
 if (!process.env.OPENAI_API_KEY) {
-  console.warn('⚠️ OPENAI_API_KEY not found in environment variables. AI features will not work.');
+  throw new Error("OPENAI_API_KEY is missing. AI cannot operate.");
 }
 
 export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'placeholder-key',
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export const AI_MODEL_GPT4O = 'gpt-4o';
