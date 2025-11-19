@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { format } from "date-fns";
@@ -116,6 +116,44 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                   Time Entries
                 </Link>
               </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* AI Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-ai">
+                <Bot className="w-4 h-4" />
+                AI
+                <ChevronDown className="w-3 h-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem asChild data-testid="nav-ai-pm">
+                <Link href="/ai-pm">
+                  <Bot className="mr-2 h-4 w-4" />
+                  AI Project Manager
+                </Link>
+              </DropdownMenuItem>
+              {isManagerOrAdmin && (
+                <DropdownMenuItem asChild data-testid="nav-cfo">
+                  <Link href="/cfo">
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    CFO Dashboard
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              {userRole === "ADMIN" && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild data-testid="nav-ai-settings">
+                    <Link href="/ai-settings">
+                      <Settings className="mr-2 h-4 w-4" />
+                      AI Settings
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 

@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { initializeAIScheduler } from "./ai/scheduler";
 
 const app = express();
 
@@ -89,5 +90,10 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    // Initialize AI scheduler after server starts
+    initializeAIScheduler().catch(error => {
+      console.error('Failed to initialize AI scheduler:', error);
+    });
   });
 })();

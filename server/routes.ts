@@ -31,6 +31,7 @@ import { logCreate, logUpdate, logDelete, logApprove, logReject } from "./auditL
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
+import aiRoutes from "./aiRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -44,6 +45,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);
+
+  // Register AI PM + CFO routes
+  app.use("/api", aiRoutes);
 
   // ====================
   // Auth Routes
