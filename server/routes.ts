@@ -30,6 +30,7 @@ import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject } from "./auditLogger";
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
+import changeOrderRoutes from "./changeOrderRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -40,6 +41,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register time-clock routes (now protected by rate limiter)
   registerTimeClockRoutes(app);
+
+  // Register change order state machine routes
+  app.use("/api/change-orders", changeOrderRoutes);
 
   // ====================
   // Auth Routes
@@ -1812,80 +1816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Approve change order (Admin/Manager only)
-  app.post("/api/change-orders/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
-    try {
-      const [order] = await db
-        .update(changeOrders)
-        .set({
-          status: "APPROVED",
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
-
-      if (!order) {
-        res.status(404).json({ error: "Change order not found" });
-        return;
-      }
-
-      // Notify requester
-      await db.insert(notifications).values({
-        userId: order.requestedById,
-        type: "GENERAL",
-        title: "Change Order Approved",
-        message: `Change order ${order.changeOrderNumber} has been approved`,
-        relatedEntityId: order.id,
-        relatedEntityType: "changeOrder",
-      });
-
-      res.json(order);
-    } catch (error: any) {
-      console.error("Approve change order error:", error);
-      res.status(500).json({ error: "Failed to approve change order" });
-    }
-  });
-
-  // Reject change order (Admin/Manager only)
-  app.post("/api/change-orders/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
-    try {
-      const { rejectionReason } = req.body;
-
-      const [order] = await db
-        .update(changeOrders)
-        .set({
-          status: "REJECTED",
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-          rejectionReason,
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
-
-      if (!order) {
-        res.status(404).json({ error: "Change order not found" });
-        return;
-      }
-
-      // Notify requester
-      await db.insert(notifications).values({
-        userId: order.requestedById,
-        type: "GENERAL",
-        title: "Change Order Rejected",
-        message: `Change order ${order.changeOrderNumber} has been rejected: ${rejectionReason || 'No reason provided'}`,
-        relatedEntityId: order.id,
-        relatedEntityType: "changeOrder",
-      });
-
-      res.json(order);
-    } catch (error: any) {
-      console.error("Reject change order error:", error);
-      res.status(500).json({ error: "Failed to reject change order" });
-    }
-  });
+  // Approve/reject endpoints moved to changeOrderRoutes.ts for state machine logic
 
   // ====================
   // Calendar Events Routes

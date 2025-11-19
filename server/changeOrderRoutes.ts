@@ -1,0 +1,394 @@
+import { Router, type Request, type Response } from "express";
+import { db } from "./db";
+import { changeOrders, insertChangeOrderSchema, users, notifications } from "@shared/schema";
+import { eq, desc, sql } from "drizzle-orm";
+import { z } from "zod";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { logAudit } from "./auditLogger";
+
+const router = Router();
+
+// Valid state transitions for change orders
+// Enforces strict workflow: DRAFT → PENDING_APPROVAL → SUBMITTED → APPROVED/REJECTED
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["PENDING_APPROVAL"],  // Must request approval first
+  PENDING_APPROVAL: ["DRAFT", "SUBMITTED"],  // Can return to draft or submit to client
+  SUBMITTED: ["DRAFT", "APPROVED", "REJECTED"],  // Client approves/rejects or return for revision
+  APPROVED: [],  // Terminal state - no further transitions
+  REJECTED: ["DRAFT"],  // Can be revised and resubmitted
+};
+
+/**
+ * Validates if a state transition is allowed
+ */
+function isValidTransition(fromStatus: string, toStatus: string): boolean {
+  return VALID_TRANSITIONS[fromStatus]?.includes(toStatus) || false;
+}
+
+/**
+ * Gets a change order by ID with validation
+ */
+async function getChangeOrderById(id: string) {
+  const [order] = await db
+    .select()
+    .from(changeOrders)
+    .where(eq(changeOrders.id, id))
+    .limit(1);
+  
+  return order;
+}
+
+/**
+ * Notifies relevant users about a change order status change
+ */
+async function notifyStatusChange(
+  order: any,
+  newStatus: string,
+  message: string,
+  notifyRequestedBy: boolean = true
+) {
+  const notificationsToCreate: any[] = [];
+
+  // Always notify the requester
+  if (notifyRequestedBy) {
+    notificationsToCreate.push({
+      userId: order.requestedById,
+      type: "GENERAL" as const,
+      title: `Change Order ${newStatus}`,
+      message,
+      relatedEntityId: order.id,
+      relatedEntityType: "changeOrder",
+    });
+  }
+
+  // Notify admins and managers for pending approvals
+  if (newStatus === "PENDING_APPROVAL") {
+    const adminsAndManagers = await db
+      .select()
+      .from(users)
+      .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+
+    adminsAndManagers.forEach(user => {
+      notificationsToCreate.push({
+        userId: user.id,
+        type: "CHANGE_ORDER_PENDING" as const,
+        title: "Change Order Pending Approval",
+        message: `Change order ${order.changeOrderNumber} requires approval`,
+        relatedEntityId: order.id,
+        relatedEntityType: "changeOrder",
+      });
+    });
+  }
+
+  if (notificationsToCreate.length > 0) {
+    await db.insert(notifications).values(notificationsToCreate);
+  }
+}
+
+// ====================
+// Change Order State Transition Routes
+// ====================
+
+/**
+ * Request approval for a change order
+ * DRAFT -> PENDING_APPROVAL
+ */
+router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    // Only requester, admins, or managers can request approval
+    if (req.user!.id !== order.requestedById && 
+        req.user!.role !== "ADMIN" && 
+        req.user!.role !== "MANAGER") {
+      res.status(403).json({ error: "You don't have permission to modify this change order" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "PENDING_APPROVAL")) {
+      res.status(400).json({ 
+        error: `Cannot transition from ${order.status} to PENDING_APPROVAL` 
+      });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "PENDING_APPROVAL",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "SUBMIT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    // Notify relevant users
+    await notifyStatusChange(
+      updatedOrder,
+      "PENDING_APPROVAL",
+      `Change order ${updatedOrder.changeOrderNumber} is now pending approval`,
+      false  // Don't notify requester as they initiated it
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Request approval error:", error);
+    res.status(500).json({ error: "Failed to request approval" });
+  }
+});
+
+/**
+ * Submit a change order to client
+ * PENDING_APPROVAL -> SUBMITTED or DRAFT -> SUBMITTED
+ */
+router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "SUBMITTED")) {
+      res.status(400).json({ 
+        error: `Cannot transition from ${order.status} to SUBMITTED` 
+      });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "SUBMITTED",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "SUBMIT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "SUBMITTED" }),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "SUBMITTED",
+      `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Submit change order error:", error);
+    res.status(500).json({ error: "Failed to submit change order" });
+  }
+});
+
+/**
+ * Approve a change order
+ * SUBMITTED -> APPROVED or PENDING_APPROVAL -> APPROVED
+ */
+router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "APPROVED")) {
+      res.status(400).json({ 
+        error: `Cannot approve from ${order.status} status. Change order must be SUBMITTED first.` 
+      });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "APPROVED",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "APPROVE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "APPROVED",
+      `Change order ${updatedOrder.changeOrderNumber} has been approved`
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Approve change order error:", error);
+    res.status(500).json({ error: "Failed to approve change order" });
+  }
+});
+
+/**
+ * Reject a change order
+ * Any non-terminal state -> REJECTED
+ */
+router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { rejectionReason } = req.body;
+
+    if (!rejectionReason || rejectionReason.trim().length === 0) {
+      res.status(400).json({ error: "Rejection reason is required" });
+      return;
+    }
+
+    const order = await getChangeOrderById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "REJECTED")) {
+      res.status(400).json({ 
+        error: `Cannot reject from ${order.status} status` 
+      });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "REJECTED",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        rejectionReason,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "REJECT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ 
+        status: "REJECTED", 
+        rejectionReason,
+        approvedById: req.user!.id 
+      }),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "REJECTED",
+      `Change order ${updatedOrder.changeOrderNumber} has been rejected: ${rejectionReason}`
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Reject change order error:", error);
+    res.status(500).json({ error: "Failed to reject change order" });
+  }
+});
+
+/**
+ * Return a change order to draft for revision
+ * PENDING_APPROVAL -> DRAFT or SUBMITTED -> DRAFT or REJECTED -> DRAFT
+ */
+router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { reason } = req.body;
+
+    const order = await getChangeOrderById(req.params.id);
+
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "DRAFT")) {
+      res.status(400).json({ 
+        error: `Cannot return to draft from ${order.status} status` 
+      });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "DRAFT",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "DRAFT", reason }),
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "DRAFT",
+      `Change order ${updatedOrder.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Return to draft error:", error);
+    res.status(500).json({ error: "Failed to return change order to draft" });
+  }
+});
+
+export default router;
