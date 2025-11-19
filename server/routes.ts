@@ -561,6 +561,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: bid.state,
         description: bid.description,
         estimatorId: bid.estimatorId,
+        contractAmount: bid.bidAmount,
+        budget: bid.bidAmount,
       }).returning();
 
       // Delete the bid after converting

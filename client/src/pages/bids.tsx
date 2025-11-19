@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
 import BidCard from "@/components/BidCard";
 import { Input } from "@/components/ui/input";
@@ -6,66 +6,42 @@ import { Button } from "@/components/ui/button";
 import { Search, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-
-//todo: remove mock functionality
-const mockBids = [
-  {
-    id: '1',
-    code: 'BID-240815',
-    name: 'City Hall Renovation - Phase 2',
-    clientName: 'City of Columbus',
-    bidAmount: '$625,000',
-    dueDate: '2024-02-15',
-    location: 'Columbus, OH',
-    estimator: 'Sarah Williams',
-  },
-  {
-    id: '2',
-    code: 'BID-240722',
-    name: 'Shopping Plaza Foundation',
-    clientName: 'Retail Development Corp',
-    bidAmount: '$380,000',
-    dueDate: '2024-02-20',
-    location: 'Dublin, OH',
-    estimator: 'David Chen',
-  },
-  {
-    id: '3',
-    code: 'BID-240701',
-    name: 'Medical Office Building',
-    clientName: 'Healthcare Properties Inc',
-    bidAmount: '$890,000',
-    dueDate: '2024-02-28',
-    location: 'Westerville, OH',
-    estimator: 'Sarah Williams',
-  },
-  {
-    id: '4',
-    code: 'BID-240628',
-    name: 'University Parking Garage Expansion',
-    clientName: 'Ohio University',
-    bidAmount: '$1,250,000',
-    dueDate: '2024-03-05',
-    location: 'Athens, OH',
-    estimator: 'David Chen',
-  },
-];
+import { useBids, useConvertBidToProject } from "@/hooks/use-data";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 
 export default function BidsPage() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  
+  const { data: bids = [], isLoading } = useBids();
+  const convertBid = useConvertBidToProject();
 
-  const filteredBids = mockBids.filter(bid => 
-    bid.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bid.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bid.clientName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredBids = useMemo(() => {
+    return bids.filter(bid => 
+      bid.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      bid.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      bid.clientName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [bids, searchTerm]);
 
-  const handleConvertToProject = (bidCode: string) => {
-    console.log(`Converting bid ${bidCode} to project`);
-    // TODO: Implement actual conversion logic
-    alert(`Bid ${bidCode} has been marked as awarded and moved to Active Projects!`);
+  const handleConvertToProject = async (bidCode: string) => {
+    try {
+      await convertBid.mutateAsync(bidCode);
+      toast({
+        title: "Success",
+        description: `Bid ${bidCode} has been converted to an active project!`,
+      });
+      setLocation("/projects");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to convert bid to project",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -103,16 +79,33 @@ export default function BidsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredBids.map((bid) => (
-            <BidCard
-              key={bid.id}
-              {...bid}
-              onClick={() => setLocation(`/bids/${bid.code}`)}
-              onConvertToProject={() => handleConvertToProject(bid.code)}
-            />
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="text-center py-12 text-muted-foreground">
+            Loading bids...
+          </div>
+        ) : filteredBids.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            {searchTerm ? "No bids match your search" : "No bids found"}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredBids.map((bid) => (
+              <BidCard
+                key={bid.id}
+                id={bid.id}
+                code={bid.code}
+                name={bid.name}
+                clientName={bid.clientName}
+                bidAmount={bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : "TBD"}
+                dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
+                location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
+                estimator={bid.estimatorId || undefined}
+                onClick={() => setLocation(`/bids/${bid.code}`)}
+                onConvertToProject={() => handleConvertToProject(bid.code)}
+              />
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );

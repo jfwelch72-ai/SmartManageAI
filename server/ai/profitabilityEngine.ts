@@ -43,35 +43,44 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     throw new Error(`Project ${projectCode} not found`);
   }
 
-  // Calculate labor costs
+  // Calculate labor costs - using time entries with estimated hourly rate
   const laborEntries = await db
     .select({
-      hours: timeEntries.hours,
-      hourlyRate: timeEntries.hourlyRate,
+      hoursRegular: timeEntries.hoursRegular,
+      hoursOvertime: timeEntries.hoursOvertime,
     })
     .from(timeEntries)
-    .where(eq(timeEntries.projectCode, projectCode))
+    .where(eq(timeEntries.projectId, project.id))
     .limit(5000);
 
-  const totalLaborHours = laborEntries.reduce((sum, entry) => sum + Number(entry.hours || 0), 0);
-  const totalLaborCost = laborEntries.reduce(
-    (sum, entry) => sum + Number(entry.hours || 0) * Number(entry.hourlyRate || 0),
+  const ASSUMED_HOURLY_RATE = 50;
+  const OVERTIME_MULTIPLIER = 1.5;
+
+  const totalLaborHours = laborEntries.reduce(
+    (sum, entry) => 
+      sum + Number(entry.hoursRegular || 0) + Number(entry.hoursOvertime || 0),
     0
   );
+  
+  const totalLaborCost = laborEntries.reduce((sum, entry) => {
+    const regularCost = Number(entry.hoursRegular || 0) * ASSUMED_HOURLY_RATE;
+    const overtimeCost = Number(entry.hoursOvertime || 0) * ASSUMED_HOURLY_RATE * OVERTIME_MULTIPLIER;
+    return sum + regularCost + overtimeCost;
+  }, 0);
 
-  // Calculate material costs
+  // Calculate material costs - using unit cost × quantity for procurement items
   const materials = await db
     .select({
-      actualCost: procurementItems.actualCost,
-      estimatedCost: procurementItems.estimatedCost,
+      unitCost: procurementItems.unitCost,
+      quantity: procurementItems.quantity,
       status: procurementItems.status,
     })
     .from(procurementItems)
-    .where(eq(procurementItems.projectCode, projectCode))
+    .where(eq(procurementItems.projectId, project.id))
     .limit(1000);
 
   const totalMaterialCost = materials.reduce((sum, item) => {
-    const cost = Number(item.actualCost || item.estimatedCost || 0);
+    const cost = Number(item.unitCost || 0) * Number(item.quantity || 0);
     return sum + cost;
   }, 0);
 
@@ -81,7 +90,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       amount: receipts.amount,
     })
     .from(receipts)
-    .where(eq(receipts.projectCode, projectCode))
+    .where(eq(receipts.projectId, project.id))
     .limit(1000);
 
   const totalOtherExpenses = expenseReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
@@ -93,7 +102,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       status: changeOrders.status,
     })
     .from(changeOrders)
-    .where(eq(changeOrders.projectCode, projectCode))
+    .where(eq(changeOrders.projectId, project.id))
     .limit(500);
 
   const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
@@ -104,14 +113,14 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
   const pendingCOValue = pendingCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
-  // Calculate totals
-  const baseBudget = Number(project.budget || 0);
+  // Calculate totals - use contractAmount as primary, fallback to budget
+  const baseBudget = Number(project.contractAmount || project.budget || 0);
   const adjustedBudget = baseBudget + approvedCOValue;
   const totalActualCost = totalLaborCost + totalMaterialCost + totalOtherExpenses;
   const variance = adjustedBudget - totalActualCost;
   const variancePercent = adjustedBudget > 0 ? (variance / adjustedBudget) * 100 : 0;
 
-  // Determine status
+  // Determine status based on variance percentage
   let status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
   if (variancePercent >= 10) {
     status = 'ON_BUDGET';
@@ -121,27 +130,32 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     status = 'MAJOR_RISK';
   }
 
-  // Project completion cost (simple heuristic: if we're 50% through timeline, double current spend)
+  // Project completion cost based on timeline percentage complete
   const startDate = project.startDate ? new Date(project.startDate) : new Date();
-  const endDate = project.estimatedCompletion ? new Date(project.estimatedCompletion) : new Date();
+  const endDate = project.estimatedCompletionDate ? new Date(project.estimatedCompletionDate) : new Date();
   const now = new Date();
   const totalDuration = endDate.getTime() - startDate.getTime();
   const elapsed = now.getTime() - startDate.getTime();
-  const percentComplete = totalDuration > 0 ? Math.min(100, Math.max(0, (elapsed / totalDuration) * 100)) : 50;
   
-  const projectedCompletionCost = percentComplete > 0 
-    ? (totalActualCost / percentComplete) * 100 
-    : totalActualCost * 2;
+  // Guard against invalid date ranges
+  let percentComplete = 50; // Default to 50% if dates are invalid
+  if (totalDuration > 0 && elapsed >= 0) {
+    percentComplete = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+  }
+  
+  const projectedCompletionCost = percentComplete > 0 && percentComplete < 100
+    ? (totalActualCost / (percentComplete / 100))
+    : totalActualCost;
 
   const estimatedMargin = adjustedBudget - projectedCompletionCost;
 
-  // Labor efficiency
-  const budgetedLaborHours = baseBudget * 0.4 / 50; // Assume 40% labor at $50/hr
+  // Labor efficiency - compare actual hours to budgeted hours (assume 40% of budget is labor)
+  const budgetedLaborHours = baseBudget * 0.4 / ASSUMED_HOURLY_RATE;
   const laborEfficiency = budgetedLaborHours > 0
     ? `${Math.round((totalLaborHours / budgetedLaborHours) * 100)}% of budgeted hours`
     : 'Unknown';
 
-  // Material spend rate
+  // Material spend rate - compare actual material costs to budgeted (assume 45% of budget)
   const budgetedMaterials = baseBudget * 0.45;
   const materialSpendRate = budgetedMaterials > 0
     ? `${Math.round((totalMaterialCost / budgetedMaterials) * 100)}% of budget`
