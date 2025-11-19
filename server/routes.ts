@@ -2858,6 +2858,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Subcontractor Payables Routes
+  // ====================
+
+  // Get all subcontractor payables (for CFO/Office Manager dashboard)
+  app.get("/api/subcontractor-payables", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const payables = await db
+        .select({
+          paymentId: subcontractorPayments.id,
+          paymentNumber: subcontractorPayments.paymentNumber,
+          amount: subcontractorPayments.amount,
+          retentionHeld: subcontractorPayments.retentionHeld,
+          paymentDate: subcontractorPayments.paymentDate,
+          description: subcontractorPayments.description,
+          invoiceNumber: subcontractorPayments.invoiceNumber,
+          status: subcontractorPayments.status,
+          approvedAt: subcontractorPayments.approvedAt,
+          paidAt: subcontractorPayments.paidAt,
+          createdAt: subcontractorPayments.createdAt,
+          contract: {
+            id: subcontractorContracts.id,
+            contractNumber: subcontractorContracts.contractNumber,
+            scopeOfWork: subcontractorContracts.scopeOfWork,
+            contractAmount: subcontractorContracts.contractAmount,
+            projectId: subcontractorContracts.projectId,
+          },
+          subcontractor: {
+            companyName: subcontractors.companyName,
+            contactName: subcontractors.contactName,
+            email: subcontractors.email,
+            phone: subcontractors.phone,
+          },
+          project: {
+            code: projects.code,
+            name: projects.name,
+          },
+        })
+        .from(subcontractorPayments)
+        .leftJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+        .leftJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+        .leftJoin(projects, eq(subcontractorContracts.projectId, projects.id))
+        .orderBy(desc(subcontractorPayments.createdAt));
+
+      res.json(payables);
+    } catch (error) {
+      console.error("Error fetching subcontractor payables:", error);
+      res.status(500).json({ error: "Failed to fetch subcontractor payables" });
+    }
+  });
+
+  // ====================
   // Data Quality Routes
   // ====================
 

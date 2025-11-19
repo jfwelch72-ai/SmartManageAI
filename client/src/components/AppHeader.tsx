@@ -188,6 +188,12 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                     Cost Rates
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild data-testid="nav-subcontractor-payables">
+                  <Link href="/subcontractor-payables">
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    Subcontractor Payables
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

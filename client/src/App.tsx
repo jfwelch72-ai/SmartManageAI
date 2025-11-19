@@ -23,6 +23,7 @@ import CFODashboard from "@/pages/cfo-dashboard";
 import AISettingsPage from "@/pages/ai-settings";
 import CrewsPage from "@/pages/crews";
 import CostRatesPage from "@/pages/cost-rates";
+import SubcontractorPayablesPage from "@/pages/subcontractor-payables";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element | null }) {
   const { user, isLoading } = useAuth();
@@ -65,6 +66,7 @@ function Router() {
       <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} />} />
+      <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} />} />
       <Route component={NotFound} />
     </Switch>
   );

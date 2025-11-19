@@ -682,7 +682,6 @@ export default function ProjectDetailPage() {
                 <p className="text-sm text-muted-foreground">{project.description || "No description provided"}</p>
               </CardContent>
             </Card>
-            </div>
 
             {/* Data Quality Score Card */}
             <Card data-testid="card-data-quality">
