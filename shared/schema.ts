@@ -354,6 +354,63 @@ export const timeClockEvents = pgTable("time_clock_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// AI Settings table
+export const aiSettings = pgTable("ai_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  dailyRunsEnabled: boolean("daily_runs_enabled").notNull().default(true),
+  dailyRunTime: text("daily_run_time").notNull().default("06:00"),
+  roleTasksEnabled: boolean("role_tasks_enabled").notNull().default(true),
+  billingAlertsEnabled: boolean("billing_alerts_enabled").notNull().default(true),
+  profitabilityWarningsEnabled: boolean("profitability_warnings_enabled").notNull().default(true),
+  crewSchedulingEnabled: boolean("crew_scheduling_enabled").notNull().default(true),
+  bidRemindersEnabled: boolean("bid_reminders_enabled").notNull().default(true),
+  materialOrderingEnabled: boolean("material_ordering_enabled").notNull().default(true),
+  modelName: text("model_name").notNull().default("gpt-4o"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// AI Runs table
+export const aiRuns = pgTable("ai_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runType: text("run_type").notNull().default("daily"),
+  status: text("status").notNull().default("in_progress"),
+  triggeredById: varchar("triggered_by_id").references(() => users.id),
+  snapshotData: text("snapshot_data"),
+  profitabilityData: text("profitability_data"),
+  aiResponse: text("ai_response"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (table) => ({
+  createdAtIdx: index("ai_runs_created_at_idx").on(table.createdAt),
+}));
+
+// AI Tasks table (role-based prioritized tasks)
+export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
+export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+
+export const aiTasks = pgTable("ai_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => aiRuns.id, { onDelete: "cascade" }),
+  taskType: text("task_type").notNull(),
+  role: userRoleEnum("role").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
+  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
+  dueDate: timestamp("due_date"),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  projectCode: text("project_code"),
+  metadata: text("metadata"),
+  assignedToId: varchar("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  roleIdx: index("ai_tasks_role_idx").on(table.role),
+  statusIdx: index("ai_tasks_status_idx").on(table.status),
+  priorityIdx: index("ai_tasks_priority_idx").on(table.priority),
+}));
+
 // Insert and Select Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -531,3 +588,29 @@ export type TimeClockShift = typeof timeClockShifts.$inferSelect;
 
 export type InsertTimeClockEvent = z.infer<typeof insertTimeClockEventSchema>;
 export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
+
+export const insertAISettingsSchema = createInsertSchema(aiSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertAIRunSchema = createInsertSchema(aiRuns).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+export const insertAITaskSchema = createInsertSchema(aiTasks).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+export type InsertAISettings = z.infer<typeof insertAISettingsSchema>;
+export type AISettings = typeof aiSettings.$inferSelect;
+
+export type InsertAIRun = z.infer<typeof insertAIRunSchema>;
+export type AIRun = typeof aiRuns.$inferSelect;
+
+export type InsertAITask = z.infer<typeof insertAITaskSchema>;
+export type AITask = typeof aiTasks.$inferSelect;
