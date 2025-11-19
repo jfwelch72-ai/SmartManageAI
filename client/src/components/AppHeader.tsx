@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { format } from "date-fns";
@@ -157,13 +157,39 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {userRole === "ADMIN" && (
-            <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-users">
-              <Link href="/users">
-                <UsersIcon className="w-4 h-4" />
-                Users
-              </Link>
-            </Button>
+          {/* Admin Menu */}
+          {isManagerOrAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-admin">
+                  <Shield className="w-4 h-4" />
+                  Admin
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {userRole === "ADMIN" && (
+                  <DropdownMenuItem asChild data-testid="nav-users">
+                    <Link href="/users">
+                      <UsersIcon className="mr-2 h-4 w-4" />
+                      Users
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild data-testid="nav-crews">
+                  <Link href="/crews">
+                    <UsersIcon className="mr-2 h-4 w-4" />
+                    Crews & Skills
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild data-testid="nav-cost-rates">
+                  <Link href="/cost-rates">
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    Cost Rates
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </nav>
 

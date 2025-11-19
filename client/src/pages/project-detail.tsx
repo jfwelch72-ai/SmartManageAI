@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ChangeOrder } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -247,9 +248,52 @@ export default function ProjectDetailPage() {
   const { data: estimates = [], isLoading: estimatesLoading } = useProjectEstimates(projectCode);
   const { data: procurementItems = [], isLoading: procurementLoading } = useProjectProcurement(projectCode);
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
-  const { data: timeEntries = [], isLoading: timeEntriesLoading } = useProjectTimeEntries(projectCode);
+  const { data: timeEntries = [], isLoading: timeEntriesLoading} = useProjectTimeEntries(projectCode);
   const { data: tmSheets = [], isLoading: tmSheetsLoading } = useProjectTMSheets(projectCode);
   const { data: receipts = [], isLoading: receiptsLoading } = useProjectReceipts(projectCode);
+
+  // Subcontractor contracts query
+  const { data: subcontractors = [], isLoading: subcontractorsLoading } = useQuery<Array<{
+    id: string;
+    contractNumber: string;
+    scopeOfWork: string;
+    contractAmount: string;
+    startDate: string | null;
+    completionDate: string | null;
+    status: string;
+    paymentTerms: string | null;
+    retentionPercent: string | null;
+    notes: string | null;
+    createdAt: string;
+    subcontractor: {
+      id: string;
+      companyName: string;
+      contactName: string | null;
+      email: string | null;
+      phone: string | null;
+    } | null;
+  }>>({
+    queryKey: ["/api/projects", projectCode, "subcontractors"],
+    enabled: !!projectCode,
+  });
+
+  // Data quality score query
+  const { data: dataQuality, isLoading: dataQualityLoading } = useQuery<{
+    overall_score: number;
+    has_scope: boolean;
+    has_estimates: boolean;
+    has_budget: boolean;
+    has_timeline: boolean;
+    has_daily_updates: boolean;
+    has_cost_tracking: boolean;
+    has_media: boolean;
+    has_documentation: boolean;
+    has_change_orders_managed: boolean;
+    has_billing_setup: boolean;
+  }>({
+    queryKey: ["/api/projects", projectCode, "data-quality"],
+    enabled: !!projectCode,
+  });
 
   // Media upload state
   const [showMediaDialog, setShowMediaDialog] = useState(false);
@@ -512,6 +556,7 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="plans" data-testid="tab-plans">Plans & Takeoff</TabsTrigger>
             <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
             <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
+            <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">Subcontractors</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -636,6 +681,185 @@ export default function ProjectDetailPage() {
               <CardContent>
                 <p className="text-sm text-muted-foreground">{project.description || "No description provided"}</p>
               </CardContent>
+            </Card>
+            </div>
+
+            {/* Data Quality Score Card */}
+            <Card data-testid="card-data-quality">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-4">
+                <span>Data Quality Score</span>
+                {dataQuality && (
+                  <Badge 
+                    className={
+                      dataQuality.overall_score >= 80 
+                        ? "bg-green-500 hover:bg-green-600" 
+                        : dataQuality.overall_score >= 60 
+                        ? "bg-yellow-500 hover:bg-yellow-600" 
+                        : "bg-red-500 hover:bg-red-600"
+                    }
+                    data-testid="badge-overall-score"
+                  >
+                    {dataQuality.overall_score}/100
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Track data completeness to improve AI insights and project management
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dataQualityLoading ? (
+                <div className="text-center py-4 text-muted-foreground">Loading data quality score...</div>
+              ) : !dataQuality ? (
+                <div className="text-center py-4 text-muted-foreground">Unable to load data quality score</div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Progress bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Overall Quality</span>
+                      <span className="font-medium">{dataQuality.overall_score}%</span>
+                    </div>
+                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${
+                          dataQuality.overall_score >= 80
+                            ? "bg-green-500"
+                            : dataQuality.overall_score >= 60
+                            ? "bg-yellow-500"
+                            : "bg-red-500"
+                        }`}
+                        style={{ width: `${dataQuality.overall_score}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quality dimensions */}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_scope ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Scope
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Scope
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_estimates ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Estimates
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Estimates
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_budget ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Budget
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Budget
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_timeline ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Timeline
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Timeline
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_daily_updates ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Daily Updates
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Daily Updates
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_cost_tracking ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Cost Tracking
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Cost Tracking
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_media ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Media
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Media
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_documentation ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Documentation
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Documentation
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_change_orders_managed ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Change Orders
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Change Orders
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {dataQuality.has_billing_setup ? (
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200">
+                          ✓ Billing Setup
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200">
+                          ✗ Billing Setup
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {dataQuality.overall_score < 80 && (
+                    <div className="mt-4 p-3 bg-muted rounded-md">
+                      <p className="text-sm font-medium mb-1">Improve Data Quality</p>
+                      <p className="text-xs text-muted-foreground">
+                        Complete missing sections to enhance AI insights and project tracking accuracy.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
             </Card>
           </TabsContent>
 
@@ -1219,6 +1443,106 @@ export default function ProjectDetailPage() {
                           </p>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="subcontractors">
+            <Card>
+              <CardHeader>
+                <CardTitle>Subcontractors & Contracts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {subcontractorsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading subcontractors...</div>
+                ) : subcontractors.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No subcontractor contracts yet</div>
+                ) : (
+                  <div className="space-y-4">
+                    {subcontractors.map((contract) => (
+                      <Card key={contract.id} data-testid={`subcontractor-${contract.id}`}>
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <CardTitle className="text-base">
+                                  {contract.subcontractor?.companyName || "Unknown Subcontractor"}
+                                </CardTitle>
+                                <Badge variant={
+                                  contract.status === "ACTIVE" ? "default" :
+                                  contract.status === "COMPLETED" ? "outline" :
+                                  "secondary"
+                                }>
+                                  {contract.status}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-1">
+                                Contract #{contract.contractNumber}
+                              </p>
+                              {contract.subcontractor?.contactName && (
+                                <p className="text-xs text-muted-foreground">
+                                  Contact: {contract.subcontractor.contactName}
+                                  {contract.subcontractor.phone && ` • ${contract.subcontractor.phone}`}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xl font-bold font-mono">
+                                ${parseFloat(contract.contractAmount).toLocaleString()}
+                              </p>
+                              {contract.retentionPercent && (
+                                <p className="text-xs text-muted-foreground">
+                                  {contract.retentionPercent}% retention
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div>
+                            <p className="text-sm font-medium mb-1">Scope of Work</p>
+                            <p className="text-sm text-muted-foreground">{contract.scopeOfWork}</p>
+                          </div>
+                          
+                          {(contract.startDate || contract.completionDate) && (
+                            <div className="flex items-center gap-4 text-sm">
+                              {contract.startDate && (
+                                <div>
+                                  <span className="text-muted-foreground">Start: </span>
+                                  <span className="font-medium">
+                                    {format(new Date(contract.startDate), "MMM d, yyyy")}
+                                  </span>
+                                </div>
+                              )}
+                              {contract.completionDate && (
+                                <div>
+                                  <span className="text-muted-foreground">Completion: </span>
+                                  <span className="font-medium">
+                                    {format(new Date(contract.completionDate), "MMM d, yyyy")}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {contract.paymentTerms && (
+                            <div>
+                              <p className="text-sm font-medium mb-1">Payment Terms</p>
+                              <p className="text-sm text-muted-foreground">{contract.paymentTerms}</p>
+                            </div>
+                          )}
+
+                          {contract.notes && (
+                            <div>
+                              <p className="text-sm font-medium mb-1">Notes</p>
+                              <p className="text-sm text-muted-foreground">{contract.notes}</p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 )}

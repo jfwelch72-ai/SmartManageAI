@@ -3,18 +3,30 @@ import AppHeader from "@/components/AppHeader";
 import BidCard from "@/components/BidCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function BidsPage() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [showBudgetWarning, setShowBudgetWarning] = useState(false);
+  const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
   
   const { data: bids = [], isLoading } = useBids();
   const convertBid = useConvertBidToProject();
@@ -28,6 +40,20 @@ export default function BidsPage() {
   }, [bids, searchTerm]);
 
   const handleConvertToProject = async (bidCode: string) => {
+    // Check if bid has budget data
+    const bid = bids.find(b => b.code === bidCode);
+    if (bid && (!bid.bidAmount || parseFloat(bid.bidAmount) === 0)) {
+      // Show warning dialog for missing budget
+      setPendingConversionBidCode(bidCode);
+      setShowBudgetWarning(true);
+      return;
+    }
+
+    // Proceed with conversion
+    await performConversion(bidCode);
+  };
+
+  const performConversion = async (bidCode: string) => {
     try {
       await convertBid.mutateAsync(bidCode);
       toast({
@@ -106,6 +132,50 @@ export default function BidsPage() {
           </div>
         )}
       </main>
+
+      {/* Budget Warning Dialog */}
+      <AlertDialog open={showBudgetWarning} onOpenChange={setShowBudgetWarning}>
+        <AlertDialogContent data-testid="dialog-budget-warning">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-500" />
+              Missing Budget Data
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                This bid does not have a bid amount entered. Converting to a project without budget data will:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Prevent accurate profitability tracking</li>
+                <li>Limit AI analysis capabilities</li>
+                <li>Reduce data quality score</li>
+                <li>Make financial reporting incomplete</li>
+              </ul>
+              <p className="mt-3 font-medium">
+                Are you sure you want to proceed without budget data?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-conversion">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (pendingConversionBidCode) {
+                  await performConversion(pendingConversionBidCode);
+                  setPendingConversionBidCode(null);
+                }
+                setShowBudgetWarning(false);
+              }}
+              data-testid="button-confirm-conversion"
+              className="bg-yellow-600 hover:bg-yellow-700"
+            >
+              Proceed Anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

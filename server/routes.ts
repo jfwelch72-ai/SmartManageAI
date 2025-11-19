@@ -10,7 +10,9 @@ import {
   insertProcurementItemSchema, insertPlanDocumentSchema, insertTimeEntrySchema,
   insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
   insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
-  insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema
+  insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema,
+  crews, crewMembers, skills, userSkills, equipment,
+  insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -2412,6 +2414,480 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       res.status(500).json({ error: "Failed to download object" });
+    }
+  });
+
+  // ====================
+  // Crews & Skills Routes
+  // ====================
+
+  // Get all crews
+  app.get("/api/crews", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const allCrews = await db
+        .select({
+          crew: crews,
+          lead: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+          }
+        })
+        .from(crews)
+        .leftJoin(users, eq(crews.leadId, users.id))
+        .orderBy(desc(crews.isActive), crews.name);
+
+      // Get member counts for each crew
+      const crewsWithCounts = await Promise.all(
+        allCrews.map(async ({ crew, lead }) => {
+          const [memberCount] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(crewMembers)
+            .where(eq(crewMembers.crewId, crew.id));
+          
+          return {
+            ...crew,
+            lead: lead.id ? lead : null,
+            memberCount: Number(memberCount?.count || 0),
+          };
+        })
+      );
+
+      res.json(crewsWithCounts);
+    } catch (error) {
+      console.error("Error fetching crews:", error);
+      res.status(500).json({ error: "Failed to fetch crews" });
+    }
+  });
+
+  // Create new crew (admin only)
+  app.post("/api/crews", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertCrewSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newCrew] = await db.insert(crews).values(validationResult.data).returning();
+      
+      await logCreate(req.user!.id, "crews", newCrew.id, {
+        name: newCrew.name,
+        leadId: newCrew.leadId,
+      });
+
+      res.status(201).json(newCrew);
+    } catch (error) {
+      console.error("Error creating crew:", error);
+      res.status(500).json({ error: "Failed to create crew" });
+    }
+  });
+
+  // Update crew (admin only)
+  app.patch("/api/crews/:id", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = insertCrewSchema.partial().safeParse(req.body);
+
+      if (!updateData.success) {
+        res.status(400).json({ error: "Invalid input", details: updateData.error.errors });
+        return;
+      }
+
+      const [updated] = await db
+        .update(crews)
+        .set({ ...updateData.data, updatedAt: new Date() })
+        .where(eq(crews.id, id))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Crew not found" });
+        return;
+      }
+
+      await logUpdate(req.user!.id, "crews", id, updateData.data);
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating crew:", error);
+      res.status(500).json({ error: "Failed to update crew" });
+    }
+  });
+
+  // Delete crew (admin only)
+  app.delete("/api/crews/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const [deleted] = await db.delete(crews).where(eq(crews.id, id)).returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Crew not found" });
+        return;
+      }
+
+      await logDelete(req.user!.id, "crews", id, { name: deleted.name });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting crew:", error);
+      res.status(500).json({ error: "Failed to delete crew" });
+    }
+  });
+
+  // Get crew members
+  app.get("/api/crews/:id/members", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const members = await db
+        .select({
+          crewMember: crewMembers,
+          user: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            role: users.role,
+            costRateRegular: users.costRateRegular,
+            costRateOvertime: users.costRateOvertime,
+          }
+        })
+        .from(crewMembers)
+        .innerJoin(users, eq(crewMembers.userId, users.id))
+        .where(eq(crewMembers.crewId, id))
+        .orderBy(crewMembers.addedAt);
+
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching crew members:", error);
+      res.status(500).json({ error: "Failed to fetch crew members" });
+    }
+  });
+
+  // Add member to crew (admin only)
+  app.post("/api/crews/:id/members", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { userId, role } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ error: "userId is required" });
+        return;
+      }
+
+      // Check if member already exists
+      const [existing] = await db
+        .select()
+        .from(crewMembers)
+        .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
+        .limit(1);
+
+      if (existing) {
+        res.status(400).json({ error: "User is already a member of this crew" });
+        return;
+      }
+
+      const [newMember] = await db
+        .insert(crewMembers)
+        .values({ crewId: id, userId, role })
+        .returning();
+
+      await logCreate(req.user!.id, "crew_members", newMember.id, {
+        crewId: id,
+        userId,
+        role,
+      });
+
+      res.status(201).json(newMember);
+    } catch (error) {
+      console.error("Error adding crew member:", error);
+      res.status(500).json({ error: "Failed to add crew member" });
+    }
+  });
+
+  // Remove member from crew (admin only)
+  app.delete("/api/crews/:id/members/:userId", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const { id, userId } = req.params;
+
+      const [deleted] = await db
+        .delete(crewMembers)
+        .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Crew member not found" });
+        return;
+      }
+
+      await logDelete(req.user!.id, "crew_members", deleted.id, {
+        crewId: id,
+        userId,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing crew member:", error);
+      res.status(500).json({ error: "Failed to remove crew member" });
+    }
+  });
+
+  // Get all skills
+  app.get("/api/skills", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const allSkills = await db.select().from(skills).orderBy(skills.category, skills.name);
+      res.json(allSkills);
+    } catch (error) {
+      console.error("Error fetching skills:", error);
+      res.status(500).json({ error: "Failed to fetch skills" });
+    }
+  });
+
+  // Create new skill (admin only)
+  app.post("/api/skills", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertSkillSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newSkill] = await db.insert(skills).values(validationResult.data).returning();
+      
+      await logCreate(req.user!.id, "skills", newSkill.id, {
+        name: newSkill.name,
+        category: newSkill.category,
+      });
+
+      res.status(201).json(newSkill);
+    } catch (error: any) {
+      console.error("Error creating skill:", error);
+      if (error.constraint === "skills_name_unique") {
+        res.status(400).json({ error: "A skill with this name already exists" });
+        return;
+      }
+      res.status(500).json({ error: "Failed to create skill" });
+    }
+  });
+
+  // Delete skill (admin only)
+  app.delete("/api/skills/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+
+      const [deleted] = await db.delete(skills).where(eq(skills.id, id)).returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Skill not found" });
+        return;
+      }
+
+      await logDelete(req.user!.id, "skills", id, { name: deleted.name });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting skill:", error);
+      res.status(500).json({ error: "Failed to delete skill" });
+    }
+  });
+
+  // Get user skills
+  app.get("/api/users/:userId/skills", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { userId } = req.params;
+
+      const userSkillsList = await db
+        .select({
+          userSkill: userSkills,
+          skill: skills,
+        })
+        .from(userSkills)
+        .innerJoin(skills, eq(userSkills.skillId, skills.id))
+        .where(eq(userSkills.userId, userId))
+        .orderBy(skills.category, skills.name);
+
+      res.json(userSkillsList);
+    } catch (error) {
+      console.error("Error fetching user skills:", error);
+      res.status(500).json({ error: "Failed to fetch user skills" });
+    }
+  });
+
+  // Assign skill to user (admin only)
+  app.post("/api/users/:userId/skills", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const { userId } = req.params;
+      const { skillId, proficiencyLevel, yearsExperience } = req.body;
+
+      if (!skillId) {
+        res.status(400).json({ error: "skillId is required" });
+        return;
+      }
+
+      // Check if user already has this skill
+      const [existing] = await db
+        .select()
+        .from(userSkills)
+        .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)))
+        .limit(1);
+
+      if (existing) {
+        res.status(400).json({ error: "User already has this skill" });
+        return;
+      }
+
+      const [newUserSkill] = await db
+        .insert(userSkills)
+        .values({ userId, skillId, proficiencyLevel, yearsExperience })
+        .returning();
+
+      await logCreate(req.user!.id, "user_skills", newUserSkill.id, {
+        userId,
+        skillId,
+        proficiencyLevel,
+      });
+
+      res.status(201).json(newUserSkill);
+    } catch (error) {
+      console.error("Error assigning skill:", error);
+      res.status(500).json({ error: "Failed to assign skill" });
+    }
+  });
+
+  // Remove skill from user (admin only)
+  app.delete("/api/users/:userId/skills/:skillId", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+    try {
+      const { userId, skillId } = req.params;
+
+      const [deleted] = await db
+        .delete(userSkills)
+        .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "User skill not found" });
+        return;
+      }
+
+      await logDelete(req.user!.id, "user_skills", deleted.id, {
+        userId,
+        skillId,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing skill:", error);
+      res.status(500).json({ error: "Failed to remove skill" });
+    }
+  });
+
+  // ====================
+  // Subcontractor Routes
+  // ====================
+
+  // Get subcontractor contracts for a project
+  app.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { code } = req.params;
+
+      // Get project
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, code))
+        .limit(1);
+
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Get contracts with subcontractor details
+      const contracts = await db
+        .select({
+          id: subcontractorContracts.id,
+          contractNumber: subcontractorContracts.contractNumber,
+          scopeOfWork: subcontractorContracts.scopeOfWork,
+          contractAmount: subcontractorContracts.contractAmount,
+          startDate: subcontractorContracts.startDate,
+          completionDate: subcontractorContracts.completionDate,
+          status: subcontractorContracts.status,
+          paymentTerms: subcontractorContracts.paymentTerms,
+          retentionPercent: subcontractorContracts.retentionPercent,
+          notes: subcontractorContracts.notes,
+          createdAt: subcontractorContracts.createdAt,
+          subcontractor: {
+            id: subcontractors.id,
+            companyName: subcontractors.companyName,
+            contactName: subcontractors.contactName,
+            email: subcontractors.email,
+            phone: subcontractors.phone,
+          },
+        })
+        .from(subcontractorContracts)
+        .leftJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+        .where(eq(subcontractorContracts.projectId, project.id))
+        .orderBy(desc(subcontractorContracts.createdAt));
+
+      res.json(contracts);
+    } catch (error) {
+      console.error("Error fetching subcontractor contracts:", error);
+      res.status(500).json({ error: "Failed to fetch subcontractor contracts" });
+    }
+  });
+
+  // Get payments for a contract
+  app.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { contractId } = req.params;
+
+      const payments = await db
+        .select()
+        .from(subcontractorPayments)
+        .where(eq(subcontractorPayments.contractId, contractId))
+        .orderBy(subcontractorPayments.paymentNumber);
+
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+      res.status(500).json({ error: "Failed to fetch payments" });
+    }
+  });
+
+  // ====================
+  // Data Quality Routes
+  // ====================
+
+  // Get data quality score for a project
+  app.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { code } = req.params;
+
+      // Get project
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, code))
+        .limit(1);
+
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Import the data quality scorer
+      const { calculateProjectDataQuality } = await import("./ai/dataQualityScorer");
+
+      // Calculate data quality score
+      const qualityScore = await calculateProjectDataQuality(project.id);
+
+      res.json(qualityScore);
+    } catch (error) {
+      console.error("Error fetching data quality score:", error);
+      res.status(500).json({ error: "Failed to fetch data quality score" });
     }
   });
 

@@ -21,8 +21,10 @@ import TimeClockManagerPage from "@/pages/time-clock-manager";
 import AIPMDashboard from "@/pages/ai-pm-dashboard";
 import CFODashboard from "@/pages/cfo-dashboard";
 import AISettingsPage from "@/pages/ai-settings";
+import CrewsPage from "@/pages/crews";
+import CostRatesPage from "@/pages/cost-rates";
 
-function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
+function ProtectedRoute({ component: Component }: { component: () => JSX.Element | null }) {
   const { user, isLoading } = useAuth();
   const [location] = useLocation();
 
@@ -61,6 +63,8 @@ function Router() {
       <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} />} />
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} />} />
       <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} />} />
+      <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} />} />
+      <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} />} />
       <Route component={NotFound} />
     </Switch>
   );
