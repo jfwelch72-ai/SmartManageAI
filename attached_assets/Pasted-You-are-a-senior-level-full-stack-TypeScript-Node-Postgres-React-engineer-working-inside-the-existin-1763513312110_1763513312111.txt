@@ -1,0 +1,229 @@
+You are a senior-level full-stack TypeScript/Node/Postgres/React engineer working inside the existing TFR Construction Platform repository. Do not create a new project. Your task is to add a fully integrated “AI Senior Project Manager + CFO + Daily Role-Based Operating System” feature that analyzes awarded projects, schedules, material needs and lead times, employee time and utilization, bid board, Textura draw/billing schedules, crew scheduling, profitability, and calendar events, then automatically generates structured tasks, alerts, reminders, schedules, and real-time CFO profitability reporting. Implement everything directly in this codebase and reuse existing patterns, auth, DB access, and OpenAI client utilities. Maintain all previously defined requirements and add all additional functionality described below.
+
+First, scan the repository for existing data models and APIs related to: projects and their statuses/schedules/SOV/change orders; time entries and/or time-clock shifts; materials/products and vendors with lead times; bid board or opportunities; Textura or billing/draw schedule fields stored on awarded jobs; receipts/POs/material costs; user roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE); labor cost or cost-rates per employee; and existing reporting/CFO layers. Integrate with current schema; only create new tables where required.
+
+Preserve all previous prompt requirements and extend them with the following enhancements.
+
+────────────────────────────────────────  
+### ADD A FULL SYSTEM PROMPT FOR THE AI ENGINE  
+────────────────────────────────────────  
+
+Inside the AI PM/CFO OpenAI integration module, create the following SYSTEM PROMPT verbatim and use it for every OpenAI call. Store it as a constant (e.g., `AI_PM_SYSTEM_PROMPT`):
+
+“”“
+You are the AI Senior Project Manager, Scheduler, Estimator, Superintendent Advisor, Office Manager Assistant, and CFO for TFR Construction.
+
+Your responsibility is to:
+- Oversee all projects with precision and professional construction-management discipline.
+- Identify risks early across scheduling, manpower, materials, safety, inspections, billing/budgeting, and client communication.
+- Generate actionable, high-quality tasks and recommendations for each TFR role.
+- Understand concrete construction phases, sequencing, and constraints.
+- Understand subcontractor coordination, supply chain risk, and vendor lead times.
+- Understand public GC billing systems such as Textura and generate billing reminders based on draw schedules.
+- Calculate project profitability including labor, materials, equipment, overhead, and change orders.
+- Produce CFO-level insights on GP/Margin, cost overruns, underbilling, and forecasted final outcomes.
+- Generate daily operating tasks for every role: ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, and HOURLY_EMPLOYEE.
+- Suggest manpower allocation, crew planning, pour prep recommendations, inspection preparation, and material order requirements.
+- Generate bid reminders and pre-bid tasks.
+- Follow strict sequencing: analyze → detect risks → prioritize → create tasks → provide rationale.
+
+Everything MUST be grounded in the provided data snapshot. Invent nothing that conflicts with known information. Never exaggerate or hallucinate quantities. If information is missing, state the uncertainty and give the safest possible recommendation.
+
+All output MUST be in the exact JSON structure provided, with strict schema compliance. All tasks must be immediately actionable, clearly prioritized, concise, and professional — written as if you are a senior-level construction PM writing instruction for your team.
+”“”
+
+────────────────────────────────────────  
+### AI OUTPUT MUST INCLUDE THE FULL EXTENDED JSON STRUCTURE  
+────────────────────────────────────────  
+
+The STRICT JSON output schema must include:
+
+- tasks[]
+- alerts[]
+- materialActions[]
+- scheduleAdjustments[]
+- billingReminders[]
+- profitabilityInsights[]
+- roleTasks{ADMIN,MANAGER,SUPERINTENDENT,ESTIMATOR,OFFICE_MANAGER,HOURLY_EMPLOYEE}
+- crewSchedulingRecommendations[]
+- bidReminders[]
+
+Each array or object must follow the full schema previously defined, including projectId, projectCode, dueDate, priority, rationale, and severity indicators.
+
+────────────────────────────────────────  
+### ROLE-BASED DAILY OPERATING SYSTEM (AUTO-GENERATED DAILY TASKS)  
+────────────────────────────────────────  
+
+The AI engine must automatically generate role-specific tasks for each TFR role, using the system prompt above to determine what each person needs to do every day based on actual project conditions.
+
+Examples of tasks that MUST be generated automatically:
+
+#### ADMIN / CEO
+- Profitability alerts  
+- Underbilling risks  
+- Company-wide schedule concerns  
+- High-risk projects  
+- Financial exposure summaries  
+- Staffing utilization issues  
+
+#### PROJECT MANAGER / MANAGER
+- Change order follow-up  
+- Submittals needed  
+- Coordination task reminders  
+- Critical path risk flags  
+- Concrete pour scheduling  
+- Vendor follow-up reminders  
+
+#### SUPERINTENDENT
+- Daily crew scheduling plan  
+- Equipment needs  
+- Material order deadlines  
+- Pre-pour tasks  
+- Safety reminders  
+- Inspection prep  
+- Jobsite logistics actions  
+
+#### ESTIMATOR
+- Bid due reminders  
+- Vendor quote follow-ups  
+- Pre-bid meetings  
+- Cost-code updates  
+- Turnover tasks for newly awarded jobs  
+
+#### OFFICE MANAGER
+- Textura billing preparation  
+- Invoices due  
+- Material receipts to reconcile  
+- Payroll/time-entry verification  
+- Compliance documentation  
+
+#### HOURLY_EMPLOYEE
+- Missing clock-outs  
+- Certification/training reminders  
+
+These must be stored in roleTasks and persisted to the tasks table with source="AI_PM".
+
+────────────────────────────────────────  
+### CREW SCHEDULING AI ENGINE  
+────────────────────────────────────────  
+
+Add a full crew-scheduling subsystem that:
+- Analyzes upcoming tasks, pours, excavation, forming, demo, sawcutting, rebar, and finishing needs.  
+- Evaluates manpower availability based on time-clock data.  
+- Recommends daily/weekly crew allocations per project.  
+- Flags over-allocation or under-allocation.  
+
+Store recommendations in crewSchedulingRecommendations[] and expose them on dashboards.
+
+────────────────────────────────────────  
+### MATERIAL ORDERING AUTOMATION  
+────────────────────────────────────────  
+
+AI must determine:
+- Required on-site dates  
+- Vendor lead times  
+- Order-by deadlines  
+- Overdue materials  
+- High-risk supply chain issues  
+
+Material ordering tasks must be assigned primarily to SUPERINTENDENT, OFFICE_MANAGER, and MANAGER.
+
+────────────────────────────────────────  
+### BID BOARD AUTOMATION  
+────────────────────────────────────────  
+
+AI must automatically:
+- Identify bid due dates  
+- Generate tasks and alerts for ESTIMATOR  
+- Track pre-bid meetings  
+- Generate follow-up tasks  
+- Create RFI reminders  
+
+────────────────────────────────────────  
+### BILLING + TEXTURA SCHEDULE AUTOMATION  
+────────────────────────────────────────  
+
+AI must:
+- Parse upcoming draw dates  
+- Identify overdue or upcoming draws  
+- Detect ready-to-bill SOV items  
+- Identify underbilling risks  
+- Generate tasks for OFFICE_MANAGER and PROJECT MANAGER  
+
+────────────────────────────────────────  
+### PROFITABILITY ENGINE (CFO-LEVEL)  
+────────────────────────────────────────  
+
+AI must compute or verify:
+- Contract value  
+- Change orders  
+- Billed to date  
+- Cost to date  
+- Gross profit  
+- Margin %  
+- Projected final margin  
+- Overrun conditions  
+- Underbill conditions  
+- Profitability ranking  
+- Corrective actions  
+
+Expose these via:
+- /api/cfo/project-profitability  
+- /api/cfo/company-profitability-summary  
+
+────────────────────────────────────────  
+### ADMIN CONTROLS  
+────────────────────────────────────────  
+
+Create ai_settings table that allows ADMIN to enable/disable:
+- daily AI runs  
+- role task generation  
+- billing alerts  
+- profitability warnings  
+- crew scheduling  
+- bid reminders  
+- material ordering automation  
+
+────────────────────────────────────────  
+### DAILY AUTOMATIC EXECUTION  
+────────────────────────────────────────  
+
+Implement:
+- Cron-based automatic run every morning OR  
+- In-process “once per day” scheduler fallback  
+
+────────────────────────────────────────  
+### FULL FRONTEND IMPLEMENTATION  
+────────────────────────────────────────  
+
+Add a new “AI PM / CFO / Daily Ops” module including:
+- Daily role task board  
+- Billing reminders  
+- Bid board alerts  
+- Profitability dashboard  
+- Crew scheduling panel  
+- Material ordering reminders  
+- Project-level AI view  
+
+────────────────────────────────────────  
+### CHAT INTERFACE (AI PM + CFO)  
+────────────────────────────────────────  
+
+Add POST /api/ai-pm/chat where users can ask role-specific operational questions.
+
+────────────────────────────────────────  
+### FINAL VALIDATION  
+────────────────────────────────────────  
+
+Ensure:
+- pnpm build passes  
+- tsc --noEmit passes  
+- all migrations run  
+- backend boots  
+- frontend loads  
+- AI runs generate valid JSON  
+- All dashboards operate correctly  
+
+Produce AI_PM_CFO_ROLE_OS.md describing the architecture.
+
+Perform all of the above directly in this repo. Do not stub. Implement fully working backend + frontend using the existing TFR stack.
