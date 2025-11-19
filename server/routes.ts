@@ -580,11 +580,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { insertProjectSchema, scopeItems, insertScopeItemSchema } = await import("@shared/schema");
   const { desc, inArray, sql } = await import("drizzle-orm");
 
-  // Get all projects
+  // Get all projects with pagination
   app.get("/api/projects", requireAuth, async (req: AuthRequest, res) => {
     try {
-      // Get all projects
-      const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+      const { page = "1", limit = "50", status } = req.query;
+      
+      // Validate and sanitize pagination parameters
+      const parsedPage = Number(page);
+      const parsedLimit = Number(limit);
+
+      let pageNum = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      let limitNum = Number.isInteger(parsedLimit) && parsedLimit >= 1 ? parsedLimit : 50;
+      
+      if (limitNum > 1000) {
+        limitNum = 1000; // Max limit to prevent abuse
+      }
+
+      const offset = (pageNum - 1) * limitNum;
+
+      // Build query with optional status filter
+      let query = db.select().from(projects);
+      if (status) {
+        query = query.where(eq(projects.status, status as any)) as any;
+      }
+
+      // Get total count
+      const totalResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(status ? eq(projects.status, status as any) : sql`true`);
+      const totalCount = totalResult[0]?.count || 0;
+
+      // Get paginated projects
+      const allProjects = await query
+        .orderBy(desc(projects.createdAt))
+        .limit(limitNum)
+        .offset(offset);
       
       // Get all unique user IDs
       const userIds = new Set<string>();
@@ -607,7 +638,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         superintendent: project.superintendentId ? userMap.get(project.superintendentId) || undefined : undefined,
       }));
         
-      res.json(projectsWithNames);
+      res.json({
+        data: projectsWithNames,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limitNum),
+        },
+      });
     } catch (error) {
       console.error("Get projects error:", error);
       res.status(500).json({ error: "Failed to fetch projects" });
@@ -1015,24 +1054,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { timeEntries, insertTimeEntrySchema, tmDailySheets, insertTMDailySheetSchema } = await import("@shared/schema");
 
-  // Get time entries (filtered by role)
+  // Get time entries with pagination (filtered by role)
   app.get("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
     try {
-      let entries;
+      const { page = "1", limit = "50", status, userId, projectId } = req.query;
+      
+      // Validate and sanitize pagination parameters
+      const parsedPage = Number(page);
+      const parsedLimit = Number(limit);
+
+      let pageNum = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+      let limitNum = Number.isInteger(parsedLimit) && parsedLimit >= 1 ? parsedLimit : 50;
+      
+      if (limitNum > 1000) {
+        limitNum = 1000; // Max limit to prevent abuse
+      }
+
+      const offset = (pageNum - 1) * limitNum;
+
+      // Build base query conditions
+      const conditions = [];
       
       if (req.user!.role === "HOURLY_EMPLOYEE") {
         // Hourly employees only see their own entries
-        entries = await db
-          .select()
-          .from(timeEntries)
-          .where(eq(timeEntries.userId, req.user!.id))
-          .orderBy(desc(timeEntries.date));
-      } else {
-        // Managers and admins see all entries
-        entries = await db.select().from(timeEntries).orderBy(desc(timeEntries.date));
+        conditions.push(eq(timeEntries.userId, req.user!.id));
+      } else if (userId) {
+        // Managers/admins can filter by userId
+        conditions.push(eq(timeEntries.userId, userId as string));
       }
 
-      res.json(entries);
+      if (status) {
+        conditions.push(eq(timeEntries.status, status as any));
+      }
+
+      if (projectId) {
+        conditions.push(eq(timeEntries.projectId, projectId as string));
+      }
+
+      // Get total count
+      const totalResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(timeEntries)
+        .where(conditions.length > 0 ? and(...conditions) : sql`true`);
+      const totalCount = totalResult[0]?.count || 0;
+
+      // Get paginated entries
+      let query = db.select().from(timeEntries);
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions)) as any;
+      }
+
+      const entries = await query
+        .orderBy(desc(timeEntries.date))
+        .limit(limitNum)
+        .offset(offset);
+
+      res.json({
+        data: entries,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limitNum),
+        },
+      });
     } catch (error) {
       console.error("Get time entries error:", error);
       res.status(500).json({ error: "Failed to fetch time entries" });
