@@ -9,6 +9,7 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 ## System Architecture
 The platform is built with a modern web stack:
 - **Frontend**: React with TypeScript, utilizing Wouter for routing, TanStack Query for data fetching, and styled with Tailwind CSS alongside shadcn/ui components for a consistent and responsive user interface.
+  - **TanStack Query Conventions**: All query keys use hierarchical array format for proper cache invalidation. Simple endpoints use `["/api/endpoint"]`, hierarchical keys use separate segments like `["/api/projects", code, "scope"]`. Never use template literals in query keys. All mutations invalidate related cache segments using `queryClient.invalidateQueries()`.
 - **Backend**: An Express.js server written in TypeScript with comprehensive security middleware including CORS (localhost:5173), rate limiting (auth/sensitive/API), and JWT token versioning for session revocation.
 - **Database**: PostgreSQL, hosted on Neon, managed with Drizzle ORM. 19 tables including audit_log, billing_events, time_clock_shifts, and time_clock_events for complete compliance tracking.
 - **Authentication**: JWT-based authentication using httpOnly cookies with bcrypt password hashing. Token versioning enables "logout all devices" functionality. All passwords require 8+ characters.
@@ -52,3 +53,7 @@ The platform is built with a modern web stack:
 - **File Validation**: MIME type whitelisting and size limits enforced for all uploads (100MB media, 50MB documents, 10MB receipts).
 - **Backend Modules**: Created rateLimiter.ts, auditLogger.ts, fileValidation.ts, timeClockRoutes.ts, and migrations/ directory for organized, maintainable code.
 - **Password Security**: Minimum password length increased from 6 to 8 characters for registration and password changes.
+- **Change-Order State Machine (NEW)**: Enforces strict DRAFT→PENDING_APPROVAL→SUBMITTED→APPROVED/REJECTED workflow with proper transition validation, audit logging, and bypass prevention. All transitions validated server-side with role-based permissions.
+- **API Pagination (NEW)**: Added pagination to high-volume endpoints (/api/projects, /api/time-entries) with strict parameter validation using Number() + Number.isInteger() to prevent NaN/negative/oversized values. Defaults to page=1, limit=50, max 1000 per page.
+- **Database Indexes (NEW)**: Added 13 performance indexes across 5 high-volume tables (projects, timeEntries, changeOrders, auditLog, timeClockShifts) targeting status filters, foreign keys, and date-range queries. Eliminated redundant indexes on unique constraint columns.
+- **TanStack Query Standards**: Validated and documented hierarchical array-based query key conventions across all 60+ frontend queries. All keys follow `["/api/endpoint", variable]` pattern with no template literals for proper cache invalidation.
