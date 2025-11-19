@@ -3,6 +3,26 @@
 ## Overview
 The TFR Construction Management Platform is a comprehensive internal tool designed for TFR Construction. Its primary purpose is to manage the entire project lifecycle, from bid tracking through project completion, using TypeScript, React, and PostgreSQL. The platform aims to centralize project data, user management, and daily operations to enhance efficiency and oversight across all construction activities. Key ambitions include improving compliance tracking, leveraging AI for operations, streamlining crew and subcontractor management, and ensuring robust data quality monitoring.
 
+## Recent Changes (November 19, 2025)
+### Backend Targeted Upgrades (Completed)
+1. **Data Quality Route Fix**: Corrected bug where `calculateProjectDataQuality` received `project.id` instead of project `code`
+2. **Textura Draw Date Tracking**: Added `texturaDrawDate` field to projects schema for billing deadline management
+3. **Financials API Enhancement**: Updated PATCH endpoint to accept and persist `texturaDrawDate`
+4. **AI Billing Urgency System**: Enhanced profitability engine with billing urgency calculations (CRITICAL ≤3 days, HIGH ≤7 days from draw date) and `daysUntilDraw` field
+5. **AI Task Generation**: Updated system prompt to generate OFFICE_MANAGER tasks for upcoming draw dates with proper priority levels
+6. **Subcontractor Payables API**: Enhanced to aggregate and return remaining balance (contract amount - total paid)
+7. **Profitability Accuracy**: Modified to use only PAID subcontractor amounts (excluding SCHEDULED/PENDING/APPROVED) for actual cost tracking
+8. **OpenAI Validation**: Added fail-fast API key validation to prevent silent failures
+9. **Rate Limiting**: Applied rate limiting to manual AI run endpoint for security
+10. **Schema Migration**: Successfully pushed all schema changes to production database
+
+### Frontend Enhancements (Pending)
+- Textura draw date editor on project detail page
+- Draw date alerts on CFO dashboard
+- Subcontractor payables UI with remaining balance display
+- Enhanced project detail subcontractor section
+- AI PM dashboard billing tasks display
+
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
 

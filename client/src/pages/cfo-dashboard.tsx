@@ -20,6 +20,9 @@ interface ProjectProfitability {
   status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
   projected_completion_cost: number;
   estimated_margin: number;
+  texturaDrawDate: string | null;
+  billingUrgency: 'CRITICAL' | 'HIGH' | null;
+  daysUntilDraw: number | null;
   key_metrics: {
     labor_hours: number;
     labor_efficiency: string;
@@ -65,6 +68,16 @@ export default function CFODashboard() {
   const projectsMissingBudget = profitability?.filter(p => {
     const budgetNum = Number(p.adjusted_budget);
     return p.adjusted_budget == null || isNaN(budgetNum) || budgetNum <= 0;
+  }) || [];
+
+  // Identify projects with upcoming Textura draw dates
+  const projectsWithDrawDateAlerts = profitability?.filter(p => 
+    p.billingUrgency === 'CRITICAL' || p.billingUrgency === 'HIGH'
+  ).sort((a, b) => {
+    // Sort CRITICAL first, then by days until draw
+    if (a.billingUrgency === 'CRITICAL' && b.billingUrgency !== 'CRITICAL') return -1;
+    if (a.billingUrgency !== 'CRITICAL' && b.billingUrgency === 'CRITICAL') return 1;
+    return (a.daysUntilDraw || 999) - (b.daysUntilDraw || 999);
   }) || [];
 
   const getStatusBadge = (status: string) => {
@@ -166,6 +179,60 @@ export default function CFODashboard() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Textura Draw Date Alerts */}
+          {projectsWithDrawDateAlerts.length > 0 && (
+            <Card className="border-red-500 bg-red-50 dark:bg-red-950/20" data-testid="card-draw-date-alerts">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-500" />
+                  {projectsWithDrawDateAlerts.length} Project{projectsWithDrawDateAlerts.length !== 1 ? 's' : ''} with Upcoming Textura Draw Date{projectsWithDrawDateAlerts.length !== 1 ? 's' : ''}
+                </CardTitle>
+                <CardDescription>
+                  These projects have Textura billing deadlines approaching. Ensure billing packages are prepared and submitted on time.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {projectsWithDrawDateAlerts.map(project => (
+                    <div 
+                      key={project.project_code}
+                      className={`flex items-center justify-between p-3 bg-background rounded-md ${
+                        project.billingUrgency === 'CRITICAL' ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-yellow-500'
+                      }`}
+                      data-testid={`draw-date-alert-${project.project_code}`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{project.project_code}</span>
+                          <span className="text-sm text-muted-foreground">- {project.project_name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Draw Date: {project.texturaDrawDate ? new Date(project.texturaDrawDate).toLocaleDateString() : 'N/A'} 
+                          {project.daysUntilDraw !== null && (
+                            <span className="ml-2">
+                              ({project.daysUntilDraw} day{project.daysUntilDraw !== 1 ? 's' : ''} remaining)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      {project.billingUrgency === 'CRITICAL' ? (
+                        <Badge variant="destructive" data-testid={`badge-urgency-${project.project_code}`}>
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          CRITICAL
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-500 hover:bg-yellow-600" data-testid={`badge-urgency-${project.project_code}`}>
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          HIGH
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Projects Missing Budget Data Warning */}
           {projectsMissingBudget.length > 0 && (

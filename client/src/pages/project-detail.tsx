@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -277,6 +277,43 @@ export default function ProjectDetailPage() {
     enabled: !!projectCode,
   });
 
+  // Subcontractor payables query (for payment tracking on this project)
+  const { data: allPayables = [] } = useQuery<Array<{
+    paymentId: string;
+    amount: string;
+    status: string;
+    remainingBalance: string;
+    contract: {
+      id: string;
+      contractAmount: string;
+    };
+    project: {
+      code: string;
+    };
+  }>>({
+    queryKey: ["/api/subcontractor-payables"],
+    enabled: !!projectCode,
+  });
+
+  // Filter payables for this project and aggregate by contract
+  const payablesByContract = useMemo(() => {
+    const filtered = allPayables.filter(p => p.project.code === projectCode);
+    const grouped = new Map<string, { totalPaid: number; remainingBalance: number }>();
+    
+    filtered.forEach(payable => {
+      const contractId = payable.contract.id;
+      if (!grouped.has(contractId)) {
+        grouped.set(contractId, { totalPaid: 0, remainingBalance: parseFloat(payable.remainingBalance) });
+      }
+      const current = grouped.get(contractId)!;
+      if (payable.status === 'PAID') {
+        current.totalPaid += parseFloat(payable.amount);
+      }
+    });
+    
+    return grouped;
+  }, [allPayables, projectCode]);
+
   // Data quality score query
   const { data: dataQuality, isLoading: dataQualityLoading } = useQuery<{
     overall_score: number;
@@ -319,6 +356,7 @@ export default function ProjectDetailPage() {
   const [showBudgetEditDialog, setShowBudgetEditDialog] = useState(false);
   const [editBudget, setEditBudget] = useState("");
   const [editContractAmount, setEditContractAmount] = useState("");
+  const [editTexturaDrawDate, setEditTexturaDrawDate] = useState("");
 
   // Upload handlers
   const handleMediaUploadComplete = async (result: any) => {
@@ -399,10 +437,16 @@ export default function ProjectDetailPage() {
     }
 
     try {
-      await apiRequest("PATCH", `/api/projects/${projectCode}/financials`, {
+      const payload: any = {
         budget: editBudget,
         contractAmount: editContractAmount,
-      });
+      };
+      
+      if (editTexturaDrawDate) {
+        payload.texturaDrawDate = editTexturaDrawDate;
+      }
+
+      await apiRequest("PATCH", `/api/projects/${projectCode}/financials`, payload);
       
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
       toast({ title: "Success", description: "Financial data updated" });
@@ -637,6 +681,7 @@ export default function ProjectDetailPage() {
                     onClick={() => {
                       setEditBudget(project.budget || "0");
                       setEditContractAmount(project.contractAmount || "0");
+                      setEditTexturaDrawDate(project.texturaDrawDate || "");
                       setShowBudgetEditDialog(true);
                     }}
                     data-testid="button-edit-financials"
@@ -1497,6 +1542,16 @@ export default function ProjectDetailPage() {
                                   {contract.retentionPercent}% retention
                                 </p>
                               )}
+                              {payablesByContract.has(contract.id) && (
+                                <div className="mt-2 text-sm">
+                                  <p className="text-green-600 dark:text-green-500">
+                                    Paid: ${payablesByContract.get(contract.id)!.totalPaid.toLocaleString()}
+                                  </p>
+                                  <p className={`${payablesByContract.get(contract.id)!.remainingBalance > 0 ? 'text-yellow-600 dark:text-yellow-500' : 'text-muted-foreground'}`}>
+                                    Balance: ${payablesByContract.get(contract.id)!.remainingBalance.toLocaleString()}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </CardHeader>
@@ -1582,6 +1637,17 @@ export default function ProjectDetailPage() {
                   onChange={(e) => setEditContractAmount(e.target.value)}
                   placeholder="0.00"
                   data-testid="input-edit-contract"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-textura-draw-date">Textura Draw Date</Label>
+                <Input
+                  id="edit-textura-draw-date"
+                  type="date"
+                  value={editTexturaDrawDate}
+                  onChange={(e) => setEditTexturaDrawDate(e.target.value)}
+                  placeholder="YYYY-MM-DD"
+                  data-testid="input-edit-textura-draw-date"
                 />
               </div>
             </div>

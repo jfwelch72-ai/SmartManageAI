@@ -61,6 +61,23 @@ export default function AIPMDashboard() {
   const inProgressTasks = tasks?.filter(t => t.status === "IN_PROGRESS") || [];
   const completedTasks = tasks?.filter(t => t.status === "COMPLETED") || [];
 
+  // Filter billing-related tasks (Textura draw dates, OFFICE_MANAGER tasks, etc.)
+  const billingTasks = tasks?.filter(t => 
+    t.status !== "DISMISSED" && 
+    t.status !== "COMPLETED" && 
+    (t.role === "OFFICE_MANAGER" || 
+     t.title.toLowerCase().includes("textura") || 
+     t.title.toLowerCase().includes("billing") ||
+     t.title.toLowerCase().includes("draw") ||
+     t.description?.toLowerCase().includes("textura") ||
+     t.description?.toLowerCase().includes("billing"))
+  ).sort((a, b) => {
+    // Sort CRITICAL first, then by due date
+    if (a.priority === "CRITICAL" && b.priority !== "CRITICAL") return -1;
+    if (a.priority !== "CRITICAL" && b.priority === "CRITICAL") return 1;
+    return 0;
+  }) || [];
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "CRITICAL": return "destructive";
@@ -162,6 +179,76 @@ export default function AIPMDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Billing & Draw Date Tasks Alert */}
+      {billingTasks.length > 0 && (
+        <Card className="border-red-500 bg-red-50 dark:bg-red-950/20" data-testid="card-billing-tasks-alert">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-500" />
+              {billingTasks.length} Urgent Billing Task{billingTasks.length !== 1 ? 's' : ''}
+            </CardTitle>
+            <CardDescription>
+              Critical billing and Textura draw date tasks requiring immediate attention
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {billingTasks.map(task => (
+                <div 
+                  key={task.id}
+                  className={`flex items-center justify-between p-3 bg-background rounded-md ${
+                    task.priority === 'CRITICAL' ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-yellow-500'
+                  }`}
+                  data-testid={`billing-task-${task.id}`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{task.title}</span>
+                      {task.projectCode && (
+                        <Badge variant="outline" className="text-xs">{task.projectCode}</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {task.description}
+                    </p>
+                    {task.dueDate && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Due: {formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Badge variant={getPriorityColor(task.priority) as any} data-testid={`badge-priority-${task.id}`}>
+                      {task.priority}
+                    </Badge>
+                    {task.status === "PENDING" && (
+                      <Button
+                        size="sm"
+                        onClick={() => updateTaskMutation.mutate({ taskId: task.id, status: "IN_PROGRESS" })}
+                        disabled={updateTaskMutation.isPending}
+                        data-testid={`button-start-billing-task-${task.id}`}
+                      >
+                        Start
+                      </Button>
+                    )}
+                    {task.status === "IN_PROGRESS" && (
+                      <Button
+                        size="sm"
+                        onClick={() => updateTaskMutation.mutate({ taskId: task.id, status: "COMPLETED" })}
+                        disabled={updateTaskMutation.isPending}
+                        data-testid={`button-complete-billing-task-${task.id}`}
+                      >
+                        Complete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">

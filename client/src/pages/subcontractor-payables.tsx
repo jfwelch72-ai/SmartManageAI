@@ -36,6 +36,7 @@ interface Payable {
   approvedAt: string | null;
   paidAt: string | null;
   createdAt: string;
+  remainingBalance: string;
   contract: {
     id: string;
     contractNumber: string;
@@ -275,6 +276,7 @@ export default function SubcontractorPayablesPage() {
                           <TableHead>Project</TableHead>
                           <TableHead>Scope</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Contract Balance</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Age</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
@@ -307,6 +309,16 @@ export default function SubcontractorPayablesPage() {
                               </TableCell>
                               <TableCell className="text-right font-semibold">
                                 {formatCurrency(payable.amount)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex flex-col items-end">
+                                  <span className={`font-medium ${parseFloat(payable.remainingBalance) > 0 ? 'text-yellow-600 dark:text-yellow-500' : 'text-green-500'}`}>
+                                    {formatCurrency(payable.remainingBalance)}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    of {formatCurrency(payable.contract.contractAmount)}
+                                  </span>
+                                </div>
                               </TableCell>
                               <TableCell>{getStatusBadge(payable.status)}</TableCell>
                               <TableCell>
