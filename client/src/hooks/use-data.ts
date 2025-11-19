@@ -513,3 +513,124 @@ export function useDeleteScopeItem() {
     },
   });
 }
+
+// Time Clock
+interface ClockInData {
+  projectId: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface ClockOutData {
+  latitude?: number;
+  longitude?: number;
+}
+
+export function useCurrentShift() {
+  return useQuery({
+    queryKey: ["/api/time-clock/current-shift"],
+    refetchInterval: 30000, // Refetch every 30 seconds to keep shift status fresh
+  });
+}
+
+export function useClockIn() {
+  return useMutation({
+    mutationFn: async (data: ClockInData) => {
+      const response = await apiRequest("POST", "/api/time-clock/clock-in", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/current-shift"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
+    },
+  });
+}
+
+export function useClockOut() {
+  return useMutation({
+    mutationFn: async (data: ClockOutData) => {
+      const response = await apiRequest("POST", "/api/time-clock/clock-out", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/current-shift"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
+    },
+  });
+}
+
+export function useMyShifts() {
+  return useQuery({
+    queryKey: ["/api/time-clock/my-shifts"],
+  });
+}
+
+export function useActiveShifts() {
+  return useQuery({
+    queryKey: ["/api/time-clock/active-shifts"],
+    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
+  });
+}
+
+export function usePendingShiftApprovals() {
+  return useQuery({
+    queryKey: ["/api/time-clock/pending-approvals"],
+  });
+}
+
+export function useApproveShift() {
+  return useMutation({
+    mutationFn: async ({ shiftId, createTimeEntry }: { shiftId: string; createTimeEntry?: boolean }) => {
+      const response = await apiRequest("POST", `/api/time-clock/shifts/${shiftId}/approve`, { createTimeEntry });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+    },
+  });
+}
+
+export function useRejectShift() {
+  return useMutation({
+    mutationFn: async ({ shiftId, reason }: { shiftId: string; reason: string }) => {
+      const response = await apiRequest("POST", `/api/time-clock/shifts/${shiftId}/reject`, { reason });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
+    },
+  });
+}
+
+export function useAdjustShift() {
+  return useMutation({
+    mutationFn: async ({ 
+      shiftId, 
+      clockIn, 
+      clockOut, 
+      reason 
+    }: { 
+      shiftId: string; 
+      clockIn?: string; 
+      clockOut?: string; 
+      reason: string;
+    }) => {
+      const response = await apiRequest("POST", `/api/time-clock/shifts/${shiftId}/adjust`, {
+        clockIn,
+        clockOut,
+        reason,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
+    },
+  });
+}

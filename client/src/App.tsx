@@ -16,6 +16,8 @@ import ProjectDetailPage from "@/pages/project-detail";
 import TimeEntryPage from "@/pages/time-entry";
 import TMDailyPage from "@/pages/tm-daily";
 import CalendarPage from "@/pages/calendar";
+import TimeClockPage from "@/pages/time-clock";
+import TimeClockManagerPage from "@/pages/time-clock-manager";
 
 function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
   const { user, isLoading } = useAuth();
@@ -51,6 +53,8 @@ function Router() {
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} />} />
       <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} />} />
+      <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
+      <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} />} />
       <Route component={NotFound} />
     </Switch>
   );

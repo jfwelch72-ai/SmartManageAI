@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, User, Bell, CheckCheck } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { format } from "date-fns";
@@ -50,9 +50,11 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
     await onLogout();
   };
 
+  const isManagerOrAdmin = userRole === "ADMIN" || userRole === "MANAGER";
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-6">
+      <div className="flex h-16 items-center justify-between px-6 gap-6">
         <Link href="/dashboard" data-testid="link-dashboard">
           <div className="flex items-center gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md -ml-2 pl-2 pr-3 py-2">
             <Building2 className="w-8 h-8 text-primary" />
@@ -62,6 +64,70 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             </div>
           </div>
         </Link>
+
+        {/* Navigation */}
+        <nav className="hidden lg:flex items-center gap-1 flex-1">
+          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-dashboard">
+            <Link href="/dashboard">
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-projects">
+            <Link href="/projects">
+              <Briefcase className="w-4 h-4" />
+              Projects
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-calendar">
+            <Link href="/calendar">
+              <Calendar className="w-4 h-4" />
+              Calendar
+            </Link>
+          </Button>
+          
+          {/* Time Clock Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-time-clock">
+                <Clock className="w-4 h-4" />
+                Time Clock
+                <ChevronDown className="w-3 h-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem asChild data-testid="nav-my-time-clock">
+                <Link href="/time-clock">
+                  <Clock className="mr-2 h-4 w-4" />
+                  My Time Clock
+                </Link>
+              </DropdownMenuItem>
+              {isManagerOrAdmin && (
+                <DropdownMenuItem asChild data-testid="nav-manage-time-clock">
+                  <Link href="/time-clock-manager">
+                    <UsersIcon className="mr-2 h-4 w-4" />
+                    Manage Time Clock
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild data-testid="nav-time-entry">
+                <Link href="/time-entry">
+                  Time Entries
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {userRole === "ADMIN" && (
+            <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-users">
+              <Link href="/users">
+                <UsersIcon className="w-4 h-4" />
+                Users
+              </Link>
+            </Button>
+          )}
+        </nav>
 
         <div className="flex items-center gap-2">
           <DropdownMenu>
