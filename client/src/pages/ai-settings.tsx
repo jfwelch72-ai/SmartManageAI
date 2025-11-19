@@ -50,11 +50,8 @@ export default function AISettingsPage() {
   }, [settings]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<AISettings>) => {
-      return apiRequest("/api/ai-settings", {
-        method: "PATCH",
-        body: data,
-      });
+    mutationFn: async (data: Partial<typeof formData>) => {
+      return apiRequest("PATCH", "/api/ai-settings", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-settings"] });

@@ -26,10 +26,7 @@ export default function AIPMDashboard() {
 
   const triggerRunMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("/api/ai-pm/run", {
-        method: "POST",
-        body: {},
-      });
+      return apiRequest("POST", "/api/ai-pm/run", {});
     },
     onSuccess: () => {
       toast({
@@ -49,10 +46,7 @@ export default function AIPMDashboard() {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return apiRequest(`/api/ai-pm/tasks/${taskId}`, {
-        method: "PATCH",
-        body: { status },
-      });
+      return apiRequest("PATCH", `/api/ai-pm/tasks/${taskId}`, { status });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-pm/tasks"] });

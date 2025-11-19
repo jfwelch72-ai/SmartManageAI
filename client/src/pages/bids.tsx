@@ -99,7 +99,7 @@ export default function BidsPage() {
                 bidAmount={bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : "TBD"}
                 dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
                 location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
-                estimator={bid.estimatorId || undefined}
+                estimator={bid.estimatorId || ""}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={() => handleConvertToProject(bid.code)}
               />

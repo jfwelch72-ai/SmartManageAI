@@ -1,0 +1,410 @@
+You are a senior-level full-stack TypeScript/Node/Postgres/React engineer working inside the existing TFR Construction Platform repository. Do not create a new project. The system is already building and running successfully with an AI PM + CFO + Daily Operating System.
+
+Your job now is to:
+
+1) Perform a final “fix everything left” engineering pass, and  
+2) Implement the following advanced capabilities on top of the existing system:
+
+- Financial data backfill automation for existing projects  
+- Cost-rate (labor cost) system for accurate profitability  
+- Superintendent crew & skills metadata system  
+- Budget-required UI & project warnings  
+- AI data-quality / accuracy scoring system  
+- Hybrid subcontractor cost + billing + profitability integration:
+  - Subcontractor quotes at bid stage
+  - Subcontractor selection and contracts at award
+  - Subcontractor cost tracking and partial payments
+  - TFR-supplied material/labor credits
+  - Subcontractor payables dashboard and outstanding balances
+  - Full integration into project profitability and AI PM/CFO outputs
+
+You must work strictly within the current architecture, schema, and patterns already present in the repo.
+
+────────────────────────────────────────
+SECTION 1 – FULL “FIX EVERYTHING LEFT” PASS
+────────────────────────────────────────
+
+1. Scan the entire repository:
+   - All backend routes, controllers, services, AI modules, schedulers, DB schema, migrations
+   - All frontend pages, dashboards, components, hooks
+   - All shared types, enums, interfaces
+
+2. Collect and fix all remaining:
+   - TypeScript errors (tsc --noEmit must pass)
+   - Obvious runtime issues (undefined variables, missing imports, wrong paths)
+   - Broken or unused imports
+   - TODOs that block core flows
+   - Small but meaningful issues in AI PM/CFO logic, profitability engine, and AI daily ops scheduler
+
+3. Ensure:
+   - `npm run build` passes without errors
+   - `tsc --noEmit` passes without type errors
+   - All migrations apply cleanly
+   - Server boots and AI scheduler initializes without crashes
+   - Core flows work: bids → projects → profitability → AI tasks
+
+Do not do large refactors. Focus on correctness, stability, and completeness.
+
+────────────────────────────────────────
+SECTION 2 – FINANCIAL DATA BACKFILL AUTOMATION
+────────────────────────────────────────
+
+Implement a robust financial data backfill system for existing projects so profitability and AI outputs become accurate.
+
+1. Migration-based backfill:
+   - Create a new SQL or TypeScript migration that:
+     - For projects with NULL contractAmount/budget:
+       - Backfill from related estimates, bids, or existing “total bid” fields according to existing schema.
+       - If an approved estimate or winning bid exists, use that as contractAmount and budget.
+     - If contractAmount is filled but budget is NULL, set budget = contractAmount.
+   - Make this logic idempotent and safe to run multiple times.
+   - Document the migration in DATABASE_MIGRATION_STRATEGY and schema-change logs.
+
+2. Admin UI for manual corrections:
+   - On project detail page, if budget or contractAmount are missing:
+     - Show a prominent banner: “This project is missing financial data. AI and profitability metrics may be inaccurate.”
+     - Add a “Set Budget & Contract” button that opens a modal/page where ADMIN/MANAGER can:
+       - Enter contractAmount
+       - Enter budget (can default to contractAmount)
+       - Optionally enter estimatedCompletionDate
+   - Save these changes via a secure backend endpoint (e.g., PATCH /api/projects/:id/financials).
+
+3. AI-aware behavior:
+   - Ensure the AI PM/CFO snapshot builder includes flags for missing or NULL financials.
+   - If budget/contractAmount are missing, AI should identify these projects as financially incomplete and emphasize that in profitabilityInsights.
+
+────────────────────────────────────────
+SECTION 3 – COST-RATE (LABOR COST) SYSTEM
+────────────────────────────────────────
+
+Implement a labor cost system to replace the simplistic flat rate assumption.
+
+1. Schema changes:
+   - Extend users table (or a dedicated employee_costs table) with:
+     - costRateRegular: decimal(10,2)
+     - costRateOvertime: decimal(10,2) – if NULL, default in code to 1.5 * costRateRegular
+     - costRateEffectiveDate: timestamp (optional)
+   - If more appropriate, use a role_costs table and link users to role-based cost rates. Prefer user-level cost if feasible in current schema.
+
+2. Profitability engine updates:
+   - Compute labor cost per project as:
+     - SUM over time entries or time-clock shifts:
+       - regularHours * costRateRegular
+       - overtimeHours * costRateOvertime
+   - If user-specific costRate is missing, fall back to role-level cost, then a global default.
+   - Include data-quality notes in profitabilityInsights when default rates are used.
+
+3. UI for cost rates:
+   - Add an admin-only screen to:
+     - List all users and their costRateRegular / costRateOvertime
+     - Edit those values
+   - Validate non-negative and sane ranges.
+
+4. AI snapshot & CFO reporting:
+   - Include laborCostToDate and, where available, equipmentCostToDate and materialCostToDate.
+   - Ensure profitabilityInsights uses these actual costs, not flat assumptions.
+
+────────────────────────────────────────
+SECTION 4 – CREW & SKILLS METADATA SYSTEM
+────────────────────────────────────────
+
+Implement a Superintendent-level crew & skills system to support more intelligent AI crew scheduling.
+
+1. Schema:
+   - Create tables (names can be adapted to existing patterns):
+     - crews:
+       - id, name, description, active, defaultSupervisorId, createdAt, updatedAt
+     - crew_members:
+       - id, crewId, userId, roleInCrew (FOREMAN, LEAD_FINISHER, APPRENTICE, etc.), active
+     - skills:
+       - id, name (e.g., "Formwork", "Finishing", "Rebar", "Layout", "Demo", "Sawcutting"), description
+     - user_skills:
+       - id, userId, skillId, skillLevel (1–5), primarySkill boolean
+     - equipment (optional if not present yet):
+       - id, name, type, status, assignedCrewId nullable
+     - (optional) crew_project_assignments:
+       - id, crewId, projectId, startDate, endDate, notes
+
+2. UI:
+   - Add an Admin/Superintendent “Crews & Skills” view where:
+     - ADMIN/MANAGER/SUPERINTENDENT can:
+       - Create and edit crews
+       - Assign members to crews
+       - Configure user skills and levels
+       - See crew compositions and primary skills
+
+3. AI integration:
+   - Extend AI snapshot builder to include:
+     - Crews
+     - Crew members and skills
+     - Crew-project assignments (if present)
+   - Update crewSchedulingRecommendations so AI:
+     - Suggests which crew(s) to allocate to which projects and dates based on skills and workload
+     - Flags skill gaps (project needs a skill not present in assigned crew).
+
+4. Superintendent dashboard:
+   - Enhance Superintendent/Manager views to show:
+     - AI crew scheduling recommendations
+     - Skill coverage per project
+     - Detected conflicts (e.g., same crew double-booked).
+
+────────────────────────────────────────
+SECTION 5 – BUDGET-REQUIRED UI & PROJECT WARNINGS
+────────────────────────────────────────
+
+Ensure the UI clearly indicates when financial data is missing or incomplete, and enforce rules where appropriate.
+
+1. Project-level warnings:
+   - On project detail page, display a clearly styled banner when:
+     - contractAmount is NULL, or
+     - budget is NULL
+   - Text example:
+     - “This project is missing budget/contract information. Profitability metrics and AI recommendations may be inaccurate.”
+   - Show a “Fix Project Financials” button that opens the admin editor from Section 2.
+
+2. New project creation:
+   - For flows where ADMIN/MANAGER creates a new project or converts a bid:
+     - Either require contractAmount/budget or
+     - If omitted, show a strong warning recommending entering financial data ASAP.
+
+3. CFO & AI dashboards:
+   - In profitability and AI PM/CFO dashboards, visually mark projects with incomplete financial data (e.g., “Missing Budget” tag or icon).
+
+────────────────────────────────────────
+SECTION 6 – AI DATA-QUALITY / ACCURACY SCORING SYSTEM
+────────────────────────────────────────
+
+Implement a per-project AI data-quality scoring system so users can see how reliable AI recommendations are.
+
+1. Schema:
+   - Create a table or view (e.g., ai_data_quality):
+     - id
+     - projectId fk
+     - score (0–100)
+     - lastComputedAt
+     - details jsonb (flags for which dimensions are present/missing)
+   - Scoring dimensions should include:
+     - contractAmount/budget presence
+     - SOV/scope items presence
+     - Textura/billing schedule presence
+     - Time entries/time-clock data presence
+     - Material/receipt cost data presence
+     - Crew & skills data presence
+     - Subcontractor contract and payment data presence (added per Section 7)
+
+2. Scoring logic:
+   - Implement a scoring function, e.g., calculateProjectDataQuality(projectId):
+     - Assign points per dimension.
+     - Aggregate into 0–100.
+     - Store score and details in ai_data_quality whenever AI runs or via scheduled recalculation.
+
+3. AI awareness:
+   - Extend the AI snapshot builder to include data-quality scores and details per project.
+   - In the AI prompt composition, instruct AI to:
+     - Trust high-scoring projects more.
+     - Explicitly call out limitations or uncertainty for low-scoring projects.
+     - Avoid overconfident, detailed recommendations where critical data is missing.
+
+4. UI:
+   - Show AI data-quality scores on:
+     - Project detail page (e.g., “AI Data Quality: 78/100 – Financials and SOV complete; crew and subcontractor data incomplete.”)
+     - AI PM/CFO dashboard with sorting/filtering by score.
+   - Color-code scores: red (low), yellow (medium), green (high).
+
+────────────────────────────────────────
+SECTION 7 – HYBRID SUBCONTRACTOR COST + BILLING + PROFITABILITY INTEGRATION
+────────────────────────────────────────
+
+Implement a hybrid subcontractor tracking system that starts simple but can expand later. It must track:
+
+- Subcontractor quotes at bid stage
+- Subcontractor contracts and cost to TFR at award
+- TFR-supplied materials/labor credits
+- Subcontractor invoices and partial payments
+- Remaining balances
+- Subcontractor impact on project profitability
+- Subcontractor payables (what TFR owes subs)
+- AI PM/CFO tasks and alerts related to subs
+
+Use a hybrid approach: relatively simple relational structure now, but flexible enough to extend toward full AIA-style pay apps.
+
+1. Schema – Subcontractor core tables:
+   - If not already present, create a subcontractors master table:
+     - subcontractors:
+       - id, name, contactName, phone, email, address, notes, active, createdAt, updatedAt
+
+   - Subcontractor contracts per project:
+     - subcontractor_contracts:
+       - id
+       - projectId fk
+       - subcontractorId fk
+       - scopeDescription text
+       - originalQuoteAmount decimal(12,2) – their quoted price
+       - approvedContractAmount decimal(12,2) – agreed amount after negotiation
+       - tfrSuppliedMaterialsCredit decimal(12,2) – total value of materials TFR provides that reduce their bill
+       - tfrSuppliedLaborCredit decimal(12,2) – if TFR self-performs a portion originally in sub scope
+       - netContractAmount decimal(12,2) – computed as approvedContractAmount - tfrSuppliedMaterialsCredit - tfrSuppliedLaborCredit
+       - status: enum("PENDING", "ACTIVE", "COMPLETE", "CLOSED", "CANCELLED")
+       - quoteReceivedDate date
+       - contractApprovedDate date
+       - notes text
+       - createdAt, updatedAt
+
+   - Subcontractor payments (partial or full):
+     - subcontractor_payments:
+       - id
+       - subcontractorContractId fk
+       - paymentNumber integer
+       - invoiceReference text – sub’s invoice number or reference
+       - scheduledAmount decimal(12,2) nullable – optional planned amount
+       - paidAmount decimal(12,2)
+       - paidDate date
+       - method text (e.g., CHECK, ACH, WIRE)
+       - notes text
+       - createdAt, updatedAt
+
+   - Optionally, a simple pay schedule rather than full AIA SOV:
+     - subcontractor_billing_schedule:
+       - id
+       - subcontractorContractId fk
+       - label or drawNumber text
+       - plannedAmount decimal(12,2)
+       - scheduledBillDate date
+       - status enum("PLANNED","READY_TO_BILL","BILLED","PAID")
+
+   - The system should compute:
+     - totalPaid = SUM(paidAmount)
+     - remainingBalance = netContractAmount - totalPaid
+
+2. Bidboard integration:
+   - On the bid/bid-detail pages, add UI to:
+     - Record subcontractor quotes per trade/scope.
+     - Link each quote to a subcontractor record and project/bid.
+     - Mark one quote as “selected” at time of award.
+   - When a bid is converted to a project:
+     - Optionally prompt: “Create subcontractor contracts from selected quotes?”
+     - If confirmed, create subcontractor_contracts records from the chosen quotes, with:
+       - originalQuoteAmount = quoted amount
+       - approvedContractAmount = same value initially
+
+3. Awarded project integration:
+   - In the project management view:
+     - Add a “Subcontractors” tab showing:
+       - All subcontractor_contracts for that project
+       - Quotes, approved contract amounts, TFR-supplied credits, net contract amount
+       - A list of payments made and outstanding balances
+     - Add forms to:
+       - Adjust tfrSuppliedMaterialsCredit and tfrSuppliedLaborCredit as TFR decides to supply materials or self-perform portions.
+       - Add subcontractor payments, referencing their invoices.
+
+4. Profitability integration:
+   - Update the profitability engine to:
+     - Include subcontractor netContractAmount and payments in project cost computations.
+     - Track:
+       - subContractOriginalTotal = SUM(approvedContractAmount) per project
+       - subContractAdjustedTotal = SUM(netContractAmount) per project
+       - subPaidToDate = SUM(paidAmount) for all subcontractor_payments per project
+       - subRemainingLiability = subContractAdjustedTotal - subPaidToDate
+   - Ensure profitabilityInsights include:
+     - subcontractorCostToDate
+     - subcontractorRemainingLiability
+     - any major deviation between originalQuoteAmount and netContractAmount (greater than some threshold).
+
+5. Payables / “What We Owe Subs” dashboard:
+   - Create a CFO/Office Manager-facing “Subcontractor Payables” screen showing:
+     - A list of active subcontractor contracts across all projects, with:
+       - project code/name
+       - subcontractor name
+       - approvedContractAmount
+       - netContractAmount
+       - totalPaid
+       - remainingBalance
+       - next scheduled billing or due date if subcontractor_billing_schedule is used
+     - Filters by project, subcontractor, and status.
+   - This dashboard must allow Office Manager to quickly see:
+     - Who is owed money
+     - How much is left to pay
+     - If any payments appear overdue
+
+6. AI PM/CFO & Daily Ops integration:
+   - Extend the AI snapshot builder to include:
+     - subcontractor_contracts and payments per project
+     - subContractAdjustedTotal, subPaidToDate, subRemainingLiability
+   - Update AI profitabilityInsights and alerts such that:
+     - Projects with heavy subcontractor cost share are flagged if:
+       - Sub bills are lagging behind project billing (cash flow risk)
+       - Subcontractor costs far exceed original quotes (overrun risk)
+     - AI tasks are generated for:
+       - Office Manager: “Pay subcontractor X invoice Y for project Z by [date].”
+       - Project Manager: “Review subcontractor X’s change order/request; potential cost overrun.”
+   - Integrate subcontractor status into:
+     - AI roleTasks for OFFICE_MANAGER, MANAGER, and ADMIN
+     - AI data-quality scoring (projects missing subcontractor data where subs are used should be scored lower on financial completeness)
+
+7. TFR-supplied materials and deductions:
+   - In the subcontractor_contracts UI:
+     - Add inputs for TFR-supplied materials and labor credits.
+     - When updated, recalculate netContractAmount for that subcontractor.
+   - In profitability:
+     - Materials that TFR supplies for sub work must still count as TFR cost.
+     - AI and CFO views should reflect:
+       - “Subcontractor direct cost”
+       - “TFR-supplied materials/labor for subs”
+       - Total combined subcontract-related costs.
+
+8. AIA-style readiness (Hybrid aspect):
+   - Keep the schema and UI flexible to allow future per-sub SOV:
+     - For example, subcontractor_billing_schedule can be extended to support line items later.
+   - Structure code to make it easy to:
+     - Add per-line-item percentages and retainage in a later iteration.
+
+────────────────────────────────────────
+SECTION 8 – AI SYSTEM PROMPT & SNAPSHOT UPDATES (SUBCONTRACTOR-AWARE)
+────────────────────────────────────────
+
+Ensure the existing AI PM/CFO system prompt and snapshot logic are updated to fully understand subcontractor costs and payables.
+
+1. SYSTEM PROMPT updates:
+   - In your AI system prompt constant, ensure the description of responsibilities explicitly includes:
+     - Managing subcontractor costs and payables
+     - Watching for subcontractor cost overruns vs original quotes
+     - Monitoring amounts owed to subs and payment timing
+     - Factoring TFR-supplied materials/labor credits into profitability and cash flow
+
+2. Snapshot builder:
+   - Confirm that AI snapshot now contains:
+     - For each project:
+       - contractAmount, budget
+       - laborCostToDate, materialCostToDate, any equipmentCostToDate
+       - subcontractorContractTotals, subcontractorPaidToDate, subcontractorRemainingLiability
+       - Textura/billing schedules and draw dates
+       - Crew and skill data
+       - AI data-quality score and details
+   - Make sure this enriched snapshot is used by all AI PM/CFO calls (daily runs, project-specific runs, chat).
+
+────────────────────────────────────────
+SECTION 9 – FINAL VALIDATION & DOCUMENTATION
+────────────────────────────────────────
+
+1. Validation:
+   - Run:
+     - npm run build
+     - tsc --noEmit
+   - Ensure all migrations apply without error.
+   - Test key flows end-to-end:
+     - Bid → subcontractor quotes → project conversion → subcontractor contracts created
+     - Adding TFR-supplied materials/labor credits
+     - Recording sub payments and viewing remaining balances
+     - Running AI PM/CFO → seeing subcontractor-related tasks, alerts, and profitabilityInsights
+     - Viewing AI data-quality scores on projects, including subcontractor dimension
+     - Crew & skills setup and AI crew scheduling
+     - Cost-rate screens and accurate labor cost in profitability
+
+2. Documentation:
+   - Update or create markdown docs:
+     - AI_PM_CFO_ROLE_OS.md – include labor cost, crews, AI data-quality scoring, subcontractor costs and payables.
+     - DATABASE_MIGRATION_STRATEGY.md – include new subcontractor-related tables and financial backfill logic.
+     - FINANCIAL_DATA_BACKFILL.md – document contractAmount/budget backfill process and how to manually correct any anomalies.
+     - SUBCONTRACTOR_COSTS_AND_PAYABLES.md – explain how subcontractor quotes, contracts, payments, and credits work and how they impact project profitability.
+
+Perform all of the above directly in the existing TFR Construction Platform repository. Do not stub out core logic. Implement fully working backend + frontend for these features based on the current stack, patterns, and conventions already present in the repo.
