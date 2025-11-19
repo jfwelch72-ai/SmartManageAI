@@ -4,7 +4,10 @@ import {
   timeEntries, 
   procurementItems, 
   changeOrders, 
-  receipts 
+  receipts,
+  users,
+  subcontractorContracts,
+  subcontractorPayments 
 } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 
@@ -14,6 +17,7 @@ export interface ProjectProfitability {
   budget: number;
   total_labor_cost: number;
   total_material_cost: number;
+  total_subcontractor_cost: number;
   total_other_expenses: number;
   approved_change_orders_value: number;
   adjusted_budget: number;
@@ -28,6 +32,7 @@ export interface ProjectProfitability {
     labor_efficiency: string;
     material_spend_rate: string;
     pending_change_orders_value: number;
+    subcontractor_count: number;
   };
 }
 
@@ -43,18 +48,21 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     throw new Error(`Project ${projectCode} not found`);
   }
 
-  // Calculate labor costs - using time entries with estimated hourly rate
+  // Calculate labor costs - using actual user cost rates from users table
   const laborEntries = await db
     .select({
       hoursRegular: timeEntries.hoursRegular,
       hoursOvertime: timeEntries.hoursOvertime,
+      costRateRegular: users.costRateRegular,
+      costRateOvertime: users.costRateOvertime,
     })
     .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.userId, users.id))
     .where(eq(timeEntries.projectId, project.id))
     .limit(5000);
 
-  const ASSUMED_HOURLY_RATE = 50;
-  const OVERTIME_MULTIPLIER = 1.5;
+  const DEFAULT_COST_RATE = 50;
+  const DEFAULT_OT_MULTIPLIER = 1.5;
 
   const totalLaborHours = laborEntries.reduce(
     (sum, entry) => 
@@ -63,8 +71,11 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   );
   
   const totalLaborCost = laborEntries.reduce((sum, entry) => {
-    const regularCost = Number(entry.hoursRegular || 0) * ASSUMED_HOURLY_RATE;
-    const overtimeCost = Number(entry.hoursOvertime || 0) * ASSUMED_HOURLY_RATE * OVERTIME_MULTIPLIER;
+    const regularRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
+    const overtimeRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : (regularRate * DEFAULT_OT_MULTIPLIER);
+    
+    const regularCost = Number(entry.hoursRegular || 0) * regularRate;
+    const overtimeCost = Number(entry.hoursOvertime || 0) * overtimeRate;
     return sum + regularCost + overtimeCost;
   }, 0);
 
@@ -95,6 +106,29 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const totalOtherExpenses = expenseReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
 
+  // Calculate subcontractor costs - use inner join to ensure valid project linkage
+  const subcontractorPaymentsData = await db
+    .select({
+      amount: subcontractorPayments.amount,
+      status: subcontractorPayments.status,
+      projectId: subcontractorContracts.projectId,
+    })
+    .from(subcontractorContracts)
+    .innerJoin(subcontractorPayments, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+    .where(eq(subcontractorContracts.projectId, project.id))
+    .limit(1000);
+
+  const totalSubcontractorCost = subcontractorPaymentsData
+    .filter(p => ['APPROVED', 'PAID'].includes(p.status || ''))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+  const subcontractorContractsData = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(subcontractorContracts)
+    .where(eq(subcontractorContracts.projectId, project.id));
+
+  const subcontractorCount = Number(subcontractorContractsData[0]?.count || 0);
+
   // Calculate change orders
   const projectChangeOrders = await db
     .select({
@@ -116,7 +150,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   // Calculate totals - use contractAmount as primary, fallback to budget
   const baseBudget = Number(project.contractAmount || project.budget || 0);
   const adjustedBudget = baseBudget + approvedCOValue;
-  const totalActualCost = totalLaborCost + totalMaterialCost + totalOtherExpenses;
+  const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalOtherExpenses;
   const variance = adjustedBudget - totalActualCost;
   const variancePercent = adjustedBudget > 0 ? (variance / adjustedBudget) * 100 : 0;
 
@@ -150,7 +184,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   const estimatedMargin = adjustedBudget - projectedCompletionCost;
 
   // Labor efficiency - compare actual hours to budgeted hours (assume 40% of budget is labor)
-  const budgetedLaborHours = baseBudget * 0.4 / ASSUMED_HOURLY_RATE;
+  const budgetedLaborHours = baseBudget * 0.4 / DEFAULT_COST_RATE;
   const laborEfficiency = budgetedLaborHours > 0
     ? `${Math.round((totalLaborHours / budgetedLaborHours) * 100)}% of budgeted hours`
     : 'Unknown';
@@ -167,6 +201,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     budget: baseBudget,
     total_labor_cost: Math.round(totalLaborCost * 100) / 100,
     total_material_cost: Math.round(totalMaterialCost * 100) / 100,
+    total_subcontractor_cost: Math.round(totalSubcontractorCost * 100) / 100,
     total_other_expenses: Math.round(totalOtherExpenses * 100) / 100,
     approved_change_orders_value: Math.round(approvedCOValue * 100) / 100,
     adjusted_budget: Math.round(adjustedBudget * 100) / 100,
@@ -181,6 +216,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       labor_efficiency: laborEfficiency,
       material_spend_rate: materialSpendRate,
       pending_change_orders_value: Math.round(pendingCOValue * 100) / 100,
+      subcontractor_count: subcontractorCount,
     },
   };
 }

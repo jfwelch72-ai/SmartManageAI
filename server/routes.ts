@@ -361,6 +361,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user cost rates (Admin only)
+  app.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const { costRateRegular, costRateOvertime } = req.body;
+
+      if (costRateRegular === undefined || costRateRegular === null || costRateRegular === "") {
+        res.status(400).json({ error: "Regular cost rate is required" });
+        return;
+      }
+
+      if (costRateOvertime === undefined || costRateOvertime === null || costRateOvertime === "") {
+        res.status(400).json({ error: "Overtime cost rate is required" });
+        return;
+      }
+
+      const regularRate = Number(costRateRegular);
+      const overtimeRate = Number(costRateOvertime);
+
+      if (isNaN(regularRate) || isNaN(overtimeRate) || regularRate < 0 || overtimeRate < 0) {
+        res.status(400).json({ error: "Cost rates must be valid non-negative numbers" });
+        return;
+      }
+
+      const [user] = await db.select().from(users).where(eq(users.id, req.params.id)).limit(1);
+      
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set({ 
+          costRateRegular: regularRate.toFixed(2), 
+          costRateOvertime: overtimeRate.toFixed(2),
+          updatedAt: new Date() 
+        })
+        .where(eq(users.id, req.params.id))
+        .returning();
+
+      const { passwordHash, tokenVersion, ...userWithoutPassword } = updated;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Update cost rates error:", error);
+      res.status(500).json({ error: "Failed to update cost rates" });
+    }
+  });
+
   // Revoke all user tokens (logout all devices) - Admin only
   app.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), sensitiveLimiter, async (req: AuthRequest, res) => {
     try {
@@ -734,6 +782,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Update project error:", error);
       res.status(500).json({ error: "Failed to update project" });
+    }
+  });
+
+  // Update project financials (Admin only)
+  app.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const { budget, contractAmount } = req.body;
+
+      if (!budget || !contractAmount) {
+        res.status(400).json({ error: "Budget and contract amount are required" });
+        return;
+      }
+
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Audit log the change
+      await logAudit({
+        entityType: "PROJECT",
+        entityId: project.id,
+        action: "UPDATE",
+        performedById: req.user!.id,
+        oldValues: {
+          budget: project.budget,
+          contractAmount: project.contractAmount,
+        },
+        newValues: {
+          budget,
+          contractAmount,
+        },
+        ipAddress: req.ip || "unknown",
+        userAgent: req.get("user-agent") || "unknown",
+      });
+
+      const [updated] = await db
+        .update(projects)
+        .set({ 
+          budget, 
+          contractAmount,
+          updatedAt: new Date() 
+        })
+        .where(eq(projects.code, req.params.code))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update project financials error:", error);
+      res.status(500).json({ error: "Failed to update project financials" });
     }
   });
 

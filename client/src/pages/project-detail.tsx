@@ -10,7 +10,8 @@ import ScopeOfWorkTable from "@/components/ScopeOfWorkTable";
 import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
@@ -270,6 +271,11 @@ export default function ProjectDetailPage() {
   const [receiptDate, setReceiptDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
+  // Budget edit state (admin only)
+  const [showBudgetEditDialog, setShowBudgetEditDialog] = useState(false);
+  const [editBudget, setEditBudget] = useState("");
+  const [editContractAmount, setEditContractAmount] = useState("");
+
   // Upload handlers
   const handleMediaUploadComplete = async (result: any) => {
     if (!result.successful || result.successful.length === 0) {
@@ -339,6 +345,26 @@ export default function ProjectDetailPage() {
       toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
     } finally {
       setIsUploadingDocument(false);
+    }
+  };
+
+  const handleBudgetUpdate = async () => {
+    if (!editBudget || !editContractAmount) {
+      toast({ title: "Error", description: "Budget and contract amount are required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await apiRequest("PATCH", `/api/projects/${projectCode}/financials`, {
+        budget: editBudget,
+        contractAmount: editContractAmount,
+      });
+      
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Success", description: "Financial data updated" });
+      setShowBudgetEditDialog(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update financial data", variant: "destructive" });
     }
   };
 
@@ -457,6 +483,16 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
+        {(!project.budget || Number(project.budget) === 0) && (!project.contractAmount || Number(project.contractAmount) === 0) && (
+          <Alert variant="destructive" className="mb-6" data-testid="alert-missing-budget">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Missing Financial Data</AlertTitle>
+            <AlertDescription>
+              This project is missing budget and contract information. Please update the financial data to enable accurate profitability tracking and AI analysis.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
@@ -545,6 +581,53 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardTitle>Financial Information</CardTitle>
+                {user?.role === "ADMIN" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEditBudget(project.budget || "0");
+                      setEditContractAmount(project.contractAmount || "0");
+                      setShowBudgetEditDialog(true);
+                    }}
+                    data-testid="button-edit-financials"
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Project Budget</p>
+                    <p className="text-2xl font-bold font-mono">
+                      ${parseFloat(project.budget || "0").toLocaleString()}
+                    </p>
+                    {(!project.budget || parseFloat(project.budget) === 0) && (
+                      <p className="text-xs text-destructive mt-1">⚠ Missing budget data</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Contract Amount</p>
+                    <p className="text-2xl font-bold font-mono">
+                      ${parseFloat(project.contractAmount || "0").toLocaleString()}
+                    </p>
+                    {(!project.contractAmount || parseFloat(project.contractAmount) === 0) && (
+                      <p className="text-xs text-destructive mt-1">⚠ Missing contract data</p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
@@ -1143,6 +1226,59 @@ export default function ProjectDetailPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Budget Edit Dialog (Admin Only) */}
+        <Dialog open={showBudgetEditDialog} onOpenChange={setShowBudgetEditDialog}>
+          <DialogContent data-testid="dialog-edit-budget">
+            <DialogHeader>
+              <DialogTitle>Edit Financial Data</DialogTitle>
+              <DialogDescription>
+                Update the project budget and contract amount. This data is used for profitability analysis.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-budget">Project Budget ($)</Label>
+                <Input
+                  id="edit-budget"
+                  type="number"
+                  step="0.01"
+                  value={editBudget}
+                  onChange={(e) => setEditBudget(e.target.value)}
+                  placeholder="0.00"
+                  data-testid="input-edit-budget"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-contract">Contract Amount ($)</Label>
+                <Input
+                  id="edit-contract"
+                  type="number"
+                  step="0.01"
+                  value={editContractAmount}
+                  onChange={(e) => setEditContractAmount(e.target.value)}
+                  placeholder="0.00"
+                  data-testid="input-edit-contract"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowBudgetEditDialog(false)}
+                data-testid="button-cancel-budget-edit"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBudgetUpdate}
+                data-testid="button-save-budget"
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

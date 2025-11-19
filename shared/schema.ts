@@ -31,6 +31,8 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   passwordHash: text("password_hash").notNull(),
   tokenVersion: integer("token_version").notNull().default(0),
+  costRateRegular: decimal("cost_rate_regular", { precision: 10, scale: 2 }),
+  costRateOvertime: decimal("cost_rate_overtime", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -617,3 +619,199 @@ export type AIRun = typeof aiRuns.$inferSelect;
 
 export type InsertAITask = z.infer<typeof insertAITaskSchema>;
 export type AITask = typeof aiTasks.$inferSelect;
+
+// Crews table
+export const crews = pgTable("crews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  leadId: varchar("lead_id").references(() => users.id),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCrewSchema = createInsertSchema(crews).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrew = z.infer<typeof insertCrewSchema>;
+export type Crew = typeof crews.$inferSelect;
+
+// Crew Members table
+export const crewMembers = pgTable("crew_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crewId: varchar("crew_id").notNull().references(() => crews.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role"),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const insertCrewMemberSchema = createInsertSchema(crewMembers).omit({ id: true, addedAt: true });
+export type InsertCrewMember = z.infer<typeof insertCrewMemberSchema>;
+export type CrewMember = typeof crewMembers.$inferSelect;
+
+// Skills table
+export const skills = pgTable("skills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  category: text("category"),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSkillSchema = createInsertSchema(skills).omit({ id: true, createdAt: true });
+export type InsertSkill = z.infer<typeof insertSkillSchema>;
+export type Skill = typeof skills.$inferSelect;
+
+// User Skills table (junction table)
+export const userSkills = pgTable("user_skills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
+  proficiencyLevel: text("proficiency_level"),
+  yearsExperience: integer("years_experience"),
+  certifiedAt: timestamp("certified_at"),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const insertUserSkillSchema = createInsertSchema(userSkills).omit({ id: true, addedAt: true });
+export type InsertUserSkill = z.infer<typeof insertUserSkillSchema>;
+export type UserSkill = typeof userSkills.$inferSelect;
+
+// Equipment table
+export const equipment = pgTable("equipment", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  serialNumber: text("serial_number"),
+  status: text("status").notNull().default("AVAILABLE"),
+  assignedToCrewId: varchar("assigned_to_crew_id").references(() => crews.id),
+  assignedToProjectId: varchar("assigned_to_project_id").references(() => projects.id),
+  purchaseDate: timestamp("purchase_date"),
+  lastMaintenanceDate: timestamp("last_maintenance_date"),
+  nextMaintenanceDate: timestamp("next_maintenance_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
+export type Equipment = typeof equipment.$inferSelect;
+
+// Crew Project Assignments table
+export const crewProjectAssignments = pgTable("crew_project_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crewId: varchar("crew_id").notNull().references(() => crews.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  assignedById: varchar("assigned_by_id").notNull().references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCrewProjectAssignmentSchema = createInsertSchema(crewProjectAssignments).omit({ id: true, createdAt: true });
+export type InsertCrewProjectAssignment = z.infer<typeof insertCrewProjectAssignmentSchema>;
+export type CrewProjectAssignment = typeof crewProjectAssignments.$inferSelect;
+
+// AI Data Quality table
+export const aiDataQuality = pgTable("ai_data_quality", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").notNull(),
+  financialDataScore: integer("financial_data_score").notNull(),
+  laborDataScore: integer("labor_data_score").notNull(),
+  materialDataScore: integer("material_data_score").notNull(),
+  timelineDataScore: integer("timeline_data_score").notNull(),
+  scopeDataScore: integer("scope_data_score").notNull(),
+  missingFields: text("missing_fields").array(),
+  recommendations: text("recommendations").array(),
+  calculatedAt: timestamp("calculated_at").notNull().defaultNow(),
+});
+
+export const insertAIDataQualitySchema = createInsertSchema(aiDataQuality).omit({ id: true, calculatedAt: true });
+export type InsertAIDataQuality = z.infer<typeof insertAIDataQualitySchema>;
+export type AIDataQuality = typeof aiDataQuality.$inferSelect;
+
+// Subcontractors table
+export const subcontractors = pgTable("subcontractors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyName: text("company_name").notNull(),
+  contactName: text("contact_name"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  specialties: text("specialties").array(),
+  insuranceExpiration: timestamp("insurance_expiration"),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSubcontractorSchema = createInsertSchema(subcontractors).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubcontractor = z.infer<typeof insertSubcontractorSchema>;
+export type Subcontractor = typeof subcontractors.$inferSelect;
+
+// Subcontractor Contracts table
+export const subcontractorContracts = pgTable("subcontractor_contracts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  subcontractorId: varchar("subcontractor_id").notNull().references(() => subcontractors.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  contractNumber: text("contract_number").notNull(),
+  scopeOfWork: text("scope_of_work").notNull(),
+  contractAmount: decimal("contract_amount", { precision: 12, scale: 2 }).notNull(),
+  startDate: timestamp("start_date"),
+  completionDate: timestamp("completion_date"),
+  status: text("status").notNull().default("PENDING"),
+  paymentTerms: text("payment_terms"),
+  retentionPercent: decimal("retention_percent", { precision: 5, scale: 2 }),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSubcontractorContractSchema = createInsertSchema(subcontractorContracts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubcontractorContract = z.infer<typeof insertSubcontractorContractSchema>;
+export type SubcontractorContract = typeof subcontractorContracts.$inferSelect;
+
+// Subcontractor Payments table
+export const subcontractorPayments = pgTable("subcontractor_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  paymentNumber: integer("payment_number").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  retentionHeld: decimal("retention_held", { precision: 12, scale: 2 }),
+  paymentDate: timestamp("payment_date"),
+  description: text("description"),
+  invoiceNumber: text("invoice_number"),
+  status: text("status").notNull().default("PENDING"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  paidById: varchar("paid_by_id").references(() => users.id),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSubcontractorPaymentSchema = createInsertSchema(subcontractorPayments).omit({ id: true, createdAt: true });
+export type InsertSubcontractorPayment = z.infer<typeof insertSubcontractorPaymentSchema>;
+export type SubcontractorPayment = typeof subcontractorPayments.$inferSelect;
+
+// Subcontractor Billing Schedule table
+export const subcontractorBillingSchedule = pgTable("subcontractor_billing_schedule", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  milestoneNumber: integer("milestone_number").notNull(),
+  description: text("description").notNull(),
+  scheduledAmount: decimal("scheduled_amount", { precision: 12, scale: 2 }).notNull(),
+  scheduledDate: timestamp("scheduled_date"),
+  completionPercent: integer("completion_percent"),
+  status: text("status").notNull().default("PENDING"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSubcontractorBillingScheduleSchema = createInsertSchema(subcontractorBillingSchedule).omit({ id: true, createdAt: true });
+export type InsertSubcontractorBillingSchedule = z.infer<typeof insertSubcontractorBillingScheduleSchema>;
+export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$inferSelect;
