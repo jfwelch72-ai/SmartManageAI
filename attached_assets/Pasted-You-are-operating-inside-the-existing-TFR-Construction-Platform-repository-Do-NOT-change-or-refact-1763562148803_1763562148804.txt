@@ -1,0 +1,132 @@
+You are operating inside the existing TFR Construction Platform repository. 
+Do NOT change or refactor any code. 
+
+Your task now is to:
+
+────────────────────────────────────────
+CREATE ONE SINGLE DOWNLOADABLE DOCUMENT 
+containing the core functional files needed 
+for external code review and architecture audit.
+────────────────────────────────────────
+
+This document must include FULL file contents, 
+not summaries, and must be formatted cleanly. 
+You may generate the document as either:
+
+- TFR_FULL_CODE_AUDIT_EXPORT.md (preferred)
+or
+- TFR_FULL_CODE_AUDIT_EXPORT.txt
+
+Place each file inside clearly labeled sections:
+
+# =====================================
+# FILE: <relative/path/to/file>
+# =====================================
+
+Then paste the FULL contents of that file.
+
+────────────────────────────────────────
+INCLUDE ONLY THE FOLLOWING FILE CATEGORIES:
+────────────────────────────────────────
+
+========================================
+1. DATABASE / SCHEMA FILES
+========================================
+Include in full:
+
+- shared/schema.ts
+
+AND any schema files relating to:
+
+- subcontractors
+- subcontractor_contracts
+- subcontractor_payments
+- crews
+- crew_members
+- skills
+- user_skills
+- cost rates (user or role cost)
+- ai_runs
+- ai_tasks
+- ai_data_quality
+- billing_schedule or textura draw tables
+- profitability-related tables
+
+========================================
+2. BACKEND CORE LOGIC
+========================================
+Include these in full:
+
+- server/routes.ts
+- server/routes/**/*.ts                     (if folder exists)
+- server/ai/**/*                             (ALL AI logic)
+- server/services/profitabilityEngine.ts
+- server/services/billingEngine.ts
+- server/services/materialsEngine.ts
+- server/services/subcontractorService.ts
+- server/services/costRateService.ts
+- server/services/crewSchedulingService.ts
+- server/services/dataQualityService.ts
+
+If names differ, include the closest matching files.
+
+========================================
+3. AI SYSTEM FILES
+========================================
+Must include:
+
+- AI system prompt file
+- AI snapshot builder
+- AI PM/CFO engine
+- AI role-task generator
+- AI subcontractor logic
+- AI daily scheduler/cron
+- AI output validators & JSON schema handler
+- AI chat endpoints
+
+========================================
+4. FRONTEND ESSENTIAL PAGES
+========================================
+Include only these pages (or nearest matching equivalents):
+
+- client/src/pages/project-detail.tsx
+- client/src/pages/profitability-dashboard.tsx
+- client/src/pages/ai-dashboard.tsx
+- client/src/pages/daily-ops.tsx
+- client/src/pages/subcontractors.tsx
+- client/src/pages/subcontractor-detail.tsx
+- client/src/pages/bids.tsx
+- client/src/pages/bid-detail.tsx
+- client/src/pages/crew-skills.tsx
+- client/src/pages/cost-rates.tsx
+
+Do NOT include every component — only these pages and their direct helper files if essential.
+
+========================================
+5. CONFIG FILES (LIMITED)
+========================================
+Include in full:
+
+- package.json
+- tsconfig.json
+- drizzle config file(s)
+- .env.example or a list of required env vars 
+  (NO actual secrets)
+
+────────────────────────────────────────
+OUTPUT REQUIREMENTS
+────────────────────────────────────────
+
+• Combine all selected files into ONE single document  
+  named:  
+  **TFR_FULL_CODE_AUDIT_EXPORT.md**
+
+• Use clean file header separators.  
+• Preserve ALL code formatting exactly as-is.  
+• If the file is long, generate it in one piece or in streaming chunks, but the final result must be saved as ONE downloadable file.  
+
+Once done, provide a direct link/button to download the file.
+
+────────────────────────────────────────
+BEGIN NOW
+────────────────────────────────────────
