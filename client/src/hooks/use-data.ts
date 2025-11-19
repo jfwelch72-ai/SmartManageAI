@@ -30,8 +30,9 @@ export function useProject(code: string) {
 }
 
 export function useProjects() {
-  return useQuery<ProjectWithNames[]>({
+  return useQuery<{ data: ProjectWithNames[]; pagination: { page: number; limit: number; totalCount: number; totalPages: number; } }, Error, ProjectWithNames[]>({
     queryKey: ["/api/projects"],
+    select: (response) => response.data,
   });
 }
 
