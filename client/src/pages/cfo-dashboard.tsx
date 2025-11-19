@@ -60,6 +60,12 @@ export default function CFODashboard() {
   const atRiskProjects = profitability?.filter(p => p.status === 'MAJOR_RISK') || [];
   const concernProjects = profitability?.filter(p => p.status === 'MINOR_CONCERN') || [];
   const onBudgetProjects = profitability?.filter(p => p.status === 'ON_BUDGET') || [];
+  
+  // Identify projects with missing budget data (adjusted_budget = 0, null, undefined, or negative)
+  const projectsMissingBudget = profitability?.filter(p => {
+    const budgetNum = Number(p.adjusted_budget);
+    return p.adjusted_budget == null || isNaN(budgetNum) || budgetNum <= 0;
+  }) || [];
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -161,6 +167,41 @@ export default function CFODashboard() {
             </Card>
           </div>
 
+          {/* Projects Missing Budget Data Warning */}
+          {projectsMissingBudget.length > 0 && (
+            <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20" data-testid="card-missing-budget-warning">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
+                  {projectsMissingBudget.length} Project{projectsMissingBudget.length !== 1 ? 's' : ''} Missing Budget Data
+                </CardTitle>
+                <CardDescription>
+                  These projects have no budget entered. AI analysis and profitability tracking are incomplete without budget data.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {projectsMissingBudget.map(project => (
+                    <div 
+                      key={project.project_code}
+                      className="flex items-center justify-between p-2 bg-background rounded-md"
+                      data-testid={`missing-budget-${project.project_code}`}
+                    >
+                      <div>
+                        <span className="font-medium text-sm">{project.project_code}</span>
+                        <span className="text-sm text-muted-foreground ml-2">- {project.project_name}</span>
+                      </div>
+                      <Badge variant="outline" className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500">
+                        <DollarSign className="w-3 h-3 mr-1" />
+                        No Budget
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <div className="space-y-4">
             <h2 className="text-2xl font-bold">Project Profitability</h2>
 
@@ -168,26 +209,56 @@ export default function CFODashboard() {
               <div className="space-y-3">
                 {profitability
                   .sort((a, b) => {
+                    // Sort: Missing budget first, then by status
+                    const aBudgetNum = Number(a.adjusted_budget);
+                    const bBudgetNum = Number(b.adjusted_budget);
+                    const aMissingBudget = a.adjusted_budget == null || isNaN(aBudgetNum) || aBudgetNum <= 0;
+                    const bMissingBudget = b.adjusted_budget == null || isNaN(bBudgetNum) || bBudgetNum <= 0;
+                    
+                    if (aMissingBudget && !bMissingBudget) return -1;
+                    if (!aMissingBudget && bMissingBudget) return 1;
+                    
                     const statusOrder = { 'MAJOR_RISK': 0, 'MINOR_CONCERN': 1, 'ON_BUDGET': 2 };
                     return statusOrder[a.status] - statusOrder[b.status];
                   })
-                  .map(project => (
-                    <Card key={project.project_code} className="hover-elevate" data-testid={`card-project-${project.project_code}`}>
-                      <CardHeader>
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <CardTitle className="text-base">
-                              {project.project_code} - {project.project_name}
-                            </CardTitle>
-                            <CardDescription className="mt-1">
-                              Budget: {formatCurrency(project.adjusted_budget)} | 
-                              Actual: {formatCurrency(project.total_actual_cost)} | 
-                              Variance: {formatCurrency(project.variance)} ({project.variance_percent.toFixed(1)}%)
-                            </CardDescription>
+                  .map(project => {
+                    const budgetNum = Number(project.adjusted_budget);
+                    const hasBudget = project.adjusted_budget != null && !isNaN(budgetNum) && budgetNum > 0;
+                    return (
+                      <Card 
+                        key={project.project_code} 
+                        className={`hover-elevate ${!hasBudget ? 'border-yellow-500' : ''}`}
+                        data-testid={`card-project-${project.project_code}`}
+                      >
+                        <CardHeader>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <CardTitle className="text-base flex items-center gap-2">
+                                {project.project_code} - {project.project_name}
+                                {!hasBudget && (
+                                  <Badge variant="outline" className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500">
+                                    <DollarSign className="w-3 h-3 mr-1" />
+                                    No Budget
+                                  </Badge>
+                                )}
+                              </CardTitle>
+                              <CardDescription className="mt-1">
+                                {hasBudget ? (
+                                  <>
+                                    Budget: {formatCurrency(project.adjusted_budget)} | 
+                                    Actual: {formatCurrency(project.total_actual_cost)} | 
+                                    Variance: {formatCurrency(project.variance)} ({project.variance_percent.toFixed(1)}%)
+                                  </>
+                                ) : (
+                                  <span className="text-yellow-600 dark:text-yellow-500">
+                                    Budget data required for profitability tracking
+                                  </span>
+                                )}
+                              </CardDescription>
+                            </div>
+                            {getStatusBadge(project.status)}
                           </div>
-                          {getStatusBadge(project.status)}
-                        </div>
-                      </CardHeader>
+                        </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
@@ -220,8 +291,9 @@ export default function CFODashboard() {
                           </div>
                         )}
                       </CardContent>
-                    </Card>
-                  ))}
+                      </Card>
+                    );
+                  })}
               </div>
             ) : (
               <Card>
