@@ -167,8 +167,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .map(item => ({
       project_code: item.projectId,
       description: item.description,
-      needed_by: item.neededByDate,
-      estimated_cost: Number(item.estimatedCost || 0),
+      needed_by: item.neededByDate?.toISOString().split('T')[0] || null,
+      estimated_cost: Number(item.unitCost || 0) * Number(item.quantity || 0),
     }));
 
   // Change orders pending approval
@@ -211,7 +211,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .map(bid => ({
       client_name: bid.clientName,
       bid_amount: Number(bid.bidAmount || 0),
-      due_date: bid.dueDate,
+      bid_deadline: bid.dueDate?.toISOString().split('T')[0] || null,
+      status: 'ACTIVE',
     }));
 
   // Crew statistics
@@ -235,8 +236,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
         name: p.name,
         status: p.status,
         budget: Number(p.budget || 0),
-        start_date: p.startDate,
-        estimated_completion: p.estimatedCompletionDate,
+        start_date: p.startDate?.toISOString().split('T')[0] || null,
+        estimated_completion: p.estimatedCompletionDate?.toISOString().split('T')[0] || null,
         client_name: p.clientName,
         superintendent_id: p.superintendentId,
       })),
@@ -250,21 +251,21 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     },
     procurement: {
       pending_orders_count: pendingProcurement.length,
-      pending_orders_value: pendingProcurement.reduce((sum, item) => sum + Number(item.estimatedCost || 0), 0),
+      pending_orders_value: pendingProcurement.reduce((sum, item) => sum + (Number(item.unitCost || 0) * Number(item.quantity || 0)), 0),
       urgent_items: urgentItems,
     },
     change_orders: {
       pending_approval_count: pendingChangeOrders.length,
       pending_approval_value: pendingChangeOrders.reduce((sum, co) => sum + Number(co.amount || 0), 0),
       recent_approvals: recentApprovedCOs.map(co => ({
-        project_code: co.projectCode,
+        project_code: co.projectId,
         description: co.description,
         amount: Number(co.amount || 0),
         status: co.status,
       })),
     },
     billing: {
-      total_billed_ytd: Math.round(totalBilled * 100) / 100,
+      total_invoiced_ytd: Math.round(totalBilled * 100) / 100,
       total_received_ytd: Math.round(totalReceived * 100) / 100,
       overdue_invoices: overdueInvoices,
     },

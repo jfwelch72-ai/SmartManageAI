@@ -92,7 +92,6 @@ export default function BidsPage() {
             {filteredBids.map((bid) => (
               <BidCard
                 key={bid.id}
-                id={bid.id}
                 code={bid.code}
                 name={bid.name}
                 clientName={bid.clientName}
