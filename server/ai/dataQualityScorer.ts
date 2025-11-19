@@ -37,22 +37,16 @@ export async function calculateProjectDataQuality(projectCode: string): Promise<
 
   // Financial Data Score (0-100)
   let financialScore = 0;
-  if (project.budget && Number(project.budget) > 0) financialScore += 33;
+  if (project.budget && Number(project.budget) > 0) financialScore += 50;
   else {
     missingFields.push("budget");
     recommendations.push("Add project budget for profitability tracking");
   }
   
-  if (project.contractAmount && Number(project.contractAmount) > 0) financialScore += 33;
+  if (project.contractAmount && Number(project.contractAmount) > 0) financialScore += 50;
   else {
     missingFields.push("contractAmount");
     recommendations.push("Add contract amount for accurate billing");
-  }
-
-  if (project.estimatedRevenue && Number(project.estimatedRevenue) > 0) financialScore += 34;
-  else {
-    missingFields.push("estimatedRevenue");
-    recommendations.push("Add estimated revenue projection");
   }
 
   // Labor Data Score (0-100)
@@ -116,7 +110,7 @@ export async function calculateProjectDataQuality(projectCode: string): Promise<
   const scopeItemsCount = await db
     .select({ count: sql<number>`count(*)` })
     .from(scopeItems)
-    .where(eq(scopeItems.projectCode, projectCode));
+    .where(eq(scopeItems.projectId, project.id));
 
   const scopeCount = Number(scopeItemsCount[0]?.count || 0);
   let scopeScore = scopeCount > 0 ? 60 : 0;

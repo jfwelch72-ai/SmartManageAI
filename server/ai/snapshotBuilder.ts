@@ -9,9 +9,13 @@ import {
   billingEvents,
   timeClockShifts,
   bids,
-  users
+  users,
+  crews,
+  subcontractorContracts,
+  aiDataQuality
 } from "@shared/schema";
 import { sql, desc, eq } from "drizzle-orm";
+import { calculateProjectDataQuality } from "./dataQualityScorer";
 
 export interface DataSnapshot {
   generated_at: string;
@@ -81,6 +85,27 @@ export interface DataSnapshot {
     superintendents: number;
     hourly_workers: number;
     overtime_hours_this_week: number;
+    total_crews: number;
+    active_crews: number;
+    users_without_cost_rates: number;
+  };
+  subcontractors: {
+    total_active_contracts: number;
+    total_contract_value: number;
+    active_contracts_by_project: {
+      project_code: string;
+      contract_count: number;
+      total_value: number;
+    }[];
+  };
+  data_quality: {
+    avg_overall_score: number;
+    projects_below_threshold: number;
+    common_issues: string[];
+  };
+  missing_financials: {
+    count: number;
+    project_codes: string[];
   };
 }
 
@@ -226,6 +251,62 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     0
   );
 
+  // Crew data
+  const allCrews = await db.select().from(crews).limit(100);
+  const activeCrews = allCrews.filter(c => c.isActive).length;
+  const usersWithoutCostRates = allUsers.filter(u => !u.costRateRegular || !u.costRateOvertime).length;
+
+  // Subcontractor data
+  const allSubcontractorContracts = await db
+    .select()
+    .from(subcontractorContracts)
+    .where(sql`${subcontractorContracts.status} IN ('ACTIVE', 'PENDING')`)
+    .limit(200);
+
+  const contractsByProject: { [key: string]: { count: number; value: number } } = {};
+  allSubcontractorContracts.forEach(contract => {
+    const projectId = contract.projectId;
+    if (!contractsByProject[projectId]) {
+      contractsByProject[projectId] = { count: 0, value: 0 };
+    }
+    contractsByProject[projectId].count++;
+    contractsByProject[projectId].value += Number(contract.contractAmount || 0);
+  });
+
+  const activeContractsByProject = Object.entries(contractsByProject).map(([projectId, data]) => ({
+    project_code: projectId,
+    contract_count: data.count,
+    total_value: Math.round(data.value * 100) / 100,
+  }));
+
+  // Data quality scores
+  const qualityScores = await db
+    .select()
+    .from(aiDataQuality)
+    .limit(1000);
+
+  const avgQualityScore = qualityScores.length > 0
+    ? Math.round(qualityScores.reduce((sum, q) => sum + q.overallScore, 0) / qualityScores.length)
+    : 0;
+
+  const projectsBelowThreshold = qualityScores.filter(q => q.overallScore < 60).length;
+
+  const commonIssues: string[] = [];
+  qualityScores.forEach(q => {
+    if (q.missingFields && q.missingFields.length > 0) {
+      q.missingFields.forEach(field => {
+        if (!commonIssues.includes(field)) {
+          commonIssues.push(field);
+        }
+      });
+    }
+  });
+
+  // Missing financials
+  const projectsMissingFinancials = activeProjects.filter(
+    p => !p.budget || Number(p.budget) === 0 || !p.contractAmount || Number(p.contractAmount) === 0
+  );
+
   return {
     generated_at: now.toISOString(),
     projects: {
@@ -282,6 +363,23 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       superintendents: superintendents,
       hourly_workers: hourlyWorkers,
       overtime_hours_this_week: Math.round(overtimeHours * 100) / 100,
+      total_crews: allCrews.length,
+      active_crews: activeCrews,
+      users_without_cost_rates: usersWithoutCostRates,
+    },
+    subcontractors: {
+      total_active_contracts: allSubcontractorContracts.length,
+      total_contract_value: Math.round(allSubcontractorContracts.reduce((sum, c) => sum + Number(c.contractAmount || 0), 0) * 100) / 100,
+      active_contracts_by_project: activeContractsByProject,
+    },
+    data_quality: {
+      avg_overall_score: avgQualityScore,
+      projects_below_threshold: projectsBelowThreshold,
+      common_issues: commonIssues.slice(0, 10),
+    },
+    missing_financials: {
+      count: projectsMissingFinancials.length,
+      project_codes: projectsMissingFinancials.map(p => p.code),
     },
   };
 }
