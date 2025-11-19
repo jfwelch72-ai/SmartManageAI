@@ -630,6 +630,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Bid Subcontractor Quotes Routes
+  // ====================
+
+  const { bidSubcontractorQuotes, insertBidSubcontractorQuoteSchema } = await import("@shared/schema");
+
+  // Get all quotes for a bid
+  app.get("/api/bids/:code/quotes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const quotes = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.bidId, bid.id))
+        .orderBy(desc(bidSubcontractorQuotes.createdAt));
+
+      res.json(quotes);
+    } catch (error) {
+      console.error("Get bid quotes error:", error);
+      res.status(500).json({ error: "Failed to fetch bid quotes" });
+    }
+  });
+
+  // Create a new quote for a bid
+  app.post("/api/bids/:code/quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const validated = insertBidSubcontractorQuoteSchema.parse({
+        ...req.body,
+        bidId: bid.id,
+      });
+
+      const [newQuote] = await db.insert(bidSubcontractorQuotes).values(validated).returning();
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE_BID_QUOTE",
+        resourceType: "bid_quote",
+        resourceId: newQuote.id,
+        details: `Created quote from ${validated.subcontractorName} for bid ${bid.code}`,
+      });
+
+      res.status(201).json(newQuote);
+    } catch (error: any) {
+      console.error("Create bid quote error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid quote data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create bid quote" });
+      }
+    }
+  });
+
+  // Update a bid quote
+  app.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const validated = insertBidSubcontractorQuoteSchema.partial().parse(req.body);
+
+      const [updated] = await db
+        .update(bidSubcontractorQuotes)
+        .set({ ...validated, updatedAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Quote not found" });
+        return;
+      }
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE_BID_QUOTE",
+        resourceType: "bid_quote",
+        resourceId: updated.id,
+        details: `Updated quote from ${updated.subcontractorName} for bid ${bid.code}`,
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update bid quote error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid quote data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update bid quote" });
+      }
+    }
+  });
+
+  // Delete a bid quote
+  app.delete("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const [deleted] = await db
+        .delete(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Quote not found" });
+        return;
+      }
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "DELETE_BID_QUOTE",
+        resourceType: "bid_quote",
+        resourceId: deleted.id,
+        details: `Deleted quote from ${deleted.subcontractorName} for bid ${bid.code}`,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete bid quote error:", error);
+      res.status(500).json({ error: "Failed to delete bid quote" });
+    }
+  });
+
+  // ====================
   // Project Routes
   // ====================
 
@@ -2631,6 +2772,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error removing crew member:", error);
       res.status(500).json({ error: "Failed to remove crew member" });
+    }
+  });
+
+  // Get crew project assignments
+  app.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { crewProjectAssignments } = await import("@shared/schema");
+      
+      const assignments = await db
+        .select({
+          assignment: crewProjectAssignments,
+          crew: {
+            id: crews.id,
+            name: crews.name,
+          },
+          project: {
+            id: projects.id,
+            code: projects.code,
+            name: projects.name,
+            status: projects.status,
+          },
+        })
+        .from(crewProjectAssignments)
+        .leftJoin(crews, eq(crewProjectAssignments.crewId, crews.id))
+        .leftJoin(projects, eq(crewProjectAssignments.projectId, projects.id))
+        .orderBy(desc(crewProjectAssignments.createdAt));
+
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching crew assignments:", error);
+      res.status(500).json({ error: "Failed to fetch crew assignments" });
+    }
+  });
+
+  // Assign crew to project
+  app.post("/api/crew-assignments", requireRole(["ADMIN", "MANAGER", "SUPERINTENDENT"]), async (req: AuthRequest, res) => {
+    try {
+      const { crewProjectAssignments, insertCrewProjectAssignmentSchema } = await import("@shared/schema");
+      
+      const validated = insertCrewProjectAssignmentSchema.parse({
+        ...req.body,
+        assignedById: req.user!.id,
+      });
+
+      const [assignment] = await db.insert(crewProjectAssignments).values(validated).returning();
+
+      await logCreate(req.user!.id, "crew_project_assignments", assignment.id, {
+        crewId: assignment.crewId,
+        projectId: assignment.projectId,
+      });
+
+      res.status(201).json(assignment);
+    } catch (error: any) {
+      console.error("Error creating crew assignment:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid input", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create crew assignment" });
+      }
+    }
+  });
+
+  // Remove crew from project
+  app.delete("/api/crew-assignments/:id", requireRole(["ADMIN", "MANAGER", "SUPERINTENDENT"]), async (req: AuthRequest, res) => {
+    try {
+      const { crewProjectAssignments } = await import("@shared/schema");
+      const { id } = req.params;
+
+      const [deleted] = await db
+        .delete(crewProjectAssignments)
+        .where(eq(crewProjectAssignments.id, id))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Assignment not found" });
+        return;
+      }
+
+      await logDelete(req.user!.id, "crew_project_assignments", id, {
+        crewId: deleted.crewId,
+        projectId: deleted.projectId,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing crew assignment:", error);
+      res.status(500).json({ error: "Failed to remove crew assignment" });
     }
   });
 

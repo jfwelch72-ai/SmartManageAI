@@ -84,6 +84,21 @@ export const bids = pgTable("bids", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Bid Subcontractor Quotes table
+export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  subcontractorName: text("subcontractor_name").notNull(),
+  scopeOfWork: text("scope_of_work").notNull(),
+  quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Estimates table
 export const estimates = pgTable("estimates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -436,6 +451,12 @@ export const insertBidSchema = createInsertSchema(bids).omit({
   updatedAt: true,
 });
 
+export const insertBidSubcontractorQuoteSchema = createInsertSchema(bidSubcontractorQuotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertEstimateSchema = createInsertSchema(estimates).omit({
   id: true,
   createdAt: true,
@@ -502,6 +523,9 @@ export type Project = typeof projects.$inferSelect;
 
 export type InsertBid = z.infer<typeof insertBidSchema>;
 export type Bid = typeof bids.$inferSelect;
+
+export type InsertBidSubcontractorQuote = z.infer<typeof insertBidSubcontractorQuoteSchema>;
+export type BidSubcontractorQuote = typeof bidSubcontractorQuotes.$inferSelect;
 
 export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
 export type Estimate = typeof estimates.$inferSelect;

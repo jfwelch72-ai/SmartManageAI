@@ -1,13 +1,14 @@
 import AppHeader from "@/components/AppHeader";
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
-import { Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, AlertTriangle } from "lucide-react";
+import { Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, AlertTriangle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
+import { useQuery } from "@tanstack/react-query";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
@@ -15,6 +16,17 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: bids = [], isLoading: bidsLoading } = useBids();
+
+  // Fetch crew assignments for superintendents
+  const { data: crewAssignments = [] } = useQuery({
+    queryKey: ["/api/crew-assignments"],
+    enabled: user?.role === "SUPERINTENDENT",
+  });
+
+  const { data: crews = [] } = useQuery({
+    queryKey: ["/api/crews"],
+    enabled: user?.role === "SUPERINTENDENT",
+  });
 
   const activeProjects = projects.filter(p => p.status === 'ACTIVE');
   // All bids in the bids table are considered "active" (not yet converted to projects)
@@ -121,6 +133,71 @@ export default function DashboardPage() {
                           And {projectsMissingBudget.length - 5} more...
                         </p>
                       )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {user?.role === "SUPERINTENDENT" && crews.length > 0 && (
+                <Card data-testid="card-crew-scheduling">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      Crew Scheduling Overview
+                    </CardTitle>
+                    <CardDescription>
+                      Crew assignments to active projects
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-2xl font-bold">{crews.length}</div>
+                          <div className="text-sm text-muted-foreground">Total Crews</div>
+                        </div>
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-2xl font-bold">{crewAssignments.filter((a: any) => a.project?.status === 'ACTIVE').length}</div>
+                          <div className="text-sm text-muted-foreground">Assigned</div>
+                        </div>
+                        <div className="text-center p-3 bg-muted rounded-md">
+                          <div className="text-2xl font-bold">
+                            {activeProjects.filter((p: any) => !crewAssignments.some((a: any) => a.project?.id === p.id)).length}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Need Crews</div>
+                        </div>
+                      </div>
+                      
+                      {crewAssignments.length === 0 ? (
+                        <div className="text-center py-4 text-muted-foreground">
+                          No crew assignments yet
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Recent Assignments:</p>
+                          {crewAssignments.slice(0, 3).map((assignment: any) => (
+                            <div key={assignment.assignment.id} className="flex items-center justify-between p-2 border rounded-md text-sm">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">{assignment.crew?.name}</Badge>
+                                <span className="text-muted-foreground">→</span>
+                                <span>{assignment.project?.name}</span>
+                              </div>
+                              <Badge className={assignment.project?.status === 'ACTIVE' ? 'bg-green-500' : ''}>
+                                {assignment.project?.status || 'N/A'}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <Button 
+                        variant="outline" 
+                        className="w-full" 
+                        onClick={() => setLocation('/crews')}
+                        data-testid="button-manage-crews"
+                      >
+                        Manage Crews & Assignments
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
