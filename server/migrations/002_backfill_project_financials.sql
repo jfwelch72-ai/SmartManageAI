@@ -8,7 +8,7 @@ SET budget = COALESCE(
   (
     SELECT MAX(e.base_bid_amount)
     FROM estimates e
-    WHERE e.project_id = p.id AND e.status = 'APPROVED'
+    WHERE e.project_id = p.id AND e.status = 'WON'
   ),
   (
     SELECT b.bid_amount

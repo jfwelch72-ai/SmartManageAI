@@ -118,8 +118,9 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     .where(eq(subcontractorContracts.projectId, project.id))
     .limit(1000);
 
+  // Include all subcontractor payment obligations (SCHEDULED, PENDING, APPROVED, PAID)
   const totalSubcontractorCost = subcontractorPaymentsData
-    .filter(p => ['APPROVED', 'PAID'].includes(p.status || ''))
+    .filter(p => ['SCHEDULED', 'PENDING', 'APPROVED', 'PAID'].includes(p.status || ''))
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   const subcontractorContractsData = await db

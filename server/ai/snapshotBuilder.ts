@@ -11,6 +11,8 @@ import {
   bids,
   users,
   crews,
+  crewMembers,
+  userSkills,
   subcontractorContracts,
   aiDataQuality
 } from "@shared/schema";
@@ -87,6 +89,8 @@ export interface DataSnapshot {
     overtime_hours_this_week: number;
     total_crews: number;
     active_crews: number;
+    total_crew_members: number;
+    users_with_skills: number;
     users_without_cost_rates: number;
   };
   subcontractors: {
@@ -252,9 +256,24 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     0
   );
 
-  // Crew data
+  // Crew data - query actual crew tables
   const allCrews = await db.select().from(crews).limit(100);
   const activeCrews = allCrews.filter(c => c.isActive).length;
+  
+  // Count crew members across all crews
+  const crewMembersData = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(crewMembers)
+    .limit(1);
+  const totalCrewMembers = Number(crewMembersData[0]?.count || 0);
+  
+  // Count users with assigned skills
+  const usersWithSkillsData = await db
+    .select({ count: sql<number>`count(DISTINCT ${userSkills.userId})` })
+    .from(userSkills)
+    .limit(1);
+  const usersWithSkills = Number(usersWithSkillsData[0]?.count || 0);
+  
   const usersWithoutCostRates = allUsers.filter(u => !u.costRateRegular || !u.costRateOvertime).length;
 
   // Subcontractor data
@@ -366,6 +385,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       overtime_hours_this_week: Math.round(overtimeHours * 100) / 100,
       total_crews: allCrews.length,
       active_crews: activeCrews,
+      total_crew_members: totalCrewMembers,
+      users_with_skills: usersWithSkills,
       users_without_cost_rates: usersWithoutCostRates,
     },
     subcontractors: {
