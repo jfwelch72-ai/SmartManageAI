@@ -1,0 +1,365 @@
+You are a SENIOR FULL-STACK TYPESCRIPT / NODE / REACT ENGINEER working INSIDE an existing TFR Construction platform repository on Replit.
+
+Do NOT create a new project. You are refactoring and repairing the CURRENT codebase in place.
+
+==================================================
+HIGH-LEVEL CONTEXT
+==================================================
+This repo is a TFR company management and CRM platform. It is intended to handle:
+
+- Full estimating and bid management
+- Project management and job tracking
+- Employee time cards and T&M tracking
+- Receipt uploading and file storage
+- Job pages with quotes, estimate data, procurement, plans/takeoffs
+- Notes from field superintendents
+- Multi-role access (Leadership, Office Manager, Estimator, Superintendent, Field Employee)
+- AI-powered assistance (profitability analysis, document generation, task creation, etc.)
+- Billing and draw tracking (including Textura draw schedules)
+- Job-specific profitability tracking vs awarded contracts
+
+A diagnostic report showed that the system is about ~58% complete and NOT production ready due to build failures, TypeScript errors, ORM/schema inconsistencies, and partially implemented features.
+
+Your job is to:
+1. Make the codebase BUILD and RUN cleanly.
+2. Fix structural, schema, and runtime issues.
+3. Finish key business logic (profitability, auto task engine, draw/billing tracking).
+4. Harden security, validation, and error handling.
+5. Organize and document everything so the app is ready for further feature work.
+
+==================================================
+ABSOLUTE RULES
+==================================================
+- DO NOT delete or “simplify away” core business logic. If something is broken, FIX it instead of ripping it out, unless it is clearly dead code.
+- Respect the current stack and libraries (TypeScript, React, Node/Express or similar, Drizzle ORM, Neon/Postgres, Google Cloud Storage, OpenAI, etc.).
+- Keep code modular and typed. Prefer small, composable functions over giant ones.
+- Whenever you change logic that affects real-world behavior (like profitability, billing, tasks), add comments explaining the assumptions.
+- Run appropriate commands frequently to confirm status: `pnpm install`, `pnpm build`, `pnpm run dev`, and relevant test commands if they exist.
+
+==================================================
+PHASE 1 – BASELINE BUILD FIXES
+==================================================
+Goal: The repo must successfully BUILD and RUN before anything else.
+
+1. FIX UPPY IMPORTS
+   - Find all Uppy usages, especially in:
+     - `client/src/components/ObjectUploader.tsx` (or similarly named components).
+   - The current code imports symbols like `DashboardModal` from `@uppy/react` that have been removed or renamed in the latest Uppy versions.
+   - Actions:
+     - Open the installed `@uppy/react` version’s documentation.
+     - Update imports and component usage to the CURRENT, supported API (e.g., use `Dashboard`, `DashboardModal` replacement, or the recommended pattern for your version).
+     - Ensure you are not importing symbols that no longer exist.
+   - Verify success by running `pnpm build` and ensuring Uppy-related errors are gone.
+
+2. INSTALL AND WIRE `nanoid`
+   - The backend references `nanoid` but the dependency is missing.
+   - Actions:
+     - Add `nanoid` to dependencies (if not already): `pnpm add nanoid`.
+     - Confirm imports use the correct modern form:
+       - `import { nanoid } from "nanoid";`
+     - Run `pnpm run dev` and ensure it no longer crashes due to missing nanoid.
+
+3. CLEAN UP OBVIOUS BROKEN IMPORTS AND PATHS
+   - Search the repo for red or unresolved imports.
+   - Fix:
+     - Incorrect relative paths
+     - Old filenames
+     - Components/utilities that were moved or renamed
+   - Do NOT comment out imports just to silence TypeScript. Fix them, or if truly dead, remove usage and clearly delete the related dead module.
+
+4. GET TO A STATE WHERE:
+   - `pnpm build` succeeds.
+   - `pnpm run dev` starts the backend and frontend without immediate crashes.
+   - Once this baseline is achieved, proceed to Phase 2.
+
+==================================================
+PHASE 2 – DRIZZLE ORM & DATABASE SCHEMA REPAIR
+==================================================
+Goal: Ensure that the Drizzle schema aligns with the actual database, and that relations and types are correct.
+
+1. LOCATE SCHEMA AND MIGRATIONS
+   - Open the main Drizzle schema file(s), typically something like:
+     - `server/db/schema.ts` or `src/db/schema.ts`
+   - Open the migrations directory, typically:
+     - `drizzle/migrations` or similar.
+
+2. FIX BROKEN RELATIONS AND FIELDS
+   - In the diagnostic report, there are:
+     - Tables referencing fields that don’t exist.
+     - `relations()` blocks pointing to wrong or outdated tables.
+     - Enum mismatches and stale columns.
+   - Actions:
+     - For each table, verify every referenced column and relation exists.
+     - Update relations to match actual table and field names.
+     - Remove or update references to columns that no longer exist.
+   - Keep relationships consistent with the business model:
+     - Jobs ↔ Estimates
+     - Jobs ↔ Draw schedules
+     - Jobs ↔ Profitability entries
+     - Jobs ↔ Tasks
+     - Users ↔ Roles ↔ Assigned tasks
+
+3. ALIGN SCHEMA WITH MIGRATIONS
+   - Compare `schema.ts` definitions with applied migrations.
+   - If schema has new fields that never had migrations:
+     - Create new Drizzle migrations to add those fields.
+   - If migrations include fields removed from schema:
+     - Decide whether to:
+       - Add them back to schema, or
+       - Write new migrations to drop/rename them.
+   - Ensure DB can be migrated cleanly from scratch.
+
+4. TYPE SAFETY
+   - Fix TypeScript types derived from Drizzle so that:
+     - API handlers expect correct types.
+     - Frontend components using these models are updated accordingly.
+   - Resolve TypeScript errors instead of `any`-ing everything.
+
+==================================================
+PHASE 3 – STORAGE SERVICE REPAIR (FILE UPLOADS)
+==================================================
+Goal: Stabilize file storage and retrieval (plans, receipts, photos, etc.).
+
+1. OPEN `storage.ts` (or equivalent)
+   - Identify:
+     - Initialization of the Google Cloud Storage client.
+     - Bucket name configuration.
+     - Signed URL generation.
+     - MIME type handling.
+
+2. FIX KNOWN ISSUES
+   - Ensure bucket is always properly defined.
+   - Handle missing or misconfigured environment variables gracefully.
+   - Implement robust error handling and logging.
+   - For signed URLs:
+     - Always return a valid URL or a well-typed error.
+     - Avoid returning `null` silently.
+
+3. FRONTEND INTEGRATION
+   - Verify upload components use the updated storage API cleanly.
+   - Make sure user-facing errors are handled (e.g., toast notifications instead of silent failure).
+
+==================================================
+PHASE 4 – PROFITABILITY ENGINE (JOB-LEVEL AND COMPANY-LEVEL)
+==================================================
+Goal: Make profitability tracking correct and robust.
+
+1. FIND THE PROFITABILITY MODULE
+   - Identify service(s) or utilities that:
+     - Calculate job profitability
+     - Aggregate labor, equipment, materials, overhead, and change orders
+   - Examples: `profitabilityService.ts`, `jobAnalytics.ts`, etc.
+
+2. FIX LOGIC ISSUES
+   - Eliminate divide-by-zero cases.
+   - Handle negative time deltas and invalid inputs.
+   - Ensure a consistent formula like:
+     - Revenue = Base contract + Approved change orders
+     - Direct costs = Labor + Equipment + Materials + Subs
+     - Indirect/overhead costs = allocated overhead (if used)
+     - Profit = Revenue − (Direct + Indirect)
+     - Margin % = Profit / Revenue * 100 (guard if revenue is 0).
+
+3. ADD JOB-SPECIFIC PROFITABILITY BASED ON AWARDED CONTRACT
+   - For each job:
+     - Link awarded contract value directly into profitability calculations.
+     - Include:
+       - Initial bid value
+       - Change orders (approved and pending)
+       - Actual costs from:
+         - Timecards
+         - T&M entries
+         - Material/receipt uploads (if cost fields exist or are planned)
+   - Provide clear types and functions for:
+     - `getJobProfitability(jobId)`
+     - `getPortfolioProfitability(filters)`
+
+4. FRONTEND DISPLAY
+   - Ensure the job detail page can display:
+     - Contract value vs actual costs
+     - Profit/profit margin
+     - Visual cues (e.g., red/yellow/green) for job health.
+
+==================================================
+PHASE 5 – AUTO TASK-GENERATION ENGINE (AI PM SYSTEM)
+==================================================
+Goal: Make the system automatically generate and assign tasks per role, daily.
+
+Roles to support:
+- Office Manager
+- Estimator
+- Superintendent
+- Leadership / Admin
+
+1. FIND OR CREATE TASK ENGINE MODULE
+   - Look for any existing task generation services (e.g. `taskEngine.ts`, `scheduler.ts`).
+   - If partial: refactor and complete it rather than starting from scratch.
+
+2. DEFINE CLEAR TASK TYPES AND SOURCES
+   - Tasks should be generated from:
+     - Jobs and their dates (start, milestones, completion).
+     - Textura draw schedule dates for billings.
+     - Bid due dates.
+     - Material lead times and delivery dates.
+     - Expiring permits or compliance requirements (if present).
+   - Each generated task must include:
+     - Role (who owns it: Office Manager, Estimator, Superintendent, etc.)
+     - Job reference (jobId)
+     - Due date
+     - Priority
+     - Description (human-readable)
+     - Status (Open, In Progress, Completed)
+
+3. ROLE-BASED DAILY TASK LOGIC
+   - Implement daily task generation logic, such as:
+     - **Office Manager**
+       - “Bill completed items for Job X based on Textura draw schedule.”
+       - “Verify all employee timecards for Job Y are approved for this pay period.”
+     - **Estimator**
+       - “Bid due today/tomorrow: Project X at Y time.”
+       - “Follow-up on outstanding RFIs or pricing from vendors for Bid Z.”
+     - **Superintendent**
+       - “Schedule crews for Job A for tomorrow.”
+       - “Order materials for upcoming pour on Job B (lead time constraints).”
+       - “Update field notes and quantities for Job C.”
+   - Make this logic data-driven (from dates/status in DB), not hard-coded strings.
+
+4. SCHEDULING (CRON OR EQUIVALENT)
+   - Implement a scheduled job (or equivalent “daily run” function) that:
+     - Scans all jobs and bids.
+     - Generates or updates tasks each day.
+   - Idempotent behavior:
+     - Don’t create duplicates if tasks already exist for the same job/role/due date.
+
+5. INTEGRATE WITH AI (OPTIONAL BUT POWERFUL)
+   - If an AI service is used to phrase or refine tasks:
+     - Use a well-structured prompt.
+     - Validate AI output (never trust it blindly).
+     - Enforce maximum length and required fields.
+
+==================================================
+PHASE 6 – DRAW TRACKING / BILLING (TEXTURA & CASH FLOW)
+==================================================
+Goal: Connect awarded jobs, draw schedules, billing reminders, and profitability.
+
+1. MODEL DRAW SCHEDULES
+   - Ensure the schema includes a `draws` or `billingSchedules` table linked to `jobs`, with fields like:
+     - drawNumber
+     - plannedDate
+     - amount
+     - status (Planned, In Progress, Billed, Paid)
+     - reference to Textura or external system ID (if applicable)
+
+2. LINK TO JOBS AND PROFITABILITY
+   - For each job:
+     - Load its draw schedule.
+     - Show billed vs unbilled amounts.
+     - Aggregate into cash flow projections.
+
+3. BILLING REMINDER LOGIC
+   - Extend the auto task-generation system so that:
+     - For each upcoming or past-due draw:
+       - Create an Office Manager task: “Prepare and submit billing for Draw #N for Job X by [date].”
+   - Make due dates configurable (e.g., reminder X days before planned date).
+
+4. UI INTEGRATION
+   - On the job page, show:
+     - Draw schedule table.
+     - Status of each draw.
+     - Flags for overdue or upcoming draws.
+
+==================================================
+PHASE 7 – FRONTEND VALIDATION, FORMS, AND UX HARDENING
+==================================================
+Goal: Prevent invalid data from ever reaching the backend.
+
+1. FORM VALIDATION
+   - Add client-side validation (e.g., using Zod, Yup, or a similar schema library) to all major forms:
+     - Job creation
+     - Estimate creation
+     - Timecard entry
+     - T&M entry
+     - Draw schedule input
+   - Enforce:
+     - Required fields
+     - Positive numbers where appropriate
+     - Valid dates
+     - Reasonable string lengths
+
+2. ERROR HANDLING UX
+   - Show human-readable error messages on the frontend.
+   - Avoid silent form failures.
+
+3. CONSISTENT FORM TYPES
+   - Make sure TypeScript form models match backend DTOs and Drizzle models.
+
+==================================================
+PHASE 8 – SECURITY, ACCESS CONTROL & HARDENING
+==================================================
+Goal: Make the platform safe for real users and production eventually.
+
+1. ROLE-BASED ACCESS CONTROL (RBAC)
+   - Enforce roles at the BACKEND level, not just frontend.
+   - For each API route:
+     - Clearly restrict which roles can:
+       - View jobs
+       - Edit jobs
+       - Approve timecards
+       - See financials / profitability
+       - Manage draws / billing
+   - Deny access by default; explicitly allow roles.
+
+2. RATE LIMITING
+   - Implement rate limiting on:
+     - AI endpoints
+     - File uploads
+     - Auth-sensitive routes
+   - Use a simple middleware solution compatible with your stack.
+
+3. INPUT SANITIZATION
+   - Sanitize user inputs to prevent:
+     - SQL injection (Drizzle already helps, but still sanitize strings)
+     - Path traversal in file operations
+     - Prompt injection in AI inputs (strip obviously malicious instructions from end users where appropriate)
+
+4. WEBHOOK AND EXTERNAL INTEGRATION SECURITY
+   - If there are webhooks (Textura, other systems):
+     - Verify signatures.
+     - Reject unsigned or invalid payloads.
+     - Log suspicious attempts.
+
+==================================================
+PHASE 9 – TESTING & DOCUMENTATION
+==================================================
+Goal: Capture the new architecture and ensure ongoing stability.
+
+1. ADD SMOKE TESTS
+   - At minimum, add tests that:
+     - Spin up the main app or core services.
+     - Exercise key flows (e.g., create job → create estimate → create tasks → compute profitability).
+
+2. DOCUMENT KEY MODULES
+   - In a `docs/` folder or at the top of critical files, add concise comments explaining:
+     - Profitability engine assumptions and formulas.
+     - Task-generation rules.
+     - Draw/billing logic.
+     - RBAC rules.
+
+3. FINAL CHECK
+   - Confirm:
+     - `pnpm build` success.
+     - `pnpm run dev` runs without crashing.
+     - Major user flows work end-to-end:
+       - Create a job → attach estimate → define draw schedule → track time/materials → see profitability → see tasks generated for Office Manager / Estimator / Superintendent.
+
+==================================================
+OUTPUT EXPECTATIONS
+==================================================
+As you perform these changes, you should:
+- Modify the actual repo files in Replit.
+- Keep changes well-structured and incremental.
+- Resolve ALL TypeScript errors in the main build.
+- Ensure no major console errors occur in the browser for primary flows.
+- Leave the codebase in a clean, consistent, and production-ready state for the next development phase.
+
+Begin by scanning the repository structure, then proceed with PHASE 1 and work through the phases in order.
