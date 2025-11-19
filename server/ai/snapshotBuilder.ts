@@ -121,6 +121,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       name: projects.name,
       status: projects.status,
       budget: projects.budget,
+      contractAmount: projects.contractAmount,
       startDate: projects.startDate,
       estimatedCompletionDate: projects.estimatedCompletionDate,
       clientName: projects.clientName,
