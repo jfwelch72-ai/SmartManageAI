@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, decimal, integer, pgEnum, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, decimal, integer, pgEnum, doublePrecision, index } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -55,7 +55,9 @@ export const projects = pgTable("projects", {
   superintendentId: varchar("superintendent_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  statusIdx: index("projects_status_idx").on(table.status),
+}));
 
 // Bids table (separate from projects)
 export const bids = pgTable("bids", {
@@ -137,7 +139,11 @@ export const timeEntries = pgTable("time_entries", {
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  userIdIdx: index("time_entries_user_id_idx").on(table.userId),
+  projectIdIdx: index("time_entries_project_id_idx").on(table.projectId),
+  dateIdx: index("time_entries_date_idx").on(table.date),
+}));
 
 // T&M Daily Sheets table
 export const tmDailySheets = pgTable("tm_daily_sheets", {
@@ -234,7 +240,10 @@ export const changeOrders = pgTable("change_orders", {
   attachmentsJson: text("attachments_json"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  statusIdx: index("change_orders_status_idx").on(table.status),
+  projectIdIdx: index("change_orders_project_id_idx").on(table.projectId),
+}));
 
 // Calendar Events table
 export const calendarEvents = pgTable("calendar_events", {
@@ -288,7 +297,12 @@ export const auditLog = pgTable("audit_log", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  entityTypeIdx: index("audit_log_entity_type_idx").on(table.entityType),
+  entityIdIdx: index("audit_log_entity_id_idx").on(table.entityId),
+  userIdIdx: index("audit_log_user_id_idx").on(table.userId),
+  createdAtIdx: index("audit_log_created_at_idx").on(table.createdAt),
+}));
 
 // Billing Events table
 export const billingEvents = pgTable("billing_events", {
@@ -321,7 +335,11 @@ export const timeClockShifts = pgTable("time_clock_shifts", {
   totalHours: decimal("total_hours", { precision: 6, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  userIdIdx: index("time_clock_shifts_user_id_idx").on(table.userId),
+  clockInIdx: index("time_clock_shifts_clock_in_idx").on(table.clockIn),
+  approvalStatusIdx: index("time_clock_shifts_approval_status_idx").on(table.approvalStatus),
+}));
 
 // Time Clock Events table
 export const timeClockEvents = pgTable("time_clock_events", {
