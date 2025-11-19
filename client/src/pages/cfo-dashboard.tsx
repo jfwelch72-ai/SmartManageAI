@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useUser } from "@/hooks/use-user";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,7 +29,7 @@ interface ProjectProfitability {
 }
 
 export default function CFODashboard() {
-  const { user } = useUser();
+  const { user } = useAuth();
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
     queryKey: ["/api/cfo/profitability"],

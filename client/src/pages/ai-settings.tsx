@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useUser } from "@/hooks/use-user";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -13,7 +13,7 @@ import { useState, useEffect } from "react";
 import type { AISettings } from "@shared/schema";
 
 export default function AISettingsPage() {
-  const { user } = useUser();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const { data: settings, isLoading } = useQuery<AISettings>({

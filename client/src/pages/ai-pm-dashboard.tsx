@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useUser } from "@/hooks/use-user";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { formatDistanceToNow } from "date-fns";
 import type { AITask, AIRun } from "@shared/schema";
 
 export default function AIPMDashboard() {
-  const { user } = useUser();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<(AITask & { metadata: any })[]>({
