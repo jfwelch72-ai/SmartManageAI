@@ -1,0 +1,86 @@
+You are a senior-level full-stack TypeScript/Node/Postgres/React engineer operating inside the existing TFR Construction Platform repository. Do not create a new project. Your task is to perform a full-system audit of the ENTIRE repository contents, including ALL code, schemas, migrations, services, UI, utilities, schedulers, and AI integrations that were generated or modified by previous prompts.
+
+Your objective is to gather and analyze ALL technical output Replit has created to date from EVERY earlier prompt. This includes but is not limited to:
+
+• All backend API routes and controllers  
+• All services (AI PM, AI CFO, AI daily ops, scheduling, profitability engine, billing engine, role-task engine, crew scheduling engine, bid reminders engine, material ordering engine)  
+• All database tables and migrations (including ai_runs, ai_settings, billing_schedule, ai_alerts, ai_tasks, material_actions, profitability tables, crew scheduling tables, etc.)  
+• All TypeScript types, enums, interfaces, and DTOs  
+• All React frontend pages, dashboards, components, hooks, and state logic  
+• All authentication/authorization logic (requireAuth, requireRole)  
+• All file upload handlers, middleware, validation, and permission checks  
+• All job schedulers / cron implementations  
+• All OpenAI integration modules (client, system prompts, JSON schema enforcement)  
+• All error handling middleware  
+• All environment variable usage patterns  
+• All utility/helper files  
+• All notification systems  
+• All role-based task generators  
+• All Textura billing integrations  
+• All profitability calculations and reporting logic  
+• All AI chat endpoints  
+• Every import path, export, barrel file, and reference across the entire repository
+
+Your job is to:
+
+1. **SCAN THE ENTIRE PROJECT RECURSIVELY**
+   - Inspect all folders, subfolders, files, modules, and components.  
+   - Identify incomplete implementations, missing imports, dead code, incorrect refactors, or partially generated artifacts Replit created earlier.  
+   - Validate that every endpoint referenced in the AI PM/CFO prompt actually exists.
+
+2. **VALIDATE BACKEND INTEGRITY**
+   - Validate TypeScript types and interfaces match DB tables.  
+   - Check all migrations for correctness, ordering, missing foreign keys, or mismatched column types.  
+   - Ensure schema enums match frontend enums.  
+   - Confirm that ai_runs, ai_settings, ai_tasks, ai_alerts, billing_reminders, profitability tables, roleTasks, crewSchedule tables, and all related structures exist and are properly referenced.
+   - Detect missing middleware, broken routes, missing controllers, or unimplemented sections.
+
+3. **VALIDATE FRONTEND INTEGRITY**
+   - Ensure all new pages exist (AI PM dashboard, CFO dashboard, daily ops dashboard, billing reminders, profitability pages, role-based task boards, crew scheduling, bid reminders, project-level AI tab).
+   - Validate React components and hooks import/export correctly.
+   - Check for undefined variables, missing props, wrong route paths, or incorrect state handling.
+   - Ensure TanStack Query keys follow stable patterns and data invalidation is correct.
+
+4. **VALIDATE AI INTEGRATION**
+   - Check that the SYSTEM PROMPT exists exactly as defined.
+   - Validate OpenAI call layers, JSON schema enforcement, and error recovery.
+   - Ensure cron/daily auto-run logic is implemented and safe.
+   - Ensure ai_runs saving logic is complete.
+
+5. **CHECK SECURITY & STABILITY**
+   - Validate requireAuth and requireRole usage on all sensitive endpoints.
+   - Check for missing CORS settings, missing cookie flags, missing rate limiting.
+   - Look for unvalidated user input.
+
+6. **CHECK PERFORMANCE & SCALABILITY**
+   - Identify N+1 queries.
+   - Identify missing indexes.
+   - Identify large or inefficient snapshot building.
+
+7. **REPORT ALL FINDINGS**
+   Generate a COMPLETE ENGINEERING DIAGNOSTIC REPORT that includes:
+
+   - A list of ALL code issues  
+   - Bugs, errors, missing functions, wrong imports  
+   - Broken migrations or schema mismatches  
+   - Security vulnerabilities  
+   - Performance risks  
+   - Missing UI components  
+   - API routes referenced but not implemented  
+   - Incomplete logic or TODO stubs  
+   - Any conflicting or inconsistent code created by earlier prompts  
+   - All other technical debt or architectural flaws  
+
+   The report must be structured into:
+   - **Critical issues** (breaks build or core features)
+   - **Major issues** (will cause runtime errors)
+   - **Moderate issues** (misalignments, instability)
+   - **Minor issues** (cleanup / optimization)
+   - **Missing features** (intended but not implemented)
+   - **Recommended next fixes**
+
+8. **NO FIXES YET — ONLY DIAGNOSE**
+   Do NOT modify or rewrite code yet.  
+   This prompt is for deep inspection and reporting only.
+
+Your final output must be the most complete and thorough full-repository diagnostic possible.
