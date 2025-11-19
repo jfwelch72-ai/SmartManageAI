@@ -16,12 +16,12 @@ The TFR Construction Management Platform is a comprehensive internal tool design
 9. **Rate Limiting**: Applied rate limiting to manual AI run endpoint for security
 10. **Schema Migration**: Successfully pushed all schema changes to production database
 
-### Frontend Enhancements (Pending)
-- Textura draw date editor on project detail page
-- Draw date alerts on CFO dashboard
-- Subcontractor payables UI with remaining balance display
-- Enhanced project detail subcontractor section
-- AI PM dashboard billing tasks display
+### Frontend Enhancements (Completed)
+1. **Textura Draw Date Editor**: Added date picker in project detail financials dialog to set/update Textura draw dates
+2. **CFO Dashboard Draw Alerts**: Implemented CRITICAL (≤7 days) and HIGH (≤14 days) draw date alert cards with project details and days remaining
+3. **Subcontractor Payables Balance**: Added "Remaining Balance" column showing contract amount minus total paid across all subcontractors
+4. **Project Detail Payment Tracking**: Enhanced subcontractor section to display total paid and remaining balance per subcontractor
+5. **AI PM Dashboard Billing Tasks**: Added urgent billing tasks alert section highlighting OFFICE_MANAGER tasks related to Textura draw dates with action buttons
 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
