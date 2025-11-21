@@ -911,6 +911,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const offset = (pageNum - 1) * limitNum;
 
+      // SECURITY: Validate status parameter against enum values
+      const validStatuses = ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"];
+      if (status && !validStatuses.includes(status as string)) {
+        res.status(400).json({ error: "Invalid status parameter. Must be one of: BID, PLANNING, ACTIVE, COMPLETE, CLOSED" });
+        return;
+      }
+
       // Build query with optional status filter
       let query = db.select().from(projects);
       if (status) {
@@ -2920,6 +2927,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pageNum = parseInt(page as string);
       const pageSizeNum = parseInt(pageSize as string);
       const offset = (pageNum - 1) * pageSizeNum;
+
+      // SECURITY: Validate action parameter against enum values
+      const validActions = ["CREATE", "READ", "UPDATE", "DELETE", "APPROVE", "REJECT", "LOGIN", "LOGOUT", "STATUS_CHANGE"];
+      if (action && !validActions.includes(action as string)) {
+        res.status(400).json({ error: "Invalid action parameter" });
+        return;
+      }
 
       let query = db.select().from(auditLog);
 
