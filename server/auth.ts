@@ -17,8 +17,11 @@ if (!process.env.SESSION_SECRET) {
 const JWT_SECRET = process.env.SESSION_SECRET;
 const COOKIE_NAME = "auth_token";
 
+// Sanitized user type - excludes sensitive fields (passwordHash, tokenVersion)
+export type SanitizedUser = Omit<SelectUser, 'passwordHash' | 'tokenVersion'>;
+
 export interface AuthRequest extends Request {
-  user?: SelectUser;
+  user?: SanitizedUser;
 }
 
 // Hash password
@@ -79,9 +82,22 @@ export async function authMiddleware(
       return;
     }
 
-    // Omit password hash from user object (keep tokenVersion for type safety)
-    const { passwordHash, ...userWithoutPassword } = user;
-    req.user = userWithoutPassword;
+    // Create sanitized user object - explicitly omit passwordHash and tokenVersion (security critical)
+    // TypeScript enforces at compile time that only allowed fields are included
+    const sanitized: SanitizedUser = {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isActive: user.isActive,
+      costRateRegular: user.costRateRegular,
+      costRateOvertime: user.costRateOvertime,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+    req.user = sanitized;
   }
 
   next();
