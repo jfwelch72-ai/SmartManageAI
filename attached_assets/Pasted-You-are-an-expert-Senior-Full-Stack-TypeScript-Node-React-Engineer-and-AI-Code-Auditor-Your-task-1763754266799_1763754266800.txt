@@ -1,0 +1,83 @@
+You are an expert Senior Full-Stack TypeScript/Node/React Engineer and AI Code Auditor.
+
+Your task is to perform a COMPLETE AND EXHAUSTIVE QUALITY AUDIT of the CURRENT REPOSITORY EXACTLY AS IT EXISTS.  
+Do NOT create a new project. Do NOT modify anything until AFTER the audit is complete.
+
+==================================================
+GOALS
+==================================================
+1. Identify ALL existing features, modules, routes, components, data models, DB tables, utilities, and background jobs currently in the codebase.
+
+2. Map out how each feature works today, including:
+   - frontend workflow
+   - backend workflow
+   - API interactions
+   - database schema interactions
+   - auth/permissions
+   - file uploads
+   - external integrations
+   - triggers/events
+   - background or cron processes
+
+3. Perform a **full stability and quality check**, including:
+   - broken imports
+   - missing dependencies
+   - outdated or deprecated packages
+   - schema conflicts
+   - type errors
+   - runtime errors
+   - build failures
+   - invalid hooks or React lifecycle issues
+   - race conditions
+   - insecure code patterns
+   - poor error handling
+   - missing try/catch props
+   - missing validation
+   - inconsistent naming
+   - unhandled promises
+   - inefficient queries
+   - inconsistent UX
+   - duplicated logic
+
+4. Provide a **clear report** that includes:
+   - A list of EVERY feature currently implemented
+   - The status of each feature: working / partially working / broken
+   - Detailed reasoning for every broken or failing feature
+   - All errors preventing build or runtime execution
+   - All dependency issues
+   - All TypeScript errors
+   - All database schema issues
+   - UI/UX inconsistencies
+   - Missing business logic
+   - All performance bottlenecks
+   - All areas where code violates best practices
+
+5. Deliver a final output with these sections:
+   - **A. Feature Inventory (Full Map)**
+   - **B. Architecture Overview**
+   - **C. Frontend Audit**
+   - **D. Backend Audit**
+   - **E. Database Schema Audit**
+   - **F. API Routes Audit**
+   - **G. External Integrations Audit**
+   - **H. Build/Runtime Errors**
+   - **I. Security & Data Integrity Risks**
+   - **J. Recommended Fixes (Priority-Ranked)**
+   - **K. Blockers that MUST be fixed before new features can be added**
+
+==================================================
+INSTRUCTIONS
+==================================================
+- Scan the ENTIRE repository.
+- Follow every import chain until resolved.
+- Parse every schema file and generate a model map.
+- Gather all UI components and trace their workflow.
+- Analyze all backend routes for correctness.
+- Analyze all business logic functions.
+
+DO NOT MAKE FIXES YET.
+
+First produce a COMPLETE AUDIT REPORT with no missing sections.
+After the audit is complete, wait for further instructions before making changes.
+
+Begin now.
