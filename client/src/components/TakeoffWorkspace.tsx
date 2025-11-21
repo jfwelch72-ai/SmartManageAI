@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text } from "react-konva";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -120,6 +120,9 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   
+  // Stage dimensions state
+  const [stageDimensions, setStageDimensions] = useState({ width: 800, height: 600 });
+  
   // Category management state
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<QuantityCategory | null>(null);
@@ -167,10 +170,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   // Mutation for deleting measurements
   const deleteMeasurementMutation = useMutation({
     mutationFn: async (measurementId: string) => {
-      return await apiRequest({
-        url: `/api/takeoff/measurements/${measurementId}`,
-        method: "DELETE",
-      });
+      return await apiRequest("DELETE", `/api/takeoff/measurements/${measurementId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
@@ -191,16 +191,15 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const saveCategoryMutation = useMutation({
     mutationFn: async (data: { id?: string; name: string; color: string; displayOrder?: number }) => {
       if (data.id) {
-        return await apiRequest({
-          url: `/api/quantity-categories/${data.id}`,
-          method: "PATCH",
-          body: { name: data.name, color: data.color },
+        return await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, { 
+          name: data.name, 
+          color: data.color 
         });
       } else {
-        return await apiRequest({
-          url: `/api/projects/${projectId}/quantity-categories`,
-          method: "POST",
-          body: { name: data.name, color: data.color, displayOrder: categories.length },
+        return await apiRequest("POST", `/api/projects/${projectId}/quantity-categories`, { 
+          name: data.name, 
+          color: data.color, 
+          displayOrder: categories.length 
         });
       }
     },
@@ -220,10 +219,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   // Mutation for deleting categories
   const deleteCategoryMutation = useMutation({
     mutationFn: async (categoryId: string) => {
-      return await apiRequest({
-        url: `/api/quantity-categories/${categoryId}`,
-        method: "DELETE",
-      });
+      return await apiRequest("DELETE", `/api/quantity-categories/${categoryId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "quantity-categories"] });
@@ -781,6 +777,31 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  // Update Stage dimensions when container size changes
+  useLayoutEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        setStageDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+
+    // Initial size
+    updateDimensions();
+
+    // Watch for container size changes
+    if (containerRef.current) {
+      const resizeObserver = new ResizeObserver(updateDimensions);
+      resizeObserver.observe(containerRef.current);
+
+      return () => {
+        resizeObserver.disconnect();
+      };
+    }
+  }, [isFullscreen, selectedSheet]);
+
   return (
     <div ref={workspaceRef} className="flex h-screen">
       {/* Left Toolbar */}
@@ -861,8 +882,8 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           {selectedSheet ? (
             <Stage
               ref={stageRef}
-              width={containerRef.current?.clientWidth || 800}
-              height={containerRef.current?.clientHeight || 600}
+              width={stageDimensions.width}
+              height={stageDimensions.height}
               scaleX={stageScale}
               scaleY={stageScale}
               x={stagePosition.x}
