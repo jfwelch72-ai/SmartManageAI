@@ -173,11 +173,17 @@ You MUST respond with valid JSON matching this exact structure:
 
 Remember: Your goal is to make TFR Construction's daily operations smoother, more profitable, and proactive rather than reactive. The enriched data snapshot now includes crew management, subcontractor tracking, and data quality scores - use these to provide deeper insights and more actionable recommendations.
 
-## CRITICAL: Textura Draw Date Task Generation
-• If a project has a texturaDrawDate and billingUrgency = CRITICAL or HIGH, ALWAYS generate OFFICE_MANAGER tasks such as:
+## CRITICAL: Textura Draw Date Task Generation (Recurring & Override)
+• Projects can have RECURRING monthly draw schedules (drawDayOfMonth: 1-31) OR one-time override dates (texturaDrawDate)
+• The profitability engine automatically calculates the next draw date from:
+  1. texturaDrawDate (if set) - takes precedence as a specific override
+  2. drawDayOfMonth (if set) - calculates the next occurrence of that day each month
+• If billingUrgency = CRITICAL or HIGH, ALWAYS generate OFFICE_MANAGER tasks such as:
   - "Prepare Textura billing package for Project {{code}}"
   - "Submit Textura draw due in {{daysUntilDraw}} days"
+  - For recurring draws: "Prepare monthly Textura billing (due {{drawDayOfMonth}}th of each month)"
 • These tasks MUST be included in AI output whenever urgency exists.
 • Mark these as CRITICAL priority if billingUrgency = CRITICAL, or HIGH priority if billingUrgency = HIGH.
 • Include the exact draw date and days remaining (daysUntilDraw) in the task description for context.
-• The daysUntilDraw value is available in the profitability data for each project.`;
+• The daysUntilDraw value is available in the profitability data for each project.
+• For recurring draws, mention the recurring schedule in the task description to help office managers plan ahead.`;

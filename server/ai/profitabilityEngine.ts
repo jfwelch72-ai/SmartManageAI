@@ -201,41 +201,58 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   // Helper function to calculate next draw date from recurring day
   const calculateNextDrawDate = (dayOfMonth: number): Date => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day for comparison
     const year = today.getFullYear();
     const month = today.getMonth();
     
     // Try current month first
     let nextDraw = new Date(year, month, dayOfMonth);
+    nextDraw.setHours(0, 0, 0, 0);
     
-    // If the date has passed this month, use next month
+    // If the date has passed this month (or is today but we want future dates), use next month
     if (nextDraw <= today) {
       nextDraw = new Date(year, month + 1, dayOfMonth);
+      nextDraw.setHours(0, 0, 0, 0);
     }
     
     // Handle months with fewer days (e.g., day 31 in February becomes last day of month)
     if (nextDraw.getDate() !== dayOfMonth) {
-      nextDraw = new Date(year, month + (nextDraw <= today ? 2 : 1), 0); // Last day of month
+      // Get last day of the target month
+      nextDraw = new Date(year, month + (new Date(year, month, dayOfMonth) <= today ? 2 : 1), 0);
+      nextDraw.setHours(0, 0, 0, 0);
     }
     
     return nextDraw;
   };
   
-  // Determine which draw date to use: override takes precedence, then recurring
+  // Determine which draw date to use
   let drawDate: Date | null = null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Normalize for comparison
+  
   if (project.texturaDrawDate) {
-    // Use the override date if set
-    drawDate = new Date(project.texturaDrawDate);
+    const overrideDate = new Date(project.texturaDrawDate);
+    overrideDate.setHours(0, 0, 0, 0);
+    
+    // Only use override if it's in the future
+    if (overrideDate > today) {
+      drawDate = overrideDate;
+    } else if (project.drawDayOfMonth) {
+      // Override has passed, fall back to recurring schedule
+      drawDate = calculateNextDrawDate(project.drawDayOfMonth);
+    }
   } else if (project.drawDayOfMonth) {
     // Calculate next draw based on recurring day
     drawDate = calculateNextDrawDate(project.drawDayOfMonth);
   }
   
   if (drawDate) {
-    const diffDays = Math.ceil((drawDate.getTime() - now.getTime()) / 86400000);
+    const diffDays = Math.ceil((drawDate.getTime() - today.getTime()) / 86400000);
     daysUntilDraw = diffDays;
-    if (diffDays <= 3) {
+    // Only set urgency for positive days (future dates)
+    if (diffDays > 0 && diffDays <= 3) {
       billingUrgency = "CRITICAL";
-    } else if (diffDays <= 7) {
+    } else if (diffDays > 0 && diffDays <= 7) {
       billingUrgency = "HIGH";
     }
   }
