@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
+import AppHeader from "@/components/AppHeader";
 
 interface ProjectProfitability {
   project_code: string;
@@ -34,7 +35,7 @@ interface ProjectProfitability {
 }
 
 export default function CFODashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
@@ -44,16 +45,30 @@ export default function CFODashboard() {
 
   if (!user) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-muted-foreground">Please log in to view profitability data</p>
+      <div className="min-h-screen bg-background">
+        <AppHeader
+          userName="Guest"
+          userRole=""
+          onLogout={logout}
+        />
+        <main className="p-8 text-center">
+          <p className="text-muted-foreground">Please log in to view profitability data</p>
+        </main>
       </div>
     );
   }
 
   if (user.role !== 'ADMIN' && user.role !== 'MANAGER') {
     return (
-      <div className="p-8 text-center">
-        <p className="text-muted-foreground">Admin or Manager access required</p>
+      <div className="min-h-screen bg-background">
+        <AppHeader
+          userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
+          userRole={user.role || ""}
+          onLogout={logout}
+        />
+        <main className="p-8 text-center">
+          <p className="text-muted-foreground">Admin or Manager access required</p>
+        </main>
       </div>
     );
   }
@@ -106,16 +121,23 @@ export default function CFODashboard() {
   };
 
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <DollarSign className="h-8 w-8 text-primary" />
-          CFO Dashboard
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Real-time profitability analysis across all projects
-        </p>
-      </div>
+    <div className="min-h-screen bg-background">
+      <AppHeader
+        userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
+        userRole={user.role || ""}
+        onLogout={logout}
+      />
+      
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <DollarSign className="h-8 w-8 text-primary" />
+            CFO Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Real-time profitability analysis across all projects
+          </p>
+        </div>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -388,6 +410,7 @@ export default function CFODashboard() {
           </div>
         </>
       )}
+      </main>
     </div>
   );
 }

@@ -121,12 +121,12 @@ export default function AIPMDashboard() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => setLocation("/dashboard")}
+        onClick={() => window.history.back()}
         className="gap-2"
         data-testid="button-back"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to Dashboard
+        Back
       </Button>
 
       <div className="flex items-center justify-between">
