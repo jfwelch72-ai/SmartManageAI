@@ -378,31 +378,38 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        status: "DRAFT",
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    // Use transaction to ensure atomic status update + audit + notification
+    const updatedOrder = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(changeOrders)
+        .set({
+          status: "DRAFT",
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logAudit({
-      userId: req.user!.id,
-      action: "UPDATE",
-      entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "DRAFT", reason }),
-    }, req);
+      // Audit log within transaction - pass tx for atomicity
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: order.status }),
+        newValue: JSON.stringify({ status: "DRAFT", reason }),
+      }, req, tx);
 
-    // Notify requester
-    await notifyStatusChange(
-      updatedOrder,
-      "DRAFT",
-      `Change order ${updatedOrder.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`
-    );
+      // Notify requester within transaction - note: tx is the 5th parameter, notifyRequestedBy=true is 4th
+      await notifyStatusChange(
+        updated,
+        "DRAFT",
+        `Change order ${updated.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`,
+        true, // notifyRequestedBy
+        tx // transaction parameter
+      );
+
+      return updated;
+    });
 
     res.json(updatedOrder);
   } catch (error: any) {

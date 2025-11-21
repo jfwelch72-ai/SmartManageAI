@@ -1500,21 +1500,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.costCode !== undefined) updates.costCode = data.costCode;
       if (data.notes !== undefined) updates.notes = data.notes;
 
-      const [updatedEntry] = await db
-        .update(timeEntries)
-        .set(updates)
-        .where(eq(timeEntries.id, req.params.id))
-        .returning();
+      // Use transaction to ensure atomic update + audit
+      const updatedEntry = await db.transaction(async (tx) => {
+        const [entry] = await tx
+          .update(timeEntries)
+          .set(updates)
+          .where(eq(timeEntries.id, req.params.id))
+          .returning();
 
-      // Audit log
-      await logUpdate(
-        req.user!.id,
-        "TIME_ENTRY",
-        req.params.id,
-        JSON.stringify(existingEntry),
-        JSON.stringify({ ...updates, adminOverride: data.adminOverride }),
-        req
-      );
+        // Audit log within transaction
+        await logUpdate(
+          req.user!.id,
+          "TIME_ENTRY",
+          req.params.id,
+          JSON.stringify(existingEntry),
+          JSON.stringify({ ...updates, adminOverride: data.adminOverride }),
+          req,
+          tx
+        );
+
+        return entry;
+      });
 
       res.json(updatedEntry);
     } catch (error) {
@@ -1552,10 +1558,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      await db.delete(timeEntries).where(eq(timeEntries.id, req.params.id));
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx.delete(timeEntries).where(eq(timeEntries.id, req.params.id));
 
-      // Audit log
-      await logDelete(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify(existingEntry), req);
+        // Audit log within transaction
+        await logDelete(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify(existingEntry), req, tx);
+      });
 
       res.status(204).send();
     } catch (error) {
@@ -1578,18 +1587,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [updatedEntry] = await db
-        .update(timeEntries)
-        .set({
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(timeEntries.id, req.params.id))
-        .returning();
+      // Use transaction to ensure atomic approval + audit
+      const updatedEntry = await db.transaction(async (tx) => {
+        const [entry] = await tx
+          .update(timeEntries)
+          .set({
+            approvedById: req.user!.id,
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(timeEntries.id, req.params.id))
+          .returning();
 
-      // Audit log
-      await logApprove(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify({ approver: req.user!.email }), req);
+        // Audit log within transaction
+        await logApprove(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify({ approver: req.user!.email }), req, tx);
+
+        return entry;
+      });
 
       res.json(updatedEntry);
     } catch (error) {
@@ -2621,13 +2635,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const data = schema.parse(req.body);
 
-      const [newEvent] = await db.insert(billingEvents).values([{
-        ...data,
-        createdById: req.user!.id,
-      }]).returning();
+      // Use transaction to ensure atomic insert + audit
+      const newEvent = await db.transaction(async (tx) => {
+        const [event] = await tx.insert(billingEvents).values([{
+          ...data,
+          createdById: req.user!.id,
+        }]).returning();
 
-      // Audit log
-      await logCreate(req.user!.id, "BILLING_EVENT", newEvent.id, JSON.stringify(newEvent), req);
+        // Audit log within transaction
+        await logCreate(req.user!.id, "BILLING_EVENT", event.id, JSON.stringify(event), req, tx);
+
+        return event;
+      });
 
       res.status(201).json(newEvent);
     } catch (error) {
@@ -2807,11 +2826,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newCrew] = await db.insert(crews).values(validationResult.data).returning();
-      
-      await logCreate(req.user!.id, "crews", newCrew.id, {
-        name: newCrew.name,
-        leadId: newCrew.leadId,
+      // Use transaction to ensure atomic insert + audit
+      const newCrew = await db.transaction(async (tx) => {
+        const [crew] = await tx.insert(crews).values(validationResult.data).returning();
+        
+        await logCreate(req.user!.id, "crews", crew.id, JSON.stringify({
+          name: crew.name,
+          leadId: crew.leadId,
+        }), req, tx);
+
+        return crew;
       });
 
       res.status(201).json(newCrew);
@@ -2832,18 +2856,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [updated] = await db
-        .update(crews)
-        .set({ ...updateData.data, updatedAt: new Date() })
-        .where(eq(crews.id, id))
-        .returning();
-
-      if (!updated) {
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db.select().from(crews).where(eq(crews.id, id)).limit(1);
+      if (!existing) {
         res.status(404).json({ error: "Crew not found" });
         return;
       }
 
-      await logUpdate(req.user!.id, "crews", id, updateData.data);
+      // Use transaction to ensure atomic update + audit
+      const updated = await db.transaction(async (tx) => {
+        const [crew] = await tx
+          .update(crews)
+          .set({ ...updateData.data, updatedAt: new Date() })
+          .where(eq(crews.id, id))
+          .returning();
+
+        await logUpdate(req.user!.id, "crews", id, JSON.stringify(existing), JSON.stringify(updateData.data), req, tx);
+
+        return crew;
+      });
 
       res.json(updated);
     } catch (error) {
@@ -3033,11 +3064,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assignedById: req.user!.id,
       });
 
-      const [assignment] = await db.insert(crewProjectAssignments).values(validated).returning();
+      // Use transaction to ensure atomic insert + audit
+      const assignment = await db.transaction(async (tx) => {
+        const [assign] = await tx.insert(crewProjectAssignments).values(validated).returning();
 
-      await logCreate(req.user!.id, "crew_project_assignments", assignment.id, {
-        crewId: assignment.crewId,
-        projectId: assignment.projectId,
+        await logCreate(req.user!.id, "crew_project_assignments", assign.id, JSON.stringify({
+          crewId: assign.crewId,
+          projectId: assign.projectId,
+        }), req, tx);
+
+        return assign;
       });
 
       res.status(201).json(assignment);
@@ -3057,19 +3093,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { crewProjectAssignments } = await import("@shared/schema");
       const { id } = req.params;
 
-      const [deleted] = await db
-        .delete(crewProjectAssignments)
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db
+        .select()
+        .from(crewProjectAssignments)
         .where(eq(crewProjectAssignments.id, id))
-        .returning();
+        .limit(1);
 
-      if (!deleted) {
+      if (!existing) {
         res.status(404).json({ error: "Assignment not found" });
         return;
       }
 
-      await logDelete(req.user!.id, "crew_project_assignments", id, {
-        crewId: deleted.crewId,
-        projectId: deleted.projectId,
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(crewProjectAssignments)
+          .where(eq(crewProjectAssignments.id, id));
+
+        await logDelete(req.user!.id, "crew_project_assignments", id, JSON.stringify({
+          crewId: existing.crewId,
+          projectId: existing.projectId,
+        }), req, tx);
       });
 
       res.json({ success: true });
@@ -3100,11 +3145,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newSkill] = await db.insert(skills).values(validationResult.data).returning();
-      
-      await logCreate(req.user!.id, "skills", newSkill.id, {
-        name: newSkill.name,
-        category: newSkill.category,
+      // Use transaction to ensure atomic insert + audit
+      const newSkill = await db.transaction(async (tx) => {
+        const [skill] = await tx.insert(skills).values(validationResult.data).returning();
+        
+        await logCreate(req.user!.id, "skills", skill.id, JSON.stringify({
+          name: skill.name,
+          category: skill.category,
+        }), req, tx);
+
+        return skill;
       });
 
       res.status(201).json(newSkill);
@@ -3123,14 +3173,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
 
-      const [deleted] = await db.delete(skills).where(eq(skills.id, id)).returning();
-
-      if (!deleted) {
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db.select().from(skills).where(eq(skills.id, id)).limit(1);
+      if (!existing) {
         res.status(404).json({ error: "Skill not found" });
         return;
       }
 
-      await logDelete(req.user!.id, "skills", id, { name: deleted.name });
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx.delete(skills).where(eq(skills.id, id));
+        await logDelete(req.user!.id, "skills", id, JSON.stringify({ name: existing.name }), req, tx);
+      });
 
       res.json({ success: true });
     } catch (error) {
@@ -3184,15 +3238,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newUserSkill] = await db
-        .insert(userSkills)
-        .values({ userId, skillId, proficiencyLevel, yearsExperience })
-        .returning();
+      // Use transaction to ensure atomic insert + audit
+      const newUserSkill = await db.transaction(async (tx) => {
+        const [uSkill] = await tx
+          .insert(userSkills)
+          .values({ userId, skillId, proficiencyLevel, yearsExperience })
+          .returning();
 
-      await logCreate(req.user!.id, "user_skills", newUserSkill.id, {
-        userId,
-        skillId,
-        proficiencyLevel,
+        await logCreate(req.user!.id, "user_skills", uSkill.id, JSON.stringify({
+          userId,
+          skillId,
+          proficiencyLevel,
+        }), req, tx);
+
+        return uSkill;
       });
 
       res.status(201).json(newUserSkill);
@@ -3207,22 +3266,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { userId, skillId } = req.params;
 
-      const [deleted] = await db
-        .delete(userSkills)
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db
+        .select()
+        .from(userSkills)
         .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)))
-        .returning();
+        .limit(1);
 
-      if (!deleted) {
+      if (!existing) {
         res.status(404).json({ error: "User skill not found" });
         return;
       }
 
-      await logDelete(req.user!.id, "user_skills", deleted.id, {
-        userId,
-        skillId,
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(userSkills)
+          .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)));
+
+        await logDelete(req.user!.id, "user_skills", existing.id, JSON.stringify({
+          userId,
+          skillId,
+        }), req, tx);
       });
 
-      res.json({ success: true });
+      res.json({ success: true});
     } catch (error) {
       console.error("Error removing skill:", error);
       res.status(500).json({ error: "Failed to remove skill" });
@@ -3584,42 +3652,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Create project plan record
-      const [plan] = await db.insert(projectPlans).values({
-        projectId,
-        documentId: documentId,
-        originalPdfUrl: document.fileUrl,
-        fileName: document.fileName,
-      }).returning();
-
-      // Prepare all sheets for batch insert
-      const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
-      const sheetValues = [];
-      
-      for (let i = 0; i < pageCount; i++) {
-        const sheetName = pageCount > 1 
-          ? `${baseSheetName} - Page ${i + 1}`
-          : baseSheetName;
-        
-        sheetValues.push({
+      // Use transaction to ensure atomic plan + sheets creation + audit
+      const result = await db.transaction(async (tx) => {
+        // Create project plan record
+        const [plan] = await tx.insert(projectPlans).values({
           projectId,
-          planId: plan.id,
-          imageUrl: document.fileUrl,
-          sheetIndex: i,
-          sheetName,
-        });
-      }
+          documentId: documentId,
+          originalPdfUrl: document.fileUrl,
+          fileName: document.fileName,
+        }).returning();
 
-      // Batch insert all sheets
-      const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
+        // Prepare all sheets for batch insert
+        const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+        const sheetValues = [];
+        
+        for (let i = 0; i < pageCount; i++) {
+          const sheetName = pageCount > 1 
+            ? `${baseSheetName} - Page ${i + 1}`
+            : baseSheetName;
+          
+          sheetValues.push({
+            projectId,
+            planId: plan.id,
+            imageUrl: document.fileUrl,
+            sheetIndex: i,
+            sheetName,
+          });
+        }
 
-      const result = { plan, sheets };
+        // Batch insert all sheets
+        const sheets = await tx.insert(takeoffSheets).values(sheetValues).returning();
 
-      await logCreate(req.user!.id, "project_plans", result.plan.id, {
-        projectId,
-        fileName: document.fileName,
-        documentId,
-        pageCount,
+        // Audit log within transaction
+        await logCreate(req.user!.id, "project_plans", plan.id, JSON.stringify({
+          projectId,
+          fileName: document.fileName,
+          documentId,
+          pageCount,
+        }), req, tx);
+
+        return { plan, sheets };
       });
 
       res.status(201).json(result);
@@ -3642,33 +3714,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { projectPlans, takeoffSheets, insertProjectPlanSchema, insertTakeoffSheetSchema } = await import("@shared/schema");
 
-      // Create project plan record
-      const [plan] = await db.insert(projectPlans).values({
-        projectId,
-        originalPdfUrl: fileUrl,
-        fileName,
-      }).returning();
+      // Use transaction to ensure atomic plan + sheet creation + audit
+      const result = await db.transaction(async (tx) => {
+        // Create project plan record
+        const [plan] = await tx.insert(projectPlans).values({
+          projectId,
+          originalPdfUrl: fileUrl,
+          fileName,
+        }).returning();
 
-      // TODO: In a production system, you would use a PDF processing service here
-      // For now, we'll create a single sheet placeholder
-      // The frontend will handle PDF rendering with pdf.js
-      const [sheet] = await db.insert(takeoffSheets).values({
-        projectId,
-        planId: plan.id,
-        imageUrl: fileUrl, // Using PDF URL as placeholder
-        sheetIndex: 0,
-        sheetName: fileName,
-      }).returning();
+        // TODO: In a production system, you would use a PDF processing service here
+        // For now, we'll create a single sheet placeholder
+        // The frontend will handle PDF rendering with pdf.js
+        const [sheet] = await tx.insert(takeoffSheets).values({
+          projectId,
+          planId: plan.id,
+          imageUrl: fileUrl, // Using PDF URL as placeholder
+          sheetIndex: 0,
+          sheetName: fileName,
+        }).returning();
 
-      await logAudit({
-        userId: req.user!.id,
-        action: "CREATE",
-        entityType: "project_plan",
-        entityId: plan.id,
-        newValue: `Uploaded plan: ${fileName}`,
-      }, req);
+        // Audit log within transaction
+        await logAudit({
+          userId: req.user!.id,
+          action: "CREATE",
+          entityType: "project_plan",
+          entityId: plan.id,
+          newValue: `Uploaded plan: ${fileName}`,
+        }, req, tx);
 
-      res.status(201).json({ plan, sheets: [sheet] });
+        return { plan, sheets: [sheet] };
+      });
+
+      res.status(201).json(result);
     } catch (error) {
       console.error("Error uploading plan:", error);
       res.status(500).json({ error: "Failed to upload plan" });
