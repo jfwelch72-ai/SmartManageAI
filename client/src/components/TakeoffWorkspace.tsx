@@ -56,6 +56,12 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const [units, setUnits] = useState<"ft" | "m">("ft");
   const [stageScale, setStageScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
+  
+  // Drawing state for measurement tools
+  const [drawingPoints, setDrawingPoints] = useState<{ x: number; y: number }[]>([]);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [tempMeasurements, setTempMeasurements] = useState<any[]>([]);
+  
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +75,30 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const { data: measurements = [], isLoading: measurementsLoading } = useQuery<TakeoffMeasurement[]>({
     queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"],
     enabled: !!selectedSheet,
+  });
+
+  // Mutation for creating measurements
+  const createMeasurementMutation = useMutation({
+    mutationFn: async (data: {
+      sheetId: string;
+      type: MeasurementType;
+      points: { x: number; y: number }[];
+      label?: string;
+      depthInches?: number;
+    }) => {
+      return await apiRequest({
+        url: `/api/takeoff/measurements`,
+        method: "POST",
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      toast({ title: "Success", description: "Measurement saved" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save measurement", variant: "destructive" });
+    },
   });
 
   const currentSheet = sheets.find(s => s.id === selectedSheet);
@@ -86,10 +116,14 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   };
 
   const handleStageClick = (e: any) => {
+    const stage = e.target.getStage();
+    const pointerPosition = stage.getPointerPosition();
+    
+    // Transform pointer position to sheet space (accounting for pan/zoom)
+    const transform = stage.getAbsoluteTransform().copy().invert();
+    const point = transform.point(pointerPosition);
+    
     if (activeTool === "calibrate") {
-      const stage = e.target.getStage();
-      const point = stage.getPointerPosition();
-      
       if (calibrationMode === "first-point") {
         setCalibrationPoints([point]);
         setCalibrationMode("second-point");
@@ -112,6 +146,57 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           description: `Enter the real-world distance (${pixelDistance.toFixed(2)} pixels measured)` 
         });
       }
+    } else if (activeTool === "linear") {
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!currentSheet?.scalePxPerFoot) {
+        toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!isDrawing) {
+        // Start drawing - first point
+        setIsDrawing(true);
+        setDrawingPoints([point]);
+      } else {
+        // End drawing - second point, save measurement
+        const newPoints = [...drawingPoints, point];
+        const pixelDistance = Math.sqrt(
+          Math.pow(newPoints[1].x - newPoints[0].x, 2) + 
+          Math.pow(newPoints[1].y - newPoints[0].y, 2)
+        );
+        
+        const lengthFt = pixelDistance / currentSheet.scalePxPerFoot;
+        
+        createMeasurementMutation.mutate({
+          sheetId: selectedSheet,
+          type: "LINEAR",
+          points: newPoints,
+          label: `Line ${measurements.length + 1}`,
+        });
+        
+        setIsDrawing(false);
+        setDrawingPoints([]);
+        toast({ 
+          title: "Measurement Created", 
+          description: `${lengthFt.toFixed(2)} LF` 
+        });
+      }
+    } else if (activeTool === "count") {
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      
+      createMeasurementMutation.mutate({
+        sheetId: selectedSheet,
+        type: "COUNT",
+        points: [point],
+        label: `Count ${measurements.filter(m => m.type === "COUNT").length + 1}`,
+      });
     }
   };
 
@@ -240,10 +325,68 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                 {/* Sheet image would go here */}
                 <Text text="Canvas: Plan will render here" x={20} y={20} fontSize={16} />
                 
+                {/* Saved measurements */}
+                {measurements.map((m) => {
+                  const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                  
+                  if (m.type === "LINEAR" && points.length >= 2) {
+                    return (
+                      <Line
+                        key={m.id}
+                        points={[points[0].x, points[0].y, points[1].x, points[1].y]}
+                        stroke="#2563eb"
+                        strokeWidth={3}
+                      />
+                    );
+                  } else if (m.type === "AREA" && points.length >= 3) {
+                    const flatPoints = points.flatMap((p: any) => [p.x, p.y]);
+                    return (
+                      <Line
+                        key={m.id}
+                        points={flatPoints}
+                        stroke="#16a34a"
+                        strokeWidth={3}
+                        fill="rgba(22, 163, 74, 0.1)"
+                        closed={true}
+                      />
+                    );
+                  } else if (m.type === "COUNT" && points.length >= 1) {
+                    return (
+                      <Circle
+                        key={m.id}
+                        x={points[0].x}
+                        y={points[0].y}
+                        radius={12}
+                        fill="#dc2626"
+                        stroke="white"
+                        strokeWidth={2}
+                      />
+                    );
+                  }
+                  return null;
+                })}
+                
+                {/* In-progress drawing */}
+                {isDrawing && drawingPoints.length > 0 && (
+                  <>
+                    {drawingPoints.map((point, i) => (
+                      <Circle
+                        key={`temp-${i}`}
+                        x={point.x}
+                        y={point.y}
+                        radius={6}
+                        fill="#2563eb"
+                        stroke="white"
+                        strokeWidth={2}
+                      />
+                    ))}
+                  </>
+                )}
+                
                 {/* Calibration points */}
                 {calibrationPoints.map((point, i) => (
                   <Circle
-                    key={i}
+                    key={`cal-${i}`}
                     x={point.x}
                     y={point.y}
                     radius={8}
