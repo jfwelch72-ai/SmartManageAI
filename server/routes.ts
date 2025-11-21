@@ -480,6 +480,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Validation Helpers
+  // ====================
+  
+  // Validate monetary amount is positive and within reasonable limits
+  function validateMonetaryAmount(amount: string | number | null | undefined, fieldName: string): { valid: boolean; error?: string } {
+    if (amount === null || amount === undefined) {
+      return { valid: true }; // Optional fields are allowed to be null/undefined
+    }
+    
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    
+    if (isNaN(numAmount)) {
+      return { valid: false, error: `${fieldName} must be a valid number` };
+    }
+    
+    if (numAmount <= 0) {
+      return { valid: false, error: `${fieldName} must be a positive value (greater than zero)` };
+    }
+    
+    // Reasonable upper limit: $100 million per field
+    if (numAmount > 100000000) {
+      return { valid: false, error: `${fieldName} exceeds maximum allowed value ($100,000,000)` };
+    }
+    
+    return { valid: true };
+  }
+
+  // Validate project status transitions (state machine)
+  type ProjectStatus = "BID" | "PLANNING" | "ACTIVE" | "COMPLETE" | "CLOSED";
+  function validateProjectStatusTransition(currentStatus: ProjectStatus, newStatus: ProjectStatus): { valid: boolean; error?: string } {
+    // Valid transitions map
+    const validTransitions: Record<ProjectStatus, ProjectStatus[]> = {
+      "BID": ["PLANNING"],
+      "PLANNING": ["ACTIVE", "BID"],  // Can revert to BID if not started
+      "ACTIVE": ["COMPLETE", "PLANNING"],  // Can revert to PLANNING if needed
+      "COMPLETE": ["CLOSED", "ACTIVE"],  // Can revert to ACTIVE if more work needed
+      "CLOSED": [],  // Terminal state - no transitions allowed
+    };
+
+    if (currentStatus === newStatus) {
+      return { valid: true }; // Same status is always allowed
+    }
+
+    const allowedTransitions = validTransitions[currentStatus];
+    if (!allowedTransitions.includes(newStatus)) {
+      return { 
+        valid: false, 
+        error: `Invalid status transition from ${currentStatus} to ${newStatus}. Allowed transitions: ${allowedTransitions.join(", ") || "none (terminal state)"}` 
+      };
+    }
+
+    return { valid: true };
+  }
+
+  // ====================
   // Bid Routes
   // ====================
 
@@ -521,6 +576,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
+      }
+
+      // BUSINESS VALIDATION: Validate monetary amounts
+      if (validationResult.data.bidAmount !== undefined) {
+        const amountCheck = validateMonetaryAmount(validationResult.data.bidAmount, "Bid amount");
+        if (!amountCheck.valid) {
+          res.status(400).json({ error: amountCheck.error });
+          return;
+        }
       }
 
       const [newBid] = await db.insert(bids).values(validationResult.data).returning();
@@ -938,6 +1002,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Check status transitions if status is being updated
+      if (validationResult.data.status !== undefined) {
+        const [currentProject] = await db
+          .select()
+          .from(projects)
+          .where(eq(projects.code, req.params.code))
+          .limit(1);
+
+        if (!currentProject) {
+          res.status(404).json({ error: "Project not found" });
+          return;
+        }
+
+        const transitionCheck = validateProjectStatusTransition(
+          currentProject.status as ProjectStatus,
+          validationResult.data.status as ProjectStatus
+        );
+
+        if (!transitionCheck.valid) {
+          res.status(400).json({ error: transitionCheck.error });
+          return;
+        }
+      }
+
       const updateData: any = { ...validationResult.data, updatedAt: new Date() };
       
       const [updatedProject] = await db
@@ -962,6 +1050,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
       const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = req.body;
+
+      // BUSINESS VALIDATION: Validate monetary amounts
+      if (budget !== undefined) {
+        const budgetCheck = validateMonetaryAmount(budget, "Budget");
+        if (!budgetCheck.valid) {
+          res.status(400).json({ error: budgetCheck.error });
+          return;
+        }
+      }
+
+      if (contractAmount !== undefined) {
+        const contractCheck = validateMonetaryAmount(contractAmount, "Contract amount");
+        if (!contractCheck.valid) {
+          res.status(400).json({ error: contractCheck.error });
+          return;
+        }
+      }
 
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
       
@@ -2336,6 +2441,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // BUSINESS VALIDATION: Validate monetary amounts (REQUIRED for change orders)
+      if (validationResult.data.amount === undefined || validationResult.data.amount === null) {
+        res.status(400).json({ error: "Change order amount is required" });
+        return;
+      }
+
+      const amountCheck = validateMonetaryAmount(validationResult.data.amount, "Change order amount");
+      if (!amountCheck.valid) {
+        res.status(400).json({ error: amountCheck.error });
         return;
       }
 
