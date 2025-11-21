@@ -1,0 +1,25 @@
+
+> rest-express@1.0.0 build
+> vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
+
+vite v5.4.20 building for production...
+transforming...
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+✓ 2588 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/public/index.html                              2.01 kB │ gzip:   0.76 kB
+../dist/public/assets/pdf.worker.min-Cpi8b8z3.mjs  1,050.96 kB
+../dist/public/assets/index-CluEHxTR.css             148.19 kB │ gzip:  23.24 kB
+../dist/public/assets/index-BFUukLhf.js            1,786.13 kB │ gzip: 510.16 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 19.32s
+
+  dist/index.js  281.2kb
+
+⚡ Done in 41ms

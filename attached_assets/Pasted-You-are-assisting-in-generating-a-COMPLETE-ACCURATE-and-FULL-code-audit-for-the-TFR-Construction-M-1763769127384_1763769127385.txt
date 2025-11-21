@@ -1,0 +1,163 @@
+You are assisting in generating a COMPLETE, ACCURATE, and FULL code audit for the TFR Construction Management Platform.
+
+Your goal is to gather ALL necessary source files and relevant project configuration into a SINGLE downloadable file so that an external expert auditor (ChatGPT) can perform a complete end-to-end system review.
+
+=================================================================
+PHASE 1 — COLLECT ALL CRITICAL SERVER FILES
+=================================================================
+
+Gather and export the FULL contents of these files:
+
+- server/routes.ts
+- server/changeOrderRoutes.ts
+- server/timeClockRoutes.ts
+- server/aiRoutes.ts
+- server/db.ts
+- server/auth.ts
+- server/objectStorage.ts
+- server/objectAcl.ts
+- server/auditLogger.ts
+- server/fileValidation.ts
+- server/fileAccessHelpers.ts
+- server/middleware/*
+- server/utils/* (if exists)
+
+Also include ALL other files in /server that contain:
+- Any query touching the database
+- Any validation logic (zod schemas, transformers, sanitization)
+- Any insert/update/delete logic
+- Any audit logging calls
+- Any route definitions
+- Any notification logic (email/SMS/in-app if present)
+
+=================================================================
+PHASE 2 — COLLECT ALL DATABASE & ORM FILES
+=================================================================
+
+Gather:
+
+- drizzle.config.ts
+- All files under /drizzle/
+- All files defining schema (schema.ts or equivalent)
+- Any migrations (.sql or generated code)
+- Any helper functions that wrap Drizzle ORM queries
+
+=================================================================
+PHASE 3 — COLLECT ALL FRONTEND FILES IMPACTING BACKEND CONTRACTS
+=================================================================
+
+Gather:
+
+- client/src/lib/api/*
+- client/src/hooks/*
+- client/src/services/*
+- client/src/context/auth*
+- Any TanStack Query wrappers
+- Any client-side validation schemas
+- Any TypeScript interface files that represent server responses
+
+=================================================================
+PHASE 4 — COLLECT ALL BUILD & ENVIRONMENT FILES
+=================================================================
+
+Gather:
+
+- package.json
+- package-lock.json or pnpm-lock.yaml
+- tsconfig.json
+- vite.config.ts
+- .replit
+- replit.nix (if present)
+- .env.example (if exists)
+- dev.env or local.env (DO NOT include production secrets)
+
+=================================================================
+PHASE 5 — RUN CODE SCANS AND INCLUDE OUTPUT
+=================================================================
+
+Run each of the following and include the FULL output in a text file:
+
+1. TypeScript check:
+   `npm run typecheck` or `tsc --noEmit`
+   → Save output to audit/typecheck.txt
+
+2. Backend build:
+   `npm run build`
+   → Save output to audit/build.txt
+
+3. Dev server startup (backend only):
+   `npm run dev` for 5 seconds then kill
+   → Save output to audit/dev_startup.txt
+
+4. Global search for transactions:
+   Search for:
+   - "db.transaction"
+   - "tx."
+   - "transaction("
+   Save results to audit/transactions.txt
+
+5. Global search for audit logging:
+   Search for:
+   - "logAudit"
+   - "logUpdate"
+   - "logCreate"
+   - "logDelete"
+   Save results to audit/audit_calls.txt
+
+6. Global search for failed or suspicious inserts:
+   Search for:
+   - "values({"
+   - "values([{"
+   - "undefined"
+   - "optional"
+   Save results to audit/db_mutations.txt
+
+=================================================================
+PHASE 6 — PACKAGE EVERYTHING
+=================================================================
+
+Create a folder named **FULL_CODE_AUDIT_EXPORT/** containing:
+
+- All collected server files
+- All Drizzle/ORM/schema files
+- All frontend API-contract-related files
+- All config/environment files
+- All log outputs from Phase 5
+- A summary file called AUDIT_SUMMARY.txt containing:
+
+   *List of all files included*  
+   *Any missing modules*  
+   *Any notable structural issues discovered during collection*  
+   *Driver type (`neon-http`)*  
+   *Confirmation that transactions are unsupported*  
+   *List of all endpoints using db.transaction()*  
+   *List of all TypeScript errors*  
+   *List of all schema mismatches*  
+   *Any unresolved warnings*
+
+Finally, compress the **FULL_CODE_AUDIT_EXPORT/** folder into:
+
+➡️ **FULL_CODE_AUDIT_EXPORT.zip**
+
+and output it as a file I can download.
+
+=================================================================
+PHASE 7 — FINAL OUTPUT
+=================================================================
+
+When finished:
+
+1. Provide a link/button to download **FULL_CODE_AUDIT_EXPORT.zip**
+2. Confirm that no files were skipped.
+3. Confirm that the zip contains:
+   - Server files
+   - DB/schema files
+   - Frontend contract files
+   - Environment/config files
+   - All code scans
+   - A summary
+4. Wait for further instructions.
+
+=================================================================
+
+Begin now.
