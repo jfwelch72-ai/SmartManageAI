@@ -66,20 +66,20 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
         </Link>
 
         {/* Navigation */}
-        <nav className="hidden lg:flex items-center gap-1 flex-1">
-          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-dashboard">
+        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-dashboard">
             <Link href="/dashboard">
               <LayoutDashboard className="w-4 h-4" />
               Dashboard
             </Link>
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-projects">
+          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-projects">
             <Link href="/projects">
               <Briefcase className="w-4 h-4" />
               Projects
             </Link>
           </Button>
-          <Button variant="ghost" size="sm" className="gap-2" asChild data-testid="nav-calendar">
+          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-calendar">
             <Link href="/calendar">
               <Calendar className="w-4 h-4" />
               Calendar
@@ -89,7 +89,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
           {/* Time Clock Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-time-clock">
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-time-clock">
                 <Clock className="w-4 h-4" />
                 Time Clock
                 <ChevronDown className="w-3 h-3" />
@@ -122,7 +122,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
           {/* AI Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-ai">
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-ai">
                 <Bot className="w-4 h-4" />
                 AI
                 <ChevronDown className="w-3 h-3" />
@@ -161,7 +161,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
           {isManagerOrAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2" data-testid="nav-admin">
+                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-admin">
                   <Shield className="w-4 h-4" />
                   Admin
                   <ChevronDown className="w-3 h-3" />
