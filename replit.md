@@ -11,6 +11,12 @@ The TFR Construction Management Platform is a comprehensive internal tool design
 4. **Admin Clock Restriction**: Hidden clock in/out controls for admin users (admins don't need to clock in/out)
 5. **Active Shifts Monitoring**: Live monitoring page auto-refreshes every 15 seconds to show currently clocked-in employees
 
+### AI Dashboard & Navigation Enhancements (Completed)
+1. **Auto-Refresh AI Results**: AI PM dashboard now auto-refreshes every 5 seconds to show new tasks and analysis results without manual page refresh
+2. **Success Feedback**: Added completion toast showing how many tasks were created when AI analysis finishes
+3. **Back Button**: Added "Back to Dashboard" button on AI PM page for easier navigation
+4. **Comprehensive Navigation**: AppHeader navigation available on all pages with quick access to Dashboard, Projects, Calendar, Time Clock, AI features, and Admin tools
+
 ## Previous Changes (November 19, 2025)
 ### Backend Targeted Upgrades (Completed)
 1. **Data Quality Route Fix**: Corrected bug where `calculateProjectDataQuality` received `project.id` instead of project `code`

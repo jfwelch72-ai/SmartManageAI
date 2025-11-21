@@ -6,22 +6,26 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Bot, CheckCircle, Clock, AlertCircle, XCircle, Play, TrendingUp } from "lucide-react";
+import { Bot, CheckCircle, Clock, AlertCircle, XCircle, Play, TrendingUp, ArrowLeft } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useLocation } from "wouter";
 import type { AITask, AIRun } from "@shared/schema";
 
 export default function AIPMDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<(AITask & { metadata: any })[]>({
     queryKey: ["/api/ai-pm/tasks"],
     enabled: !!user,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds to show new tasks
   });
 
   const { data: latestRun, isLoading: runLoading } = useQuery<AIRun & { aiResponse: any }>({
     queryKey: ["/api/ai-pm/latest-run"],
     enabled: !!user,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds to show latest analysis
   });
 
   const triggerRunMutation = useMutation({
@@ -113,6 +117,18 @@ export default function AIPMDashboard() {
 
   return (
     <div className="p-8 space-y-6">
+      {/* Back Button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setLocation("/dashboard")}
+        className="gap-2"
+        data-testid="button-back"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Dashboard
+      </Button>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
