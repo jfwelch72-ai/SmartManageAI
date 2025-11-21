@@ -3840,15 +3840,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   // Get all quantity categories for a project
-  app.get("/api/projects/:projectId/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { projectId } = req.params;
+      const { code } = req.params;
       const { quantityCategories } = await import("@shared/schema");
+
+      // Get the project to find its internal ID
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, code))
+        .limit(1);
+
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
 
       const categories = await db
         .select()
         .from(quantityCategories)
-        .where(eq(quantityCategories.projectId, projectId))
+        .where(eq(quantityCategories.projectId, project.id))
         .orderBy(quantityCategories.displayOrder);
 
       res.json(categories);
@@ -3859,13 +3871,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create a new quantity category
-  app.post("/api/projects/:projectId/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { projectId } = req.params;
+      const { code } = req.params;
       const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
 
+      // Get the project to find its internal ID
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, code))
+        .limit(1);
+
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
       const validated = insertQuantityCategorySchema.parse({
-        projectId,
+        projectId: project.id,  // Use the internal UUID, not the code
         ...req.body,
       });
 

@@ -36,6 +36,7 @@ type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE";
 
 interface TakeoffWorkspaceProps {
   projectId: string;
+  projectCode: string;
 }
 
 const TOOL_CONFIG = [
@@ -85,7 +86,7 @@ const COMMON_SCALES = {
   ],
 };
 
-export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWorkspaceProps) {
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -184,7 +185,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
 
   // Fetch categories for this project
   const { data: categories = [] } = useQuery<QuantityCategory[]>({
-    queryKey: ["/api/projects", projectId, "quantity-categories"],
+    queryKey: ["/api/projects", projectCode, "quantity-categories"],
   });
 
   // Mutation for creating/updating categories
@@ -196,7 +197,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           color: data.color 
         });
       } else {
-        return await apiRequest("POST", `/api/projects/${projectId}/quantity-categories`, { 
+        return await apiRequest("POST", `/api/projects/${projectCode}/quantity-categories`, { 
           name: data.name, 
           color: data.color, 
           displayOrder: categories.length 
@@ -204,7 +205,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "quantity-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
       setCategoryDialogOpen(false);
       setEditingCategory(null);
       setCategoryName("");
@@ -222,7 +223,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       return await apiRequest("DELETE", `/api/quantity-categories/${categoryId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "quantity-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
       toast({ title: "Success", description: "Category deleted" });
     },
     onError: () => {

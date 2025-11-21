@@ -1430,7 +1430,7 @@ export default function ProjectDetailPage() {
             
             {plansSubTab === "takeoff" && project && (
               <div className="h-[calc(100vh-200px)]">
-                <TakeoffWorkspace projectId={project.id} />
+                <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
               </div>
             )}
           </TabsContent>
