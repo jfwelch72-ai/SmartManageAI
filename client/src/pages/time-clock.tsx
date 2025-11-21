@@ -44,6 +44,7 @@ export default function TimeClockPage() {
   const clockOut = useClockOut();
 
   const isClockedIn = !!currentShift?.shift;
+  const shouldShowClockControls = user?.role !== "ADMIN";
 
   // Get GPS coordinates
   useEffect(() => {
@@ -151,8 +152,9 @@ export default function TimeClockPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Clock In/Out Card */}
-          <Card className="lg:col-span-2" data-testid="card-clock-control">
+          {/* Clock In/Out Card - Hidden for Admins */}
+          {shouldShowClockControls && (
+            <Card className="lg:col-span-2" data-testid="card-clock-control">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="w-5 h-5" />
@@ -258,10 +260,11 @@ export default function TimeClockPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
+            </Card>
+          )}
 
           {/* Quick Stats Card */}
-          <Card data-testid="card-quick-stats">
+          <Card className={shouldShowClockControls ? "" : "lg:col-span-3"} data-testid="card-quick-stats">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="w-5 h-5" />

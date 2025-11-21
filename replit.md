@@ -3,7 +3,15 @@
 ## Overview
 The TFR Construction Management Platform is a comprehensive internal tool designed for TFR Construction. Its primary purpose is to manage the entire project lifecycle, from bid tracking through project completion, using TypeScript, React, and PostgreSQL. The platform aims to centralize project data, user management, and daily operations to enhance efficiency and oversight across all construction activities. Key ambitions include improving compliance tracking, leveraging AI for operations, streamlining crew and subcontractor management, and ensuring robust data quality monitoring.
 
-## Recent Changes (November 19, 2025)
+## Recent Changes (November 21, 2025)
+### Time Clock & Calendar Fixes (Completed)
+1. **Time Entries Page Fix**: Fixed crash caused by API returning `{data: [...], pagination: {...}}` but frontend expecting direct array
+2. **Calendar Time Support**: Added time fields (start/end time) with "All Day Event" checkbox for creating timed events
+3. **Calendar Clickable Events**: Made all calendar events clickable to view full details, including "+X more" indicator
+4. **Admin Clock Restriction**: Hidden clock in/out controls for admin users (admins don't need to clock in/out)
+5. **Active Shifts Monitoring**: Live monitoring page auto-refreshes every 15 seconds to show currently clocked-in employees
+
+## Previous Changes (November 19, 2025)
 ### Backend Targeted Upgrades (Completed)
 1. **Data Quality Route Fix**: Corrected bug where `calculateProjectDataQuality` received `project.id` instead of project `code`
 2. **Textura Draw Date Tracking**: Added `texturaDrawDate` field to projects schema for billing deadline management

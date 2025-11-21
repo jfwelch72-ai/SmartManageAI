@@ -186,7 +186,7 @@ export function useMarkAllNotificationsRead() {
 
 // Time Entries
 export function useTimeEntries() {
-  return useQuery<TimeEntry[]>({
+  return useQuery<{ data: TimeEntry[]; pagination: any }>({
     queryKey: ["/api/time-entries"],
   });
 }

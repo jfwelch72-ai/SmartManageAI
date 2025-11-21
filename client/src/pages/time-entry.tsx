@@ -14,7 +14,8 @@ export default function TimeEntryPage() {
   const { toast } = useToast();
   
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
-  const { data: timeEntries = [], isLoading: entriesLoading } = useTimeEntries();
+  const { data: timeEntriesResponse, isLoading: entriesLoading } = useTimeEntries();
+  const timeEntries = timeEntriesResponse?.data || [];
   const createEntry = useCreateTimeEntry();
   const approveEntry = useApproveTimeEntry();
 
