@@ -1357,25 +1357,27 @@ export default function ProjectDetailPage() {
                                 <Download className="w-4 h-4 mr-1" />
                                 Download
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={async () => {
-                                  try {
-                                    await apiRequest("POST", `/api/projects/${project!.id}/takeoff/import-plan`, { documentId: doc.id });
-                                    toast({ title: "Success", description: "Plan imported to takeoff workspace" });
-                                    await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
-                                    await queryClient.refetchQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
-                                  } catch (error: any) {
-                                    const errorMessage = error?.message || error?.error || "Failed to import plan";
-                                    toast({ title: "Error", description: errorMessage, variant: "destructive" });
-                                  }
-                                }}
-                                data-testid={`button-import-takeoff-${doc.id}`}
-                              >
-                                <FileText className="w-4 h-4 mr-1" />
-                                Import to Takeoff
-                              </Button>
+                              {doc.mimeType === 'application/pdf' && (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={async () => {
+                                    try {
+                                      await apiRequest("POST", `/api/projects/${project!.id}/takeoff/import-plan`, { documentId: doc.id });
+                                      toast({ title: "Success", description: "Plan imported to takeoff workspace" });
+                                      await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                      await queryClient.refetchQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                    } catch (error: any) {
+                                      const errorMessage = error?.message || error?.error || "Failed to import plan";
+                                      toast({ title: "Error", description: errorMessage, variant: "destructive" });
+                                    }
+                                  }}
+                                  data-testid={`button-import-takeoff-${doc.id}`}
+                                >
+                                  <FileText className="w-4 h-4 mr-1" />
+                                  Import to Takeoff
+                                </Button>
+                              )}
                             </div>
                           </div>
                         ))}
