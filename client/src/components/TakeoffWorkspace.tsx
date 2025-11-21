@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil 
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,7 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import type { TakeoffSheet, TakeoffMeasurement } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import * as pdfjsLib from 'pdfjs-dist';
 
 type Tool = 
@@ -119,6 +119,13 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   
+  // Category management state
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<QuantityCategory | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryColor, setCategoryColor] = useState("#3b82f6");
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -174,6 +181,58 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete measurement", variant: "destructive" });
+    },
+  });
+
+  // Fetch categories for this project
+  const { data: categories = [] } = useQuery<QuantityCategory[]>({
+    queryKey: ["/api/projects", projectId, "quantity-categories"],
+  });
+
+  // Mutation for creating/updating categories
+  const saveCategoryMutation = useMutation({
+    mutationFn: async (data: { id?: string; name: string; color: string; displayOrder?: number }) => {
+      if (data.id) {
+        return await apiRequest({
+          url: `/api/quantity-categories/${data.id}`,
+          method: "PATCH",
+          body: { name: data.name, color: data.color },
+        });
+      } else {
+        return await apiRequest({
+          url: `/api/projects/${projectId}/quantity-categories`,
+          method: "POST",
+          body: { name: data.name, color: data.color, displayOrder: categories.length },
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "quantity-categories"] });
+      setCategoryDialogOpen(false);
+      setEditingCategory(null);
+      setCategoryName("");
+      setCategoryColor("#3b82f6");
+      toast({ title: "Success", description: editingCategory ? "Category updated" : "Category created" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save category", variant: "destructive" });
+    },
+  });
+
+  // Mutation for deleting categories
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (categoryId: string) => {
+      return await apiRequest({
+        url: `/api/quantity-categories/${categoryId}`,
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "quantity-categories"] });
+      toast({ title: "Success", description: "Category deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete category", variant: "destructive" });
     },
   });
 
@@ -458,6 +517,37 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       toast({ title: "Error", description: "Failed to apply scale", variant: "destructive" });
     }
   };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!confirm("Delete this category? Measurements will not be deleted, but will lose their category assignment.")) {
+      return;
+    }
+    deleteCategoryMutation.mutate(categoryId);
+  };
+
+  const handleSaveCategory = () => {
+    if (!categoryName.trim()) {
+      toast({ title: "Error", description: "Category name is required", variant: "destructive" });
+      return;
+    }
+
+    saveCategoryMutation.mutate({
+      id: editingCategory?.id,
+      name: categoryName,
+      color: categoryColor,
+    });
+  };
+
+  // Populate edit form when editing a category
+  useEffect(() => {
+    if (editingCategory) {
+      setCategoryName(editingCategory.name);
+      setCategoryColor(editingCategory.color);
+    } else {
+      setCategoryName("");
+      setCategoryColor("#3b82f6");
+    }
+  }, [editingCategory]);
 
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
@@ -960,6 +1050,71 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
               </Card>
             )}
 
+            {/* Quantity Categories */}
+            {selectedSheet && (
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold">Quantity Categories</h3>
+                    <Button 
+                      size="sm" 
+                      onClick={() => setCategoryDialogOpen(true)}
+                      data-testid="button-add-category"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    {categories.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-2">
+                        No categories yet. Create one to organize measurements.
+                      </p>
+                    ) : (
+                      categories.map((category) => (
+                        <div 
+                          key={category.id}
+                          className="flex items-center justify-between p-2 rounded border hover-elevate"
+                          style={{ borderLeft: `4px solid ${category.color}` }}
+                        >
+                          <div className="flex items-center gap-2 flex-1">
+                            <div 
+                              className="w-4 h-4 rounded"
+                              style={{ backgroundColor: category.color }}
+                            />
+                            <span className="text-sm">{category.name}</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => {
+                                setEditingCategory(category);
+                                setCategoryDialogOpen(true);
+                              }}
+                              data-testid={`button-edit-category-${category.id}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => handleDeleteCategory(category.id)}
+                              data-testid={`button-delete-category-${category.id}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Measurements List */}
             <Card>
               <CardContent className="pt-6">
@@ -1105,6 +1260,72 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
               data-testid="button-save-note"
             >
               Save Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Category Dialog */}
+      <Dialog open={categoryDialogOpen} onOpenChange={(open) => {
+        setCategoryDialogOpen(open);
+        if (!open) {
+          setEditingCategory(null);
+        }
+      }}>
+        <DialogContent data-testid="dialog-category">
+          <DialogHeader>
+            <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="category-name">Category Name</Label>
+              <Input
+                id="category-name"
+                placeholder="e.g., Sidewalk, Curb, Curb & Gutter..."
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                data-testid="input-category-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category-color">Color</Label>
+              <div className="flex gap-2 items-center">
+                <Input
+                  id="category-color"
+                  type="color"
+                  value={categoryColor}
+                  onChange={(e) => setCategoryColor(e.target.value)}
+                  className="w-20 h-10 cursor-pointer"
+                  data-testid="input-category-color"
+                />
+                <Input
+                  type="text"
+                  value={categoryColor}
+                  onChange={(e) => setCategoryColor(e.target.value)}
+                  placeholder="#3b82f6"
+                  className="flex-1 font-mono"
+                  data-testid="input-category-color-text"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setCategoryDialogOpen(false);
+                setEditingCategory(null);
+              }}
+              data-testid="button-cancel-category"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveCategory}
+              data-testid="button-save-category"
+              disabled={saveCategoryMutation.isPending}
+            >
+              {saveCategoryMutation.isPending ? "Saving..." : (editingCategory ? "Update" : "Create")}
             </Button>
           </DialogFooter>
         </DialogContent>
