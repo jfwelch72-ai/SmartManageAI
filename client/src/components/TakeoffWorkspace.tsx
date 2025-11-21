@@ -157,18 +157,16 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         setIsPdfLoading(true);
         setPdfImage(null);
 
-        // Get presigned URL if sheet has documentId
+        // Get presigned URL for this sheet
         let pdfUrl = currentSheet.imageUrl;
-        if ((currentSheet as any).documentId) {
-          try {
-            const response = await fetch(`/api/documents/${(currentSheet as any).documentId}/download-url`);
-            if (response.ok) {
-              const data = await response.json();
-              pdfUrl = data.url;
-            }
-          } catch (error) {
-            console.warn('Failed to get presigned URL, using direct URL:', error);
+        try {
+          const response = await fetch(`/api/takeoff/sheets/${currentSheet.id}/pdf-url`);
+          if (response.ok) {
+            const data = await response.json();
+            pdfUrl = data.url;
           }
+        } catch (error) {
+          console.warn('Failed to get presigned URL, using direct URL:', error);
         }
 
         // Load the PDF document
@@ -215,7 +213,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     };
 
     loadPDF();
-  }, [currentSheet?.imageUrl, (currentSheet as any)?.documentId, toast]);
+  }, [currentSheet?.id, currentSheet?.imageUrl, toast]);
 
   const handleToolSelect = (tool: Tool) => {
     setActiveTool(tool);

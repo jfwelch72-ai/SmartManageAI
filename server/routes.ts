@@ -3259,6 +3259,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get presigned URL for a takeoff sheet's PDF
+  app.get("/api/takeoff/sheets/:sheetId/pdf-url", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { sheetId } = req.params;
+      const { takeoffSheets, projectPlans, planDocuments } = await import("@shared/schema");
+
+      // Get the sheet with plan and document info
+      const [sheetData] = await db
+        .select({
+          sheet: takeoffSheets,
+          plan: projectPlans,
+          document: planDocuments,
+        })
+        .from(takeoffSheets)
+        .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
+        .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
+        .where(eq(takeoffSheets.id, sheetId))
+        .limit(1);
+
+      if (!sheetData) {
+        res.status(404).json({ error: "Sheet not found" });
+        return;
+      }
+
+      const { sheet, plan, document } = sheetData;
+
+      // Check if user has access to this project
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, sheet.projectId))
+        .limit(1);
+
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // If document exists and has objectKey, generate presigned URL
+      if (document?.objectKey) {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        
+        try {
+          const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
+          
+          // Generate presigned URL (valid for 1 hour)
+          const [signedUrl] = await objectFile.getSignedUrl({
+            version: 'v4',
+            action: 'read',
+            expires: Date.now() + 60 * 60 * 1000, // 1 hour
+          });
+
+          res.json({ url: signedUrl });
+          return;
+        } catch (error) {
+          console.error("Error generating presigned URL from objectKey:", error);
+        }
+      }
+
+      // Fallback to direct imageUrl if no document/objectKey
+      res.json({ url: sheet.imageUrl });
+    } catch (error: any) {
+      console.error("Get sheet PDF URL error:", error);
+      res.status(500).json({ error: "Failed to get PDF URL" });
+    }
+  });
+
   // Import a plan document to takeoff workspace
   app.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (req: AuthRequest, res) => {
     try {
