@@ -33,6 +33,8 @@ export default function CalendarPage() {
   const [eventType, setEventType] = useState<string>("TIME_OFF_REQUEST");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showEventDetail, setShowEventDetail] = useState(false);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
+  const [showDayEventsDialog, setShowDayEventsDialog] = useState(false);
 
   const { data: events = [], isLoading } = useCalendarEvents();
   const createEvent = useCreateCalendarEvent();
@@ -297,7 +299,16 @@ export default function CalendarPage() {
                             </Badge>
                           ))}
                           {dayEvents.length > 2 && (
-                            <span className="text-xs text-muted-foreground">+{dayEvents.length - 2} more</span>
+                            <span 
+                              className="text-xs text-muted-foreground cursor-pointer hover:underline hover:text-foreground"
+                              onClick={() => {
+                                setSelectedDayEvents(dayEvents);
+                                setShowDayEventsDialog(true);
+                              }}
+                              data-testid={`button-show-more-${format(day, "yyyy-MM-dd")}`}
+                            >
+                              +{dayEvents.length - 2} more
+                            </span>
                           )}
                         </div>
                       </div>
@@ -458,6 +469,66 @@ export default function CalendarPage() {
                 </Button>
               )}
               <Button variant="outline" onClick={() => setShowEventDetail(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Day Events Dialog - Shows all events for a specific day */}
+        <Dialog open={showDayEventsDialog} onOpenChange={setShowDayEventsDialog}>
+          <DialogContent data-testid="dialog-day-events">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedDayEvents.length > 0 && format(new Date(selectedDayEvents[0].startDate), "MMMM d, yyyy")} - All Events
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {selectedDayEvents.map(event => (
+                <Card 
+                  key={event.id} 
+                  className="p-3 cursor-pointer hover-elevate active-elevate-2"
+                  onClick={() => {
+                    setSelectedEvent(event);
+                    setShowDayEventsDialog(false);
+                    setShowEventDetail(true);
+                  }}
+                  data-testid={`day-event-${event.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-sm">{event.title}</span>
+                      </div>
+                      <Badge
+                        variant={
+                          event.eventType === "TIME_OFF_APPROVED" ? "default" :
+                          event.eventType === "TIME_OFF_REQUEST" ? "destructive" :
+                          "secondary"
+                        }
+                        className="text-xs"
+                      >
+                        {event.eventType.replace(/_/g, " ")}
+                      </Badge>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {!event.allDay && (
+                          <>
+                            {format(new Date(event.startDate), "h:mm a")}
+                            {event.endDate && ` - ${format(new Date(event.endDate), "h:mm a")}`}
+                          </>
+                        )}
+                        {event.allDay && "All Day"}
+                      </p>
+                      {event.description && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{event.description}</p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDayEventsDialog(false)}>
                 Close
               </Button>
             </DialogFooter>
