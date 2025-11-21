@@ -40,7 +40,13 @@ The platform features a modern web stack designed for robustness and comprehensi
 -   **node-cron**: For scheduling tasks.
 -   **react-konva, konva, pdfjs-dist, xlsx**: For interactive drawing and document processing in the takeoff engine.
 
-## Recent Changes (November 21, 2025)
+## Recent Changes (November 21, 2025 - Session 2)
+-   **Category API Foreign Key Fix**: Corrected category creation endpoint to resolve project CODE to internal UUID before database operations. Routes `/api/projects/:code/quantity-categories` (GET and POST) now look up project by code parameter, then use `project.id` (UUID) for FK constraints, eliminating "Key (project_id)=(PROJ-2024-098) is not present in table projects" errors. Frontend updated to pass both `projectId` and `projectCode` props to TakeoffWorkspace.
+-   **Polygon Snap-to-Close Functionality**: Implemented click detection to close polygons when user clicks near the first point. Added proximity check (10px threshold) in `handleStageClick` - when 3+ points exist and user clicks within 10px of first point, triggers `completePolygon()` to save measurement. Updated user instructions from "Double-click to finish" to "Click first point to close polygon" for clarity.
+-   **Measurement Points JSON Serialization**: Fixed schema mismatch where backend stored points as TEXT (JSON string) but frontend sent/expected arrays. POST `/api/takeoff/measurements` now stringifies point arrays before validation (`JSON.stringify(points)`). GET `/api/takeoff/sheets/:sheetId/measurements` parses JSON strings back to arrays (`JSON.parse(points)`) for frontend compatibility. Backward compatible with existing data.
+-   **End-to-End Testing**: Verified complete takeoff workflow including category creation without FK errors, preset scale calibration (1/4" = 1'-0"), polygon drawing with snap-to-close visual feedback, measurement creation with proper serialization, fullscreen mode with working dialogs, and measurement selection/deletion.
+
+## Recent Changes (November 21, 2025 - Session 1)
 -   **PDF Streaming Proxy System**: Implemented secure PDF serving for takeoff workspace using server-side streaming proxy instead of presigned URLs (which are incompatible with Replit's object storage credentials). Created `/api/takeoff/sheets/:sheetId/pdf` endpoint that streams PDFs directly after authorization checks, with 1-hour browser caching. Frontend loads PDFs using authenticated requests with credentials. This approach eliminates CORS issues and maintains security through server-side authorization.
 -   **Database Integrity Fixes**: Repaired broken `project_plan.document_id` references that prevented PDFs from loading in takeoff workspace. NULL references were updated to point to correct document records.
 -   **Document Display Improvements**: Fixed document list to display filename as fallback when title field is empty, ensuring all uploaded documents show meaningful names to users.
