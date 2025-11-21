@@ -32,6 +32,7 @@ import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
+import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import aiRoutes from "./aiRoutes";
@@ -74,7 +75,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new user
   app.post("/api/auth/register", authLimiter, async (req: AuthRequest, res) => {
     try {
-      const validationResult = registerSchema.safeParse(req.body);
+      // SECURITY: Sanitize inputs before validation for data integrity
+      const sanitizedBody = {
+        firstName: sanitizeShortText(req.body.firstName),
+        lastName: sanitizeShortText(req.body.lastName),
+        email: sanitizeEmail(req.body.email),
+        phone: sanitizePhone(req.body.phone),
+        password: req.body.password, // Don't sanitize passwords - preserve exact input
+      };
+
+      const validationResult = registerSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -118,7 +128,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Login
   app.post("/api/auth/login", authLimiter, async (req: AuthRequest, res) => {
     try {
-      const validationResult = loginSchema.safeParse(req.body);
+      // SECURITY: Sanitize email before validation
+      const sanitizedBody = {
+        email: sanitizeEmail(req.body.email),
+        password: req.body.password, // Don't sanitize passwords - preserve exact input
+      };
+
+      const validationResult = loginSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -593,7 +609,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create bid (Admin/Manager only)
   app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertBidSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: sanitizeShortText(req.body.name),
+        clientName: sanitizeShortText(req.body.clientName),
+        description: sanitizeText(req.body.description),
+      };
+
+      const validationResult = insertBidSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -999,7 +1023,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create project (Admin/Manager only)
   app.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertProjectSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: sanitizeShortText(req.body.name),
+        projectCode: sanitizeShortText(req.body.projectCode),
+        description: sanitizeText(req.body.description),
+        clientName: sanitizeShortText(req.body.clientName),
+        location: sanitizeText(req.body.location),
+      };
+
+      const validationResult = insertProjectSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -1317,11 +1351,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Sanitize note content for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        content: sanitizeText(req.body.content),
+      };
+
       const validationResult = insertProjectNoteSchema.extend({
         projectId: z.string().optional(),
         authorId: z.string().optional(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         projectId: project.id,
         authorId: req.user!.id,
       });
