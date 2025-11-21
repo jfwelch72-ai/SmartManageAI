@@ -3521,39 +3521,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use a transaction to ensure all-or-nothing creation
-      const result = await db.transaction(async (tx) => {
-        // Create project plan record
-        const [plan] = await tx.insert(projectPlans).values({
-          projectId,
-          documentId: documentId,
-          originalPdfUrl: document.fileUrl,
-          fileName: document.fileName,
-        }).returning();
+      // Create project plan record
+      const [plan] = await db.insert(projectPlans).values({
+        projectId,
+        documentId: documentId,
+        originalPdfUrl: document.fileUrl,
+        fileName: document.fileName,
+      }).returning();
 
-        // Prepare all sheets for batch insert
-        const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
-        const sheetValues = [];
+      // Prepare all sheets for batch insert
+      const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+      const sheetValues = [];
+      
+      for (let i = 0; i < pageCount; i++) {
+        const sheetName = pageCount > 1 
+          ? `${baseSheetName} - Page ${i + 1}`
+          : baseSheetName;
         
-        for (let i = 0; i < pageCount; i++) {
-          const sheetName = pageCount > 1 
-            ? `${baseSheetName} - Page ${i + 1}`
-            : baseSheetName;
-          
-          sheetValues.push({
-            projectId,
-            planId: plan.id,
-            imageUrl: document.fileUrl,
-            sheetIndex: i,
-            sheetName,
-          });
-        }
+        sheetValues.push({
+          projectId,
+          planId: plan.id,
+          imageUrl: document.fileUrl,
+          sheetIndex: i,
+          sheetName,
+        });
+      }
 
-        // Batch insert all sheets
-        const sheets = await tx.insert(takeoffSheets).values(sheetValues).returning();
+      // Batch insert all sheets
+      const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
 
-        return { plan, sheets };
-      });
+      const result = { plan, sheets };
 
       await logCreate(req.user!.id, "project_plans", result.plan.id, {
         projectId,
