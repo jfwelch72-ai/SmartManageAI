@@ -1,0 +1,125 @@
+You are assisting in preparing a complete refactor and production-grade hardening of the TFR Construction Management Platform.
+
+Before generating the final refactor instructions, gather and output the following information EXACTLY as requested.
+
+=================================================================
+SECTION A — EXPORT CRITICAL SERVER FILES
+=================================================================
+
+Please retrieve and output the FULL CONTENTS of the following files:
+
+1. server/routes.ts
+2. server/changeOrderRoutes.ts
+3. server/timeClockRoutes.ts
+
+If any of these files do not exist or are split across folders, search the project for:
+- “change order”
+- “time clock”
+- “timeClock”
+- “approval”
+- “shift”
+- “db.transaction”
+- “convert bid”
+- “takeoff import”
+…then output the files where those are defined.
+
+=================================================================
+SECTION B — DRIVER & DATABASE CONFIG CHECK
+=================================================================
+
+Output the following environment-specific information:
+
+1. Which Drizzle driver is currently active?
+   - neon-http?
+   - neon-websocket?
+   - pg?
+
+2. Output the contents of:
+   - server/db.ts (or wherever Drizzle is initialized)
+   - drizzle.config.ts
+   - .env.example
+   - Any .replit or replit.nix files showing build/runtime commands
+
+3. Confirm:
+   - Does the current DB driver support transactions?
+   - Are any existing db.transaction() calls still present anywhere in the repo?
+
+=================================================================
+SECTION C — IDENTIFY ALL TRANSACTION-DEPENDENT ENDPOINTS
+=================================================================
+
+Search the ENTIRE repository for:
+
+- “db.transaction”
+- “transaction(”
+- “tx.” (inside Drizzle calls)
+- “await tx.”
+- “BEGIN;”
+- “COMMIT;”
+- “ROLLBACK;”
+
+For each match found:
+- Output the full file path
+- Output the surrounding 20–30 lines of code
+
+=================================================================
+SECTION D — RECENT CHANGES SINCE AUDIT
+=================================================================
+
+Identify if ANY of the following were modified AFTER the production audit:
+
+- routes.ts
+- changeOrderRoutes.ts
+- timeClockRoutes.ts
+- aiRoutes.ts
+- project plan import endpoints
+- crew management endpoints
+- user skill endpoints
+
+If yes:
+- Output the diffs compared to git history (or last known snapshot)
+- OR output the current version of those affected files
+
+=================================================================
+SECTION E — FRONTEND DEPENDENCIES AFFECTING REFACTOR
+=================================================================
+
+Output the following:
+
+1. package.json
+2. Any custom hooks under /client/src/hooks that relate to:
+   - change orders
+   - time clock
+   - AI settings
+   - crew management
+3. Any TanStack query wrappers that interact with those endpoints
+
+=================================================================
+SECTION F — CONFIRM BUILD/DEV STATE
+=================================================================
+
+Output the results of running all of the following:
+
+- `npm run build` (or pnpm equivalent)
+- `npm run typecheck`
+- `npm run dev` startup logs
+
+If errors occur, output them verbatim.
+
+=================================================================
+SECTION G — FINAL OUTPUT REQUIREMENT
+=================================================================
+
+After collecting all requested data, provide a clean summary:
+
+1. List of all files retrieved (with file paths)
+2. List of all endpoints still requiring refactor
+3. Confirmation of whether the current DB driver supports transactions
+4. Any unexpected findings (missing files, duplicated logic, dead code)
+
+Do not attempt to refactor anything yet.  
+Only gather information.
+
+=================================================================
+
+Begin now. Gather ALL requested information and output everything in structured sections.
