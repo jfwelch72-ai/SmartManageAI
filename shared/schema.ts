@@ -459,6 +459,19 @@ export const projectPlans = pgTable("project_plans", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Quantity Categories table (for organizing measurements by scope/type)
+export const quantityCategories = pgTable("quantity_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#3b82f6"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("quantity_categories_project_idx").on(table.projectId),
+}));
+
 // Takeoff Sheets table (per-page images from PDFs)
 export const takeoffSheets = pgTable("takeoff_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -480,6 +493,7 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
 export const takeoffMeasurements = pgTable("takeoff_measurements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
   type: measurementTypeEnum("type").notNull(),
   label: text("label").notNull(),
   points: text("points").notNull(),
@@ -499,6 +513,7 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   sheetIdx: index("takeoff_measurements_sheet_idx").on(table.sheetId),
+  categoryIdx: index("takeoff_measurements_category_idx").on(table.categoryId),
   typeIdx: index("takeoff_measurements_type_idx").on(table.type),
   statusIdx: index("takeoff_measurements_status_idx").on(table.status),
 }));
@@ -1032,6 +1047,10 @@ export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$
 export const insertProjectPlanSchema = createInsertSchema(projectPlans).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectPlan = z.infer<typeof insertProjectPlanSchema>;
 export type ProjectPlan = typeof projectPlans.$inferSelect;
+
+export const insertQuantityCategorySchema = createInsertSchema(quantityCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertQuantityCategory = z.infer<typeof insertQuantityCategorySchema>;
+export type QuantityCategory = typeof quantityCategories.$inferSelect;
 
 export const insertTakeoffSheetSchema = createInsertSchema(takeoffSheets).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffSheet = z.infer<typeof insertTakeoffSheetSchema>;

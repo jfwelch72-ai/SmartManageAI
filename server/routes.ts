@@ -3742,6 +3742,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ====================
+  // QUANTITY CATEGORY ROUTES
+  // ====================
+
+  // Get all quantity categories for a project
+  app.get("/api/projects/:projectId/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { quantityCategories } = await import("@shared/schema");
+
+      const categories = await db
+        .select()
+        .from(quantityCategories)
+        .where(eq(quantityCategories.projectId, projectId))
+        .orderBy(quantityCategories.displayOrder);
+
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching quantity categories:", error);
+      res.status(500).json({ error: "Failed to fetch quantity categories" });
+    }
+  });
+
+  // Create a new quantity category
+  app.post("/api/projects/:projectId/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
+
+      const validated = insertQuantityCategorySchema.parse({
+        projectId,
+        ...req.body,
+      });
+
+      const [category] = await db
+        .insert(quantityCategories)
+        .values(validated)
+        .returning();
+
+      res.status(201).json(category);
+    } catch (error: any) {
+      console.error("Error creating quantity category:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid category data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create quantity category" });
+      }
+    }
+  });
+
+  // Update a quantity category
+  app.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
+
+      const validated = insertQuantityCategorySchema.partial().parse(req.body);
+
+      const [updated] = await db
+        .update(quantityCategories)
+        .set({ ...validated, updatedAt: new Date() })
+        .where(eq(quantityCategories.id, id))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Category not found" });
+        return;
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating quantity category:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid category data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update quantity category" });
+      }
+    }
+  });
+
+  // Delete a quantity category
+  app.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { quantityCategories } = await import("@shared/schema");
+
+      const [deleted] = await db
+        .delete(quantityCategories)
+        .where(eq(quantityCategories.id, id))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Category not found" });
+        return;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting quantity category:", error);
+      res.status(500).json({ error: "Failed to delete quantity category" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
