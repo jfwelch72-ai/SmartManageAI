@@ -437,6 +437,182 @@ export const aiTasks = pgTable("ai_tasks", {
   priorityIdx: index("ai_tasks_priority_idx").on(table.priority),
 }));
 
+// ==================================================
+// TAKEOFF + ESTIMATING ENGINE TABLES
+// ==================================================
+
+// Enums for takeoff and estimating
+export const measurementTypeEnum = pgEnum("measurement_type", ["LINEAR", "AREA", "VOLUME", "COUNT", "NOTE"]);
+export const measurementSourceEnum = pgEnum("measurement_source", ["USER", "AI"]);
+export const measurementStatusEnum = pgEnum("measurement_status", ["DRAFT", "CONFIRMED"]);
+export const scopeTypeEnum = pgEnum("scope_type", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "UNDERDRAIN", "BASE", "BEDDING", "GENERAL"]);
+export const estimateItemCategoryEnum = pgEnum("estimate_item_category", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"]);
+
+// Project Plans table (for uploaded PDFs)
+export const projectPlans = pgTable("project_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  originalPdfUrl: text("original_pdf_url").notNull(),
+  fileName: text("file_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Takeoff Sheets table (per-page images from PDFs)
+export const takeoffSheets = pgTable("takeoff_sheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  planId: varchar("plan_id").references(() => projectPlans.id, { onDelete: "cascade" }),
+  imageUrl: text("image_url").notNull(),
+  sheetIndex: integer("sheet_index").notNull().default(0),
+  sheetName: text("sheet_name"),
+  scalePxPerFoot: doublePrecision("scale_px_per_foot"),
+  units: text("units").notNull().default("ft"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("takeoff_sheets_project_idx").on(table.projectId),
+  planIdx: index("takeoff_sheets_plan_idx").on(table.planId),
+}));
+
+// Takeoff Measurements table
+export const takeoffMeasurements = pgTable("takeoff_measurements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  type: measurementTypeEnum("type").notNull(),
+  label: text("label").notNull(),
+  points: text("points").notNull(),
+  arcData: text("arc_data"),
+  depthFeet: doublePrecision("depth_feet"),
+  count: integer("count"),
+  note: text("note"),
+  color: text("color").default("#3b82f6"),
+  visible: boolean("visible").notNull().default(true),
+  source: measurementSourceEnum("source").notNull().default("USER"),
+  status: measurementStatusEnum("status").notNull().default("DRAFT"),
+  computedLengthFt: doublePrecision("computed_length_ft"),
+  computedAreaFt2: doublePrecision("computed_area_ft2"),
+  computedVolumeCy: doublePrecision("computed_volume_cy"),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  sheetIdx: index("takeoff_measurements_sheet_idx").on(table.sheetId),
+  typeIdx: index("takeoff_measurements_type_idx").on(table.type),
+  statusIdx: index("takeoff_measurements_status_idx").on(table.status),
+}));
+
+// Project Specs table (uploaded spec books)
+export const projectSpecs = pgTable("project_specs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  fileUrl: text("file_url").notNull(),
+  originalFileName: text("original_file_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Project Spec Index table (AI-generated index of specs)
+export const projectSpecIndex = pgTable("project_spec_index", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Estimate Settings table (global cost settings and rates)
+export const estimateSettings = pgTable("estimate_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  defaultMaterialPrices: text("default_material_prices").notNull().default('{}'),
+  defaultLaborRates: text("default_labor_rates").notNull().default('{}'),
+  defaultEquipmentRates: text("default_equipment_rates").notNull().default('{}'),
+  defaultProductionRates: text("default_production_rates").notNull().default('{}'),
+  defaultOverheadPercent: doublePrecision("default_overhead_percent").notNull().default(15),
+  defaultProfitMarginPercent: doublePrecision("default_profit_margin_percent").notNull().default(20),
+  defaultMarkups: text("default_markups").notNull().default('{}'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Estimate Crews table (crew definitions and production rates)
+export const estimateCrews = pgTable("estimate_crews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  members: text("members").notNull().default('[]'),
+  blendedRatePerHour: decimal("blended_rate_per_hour", { precision: 10, scale: 2 }).notNull(),
+  productionRateMapping: text("production_rate_mapping").notNull().default('{}'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Estimate Line Items table (detailed cost breakdown per line)
+export const estimateLineItems = pgTable("estimate_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  category: estimateItemCategoryEnum("category").notNull(),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unit: text("unit").notNull(),
+  materialCost: decimal("material_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  laborHours: decimal("labor_hours", { precision: 10, scale: 2 }).notNull().default('0'),
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  equipmentHours: decimal("equipment_hours", { precision: 10, scale: 2 }).notNull().default('0'),
+  equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  consumablesCost: decimal("consumables_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  subcontractCost: decimal("subcontract_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  overheadAllocation: decimal("overhead_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
+  profitAllocation: decimal("profit_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  userAdjusted: boolean("user_adjusted").notNull().default(false),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  estimateIdx: index("estimate_line_items_estimate_idx").on(table.estimateId),
+  categoryIdx: index("estimate_line_items_category_idx").on(table.category),
+}));
+
+// Estimate Versions table (snapshots of estimates)
+export const estimateVersions = pgTable("estimate_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  snapshot: text("snapshot").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  estimateIdx: index("estimate_versions_estimate_idx").on(table.estimateId),
+}));
+
+// Estimate Vendor Quotes table (uploaded vendor/material quotes)
+export const estimateVendorQuotes = pgTable("estimate_vendor_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
+  vendorName: text("vendor_name").notNull(),
+  contactInfo: text("contact_info"),
+  scopeDescription: text("scope_description").notNull(),
+  quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  linkedLineItemIds: text("linked_line_item_ids").notNull().default('[]'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  estimateIdx: index("estimate_vendor_quotes_estimate_idx").on(table.estimateId),
+}));
+
+// Estimate History table (for production rate tracking)
+export const estimateHistory = pgTable("estimate_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  estimateId: varchar("estimate_id").references(() => estimates.id, { onDelete: "cascade" }),
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Insert and Select Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -850,3 +1026,48 @@ export const subcontractorBillingSchedule = pgTable("subcontractor_billing_sched
 export const insertSubcontractorBillingScheduleSchema = createInsertSchema(subcontractorBillingSchedule).omit({ id: true, createdAt: true });
 export type InsertSubcontractorBillingSchedule = z.infer<typeof insertSubcontractorBillingScheduleSchema>;
 export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$inferSelect;
+
+// Takeoff + Estimating Insert/Select Schemas
+export const insertProjectPlanSchema = createInsertSchema(projectPlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectPlan = z.infer<typeof insertProjectPlanSchema>;
+export type ProjectPlan = typeof projectPlans.$inferSelect;
+
+export const insertTakeoffSheetSchema = createInsertSchema(takeoffSheets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffSheet = z.infer<typeof insertTakeoffSheetSchema>;
+export type TakeoffSheet = typeof takeoffSheets.$inferSelect;
+
+export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
+export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+export const insertProjectSpecSchema = createInsertSchema(projectSpecs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectSpec = z.infer<typeof insertProjectSpecSchema>;
+export type ProjectSpec = typeof projectSpecs.$inferSelect;
+
+export const insertProjectSpecIndexSchema = createInsertSchema(projectSpecIndex).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectSpecIndex = z.infer<typeof insertProjectSpecIndexSchema>;
+export type ProjectSpecIndex = typeof projectSpecIndex.$inferSelect;
+
+export const insertEstimateSettingsSchema = createInsertSchema(estimateSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateSettings = z.infer<typeof insertEstimateSettingsSchema>;
+export type EstimateSettings = typeof estimateSettings.$inferSelect;
+
+export const insertEstimateCrewSchema = createInsertSchema(estimateCrews).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateCrew = z.infer<typeof insertEstimateCrewSchema>;
+export type EstimateCrew = typeof estimateCrews.$inferSelect;
+
+export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
+export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
+
+export const insertEstimateVersionSchema = createInsertSchema(estimateVersions).omit({ id: true, createdAt: true });
+export type InsertEstimateVersion = z.infer<typeof insertEstimateVersionSchema>;
+export type EstimateVersion = typeof estimateVersions.$inferSelect;
+
+export const insertEstimateVendorQuoteSchema = createInsertSchema(estimateVendorQuotes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateVendorQuote = z.infer<typeof insertEstimateVendorQuoteSchema>;
+export type EstimateVendorQuote = typeof estimateVendorQuotes.$inferSelect;
+
+export const insertEstimateHistorySchema = createInsertSchema(estimateHistory).omit({ id: true, createdAt: true });
+export type InsertEstimateHistory = z.infer<typeof insertEstimateHistorySchema>;
+export type EstimateHistory = typeof estimateHistory.$inferSelect;

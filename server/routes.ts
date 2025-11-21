@@ -3151,6 +3151,205 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ====================
+  // TAKEOFF + ESTIMATING ROUTES
+  // ====================
+
+  // Get all takeoff sheets for a project
+  app.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { takeoffSheets } = await import("@shared/schema");
+
+      const sheets = await db
+        .select()
+        .from(takeoffSheets)
+        .where(eq(takeoffSheets.projectId, projectId))
+        .orderBy(takeoffSheets.sheetIndex);
+
+      res.json(sheets);
+    } catch (error) {
+      console.error("Error fetching takeoff sheets:", error);
+      res.status(500).json({ error: "Failed to fetch takeoff sheets" });
+    }
+  });
+
+  // Upload a plan PDF and create sheets
+  app.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { fileUrl, fileName } = req.body;
+
+      if (!fileUrl || !fileName) {
+        res.status(400).json({ error: "File URL and name are required" });
+        return;
+      }
+
+      const { projectPlans, takeoffSheets, insertProjectPlanSchema, insertTakeoffSheetSchema } = await import("@shared/schema");
+
+      // Create project plan record
+      const [plan] = await db.insert(projectPlans).values({
+        projectId,
+        originalPdfUrl: fileUrl,
+        fileName,
+      }).returning();
+
+      // TODO: In a production system, you would use a PDF processing service here
+      // For now, we'll create a single sheet placeholder
+      // The frontend will handle PDF rendering with pdf.js
+      const [sheet] = await db.insert(takeoffSheets).values({
+        projectId,
+        planId: plan.id,
+        imageUrl: fileUrl, // Using PDF URL as placeholder
+        sheetIndex: 0,
+        sheetName: fileName,
+      }).returning();
+
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE",
+        resourceType: "project_plan",
+        resourceId: plan.id,
+        details: `Uploaded plan: ${fileName}`,
+      });
+
+      res.status(201).json({ plan, sheets: [sheet] });
+    } catch (error) {
+      console.error("Error uploading plan:", error);
+      res.status(500).json({ error: "Failed to upload plan" });
+    }
+  });
+
+  // Get measurements for a sheet
+  app.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { sheetId } = req.params;
+      const { takeoffMeasurements } = await import("@shared/schema");
+
+      const measurements = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.sheetId, sheetId))
+        .orderBy(takeoffMeasurements.createdAt);
+
+      res.json(measurements);
+    } catch (error) {
+      console.error("Error fetching measurements:", error);
+      res.status(500).json({ error: "Failed to fetch measurements" });
+    }
+  });
+
+  // Create a new measurement
+  app.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { sheetId } = req.params;
+      const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+
+      const validated = insertTakeoffMeasurementSchema.parse({
+        ...req.body,
+        sheetId,
+      });
+
+      const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
+
+      res.status(201).json(measurement);
+    } catch (error: any) {
+      console.error("Error creating measurement:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid measurement data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create measurement" });
+      }
+    }
+  });
+
+  // Update a measurement
+  app.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+
+      const validated = insertTakeoffMeasurementSchema.partial().parse(req.body);
+
+      const [updated] = await db
+        .update(takeoffMeasurements)
+        .set({ ...validated, updatedAt: new Date() })
+        .where(eq(takeoffMeasurements.id, id))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Measurement not found" });
+        return;
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating measurement:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid measurement data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update measurement" });
+      }
+    }
+  });
+
+  // Delete a measurement
+  app.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { takeoffMeasurements } = await import("@shared/schema");
+
+      const [deleted] = await db
+        .delete(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.id, id))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Measurement not found" });
+        return;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting measurement:", error);
+      res.status(500).json({ error: "Failed to delete measurement" });
+    }
+  });
+
+  // Update sheet calibration
+  app.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { scalePxPerFoot, units } = req.body;
+      const { takeoffSheets } = await import("@shared/schema");
+
+      if (!scalePxPerFoot) {
+        res.status(400).json({ error: "Scale is required" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(takeoffSheets)
+        .set({ 
+          scalePxPerFoot, 
+          units: units || "ft",
+          updatedAt: new Date() 
+        })
+        .where(eq(takeoffSheets.id, id))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Sheet not found" });
+        return;
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating calibration:", error);
+      res.status(500).json({ error: "Failed to update calibration" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
