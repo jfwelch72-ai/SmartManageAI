@@ -12,7 +12,8 @@ import {
   insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
   insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema,
   crews, crewMembers, skills, userSkills, equipment,
-  insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema
+  insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema,
+  subcontractors, subcontractorContracts, subcontractorPayments
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -29,7 +30,7 @@ import {
 import { eq, desc, sql, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
-import { logCreate, logUpdate, logDelete, logApprove, logReject } from "./auditLogger";
+import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
@@ -947,24 +948,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (texturaDrawDate !== undefined) updateData.texturaDrawDate = texturaDrawDate;
 
       // Audit log the change
-      await logAudit({
-        entityType: "PROJECT",
-        entityId: project.id,
-        action: "UPDATE",
-        performedById: req.user!.id,
-        oldValues: {
+      await logUpdate(
+        req.user!.id,
+        "PROJECT",
+        project.id,
+        JSON.stringify({
           budget: project.budget,
           contractAmount: project.contractAmount,
           texturaDrawDate: project.texturaDrawDate,
-        },
-        newValues: {
+        }),
+        JSON.stringify({
           budget,
           contractAmount,
           texturaDrawDate,
-        },
-        ipAddress: req.ip || "unknown",
-        userAgent: req.get("user-agent") || "unknown",
-      });
+        }),
+        req
+      );
 
       const [updated] = await db
         .update(projects)
