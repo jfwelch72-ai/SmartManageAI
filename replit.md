@@ -4,8 +4,8 @@
 The TFR Construction Management Platform is a comprehensive internal tool designed for TFR Construction. Its primary purpose is to manage the entire project lifecycle, from bid tracking through project completion, using TypeScript, React, and PostgreSQL. The platform aims to centralize project data, user management, and daily operations to enhance efficiency and oversight across all construction activities. Key ambitions include improving compliance tracking, leveraging AI for operations, streamlining crew and subcontractor management, and ensuring robust data quality monitoring.
 
 ## Recent Changes (November 21, 2025)
-### Takeoff + Estimating Engine Foundation - Phase 1 Complete (14/27 tasks)
-**Foundation Status**: Database schema, backend API, UI scaffold, and integration COMPLETE with zero regression ✅
+### Takeoff + Estimating Engine - Drawing Tools Complete (19/27 tasks)
+**Foundation + Interactive Drawing Status**: Database, backend, UI scaffold, and core measurement tools COMPLETE ✅
 
 1. **Database Schema**: Added 12 new tables for complete takeoff and estimating system (project_plans, takeoff_sheets, takeoff_measurements, project_specs, project_spec_index, estimate_settings, estimate_crews, estimate_line_items, estimate_versions, estimate_vendor_quotes, estimate_history)
 2. **Backend API**: Implemented core takeoff endpoints - plan upload, sheet retrieval, measurement CRUD, calibration updates
@@ -22,7 +22,16 @@ The TFR Construction Management Platform is a comprehensive internal tool design
    - Button group always visible outside loading state - zero regression to document management
    - Conditional rendering cleanly toggles between document list and workspace
    - Architect-reviewed and e2e tested - full document upload/list workflow preserved
-6. **Next Phase**: Drawing tools implementation (linear, area, volume, count), PDF rendering integration, AI auto-takeoff, estimating engine (13 remaining tasks)
+6. **Interactive Drawing Tools Implementation**: All core measurement tools fully functional with accurate calculations and backend persistence:
+   - **Linear Tool**: Click-to-click straight line drawing with length calculation in feet
+   - **Area Tool**: Multi-click polygon drawing with shoelace formula area calculation (SF), double-click or Enter to complete, Escape to cancel
+   - **Volume Tool**: Same polygon interaction as area with default 12" depth (depth input UI pending)
+   - **Count Tool**: Single-click marker placement with auto-numbering and coordinate tracking
+   - **Coordinate System**: Sheet-space normalization using stage transform inversion for pan/zoom independence - all measurements remain accurate regardless of viewport position
+   - **Visual Feedback**: Color-coded drawing states (blue=linear, green=area, orange=volume, red=count) with dashed lines for in-progress polygons
+   - **Keyboard Controls**: Enter to finish polygon, Escape to cancel drawing, optimized event listeners scoped to active drawing state
+   - **Backend Persistence**: All measurements saved to database via API with type, points, labels, and calculated quantities
+7. **Next Phase**: Note tool implementation, measurement editing/deletion, measurements list UI, quantity summary aggregation, PDF rendering, AI auto-takeoff (8 remaining tasks)
 
 ### Time Clock & Calendar Fixes (Completed)
 1. **Time Entries Page Fix**: Fixed crash caused by API returning `{data: [...], pagination: {...}}` but frontend expecting direct array
