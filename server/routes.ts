@@ -3688,9 +3688,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a new measurement (with sheetId in body)
   app.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+      const { takeoffMeasurements, takeoffSheets, projects, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
       const validated = insertTakeoffMeasurementSchema.parse(req.body);
+
+      // Validate that the sheet exists and belongs to a valid project
+      const sheetWithProject = await db
+        .select({
+          sheetId: takeoffSheets.id,
+          projectId: takeoffSheets.projectId,
+          projectCode: projects.code,
+        })
+        .from(takeoffSheets)
+        .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
+        .where(eq(takeoffSheets.id, validated.sheetId))
+        .limit(1);
+
+      if (!sheetWithProject || sheetWithProject.length === 0) {
+        res.status(404).json({ error: "Sheet not found or does not belong to a valid project" });
+        return;
+      }
+
+      // Authorization check: Only ADMIN/MANAGER or users assigned to the project can create measurements
+      const userRole = req.user!.role;
+      if (userRole !== "ADMIN" && userRole !== "MANAGER") {
+        // Check if user is assigned to this project via crew assignments
+        const userAssignment = await db
+          .select({ id: crewProjectAssignments.id })
+          .from(crewProjectAssignments)
+          .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+          .where(
+            and(
+              eq(crewProjectAssignments.projectId, sheetWithProject[0].projectId),
+              eq(crewMembers.userId, req.user!.id)
+            )
+          )
+          .limit(1);
+
+        if (!userAssignment || userAssignment.length === 0) {
+          res.status(403).json({ error: "You do not have access to this project" });
+          return;
+        }
+      }
 
       const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
 

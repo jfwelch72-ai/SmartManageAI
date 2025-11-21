@@ -239,6 +239,44 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
 
   const currentSheet = sheets.find(s => s.id === selectedSheet);
 
+  // Helper to validate and sanitize hex colors (supports 3, 4, 6, and 8 digit hex)
+  const validateHexColor = (color: string | undefined): string | null => {
+    if (!color) return null;
+    const trimmed = color.trim();
+    // Match #RGB, #RGBA, #RRGGBB, #RRGGBBAA
+    const hexPattern = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
+    if (!hexPattern.test(trimmed)) return null;
+    
+    // Convert 3-digit (#RGB) to 6-digit (#RRGGBB)
+    if (trimmed.length === 4) {
+      const r = trimmed[1];
+      const g = trimmed[2];
+      const b = trimmed[3];
+      return `#${r}${r}${g}${g}${b}${b}`;
+    }
+    // Convert 4-digit (#RGBA) to 6-digit (#RRGGBB) - discard alpha
+    if (trimmed.length === 5) {
+      const r = trimmed[1];
+      const g = trimmed[2];
+      const b = trimmed[3];
+      return `#${r}${r}${g}${g}${b}${b}`;
+    }
+    // Strip alpha from 8-digit (#RRGGBBAA) to get 6-digit (#RRGGBB)
+    if (trimmed.length === 9) {
+      return trimmed.substring(0, 7);
+    }
+    // Already 6-digit or 7-digit with #, return as-is
+    return trimmed;
+  };
+
+  // Helper to convert hex to rgba (assumes valid 6-digit hex)
+  const hexToRgba = (hex: string, alpha: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   // Configure PDF.js worker
   useEffect(() => {
     // Use new URL() with import.meta.url - Vite will handle the rest (best practice for Vite)
@@ -793,6 +831,16 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                   const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
                   const isSelected = selectedMeasurementId === m.id;
                   
+                  // Get category color if measurement has a category
+                  const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const categoryColor = validateHexColor(category?.color);
+                  const baseColor = categoryColor || (
+                    m.type === "LINEAR" ? "#2563eb" : 
+                    m.type === "AREA" ? "#16a34a" : 
+                    m.type === "VOLUME" ? "#ea580c" : 
+                    m.type === "COUNT" ? "#dc2626" : "#f59e0b"
+                  );
+                  
                   const handleMeasurementClick = (e: any) => {
                     if (activeTool === "select") {
                       e.cancelBubble = true;
@@ -806,8 +854,9 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                       <Line
                         key={m.id}
                         points={[points[0].x, points[0].y, points[1].x, points[1].y]}
-                        stroke={isSelected ? "#3b82f6" : "#2563eb"}
+                        stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
+                        opacity={isSelected ? 1 : 0.8}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
                       />
@@ -818,9 +867,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                       <Line
                         key={m.id}
                         points={flatPoints}
-                        stroke={isSelected ? "#22c55e" : "#16a34a"}
+                        stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
-                        fill={isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(22, 163, 74, 0.1)"}
+                        fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
+                        opacity={isSelected ? 1 : 0.8}
                         closed={true}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
@@ -832,9 +882,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                       <Line
                         key={m.id}
                         points={flatPoints}
-                        stroke={isSelected ? "#fb923c" : "#ea580c"}
+                        stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
-                        fill={isSelected ? "rgba(251, 146, 60, 0.2)" : "rgba(234, 88, 12, 0.1)"}
+                        fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
+                        opacity={isSelected ? 1 : 0.8}
                         closed={true}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
@@ -847,9 +898,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                         x={points[0].x}
                         y={points[0].y}
                         radius={isSelected ? 14 : 12}
-                        fill="#dc2626"
-                        stroke={isSelected ? "#3b82f6" : "white"}
+                        fill={baseColor}
+                        stroke="white"
                         strokeWidth={isSelected ? 3 : 2}
+                        opacity={isSelected ? 1 : 0.8}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
                       />
@@ -863,9 +915,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                           x={points[0].x}
                           y={points[0].y}
                           radius={isSelected ? 10 : 8}
-                          fill="#f59e0b"
-                          stroke={isSelected ? "#3b82f6" : "white"}
+                          fill={baseColor}
+                          stroke="white"
                           strokeWidth={isSelected ? 3 : 2}
+                          opacity={isSelected ? 1 : 0.8}
                           onClick={handleMeasurementClick}
                           onTap={handleMeasurementClick}
                         />
@@ -876,8 +929,9 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                           y={points[0].y - 5}
                           text={m.label || "Note"}
                           fontSize={isSelected ? 14 : 12}
-                          fill={isSelected ? "#3b82f6" : "#f59e0b"}
+                          fill={baseColor}
                           fontStyle="bold"
+                          opacity={isSelected ? 1 : 0.8}
                           onClick={handleMeasurementClick}
                           onTap={handleMeasurementClick}
                         />
@@ -1202,11 +1256,11 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                         {(m.computedLengthFt || m.computedAreaFt2 || m.computedVolumeCy || m.type === "COUNT" || m.type === "NOTE") && (
                           <p className="text-sm text-muted-foreground">
                             {m.type === "LINEAR" && m.computedLengthFt 
-                              ? `${m.computedLengthFt.toFixed(2)} LF`
+                              ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF`
                               : m.type === "AREA" && m.computedAreaFt2
-                              ? `${m.computedAreaFt2.toFixed(2)} SF`
+                              ? `${(Number.isFinite(m.computedAreaFt2) ? m.computedAreaFt2 : 0).toFixed(2)} SF`
                               : m.type === "VOLUME" && m.computedVolumeCy
-                              ? `${m.computedVolumeCy.toFixed(2)} CY`
+                              ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
                               : m.type === "COUNT"
                               ? "Count marker"
                               : m.type === "NOTE"
@@ -1221,44 +1275,197 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
               </CardContent>
             </Card>
 
-            {/* Quantity Summary */}
+            {/* Quantity Summary by Category */}
             <Card>
               <CardContent className="pt-6">
-                <h3 className="font-semibold mb-4">Quantity Summary</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Linear:</span>
-                    <span className="font-medium">
-                      {measurements
-                        .filter(m => m.type === "LINEAR")
-                        .reduce((sum, m) => sum + (m.computedLengthFt || 0), 0)
-                        .toFixed(2)} LF
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Area:</span>
-                    <span className="font-medium">
-                      {measurements
-                        .filter(m => m.type === "AREA")
-                        .reduce((sum, m) => sum + (m.computedAreaFt2 || 0), 0)
-                        .toFixed(2)} SF
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Volume:</span>
-                    <span className="font-medium">
-                      {measurements
-                        .filter(m => m.type === "VOLUME")
-                        .reduce((sum, m) => sum + (m.computedVolumeCy || 0), 0)
-                        .toFixed(2)} CY
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Count Items:</span>
-                    <span className="font-medium">
-                      {measurements.filter(m => m.type === "COUNT").length}
-                    </span>
-                  </div>
+                <h3 className="font-semibold mb-4">Quantity Summary by Category</h3>
+                <div className="space-y-4">
+                  {/* Category-wise breakdown */}
+                  {categories.map((category) => {
+                    const categoryMeasurements = measurements.filter(m => m.categoryId === category.id);
+                    if (categoryMeasurements.length === 0) return null;
+
+                    const linearTotal = categoryMeasurements
+                      .filter(m => m.type === "LINEAR")
+                      .reduce((sum, m) => {
+                        const val = Number(m.computedLengthFt);
+                        return sum + (Number.isFinite(val) ? val : 0);
+                      }, 0);
+                    const areaTotal = categoryMeasurements
+                      .filter(m => m.type === "AREA")
+                      .reduce((sum, m) => {
+                        const val = Number(m.computedAreaFt2);
+                        return sum + (Number.isFinite(val) ? val : 0);
+                      }, 0);
+                    const volumeTotal = categoryMeasurements
+                      .filter(m => m.type === "VOLUME")
+                      .reduce((sum, m) => {
+                        const val = Number(m.computedVolumeCy);
+                        return sum + (Number.isFinite(val) ? val : 0);
+                      }, 0);
+                    const countTotal = categoryMeasurements.filter(m => m.type === "COUNT").length;
+
+                    return (
+                      <div key={category.id} className="border-l-4 pl-3" style={{ borderColor: category.color }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: category.color }} />
+                          <span className="font-medium text-sm">{category.name}</span>
+                          <Badge variant="outline" className="text-xs">{categoryMeasurements.length}</Badge>
+                        </div>
+                        <div className="space-y-1 text-xs ml-5">
+                          {linearTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Linear:</span>
+                              <span>{(Number.isFinite(linearTotal) ? linearTotal : 0).toFixed(2)} LF</span>
+                            </div>
+                          )}
+                          {areaTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Area:</span>
+                              <span>{(Number.isFinite(areaTotal) ? areaTotal : 0).toFixed(2)} SF</span>
+                            </div>
+                          )}
+                          {volumeTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Volume:</span>
+                              <span>{(Number.isFinite(volumeTotal) ? volumeTotal : 0).toFixed(2)} CY</span>
+                            </div>
+                          )}
+                          {countTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Count:</span>
+                              <span>{countTotal}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Uncategorized measurements */}
+                  {measurements.filter(m => !m.categoryId).length > 0 && (
+                    <div className="border-l-4 border-muted pl-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-medium text-sm text-muted-foreground">Uncategorized</span>
+                        <Badge variant="outline" className="text-xs">
+                          {measurements.filter(m => !m.categoryId).length}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1 text-xs ml-5">
+                        {measurements.filter(m => !m.categoryId && m.type === "LINEAR").length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Linear:</span>
+                            <span>
+                              {(() => {
+                                const total = measurements
+                                  .filter(m => !m.categoryId && m.type === "LINEAR")
+                                  .reduce((sum, m) => {
+                                    const val = Number(m.computedLengthFt);
+                                    return sum + (Number.isFinite(val) ? val : 0);
+                                  }, 0);
+                                return (Number.isFinite(total) ? total : 0).toFixed(2);
+                              })()} LF
+                            </span>
+                          </div>
+                        )}
+                        {measurements.filter(m => !m.categoryId && m.type === "AREA").length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Area:</span>
+                            <span>
+                              {(() => {
+                                const total = measurements
+                                  .filter(m => !m.categoryId && m.type === "AREA")
+                                  .reduce((sum, m) => {
+                                    const val = Number(m.computedAreaFt2);
+                                    return sum + (Number.isFinite(val) ? val : 0);
+                                  }, 0);
+                                return (Number.isFinite(total) ? total : 0).toFixed(2);
+                              })()} SF
+                            </span>
+                          </div>
+                        )}
+                        {measurements.filter(m => !m.categoryId && m.type === "VOLUME").length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Volume:</span>
+                            <span>
+                              {(() => {
+                                const total = measurements
+                                  .filter(m => !m.categoryId && m.type === "VOLUME")
+                                  .reduce((sum, m) => {
+                                    const val = Number(m.computedVolumeCy);
+                                    return sum + (Number.isFinite(val) ? val : 0);
+                                  }, 0);
+                                return (Number.isFinite(total) ? total : 0).toFixed(2);
+                              })()} CY
+                            </span>
+                          </div>
+                        )}
+                        {measurements.filter(m => !m.categoryId && m.type === "COUNT").length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Count:</span>
+                            <span>{measurements.filter(m => !m.categoryId && m.type === "COUNT").length}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Grand totals */}
+                  {measurements.length > 0 && (
+                    <div className="pt-3 border-t space-y-2">
+                      <h4 className="font-semibold text-sm">Total Quantities</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Linear:</span>
+                          <span className="font-medium">
+                            {(() => {
+                              const total = measurements
+                                .filter(m => m.type === "LINEAR")
+                                .reduce((sum, m) => {
+                                  const val = Number(m.computedLengthFt);
+                                  return sum + (Number.isFinite(val) ? val : 0);
+                                }, 0);
+                              return (Number.isFinite(total) ? total : 0).toFixed(2);
+                            })()} LF
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Area:</span>
+                          <span className="font-medium">
+                            {(() => {
+                              const total = measurements
+                                .filter(m => m.type === "AREA")
+                                .reduce((sum, m) => {
+                                  const val = Number(m.computedAreaFt2);
+                                  return sum + (Number.isFinite(val) ? val : 0);
+                                }, 0);
+                              return (Number.isFinite(total) ? total : 0).toFixed(2);
+                            })()} SF
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Volume:</span>
+                          <span className="font-medium">
+                            {(() => {
+                              const total = measurements
+                                .filter(m => m.type === "VOLUME")
+                                .reduce((sum, m) => {
+                                  const val = Number(m.computedVolumeCy);
+                                  return sum + (Number.isFinite(val) ? val : 0);
+                                }, 0);
+                              return (Number.isFinite(total) ? total : 0).toFixed(2);
+                            })()} CY
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Count:</span>
+                          <span className="font-medium">
+                            {measurements.filter(m => m.type === "COUNT").length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
