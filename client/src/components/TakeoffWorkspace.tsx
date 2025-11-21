@@ -498,14 +498,37 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       return;
     }
 
+    const distanceValue = parseFloat(calibrationDistance.trim());
+    
+    // Validate distance is a valid number
+    if (!Number.isFinite(distanceValue) || distanceValue <= 0) {
+      toast({ 
+        title: "Error", 
+        description: "Please enter a valid distance value",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    // Validate minimum distance to prevent unrealistic scales
+    const minDistance = units === "ft" ? 0.5 : 0.15; // 0.5ft or 0.15m minimum
+    if (distanceValue < minDistance) {
+      toast({ 
+        title: "Error", 
+        description: `Distance must be at least ${minDistance} ${units}. For small details, use a larger reference distance.`,
+        variant: "destructive" 
+      });
+      return;
+    }
+
     const pixelDistance = Math.sqrt(
       Math.pow(calibrationPoints[1].x - calibrationPoints[0].x, 2) + 
       Math.pow(calibrationPoints[1].y - calibrationPoints[0].y, 2)
     );
 
     const scalePxPerFoot = units === "ft" 
-      ? pixelDistance / parseFloat(calibrationDistance)
-      : pixelDistance / (parseFloat(calibrationDistance) * 3.28084);
+      ? pixelDistance / distanceValue
+      : pixelDistance / (distanceValue * 3.28084);
 
     // Validate scalePxPerFoot is a valid positive number
     if (!Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
@@ -527,11 +550,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     });
 
     try {
-      await apiRequest({
-        url: `/api/takeoff/sheets/${selectedSheet}/calibration`,
-        method: "PATCH",
-        body: { scalePxPerFoot, units },
-      });
+      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot, units });
       
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ title: "Success", description: "Calibration saved" });
@@ -541,7 +560,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       setActiveTool("select");
     } catch (error: any) {
       console.error("Failed to save manual calibration:", error);
-      const errorMessage = error?.message || error?.error || "Failed to save calibration";
+      const errorMessage = error?.message || "Failed to save calibration";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
@@ -575,11 +594,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     });
 
     try {
-      await apiRequest({
-        url: `/api/takeoff/sheets/${selectedSheet}/calibration`,
-        method: "PATCH",
-        body: { scalePxPerFoot: scale.pxPerFoot, units: "ft" },
-      });
+      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: scale.pxPerFoot, units: "ft" });
       
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ 
@@ -590,7 +605,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       setSelectedPresetScale("");
     } catch (error: any) {
       console.error("Failed to apply preset scale:", error);
-      const errorMessage = error?.message || error?.error || "Failed to apply scale";
+      const errorMessage = error?.message || "Failed to apply scale";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
