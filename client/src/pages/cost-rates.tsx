@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Edit } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 interface User {
   id: string;
@@ -22,6 +23,7 @@ interface User {
 }
 
 export default function CostRatesPage() {
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -80,7 +82,11 @@ export default function CostRatesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader />
+      <AppHeader
+        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
+        userRole={user?.role || ""}
+        onLogout={logout}
+      />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground mb-2">Labor Cost Rates</h1>
