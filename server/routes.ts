@@ -751,40 +751,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic bid-to-project conversion
-      const newProject = await db.transaction(async (tx) => {
-        // Create project from bid data
-        const [project] = await tx.insert(projects).values({
-          name: bid.name,
-          code: bid.code,
-          clientName: bid.clientName,
-          clientContactName: bid.clientContactName,
-          clientContactEmail: bid.clientContactEmail,
-          clientContactPhone: bid.clientContactPhone,
-          status: "PLANNING",
-          locationAddress: bid.locationAddress,
-          city: bid.city,
-          state: bid.state,
-          description: bid.description,
-          estimatorId: bid.estimatorId,
-          contractAmount: bid.bidAmount,
-          budget: bid.bidAmount,
-        }).returning();
+      // NOTE: Neon HTTP driver doesn't support transactions in serverless environments
+      // Sequential operations with error handling (not atomic)
+      
+      // Create project from bid data
+      const [newProject] = await db.insert(projects).values({
+        name: bid.name,
+        code: bid.code,
+        clientName: bid.clientName,
+        clientContactName: bid.clientContactName,
+        clientContactEmail: bid.clientContactEmail,
+        clientContactPhone: bid.clientContactPhone,
+        status: "PLANNING",
+        locationAddress: bid.locationAddress,
+        city: bid.city,
+        state: bid.state,
+        description: bid.description,
+        estimatorId: bid.estimatorId,
+        contractAmount: bid.bidAmount,
+        budget: bid.bidAmount,
+      }).returning();
 
-        // Delete the bid after converting (in same transaction)
-        await tx.delete(bids).where(eq(bids.code, req.params.code));
+      // Delete the bid after converting
+      await db.delete(bids).where(eq(bids.code, req.params.code));
 
-        // Log audit within transaction - pass tx for atomicity
-        await logAudit({
-          userId: req.user!.id,
-          action: "CREATE",
-          entityType: "project",
-          entityId: project.id,
-          newValue: `Converted bid ${bid.code} to project`,
-        }, req, tx);
-
-        return project;
-      });
+      // Log audit (best effort)
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "project",
+        entityId: newProject.id,
+        newValue: `Converted bid ${bid.code} to project`,
+      }, req);
 
       res.status(201).json(newProject);
     } catch (error: any) {

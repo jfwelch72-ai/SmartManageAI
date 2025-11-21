@@ -2,8 +2,9 @@ import { db } from "./db";
 import { auditLog, type InsertAuditLog } from "@shared/schema";
 import type { Request } from "express";
 
-// Extract the correct transaction type from db.transaction's callback parameter
-type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// NOTE: Neon HTTP driver doesn't support transactions in serverless environments
+// DbTransaction type is optional - tx parameter will be undefined
+type DbTransaction = any;
 
 export async function logAudit(
   data: Omit<InsertAuditLog, "ipAddress" | "userAgent">, 
