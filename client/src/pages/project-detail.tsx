@@ -10,6 +10,7 @@ import ScopeOfWorkTable from "@/components/ScopeOfWorkTable";
 import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -364,6 +365,7 @@ export default function ProjectDetailPage() {
   const [editContractAmount, setEditContractAmount] = useState("");
   const [editTexturaDrawDate, setEditTexturaDrawDate] = useState("");
   const [editDrawDayOfMonth, setEditDrawDayOfMonth] = useState<number | "">("");
+  const [plansSubTab, setPlansSubTab] = useState<"takeoff" | "documents">("documents");
 
   // Upload handlers
   const handleMediaUploadComplete = async (result: any) => {
@@ -1215,104 +1217,133 @@ export default function ProjectDetailPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="plans">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
-                <CardTitle>Documents</CardTitle>
-                <Dialog open={showDocumentDialog} onOpenChange={setShowDocumentDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" data-testid="button-upload-document">
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Document
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent data-testid="dialog-upload-document">
-                    <DialogHeader>
-                      <DialogTitle>Upload Document</DialogTitle>
-                      <DialogDescription>
-                        Fill in the details below and then select a file to upload.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="document-title">Title</Label>
-                        <Input
-                          id="document-title"
-                          value={documentTitle}
-                          onChange={(e) => setDocumentTitle(e.target.value)}
-                          placeholder="Enter document title..."
-                          data-testid="input-document-title"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="document-type">Type</Label>
-                        <Select
-                          value={documentType}
-                          onValueChange={(value: "PLANS" | "SPECS" | "TAKEOFF" | "OTHER") => setDocumentType(value)}
-                        >
-                          <SelectTrigger id="document-type" data-testid="select-document-type">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="PLANS">Plans</SelectItem>
-                            <SelectItem value="SPECS">Specifications</SelectItem>
-                            <SelectItem value="TAKEOFF">Takeoff</SelectItem>
-                            <SelectItem value="OTHER">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setShowDocumentDialog(false);
-                          setDocumentTitle("");
-                          setDocumentType("OTHER");
-                        }}
-                        data-testid="button-cancel-document"
-                      >
-                        Cancel
-                      </Button>
-                      <ObjectUploader
-                        maxNumberOfFiles={1}
-                        maxFileSize={104857600}
-                        onGetUploadParameters={getUploadParameters}
-                        onComplete={(result) => {
-                          setIsUploadingDocument(true);
-                          handleDocumentUploadComplete(result);
-                        }}
-                        buttonVariant="default"
-                        testId="button-select-document-file"
-                      >
-                        {isUploadingDocument ? "Uploading..." : "Select File"}
-                      </ObjectUploader>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </CardHeader>
-              <CardContent>
-                {documentsLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading documents...</div>
-                ) : documents.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No documents uploaded yet</div>
-                ) : (
-                  <div className="space-y-2">
-                    {documents.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate" data-testid={`document-${doc.id}`}>
-                        <div>
-                          <p className="font-medium text-sm">{doc.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Uploaded {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
-                          </p>
+          <TabsContent value="plans" className="space-y-0">
+            <div className="border-b mb-4">
+              <div className="flex gap-2">
+                <Button
+                  variant={plansSubTab === "documents" ? "default" : "ghost"}
+                  onClick={() => setPlansSubTab("documents")}
+                  data-testid="tab-documents"
+                  className="rounded-b-none"
+                >
+                  Documents
+                </Button>
+                <Button
+                  variant={plansSubTab === "takeoff" ? "default" : "ghost"}
+                  onClick={() => setPlansSubTab("takeoff")}
+                  data-testid="tab-takeoff-workspace"
+                  className="rounded-b-none"
+                >
+                  Takeoff Workspace
+                </Button>
+              </div>
+            </div>
+            
+            {plansSubTab === "documents" && (
+              <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-4">
+                    <CardTitle>Documents</CardTitle>
+                    <Dialog open={showDocumentDialog} onOpenChange={setShowDocumentDialog}>
+                      <DialogTrigger asChild>
+                        <Button size="sm" data-testid="button-upload-document">
+                          <Upload className="w-4 h-4 mr-2" />
+                          Upload Document
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent data-testid="dialog-upload-document">
+                        <DialogHeader>
+                          <DialogTitle>Upload Document</DialogTitle>
+                          <DialogDescription>
+                            Fill in the details below and then select a file to upload.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="document-title">Title</Label>
+                            <Input
+                              id="document-title"
+                              value={documentTitle}
+                              onChange={(e) => setDocumentTitle(e.target.value)}
+                              placeholder="Enter document title..."
+                              data-testid="input-document-title"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="document-type">Type</Label>
+                            <Select
+                              value={documentType}
+                              onValueChange={(value: "PLANS" | "SPECS" | "TAKEOFF" | "OTHER") => setDocumentType(value)}
+                            >
+                              <SelectTrigger id="document-type" data-testid="select-document-type">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PLANS">Plans</SelectItem>
+                                <SelectItem value="SPECS">Specifications</SelectItem>
+                                <SelectItem value="TAKEOFF">Takeoff</SelectItem>
+                                <SelectItem value="OTHER">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <Badge variant="outline">{doc.type}</Badge>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowDocumentDialog(false);
+                              setDocumentTitle("");
+                              setDocumentType("OTHER");
+                            }}
+                            data-testid="button-cancel-document"
+                          >
+                            Cancel
+                          </Button>
+                          <ObjectUploader
+                            maxNumberOfFiles={1}
+                            maxFileSize={104857600}
+                            onGetUploadParameters={getUploadParameters}
+                            onComplete={(result) => {
+                              setIsUploadingDocument(true);
+                              handleDocumentUploadComplete(result);
+                            }}
+                            buttonVariant="default"
+                            testId="button-select-document-file"
+                          >
+                            {isUploadingDocument ? "Uploading..." : "Select File"}
+                          </ObjectUploader>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </CardHeader>
+                  <CardContent>
+                    {documentsLoading ? (
+                      <div className="text-center py-8 text-muted-foreground">Loading documents...</div>
+                    ) : documents.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">No documents uploaded yet</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {documents.map(doc => (
+                          <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate" data-testid={`document-${doc.id}`}>
+                            <div>
+                              <p className="font-medium text-sm">{doc.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                Uploaded {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
+                              </p>
+                            </div>
+                            <Badge variant="outline">{doc.type}</Badge>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    )}
+                  </CardContent>
+                </Card>
+            )}
+            
+            {plansSubTab === "takeoff" && project && (
+              <div className="h-[calc(100vh-200px)]">
+                <TakeoffWorkspace projectId={project.id} />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="time">

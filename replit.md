@@ -4,6 +4,19 @@
 The TFR Construction Management Platform is a comprehensive internal tool designed for TFR Construction. Its primary purpose is to manage the entire project lifecycle, from bid tracking through project completion, using TypeScript, React, and PostgreSQL. The platform aims to centralize project data, user management, and daily operations to enhance efficiency and oversight across all construction activities. Key ambitions include improving compliance tracking, leveraging AI for operations, streamlining crew and subcontractor management, and ensuring robust data quality monitoring.
 
 ## Recent Changes (November 21, 2025)
+### Takeoff + Estimating Engine Foundation (In Progress)
+1. **Database Schema**: Added 12 new tables for complete takeoff and estimating system (project_plans, takeoff_sheets, takeoff_measurements, project_specs, project_spec_index, estimate_settings, estimate_crews, estimate_line_items, estimate_versions, estimate_vendor_quotes, estimate_history)
+2. **Backend API**: Implemented core takeoff endpoints - plan upload, sheet retrieval, measurement CRUD, calibration updates
+3. **Dependencies**: Installed react-konva@18.2.10 (React 18 compatible), konva, pdfjs-dist, xlsx for canvas rendering and export
+4. **TakeoffWorkspace UI**: Built comprehensive workspace with:
+   - Left toolbar with 9 tools (select, pan, zoom, calibrate, linear, area, volume, count, note)
+   - Center canvas area with Konva Stage for interactive drawing
+   - Right sidebar with calibration panel, measurements list, and quantity summary
+   - 2-point calibration workflow with real-world distance input
+   - Zoom/pan controls with mouse wheel support
+   - Sheet selector for multi-page plans
+5. **Project Integration**: Added "Plans & Takeoff" tab to project detail view with full-screen workspace
+
 ### Time Clock & Calendar Fixes (Completed)
 1. **Time Entries Page Fix**: Fixed crash caused by API returning `{data: [...], pagination: {...}}` but frontend expecting direct array
 2. **Calendar Time Support**: Added time fields (start/end time) with "All Day Event" checkbox for creating timed events
