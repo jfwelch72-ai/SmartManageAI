@@ -28,6 +28,7 @@ export interface ProjectProfitability {
   projected_completion_cost: number;
   estimated_margin: number;
   texturaDrawDate: string | null;
+  drawDayOfMonth: number | null;
   billingUrgency: 'CRITICAL' | 'HIGH' | null;
   daysUntilDraw: number | null;
   key_metrics: {
@@ -256,6 +257,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     projected_completion_cost: Math.round(projectedCompletionCost * 100) / 100,
     estimated_margin: Math.round(estimatedMargin * 100) / 100,
     texturaDrawDate: project.texturaDrawDate || null,
+    drawDayOfMonth: project.drawDayOfMonth || null,
     billingUrgency,
     daysUntilDraw,
     key_metrics: {

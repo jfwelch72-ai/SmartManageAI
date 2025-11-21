@@ -21,6 +21,7 @@ interface ProjectProfitability {
   projected_completion_cost: number;
   estimated_margin: number;
   texturaDrawDate: string | null;
+  drawDayOfMonth: number | null;
   billingUrgency: 'CRITICAL' | 'HIGH' | null;
   daysUntilDraw: number | null;
   key_metrics: {
@@ -208,9 +209,16 @@ export default function CFODashboard() {
                           <span className="text-sm text-muted-foreground">- {project.project_name}</span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Draw Date: {project.texturaDrawDate ? new Date(project.texturaDrawDate).toLocaleDateString() : 'N/A'} 
+                          {project.drawDayOfMonth ? (
+                            <>
+                              Recurring Draw: {project.drawDayOfMonth}{project.drawDayOfMonth === 1 ? 'st' : project.drawDayOfMonth === 2 ? 'nd' : project.drawDayOfMonth === 3 ? 'rd' : 'th'} of each month
+                              {project.texturaDrawDate && <span className="ml-2 text-yellow-600 dark:text-yellow-500">(Override: {new Date(project.texturaDrawDate).toLocaleDateString()})</span>}
+                            </>
+                          ) : (
+                            <>Draw Date: {project.texturaDrawDate ? new Date(project.texturaDrawDate).toLocaleDateString() : 'N/A'}</>
+                          )}
                           {project.daysUntilDraw !== null && (
-                            <span className="ml-2">
+                            <span className="ml-2 font-medium">
                               ({project.daysUntilDraw} day{project.daysUntilDraw !== 1 ? 's' : ''} remaining)
                             </span>
                           )}
