@@ -1919,6 +1919,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete plan document
+  app.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { documentId } = req.params;
+      const userRole = req.user!.role;
+      const userId = req.user!.id;
+
+      // Get the document
+      const [document] = await db
+        .select()
+        .from(planDocuments)
+        .where(eq(planDocuments.id, documentId))
+        .limit(1);
+
+      if (!document) {
+        res.status(404).json({ error: "Document not found" });
+        return;
+      }
+
+      // Check if user has permission to delete
+      const hasRoleAccess = userRole === "ADMIN" || userRole === "MANAGER";
+      const isOwner = document.uploadedById === userId;
+
+      if (!hasRoleAccess && !isOwner) {
+        res.status(403).json({ error: "You do not have permission to delete this document" });
+        return;
+      }
+
+      // Delete the file from object storage if it exists
+      if (document.objectKey) {
+        try {
+          const { ObjectStorageService } = await import("./objectStorage");
+          const objectStorageService = new ObjectStorageService();
+          const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
+          await objectFile.delete();
+        } catch (error) {
+          console.error("Error deleting file from object storage:", error);
+          // Continue with database deletion even if storage deletion fails
+        }
+      }
+
+      // Delete the document record (cascade will handle related records)
+      await db.delete(planDocuments).where(eq(planDocuments.id, documentId));
+
+      // Log the deletion
+      await logAudit(
+        req.user!.id,
+        "DELETE",
+        "DOCUMENT",
+        documentId,
+        undefined,
+        document.projectId,
+        `Deleted document: ${document.title || document.fileName}`
+      );
+
+      res.json({ message: "Document deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete document error:", error);
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
   // Get presigned download URL for a document
   app.get("/api/documents/:documentId/download-url", requireAuth, async (req: AuthRequest, res) => {
     try {
