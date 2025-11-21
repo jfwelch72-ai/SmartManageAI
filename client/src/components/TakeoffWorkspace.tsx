@@ -49,6 +49,41 @@ const TOOL_CONFIG = [
   { id: "note", icon: StickyNote, label: "Note", color: "default" },
 ] as const;
 
+// Common architectural, civil, and structural scales
+// Assuming 96 DPI (pixels per inch), we calculate pixels per foot for each scale
+const COMMON_SCALES = {
+  architectural: [
+    { label: '1/16" = 1\'-0"', pxPerFoot: 6, description: "Very small scale" },
+    { label: '1/8" = 1\'-0"', pxPerFoot: 12, description: "Small scale" },
+    { label: '1/4" = 1\'-0"', pxPerFoot: 24, description: "Common floor plans" },
+    { label: '3/8" = 1\'-0"', pxPerFoot: 36, description: "Medium detail" },
+    { label: '1/2" = 1\'-0"', pxPerFoot: 48, description: "Detailed plans" },
+    { label: '3/4" = 1\'-0"', pxPerFoot: 72, description: "Large detail" },
+    { label: '1" = 1\'-0"', pxPerFoot: 96, description: "Full size details" },
+    { label: '1-1/2" = 1\'-0"', pxPerFoot: 144, description: "Enlarged details" },
+    { label: '3" = 1\'-0"', pxPerFoot: 288, description: "Large details" },
+  ],
+  civil: [
+    { label: '1" = 10\'', pxPerFoot: 9.6, description: "Small site plans" },
+    { label: '1" = 20\'', pxPerFoot: 4.8, description: "Medium site plans" },
+    { label: '1" = 30\'', pxPerFoot: 3.2, description: "Large site plans" },
+    { label: '1" = 40\'', pxPerFoot: 2.4, description: "Very large sites" },
+    { label: '1" = 50\'', pxPerFoot: 1.92, description: "Regional plans" },
+    { label: '1" = 60\'', pxPerFoot: 1.6, description: "Large regional" },
+    { label: '1" = 100\'', pxPerFoot: 0.96, description: "Master plans" },
+  ],
+  structural: [
+    { label: '1/8" = 1\'-0"', pxPerFoot: 12, description: "Overall framing" },
+    { label: '1/4" = 1\'-0"', pxPerFoot: 24, description: "Framing plans" },
+    { label: '3/8" = 1\'-0"', pxPerFoot: 36, description: "Connection details" },
+    { label: '1/2" = 1\'-0"', pxPerFoot: 48, description: "Detailed connections" },
+    { label: '3/4" = 1\'-0"', pxPerFoot: 72, description: "Large details" },
+    { label: '1" = 1\'-0"', pxPerFoot: 96, description: "Full size details" },
+    { label: '1-1/2" = 1\'-0"', pxPerFoot: 144, description: "Connection details" },
+    { label: '3" = 1\'-0"', pxPerFoot: 288, description: "Bolt details" },
+  ],
+};
+
 export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
@@ -59,6 +94,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const [units, setUnits] = useState<"ft" | "m">("ft");
   const [stageScale, setStageScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
+  
+  // Preset scale state
+  const [scaleCategory, setScaleCategory] = useState<string>("");
+  const [selectedPresetScale, setSelectedPresetScale] = useState<string>("");
   
   // Drawing state for measurement tools
   const [drawingPoints, setDrawingPoints] = useState<{ x: number; y: number }[]>([]);
@@ -383,6 +422,40 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       setActiveTool("select");
     } catch (error) {
       toast({ title: "Error", description: "Failed to save calibration", variant: "destructive" });
+    }
+  };
+
+  const handleApplyPresetScale = async () => {
+    if (!selectedSheet || !selectedPresetScale || !scaleCategory) {
+      toast({ title: "Error", description: "Please select a scale", variant: "destructive" });
+      return;
+    }
+
+    // Find the selected scale from the common scales
+    const category = COMMON_SCALES[scaleCategory as keyof typeof COMMON_SCALES];
+    const scale = category.find(s => s.label === selectedPresetScale);
+    
+    if (!scale) {
+      toast({ title: "Error", description: "Invalid scale selected", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await apiRequest({
+        url: `/api/takeoff/sheets/${selectedSheet}/calibration`,
+        method: "PATCH",
+        body: { scalePxPerFoot: scale.pxPerFoot, units: "ft" },
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+      toast({ 
+        title: "Success", 
+        description: `Applied scale: ${scale.label}` 
+      });
+      setScaleCategory("");
+      setSelectedPresetScale("");
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to apply scale", variant: "destructive" });
     }
   };
 
@@ -793,6 +866,8 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
             {calibrationMode !== "idle" && (
               <Card>
                 <CardContent className="pt-6 space-y-4">
+                  <h3 className="font-semibold text-sm">Manual Calibration</h3>
+                  <p className="text-xs text-muted-foreground">Click two points on a known distance</p>
                   <div>
                     <Label>Real-World Distance</Label>
                     <div className="flex gap-2">
@@ -822,6 +897,64 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                   >
                     <Save className="w-4 h-4 mr-2" />
                     Save Calibration
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+            
+            {/* Preset Scale Panel */}
+            {selectedSheet && !currentSheet?.scalePxPerFoot && (
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <h3 className="font-semibold text-sm">Or Use Preset Scale</h3>
+                  <p className="text-xs text-muted-foreground">Select a common architectural, civil, or structural scale</p>
+                  <div>
+                    <Label>Scale Category</Label>
+                    <Select 
+                      value={scaleCategory} 
+                      onValueChange={(v: any) => {
+                        setScaleCategory(v);
+                        setSelectedPresetScale("");
+                      }}
+                    >
+                      <SelectTrigger data-testid="select-scale-category">
+                        <SelectValue placeholder="Select category..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="architectural">Architectural</SelectItem>
+                        <SelectItem value="civil">Civil/Site</SelectItem>
+                        <SelectItem value="structural">Structural</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {scaleCategory && (
+                    <div>
+                      <Label>Scale</Label>
+                      <Select 
+                        value={selectedPresetScale} 
+                        onValueChange={setSelectedPresetScale}
+                      >
+                        <SelectTrigger data-testid="select-preset-scale">
+                          <SelectValue placeholder="Select scale..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COMMON_SCALES[scaleCategory as keyof typeof COMMON_SCALES].map((scale) => (
+                            <SelectItem key={scale.label} value={scale.label}>
+                              {scale.label} - {scale.description}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <Button 
+                    onClick={handleApplyPresetScale} 
+                    className="w-full"
+                    disabled={!selectedPresetScale}
+                    data-testid="button-apply-preset-scale"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Apply Preset Scale
                   </Button>
                 </CardContent>
               </Card>
