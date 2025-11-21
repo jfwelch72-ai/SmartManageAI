@@ -598,6 +598,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Check if project with same code already exists
+      const [existingProject] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, bid.code))
+        .limit(1);
+
+      if (existingProject) {
+        res.status(409).json({ 
+          error: "Project with this code already exists",
+          details: `A project with code ${bid.code} already exists. Cannot convert bid.`
+        });
+        return;
+      }
+
       // Use transaction to ensure atomic bid-to-project conversion
       const newProject = await db.transaction(async (tx) => {
         // Create project from bid data
@@ -1433,6 +1448,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Check date constraints
+      const entryDate = new Date(validationResult.data.date);
+      const now = new Date();
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      // Prevent future dates
+      if (entryDate > now) {
+        res.status(400).json({ 
+          error: "Invalid date",
+          details: "Time entries cannot be created for future dates."
+        });
+        return;
+      }
+
+      // Non-admin users cannot create entries older than 90 days
+      if (req.user!.role !== "ADMIN" && entryDate < ninetyDaysAgo) {
+        res.status(400).json({ 
+          error: "Invalid date",
+          details: "Time entries cannot be created for dates more than 90 days in the past. Please contact an administrator."
+        });
+        return;
+      }
+
       // Use transaction to ensure atomic insert + audit
       const newEntry = await db.transaction(async (tx) => {
         const [entry] = await tx.insert(timeEntries).values([validationResult.data]).returning();
@@ -1652,6 +1691,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // BUSINESS VALIDATION: Check if T&M sheet already exists for this project/date
+      const [existingSheet] = await db
+        .select()
+        .from(tmDailySheets)
+        .where(
+          and(
+            eq(tmDailySheets.projectId, validationResult.data.projectId),
+            sql`DATE(${tmDailySheets.date}) = DATE(${validationResult.data.date})`
+          )
+        )
+        .limit(1);
+
+      if (existingSheet) {
+        res.status(409).json({ 
+          error: "T&M sheet already exists for this project and date",
+          details: "A Time & Materials sheet has already been created for this project on the specified date."
+        });
         return;
       }
 
@@ -2949,18 +3008,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Check if user is already a member of this crew
+      const [existing] = await db
+        .select()
+        .from(crewMembers)
+        .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
+        .limit(1);
+
+      if (existing) {
+        res.status(409).json({ 
+          error: "User is already a member of this crew",
+          details: "This user has already been added to the specified crew."
+        });
+        return;
+      }
+
       // Use transaction to ensure atomic insert + audit
       const newMember = await db.transaction(async (tx) => {
-        // Check if member already exists
-        const [existing] = await tx
-          .select()
-          .from(crewMembers)
-          .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
-          .limit(1);
-
-        if (existing) {
-          throw new Error("User is already a member of this crew");
-        }
 
         const [member] = await tx
           .insert(crewMembers)
@@ -3063,6 +3127,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         assignedById: req.user!.id,
       });
+
+      // BUSINESS VALIDATION: Check if crew is already assigned to this project
+      const [existingAssignment] = await db
+        .select()
+        .from(crewProjectAssignments)
+        .where(
+          and(
+            eq(crewProjectAssignments.crewId, validated.crewId),
+            eq(crewProjectAssignments.projectId, validated.projectId)
+          )
+        )
+        .limit(1);
+
+      if (existingAssignment) {
+        res.status(409).json({ 
+          error: "Crew already assigned to this project",
+          details: "This crew is already assigned to the specified project."
+        });
+        return;
+      }
 
       // Use transaction to ensure atomic insert + audit
       const assignment = await db.transaction(async (tx) => {
