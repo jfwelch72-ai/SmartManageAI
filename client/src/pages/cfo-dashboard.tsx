@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, TrendingDown, DollarSign, AlertTriangle } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface ProjectProfitability {
   project_code: string;
@@ -34,6 +35,7 @@ interface ProjectProfitability {
 
 export default function CFODashboard() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
     queryKey: ["/api/cfo/profitability"],
@@ -198,7 +200,8 @@ export default function CFODashboard() {
                   {projectsWithDrawDateAlerts.map(project => (
                     <div 
                       key={project.project_code}
-                      className={`flex items-center justify-between p-3 bg-background rounded-md ${
+                      onClick={() => setLocation(`/projects/${project.project_code}`)}
+                      className={`flex items-center justify-between p-3 bg-background rounded-md cursor-pointer hover-elevate active-elevate-2 ${
                         project.billingUrgency === 'CRITICAL' ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-yellow-500'
                       }`}
                       data-testid={`draw-date-alert-${project.project_code}`}
@@ -259,7 +262,8 @@ export default function CFODashboard() {
                   {projectsMissingBudget.map(project => (
                     <div 
                       key={project.project_code}
-                      className="flex items-center justify-between p-2 bg-background rounded-md"
+                      onClick={() => setLocation(`/projects/${project.project_code}`)}
+                      className="flex items-center justify-between p-2 bg-background rounded-md cursor-pointer hover-elevate active-elevate-2"
                       data-testid={`missing-budget-${project.project_code}`}
                     >
                       <div>
@@ -301,8 +305,9 @@ export default function CFODashboard() {
                     const hasBudget = project.adjusted_budget != null && !isNaN(budgetNum) && budgetNum > 0;
                     return (
                       <Card 
-                        key={project.project_code} 
-                        className={`hover-elevate ${!hasBudget ? 'border-yellow-500' : ''}`}
+                        key={project.project_code}
+                        onClick={() => setLocation(`/projects/${project.project_code}`)}
+                        className={`cursor-pointer hover-elevate active-elevate-2 ${!hasBudget ? 'border-yellow-500' : ''}`}
                         data-testid={`card-project-${project.project_code}`}
                       >
                         <CardHeader>

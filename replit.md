@@ -16,6 +16,7 @@ The TFR Construction Management Platform is a comprehensive internal tool design
 2. **Success Feedback**: Added completion toast showing how many tasks were created when AI analysis finishes
 3. **Back Button**: Added "Back to Dashboard" button on AI PM page for easier navigation
 4. **Comprehensive Navigation**: AppHeader navigation available on all pages with quick access to Dashboard, Projects, Calendar, Time Clock, AI features, and Admin tools
+5. **CFO Dashboard Clickable Cards**: All CFO dashboard cards now navigate to their associated project detail pages when clicked, including draw date alerts, missing budget warnings, and individual project profitability cards
 
 ## Previous Changes (November 19, 2025)
 ### Backend Targeted Upgrades (Completed)
