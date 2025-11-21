@@ -1733,15 +1733,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure required fields are set (TypeScript safety)
       const insertData = { ...validationResult.data, userId: req.user!.id };
       
-      // Use transaction to ensure atomic insert + audit
-      const newEntry = await db.transaction(async (tx) => {
-        const [entry] = await tx.insert(timeEntries).values([insertData]).returning();
-        
-        // Audit log within transaction
-        await logCreate(req.user!.id, "TIME_ENTRY", entry.id, JSON.stringify(entry), req, tx);
-        
-        return entry;
-      });
+      // Create time entry (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newEntry] = await db.insert(timeEntries).values([insertData]).returning();
+      
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "TIME_ENTRY", newEntry.id, newEntry, req);
       
       res.status(201).json(newEntry);
     } catch (error: any) {
@@ -1806,27 +1802,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.costCode !== undefined) updates.costCode = data.costCode;
       if (data.notes !== undefined) updates.notes = data.notes;
 
-      // Use transaction to ensure atomic update + audit
-      const updatedEntry = await db.transaction(async (tx) => {
-        const [entry] = await tx
-          .update(timeEntries)
-          .set(updates)
-          .where(eq(timeEntries.id, req.params.id))
-          .returning();
+      // Update time entry (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [updatedEntry] = await db
+        .update(timeEntries)
+        .set(updates)
+        .where(eq(timeEntries.id, req.params.id))
+        .returning();
 
-        // Audit log within transaction
-        await logUpdate(
-          req.user!.id,
-          "TIME_ENTRY",
-          req.params.id,
-          JSON.stringify(existingEntry),
-          JSON.stringify({ ...updates, adminOverride: data.adminOverride }),
-          req,
-          tx
-        );
-
-        return entry;
-      });
+      // Audit log (pass raw objects, not JSON.stringify)
+      await logUpdate(
+        req.user!.id,
+        "TIME_ENTRY",
+        req.params.id,
+        existingEntry,
+        { ...updates, adminOverride: data.adminOverride },
+        req
+      );
 
       res.json(updatedEntry);
     } catch (error) {
@@ -1864,13 +1855,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx.delete(timeEntries).where(eq(timeEntries.id, req.params.id));
+      // Delete time entry (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db.delete(timeEntries).where(eq(timeEntries.id, req.params.id));
 
-        // Audit log within transaction
-        await logDelete(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify(existingEntry), req, tx);
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "TIME_ENTRY", req.params.id, existingEntry, req);
 
       res.status(204).send();
     } catch (error) {
@@ -1893,23 +1882,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic approval + audit
-      const updatedEntry = await db.transaction(async (tx) => {
-        const [entry] = await tx
-          .update(timeEntries)
-          .set({
-            approvedById: req.user!.id,
-            approvedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(timeEntries.id, req.params.id))
-          .returning();
+      // Approve time entry (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [updatedEntry] = await db
+        .update(timeEntries)
+        .set({
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(timeEntries.id, req.params.id))
+        .returning();
 
-        // Audit log within transaction
-        await logApprove(req.user!.id, "TIME_ENTRY", req.params.id, JSON.stringify({ approver: req.user!.email }), req, tx);
-
-        return entry;
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logApprove(req.user!.id, "TIME_ENTRY", req.params.id, { approver: req.user!.email }, req);
 
       res.json(updatedEntry);
     } catch (error) {
@@ -2872,36 +2857,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Approve time-off request (Admin/Manager only)
   app.post("/api/calendar/events/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      // Use transaction to ensure atomic approval + notification
-      const event = await db.transaction(async (tx) => {
-        const [approved] = await tx
-          .update(calendarEvents)
-          .set({
-            eventType: "TIME_OFF_APPROVED",
-            approvedById: req.user!.id,
-            approvedAt: new Date(),
-          })
-          .where(eq(calendarEvents.id, req.params.id))
-          .returning();
+      // Approve time-off request (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [event] = await db
+        .update(calendarEvents)
+        .set({
+          eventType: "TIME_OFF_APPROVED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+        })
+        .where(eq(calendarEvents.id, req.params.id))
+        .returning();
 
-        if (!approved) {
-          throw new Error("Calendar event not found");
-        }
+      if (!event) {
+        res.status(404).json({ error: "Calendar event not found" });
+        return;
+      }
 
-        // Notify the requester within transaction
-        if (approved.userId) {
-          await tx.insert(notifications).values([{
-            userId: approved.userId,
-            type: "GENERAL",
-            title: "Time Off Approved",
-            message: `Your time off request has been approved: ${approved.title}`,
-            relatedEntityId: approved.id,
-            relatedEntityType: "calendarEvent",
-          }]);
-        }
-
-        return approved;
-      });
+      // Notify the requester
+      if (event.userId) {
+        await db.insert(notifications).values([{
+          userId: event.userId,
+          type: "GENERAL",
+          title: "Time Off Approved",
+          message: `Your time off request has been approved: ${event.title}`,
+          relatedEntityId: event.id,
+          relatedEntityType: "calendarEvent",
+        }]);
+      }
 
       res.json(event);
     } catch (error: any) {
@@ -3066,15 +3048,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Ensure required field is set (TypeScript safety)
       const insertData = { ...data, createdById: req.user!.id };
 
-      // Use transaction to ensure atomic insert + audit
-      const newEvent = await db.transaction(async (tx) => {
-        const [event] = await tx.insert(billingEvents).values([insertData]).returning();
+      // Create billing event (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newEvent] = await db.insert(billingEvents).values([insertData]).returning();
 
-        // Audit log within transaction
-        await logCreate(req.user!.id, "BILLING_EVENT", event.id, JSON.stringify(event), req, tx);
-
-        return event;
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "BILLING_EVENT", newEvent.id, newEvent, req);
 
       res.status(201).json(newEvent);
     } catch (error) {
@@ -3275,17 +3253,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic insert + audit
-      const newCrew = await db.transaction(async (tx) => {
-        const [crew] = await tx.insert(crews).values(validationResult.data).returning();
-        
-        await logCreate(req.user!.id, "crews", crew.id, JSON.stringify({
-          name: crew.name,
-          leadId: crew.leadId,
-        }), req, tx);
-
-        return crew;
-      });
+      // Create crew (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newCrew] = await db.insert(crews).values(validationResult.data).returning();
+      
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "crews", newCrew.id, {
+        name: newCrew.name,
+        leadId: newCrew.leadId,
+      }, req);
 
       res.status(201).json(newCrew);
     } catch (error) {
@@ -3320,18 +3295,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic update + audit
-      const updated = await db.transaction(async (tx) => {
-        const [crew] = await tx
-          .update(crews)
-          .set({ ...updateData.data, updatedAt: new Date() })
-          .where(eq(crews.id, id))
-          .returning();
+      // Update crew (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [updated] = await db
+        .update(crews)
+        .set({ ...updateData.data, updatedAt: new Date() })
+        .where(eq(crews.id, id))
+        .returning();
 
-        await logUpdate(req.user!.id, "crews", id, JSON.stringify(existing), JSON.stringify(updateData.data), req, tx);
-
-        return crew;
-      });
+      // Audit log (pass raw objects, not JSON.stringify)
+      await logUpdate(req.user!.id, "crews", id, existing, updateData.data, req);
 
       res.json(updated);
     } catch (error) {
@@ -3352,11 +3324,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx.delete(crews).where(eq(crews.id, id));
-        await logDelete(req.user!.id, "crews", id, JSON.stringify({ name: existing.name }), req, tx);
-      });
+      // Delete crew (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db.delete(crews).where(eq(crews.id, id));
+      
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "crews", id, { name: existing.name }, req);
 
       res.json({ success: true });
     } catch (error: any) {
@@ -3421,22 +3393,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic insert + audit
-      const newMember = await db.transaction(async (tx) => {
+      // Add crew member (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newMember] = await db
+        .insert(crewMembers)
+        .values({ crewId: id, userId, role })
+        .returning();
 
-        const [member] = await tx
-          .insert(crewMembers)
-          .values({ crewId: id, userId, role })
-          .returning();
-
-        await logCreate(req.user!.id, "crew_members", member.id, JSON.stringify({
-          crewId: id,
-          userId,
-          role,
-        }), req, tx);
-
-        return member;
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "crew_members", newMember.id, {
+        crewId: id,
+        userId,
+        role,
+      }, req);
 
       res.status(201).json(newMember);
     } catch (error: any) {
@@ -3466,17 +3434,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(crewMembers)
-          .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)));
+      // Remove crew member (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db
+        .delete(crewMembers)
+        .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)));
 
-        await logDelete(req.user!.id, "crew_members", existing.id, JSON.stringify({
-          crewId: id,
-          userId,
-        }), req, tx);
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "crew_members", existing.id, {
+        crewId: id,
+        userId,
+      }, req);
 
       res.json({ success: true });
     } catch (error: any) {
@@ -3546,17 +3513,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic insert + audit
-      const assignment = await db.transaction(async (tx) => {
-        const [assign] = await tx.insert(crewProjectAssignments).values(validated).returning();
+      // Create crew assignment (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [assignment] = await db.insert(crewProjectAssignments).values(validated).returning();
 
-        await logCreate(req.user!.id, "crew_project_assignments", assign.id, JSON.stringify({
-          crewId: assign.crewId,
-          projectId: assign.projectId,
-        }), req, tx);
-
-        return assign;
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "crew_project_assignments", assignment.id, {
+        crewId: assignment.crewId,
+        projectId: assignment.projectId,
+      }, req);
 
       res.status(201).json(assignment);
     } catch (error: any) {
@@ -3587,17 +3551,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(crewProjectAssignments)
-          .where(eq(crewProjectAssignments.id, id));
+      // Delete crew assignment (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db
+        .delete(crewProjectAssignments)
+        .where(eq(crewProjectAssignments.id, id));
 
-        await logDelete(req.user!.id, "crew_project_assignments", id, JSON.stringify({
-          crewId: existing.crewId,
-          projectId: existing.projectId,
-        }), req, tx);
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "crew_project_assignments", id, {
+        crewId: existing.crewId,
+        projectId: existing.projectId,
+      }, req);
 
       res.json({ success: true });
     } catch (error) {
@@ -3634,17 +3597,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic insert + audit
-      const newSkill = await db.transaction(async (tx) => {
-        const [skill] = await tx.insert(skills).values(validationResult.data).returning();
-        
-        await logCreate(req.user!.id, "skills", skill.id, JSON.stringify({
-          name: skill.name,
-          category: skill.category,
-        }), req, tx);
-
-        return skill;
-      });
+      // Create skill (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newSkill] = await db.insert(skills).values(validationResult.data).returning();
+      
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "skills", newSkill.id, {
+        name: newSkill.name,
+        category: newSkill.category,
+      }, req);
 
       res.status(201).json(newSkill);
     } catch (error: any) {
@@ -3669,11 +3629,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx.delete(skills).where(eq(skills.id, id));
-        await logDelete(req.user!.id, "skills", id, JSON.stringify({ name: existing.name }), req, tx);
-      });
+      // Delete skill (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db.delete(skills).where(eq(skills.id, id));
+      
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "skills", id, { name: existing.name }, req);
 
       res.json({ success: true });
     } catch (error) {
@@ -3727,21 +3687,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic insert + audit
-      const newUserSkill = await db.transaction(async (tx) => {
-        const [uSkill] = await tx
-          .insert(userSkills)
-          .values({ userId, skillId, proficiencyLevel, yearsExperience })
-          .returning();
+      // Assign skill to user (sequential operations - Neon HTTP driver doesn't support transactions)
+      const [newUserSkill] = await db
+        .insert(userSkills)
+        .values({ userId, skillId, proficiencyLevel, yearsExperience })
+        .returning();
 
-        await logCreate(req.user!.id, "user_skills", uSkill.id, JSON.stringify({
-          userId,
-          skillId,
-          proficiencyLevel,
-        }), req, tx);
-
-        return uSkill;
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "user_skills", newUserSkill.id, {
+        userId,
+        skillId,
+        proficiencyLevel,
+      }, req);
 
       res.status(201).json(newUserSkill);
     } catch (error) {
@@ -3767,17 +3724,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic delete + audit
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(userSkills)
-          .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)));
+      // Remove skill from user (sequential operations - Neon HTTP driver doesn't support transactions)
+      await db
+        .delete(userSkills)
+        .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, skillId)));
 
-        await logDelete(req.user!.id, "user_skills", existing.id, JSON.stringify({
-          userId,
-          skillId,
-        }), req, tx);
-      });
+      // Audit log (pass raw object, not JSON.stringify)
+      await logDelete(req.user!.id, "user_skills", existing.id, {
+        userId,
+        skillId,
+      }, req);
 
       res.json({ success: true});
     } catch (error) {
@@ -4141,49 +4097,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Use transaction to ensure atomic plan + sheets creation + audit
-      const result = await db.transaction(async (tx) => {
-        // Create project plan record
-        const [plan] = await tx.insert(projectPlans).values({
-          projectId,
-          documentId: documentId,
-          originalPdfUrl: document.fileUrl,
-          fileName: document.fileName,
-        }).returning();
+      // Import plan to takeoff (sequential operations with compensating cleanup)
+      // Create project plan record
+      const [plan] = await db.insert(projectPlans).values({
+        projectId,
+        documentId: documentId,
+        originalPdfUrl: document.fileUrl,
+        fileName: document.fileName,
+      }).returning();
 
-        // Prepare all sheets for batch insert
-        const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
-        const sheetValues = [];
+      // Prepare all sheets for batch insert
+      const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+      const sheetValues = [];
+      
+      for (let i = 0; i < pageCount; i++) {
+        const sheetName = pageCount > 1 
+          ? `${baseSheetName} - Page ${i + 1}`
+          : baseSheetName;
         
-        for (let i = 0; i < pageCount; i++) {
-          const sheetName = pageCount > 1 
-            ? `${baseSheetName} - Page ${i + 1}`
-            : baseSheetName;
-          
-          sheetValues.push({
-            projectId,
-            planId: plan.id,
-            imageUrl: document.fileUrl,
-            sheetIndex: i,
-            sheetName,
-          });
-        }
-
-        // Batch insert all sheets
-        const sheets = await tx.insert(takeoffSheets).values(sheetValues).returning();
-
-        // Audit log within transaction
-        await logCreate(req.user!.id, "project_plans", plan.id, JSON.stringify({
+        sheetValues.push({
           projectId,
-          fileName: document.fileName,
-          documentId,
-          pageCount,
-        }), req, tx);
+          planId: plan.id,
+          imageUrl: document.fileUrl,
+          sheetIndex: i,
+          sheetName,
+        });
+      }
 
-        return { plan, sheets };
-      });
+      // Batch insert all sheets with compensating cleanup on failure
+      let sheets;
+      try {
+        sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
+      } catch (sheetError) {
+        // Compensating cleanup: delete the orphaned plan
+        await db.delete(projectPlans).where(eq(projectPlans.id, plan.id));
+        throw sheetError; // Re-throw to trigger outer catch
+      }
 
-      res.status(201).json(result);
+      // Audit log (pass raw object, not JSON.stringify)
+      await logCreate(req.user!.id, "project_plans", plan.id, {
+        projectId,
+        fileName: document.fileName,
+        documentId,
+        pageCount,
+      }, req);
+
+      res.status(201).json({ plan, sheets });
     } catch (error) {
       console.error("Error importing plan to takeoff:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -4203,39 +4162,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { projectPlans, takeoffSheets, insertProjectPlanSchema, insertTakeoffSheetSchema } = await import("@shared/schema");
 
-      // Use transaction to ensure atomic plan + sheet creation + audit
-      const result = await db.transaction(async (tx) => {
-        // Create project plan record
-        const [plan] = await tx.insert(projectPlans).values({
-          projectId,
-          originalPdfUrl: fileUrl,
-          fileName,
-        }).returning();
+      // Upload plan (sequential operations with compensating cleanup)
+      // Create project plan record
+      const [plan] = await db.insert(projectPlans).values({
+        projectId,
+        originalPdfUrl: fileUrl,
+        fileName,
+      }).returning();
 
-        // TODO: In a production system, you would use a PDF processing service here
-        // For now, we'll create a single sheet placeholder
-        // The frontend will handle PDF rendering with pdf.js
-        const [sheet] = await tx.insert(takeoffSheets).values({
+      // TODO: In a production system, you would use a PDF processing service here
+      // For now, we'll create a single sheet placeholder
+      // The frontend will handle PDF rendering with pdf.js
+      let sheet;
+      try {
+        [sheet] = await db.insert(takeoffSheets).values({
           projectId,
           planId: plan.id,
           imageUrl: fileUrl, // Using PDF URL as placeholder
           sheetIndex: 0,
           sheetName: fileName,
         }).returning();
+      } catch (sheetError) {
+        // Compensating cleanup: delete the orphaned plan
+        await db.delete(projectPlans).where(eq(projectPlans.id, plan.id));
+        throw sheetError; // Re-throw to trigger outer catch
+      }
 
-        // Audit log within transaction
-        await logAudit({
-          userId: req.user!.id,
-          action: "CREATE",
-          entityType: "project_plan",
-          entityId: plan.id,
-          newValue: `Uploaded plan: ${fileName}`,
-        }, req, tx);
+      // Audit log
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "project_plan",
+        entityId: plan.id,
+        newValue: `Uploaded plan: ${fileName}`,
+      }, req);
 
-        return { plan, sheets: [sheet] };
-      });
-
-      res.status(201).json(result);
+      res.status(201).json({ plan, sheets: [sheet] });
     } catch (error) {
       console.error("Error uploading plan:", error);
       res.status(500).json({ error: "Internal server error" });

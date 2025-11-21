@@ -28,7 +28,7 @@ export async function logCreate(
   userId: string,
   entityType: string,
   entityId: string,
-  newValue: string,
+  newValue: unknown,
   req?: Request,
   tx?: DbTransaction
 ): Promise<void> {
@@ -38,7 +38,7 @@ export async function logCreate(
     entityId,
     action: "CREATE",
     oldValue: null,
-    newValue,
+    newValue: typeof newValue === 'string' ? newValue : JSON.stringify(newValue),
   }, req, tx);
 }
 
@@ -46,8 +46,8 @@ export async function logUpdate(
   userId: string,
   entityType: string,
   entityId: string,
-  oldValue: string,
-  newValue: string,
+  oldValue: unknown,
+  newValue: unknown,
   req?: Request,
   tx?: DbTransaction
 ): Promise<void> {
@@ -56,8 +56,8 @@ export async function logUpdate(
     entityType,
     entityId,
     action: "UPDATE",
-    oldValue,
-    newValue,
+    oldValue: typeof oldValue === 'string' ? oldValue : JSON.stringify(oldValue),
+    newValue: typeof newValue === 'string' ? newValue : JSON.stringify(newValue),
   }, req, tx);
 }
 
@@ -65,7 +65,7 @@ export async function logDelete(
   userId: string,
   entityType: string,
   entityId: string,
-  oldValue: string,
+  oldValue: unknown,
   req?: Request,
   tx?: DbTransaction
 ): Promise<void> {
@@ -74,7 +74,7 @@ export async function logDelete(
     entityType,
     entityId,
     action: "DELETE",
-    oldValue,
+    oldValue: typeof oldValue === 'string' ? oldValue : JSON.stringify(oldValue),
     newValue: null,
   }, req, tx);
 }
@@ -83,7 +83,7 @@ export async function logApprove(
   userId: string,
   entityType: string,
   entityId: string,
-  details: string,
+  details: unknown,
   req?: Request,
   tx?: DbTransaction
 ): Promise<void> {
@@ -93,7 +93,7 @@ export async function logApprove(
     entityId,
     action: "APPROVE",
     oldValue: null,
-    newValue: details,
+    newValue: typeof details === 'string' ? details : JSON.stringify(details),
   }, req, tx);
 }
 

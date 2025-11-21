@@ -121,38 +121,39 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    // Use transaction to ensure atomic status update + audit + notification
-    const updatedOrder = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(changeOrders)
-        .set({
-          status: "PENDING_APPROVAL",
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
+    // Update change order status (sequential operations - Neon HTTP driver doesn't support transactions)
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "PENDING_APPROVAL",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
 
-      // Audit log within transaction - pass tx for atomicity
-      await logAudit({
-        userId: req.user!.id,
-        action: "SUBMIT",
-        entityType: "changeOrder",
-        entityId: order.id,
-        oldValue: JSON.stringify({ status: order.status }),
-        newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
-      }, req, tx);
+    // Guard: Check if update actually found a row (concurrent deletion protection)
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
 
-      // Notify relevant users within transaction - pass tx for atomicity
-      await notifyStatusChange(
-        updated,
-        "PENDING_APPROVAL",
-        `Change order ${updated.changeOrderNumber} is now pending approval`,
-        false,  // Don't notify requester as they initiated it
-        tx
-      );
+    // Audit log (pass raw objects, not JSON.stringify)
+    await logAudit({
+      userId: req.user!.id,
+      action: "SUBMIT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: { status: order.status },
+      newValue: { status: "PENDING_APPROVAL" },
+    }, req);
 
-      return updated;
-    });
+    // Notify relevant users
+    await notifyStatusChange(
+      updatedOrder,
+      "PENDING_APPROVAL",
+      `Change order ${updatedOrder.changeOrderNumber} is now pending approval`,
+      false  // Don't notify requester as they initiated it
+    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -181,38 +182,39 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Use transaction to ensure atomic status update + audit + notification
-    const updatedOrder = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(changeOrders)
-        .set({
-          status: "SUBMITTED",
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
+    // Update change order status (sequential operations - Neon HTTP driver doesn't support transactions)
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "SUBMITTED",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
 
-      // Audit log within transaction - pass tx for atomicity
-      await logAudit({
-        userId: req.user!.id,
-        action: "SUBMIT",
-        entityType: "changeOrder",
-        entityId: order.id,
-        oldValue: JSON.stringify({ status: order.status }),
-        newValue: JSON.stringify({ status: "SUBMITTED" }),
-      }, req, tx);
+    // Guard: Check if update actually found a row (concurrent deletion protection)
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
 
-      // Notify requester within transaction - pass tx for atomicity
-      await notifyStatusChange(
-        updated,
-        "SUBMITTED",
-        `Change order ${updated.changeOrderNumber} has been submitted to client`,
-        true,
-        tx
-      );
+    // Audit log (pass raw objects, not JSON.stringify)
+    await logAudit({
+      userId: req.user!.id,
+      action: "SUBMIT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: { status: order.status },
+      newValue: { status: "SUBMITTED" },
+    }, req);
 
-      return updated;
-    });
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "SUBMITTED",
+      `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
+      true
+    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -241,40 +243,41 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       return;
     }
 
-    // Use transaction to ensure atomic approval + audit + notification
-    const updatedOrder = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(changeOrders)
-        .set({
-          status: "APPROVED",
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
+    // Approve change order (sequential operations - Neon HTTP driver doesn't support transactions)
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "APPROVED",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
 
-      // Audit log within transaction - pass tx for atomicity
-      await logAudit({
-        userId: req.user!.id,
-        action: "APPROVE",
-        entityType: "changeOrder",
-        entityId: order.id,
-        oldValue: JSON.stringify({ status: order.status }),
-        newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
-      }, req, tx);
+    // Guard: Check if update actually found a row (concurrent deletion protection)
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
 
-      // Notify requester within transaction - pass tx for atomicity
-      await notifyStatusChange(
-        updated,
-        "APPROVED",
-        `Change order ${updated.changeOrderNumber} has been approved`,
-        true,
-        tx
-      );
+    // Audit log (pass raw objects, not JSON.stringify)
+    await logAudit({
+      userId: req.user!.id,
+      action: "APPROVE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: { status: order.status },
+      newValue: { status: "APPROVED", approvedById: req.user!.id },
+    }, req);
 
-      return updated;
-    });
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "APPROVED",
+      `Change order ${updatedOrder.changeOrderNumber} has been approved`,
+      true
+    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -311,45 +314,46 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Use transaction to ensure atomic rejection + audit + notification
-    const updatedOrder = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(changeOrders)
-        .set({
-          status: "REJECTED",
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-          rejectionReason,
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
+    // Reject change order (sequential operations - Neon HTTP driver doesn't support transactions)
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "REJECTED",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        rejectionReason,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
 
-      // Audit log within transaction - pass tx for atomicity
-      await logAudit({
-        userId: req.user!.id,
-        action: "REJECT",
-        entityType: "changeOrder",
-        entityId: order.id,
-        oldValue: JSON.stringify({ status: order.status }),
-        newValue: JSON.stringify({ 
-          status: "REJECTED", 
-          rejectionReason,
-          approvedById: req.user!.id 
-        }),
-      }, req, tx);
+    // Guard: Check if update actually found a row (concurrent deletion protection)
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
 
-      // Notify requester within transaction - pass tx for atomicity
-      await notifyStatusChange(
-        updated,
-        "REJECTED",
-        `Change order ${updated.changeOrderNumber} has been rejected: ${rejectionReason}`,
-        true,
-        tx
-      );
+    // Audit log (pass raw objects, not JSON.stringify)
+    await logAudit({
+      userId: req.user!.id,
+      action: "REJECT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: { status: order.status },
+      newValue: { 
+        status: "REJECTED", 
+        rejectionReason,
+        approvedById: req.user!.id 
+      },
+    }, req);
 
-      return updated;
-    });
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "REJECTED",
+      `Change order ${updatedOrder.changeOrderNumber} has been rejected: ${rejectionReason}`,
+      true
+    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -381,38 +385,39 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
-    // Use transaction to ensure atomic status update + audit + notification
-    const updatedOrder = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(changeOrders)
-        .set({
-          status: "DRAFT",
-          updatedAt: new Date(),
-        })
-        .where(eq(changeOrders.id, req.params.id))
-        .returning();
+    // Return to draft (sequential operations - Neon HTTP driver doesn't support transactions)
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "DRAFT",
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
 
-      // Audit log within transaction - pass tx for atomicity
-      await logAudit({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "changeOrder",
-        entityId: order.id,
-        oldValue: JSON.stringify({ status: order.status }),
-        newValue: JSON.stringify({ status: "DRAFT", reason }),
-      }, req, tx);
+    // Guard: Check if update actually found a row (concurrent deletion protection)
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
 
-      // Notify requester within transaction - note: tx is the 5th parameter, notifyRequestedBy=true is 4th
-      await notifyStatusChange(
-        updated,
-        "DRAFT",
-        `Change order ${updated.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`,
-        true, // notifyRequestedBy
-        tx // transaction parameter
-      );
+    // Audit log (pass raw objects, not JSON.stringify)
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: { status: order.status },
+      newValue: { status: "DRAFT", reason },
+    }, req);
 
-      return updated;
-    });
+    // Notify requester
+    await notifyStatusChange(
+      updatedOrder,
+      "DRAFT",
+      `Change order ${updatedOrder.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`,
+      true
+    );
 
     res.json(updatedOrder);
   } catch (error: any) {
