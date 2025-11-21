@@ -3624,7 +3624,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(takeoffMeasurements.sheetId, sheetId))
         .orderBy(takeoffMeasurements.createdAt);
 
-      res.json(measurements);
+      // Parse points JSON string to array for frontend
+      const parsedMeasurements = measurements.map(m => ({
+        ...m,
+        points: JSON.parse(m.points),
+      }));
+
+      res.json(parsedMeasurements);
     } catch (error) {
       console.error("Error fetching measurements:", error);
       res.status(500).json({ error: "Failed to fetch measurements" });
@@ -3690,7 +3696,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { takeoffMeasurements, takeoffSheets, projects, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-      const validated = insertTakeoffMeasurementSchema.parse(req.body);
+      // Convert points array to JSON string if it's an array
+      const bodyWithStringifiedPoints = {
+        ...req.body,
+        points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
+      };
+
+      const validated = insertTakeoffMeasurementSchema.parse(bodyWithStringifiedPoints);
 
       // Validate that the sheet exists and belongs to a valid project
       const sheetWithProject = await db
