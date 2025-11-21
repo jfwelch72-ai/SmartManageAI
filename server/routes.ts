@@ -3504,7 +3504,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         planId: plan.id,
         imageUrl: document.fileUrl,
         sheetIndex: 0,
-        sheetName: document.title,
+        sheetName: document.title || document.fileName, // Use filename as fallback
       }).returning();
 
       await logCreate(req.user!.id, "project_plans", plan.id, {
