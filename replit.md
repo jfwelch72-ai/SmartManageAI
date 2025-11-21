@@ -28,7 +28,7 @@ The platform features a modern web stack designed for robustness and comprehensi
     -   **Dashboard**: Real-time KPIs and navigation.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation using OpenAI GPT-4, including role-specific tasks and CFO-level financial analysis.
-    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (linear, area, volume, count, note), measurement persistence, and quantity summaries. Includes document viewing, import of PDF plans, and integration with project details.
+    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (linear, area, volume, count, note), measurement persistence, and quantity summaries. Includes document viewing, import of PDF plans with PDF.js rendering on canvas using Vite-compatible worker configuration, and integration with project details.
 
 ## External Dependencies
 -   **PostgreSQL (Neon)**: Primary database.
