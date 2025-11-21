@@ -4,7 +4,7 @@ import { changeOrders, insertChangeOrderSchema, users, notifications } from "@sh
 import { eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { logAudit } from "./auditLogger";
+import { logAudit, type DbTransaction } from "./auditLogger";
 
 const router = Router();
 
@@ -40,13 +40,16 @@ async function getChangeOrderById(id: string) {
 
 /**
  * Notifies relevant users about a change order status change
+ * Transaction-aware to support atomic operations
  */
 async function notifyStatusChange(
   order: any,
   newStatus: string,
   message: string,
-  notifyRequestedBy: boolean = true
+  notifyRequestedBy: boolean = true,
+  tx?: DbTransaction
 ) {
+  const dbClient = tx || db;
   const notificationsToCreate: any[] = [];
 
   // Always notify the requester
@@ -63,7 +66,7 @@ async function notifyStatusChange(
 
   // Notify admins and managers for pending approvals
   if (newStatus === "PENDING_APPROVAL") {
-    const adminsAndManagers = await db
+    const adminsAndManagers = await dbClient
       .select()
       .from(users)
       .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
@@ -81,7 +84,7 @@ async function notifyStatusChange(
   }
 
   if (notificationsToCreate.length > 0) {
-    await db.insert(notifications).values(notificationsToCreate);
+    await dbClient.insert(notifications).values(notificationsToCreate);
   }
 }
 
@@ -117,34 +120,38 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        status: "PENDING_APPROVAL",
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    // Use transaction to ensure atomic status update + audit + notification
+    const updatedOrder = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(changeOrders)
+        .set({
+          status: "PENDING_APPROVAL",
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logAudit({
-      userId: req.user!.id,
-      action: "SUBMIT",
-      entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+      // Audit log within transaction - pass tx for atomicity
+      await logAudit({
+        userId: req.user!.id,
+        action: "SUBMIT",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: order.status }),
+        newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
+      }, req, tx);
+
+      // Notify relevant users within transaction - pass tx for atomicity
+      await notifyStatusChange(
+        updated,
+        "PENDING_APPROVAL",
+        `Change order ${updated.changeOrderNumber} is now pending approval`,
+        false,  // Don't notify requester as they initiated it
+        tx
+      );
+
+      return updated;
     });
-
-    // Notify relevant users
-    await notifyStatusChange(
-      updatedOrder,
-      "PENDING_APPROVAL",
-      `Change order ${updatedOrder.changeOrderNumber} is now pending approval`,
-      false  // Don't notify requester as they initiated it
-    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -173,33 +180,38 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        status: "SUBMITTED",
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    // Use transaction to ensure atomic status update + audit + notification
+    const updatedOrder = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(changeOrders)
+        .set({
+          status: "SUBMITTED",
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logAudit({
-      userId: req.user!.id,
-      action: "SUBMIT",
-      entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "SUBMITTED" }),
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+      // Audit log within transaction - pass tx for atomicity
+      await logAudit({
+        userId: req.user!.id,
+        action: "SUBMIT",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: order.status }),
+        newValue: JSON.stringify({ status: "SUBMITTED" }),
+      }, req, tx);
+
+      // Notify requester within transaction - pass tx for atomicity
+      await notifyStatusChange(
+        updated,
+        "SUBMITTED",
+        `Change order ${updated.changeOrderNumber} has been submitted to client`,
+        true,
+        tx
+      );
+
+      return updated;
     });
-
-    // Notify requester
-    await notifyStatusChange(
-      updatedOrder,
-      "SUBMITTED",
-      `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`
-    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -228,35 +240,40 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       return;
     }
 
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        status: "APPROVED",
-        approvedById: req.user!.id,
-        approvedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    // Use transaction to ensure atomic approval + audit + notification
+    const updatedOrder = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(changeOrders)
+        .set({
+          status: "APPROVED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logAudit({
-      userId: req.user!.id,
-      action: "APPROVE",
-      entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+      // Audit log within transaction - pass tx for atomicity
+      await logAudit({
+        userId: req.user!.id,
+        action: "APPROVE",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: order.status }),
+        newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
+      }, req, tx);
+
+      // Notify requester within transaction - pass tx for atomicity
+      await notifyStatusChange(
+        updated,
+        "APPROVED",
+        `Change order ${updated.changeOrderNumber} has been approved`,
+        true,
+        tx
+      );
+
+      return updated;
     });
-
-    // Notify requester
-    await notifyStatusChange(
-      updatedOrder,
-      "APPROVED",
-      `Change order ${updatedOrder.changeOrderNumber} has been approved`
-    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -292,40 +309,45 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        status: "REJECTED",
-        approvedById: req.user!.id,
-        approvedAt: new Date(),
-        rejectionReason,
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    // Use transaction to ensure atomic rejection + audit + notification
+    const updatedOrder = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(changeOrders)
+        .set({
+          status: "REJECTED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          rejectionReason,
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logAudit({
-      userId: req.user!.id,
-      action: "REJECT",
-      entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ 
-        status: "REJECTED", 
-        rejectionReason,
-        approvedById: req.user!.id 
-      }),
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
+      // Audit log within transaction - pass tx for atomicity
+      await logAudit({
+        userId: req.user!.id,
+        action: "REJECT",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: order.status }),
+        newValue: JSON.stringify({ 
+          status: "REJECTED", 
+          rejectionReason,
+          approvedById: req.user!.id 
+        }),
+      }, req, tx);
+
+      // Notify requester within transaction - pass tx for atomicity
+      await notifyStatusChange(
+        updated,
+        "REJECTED",
+        `Change order ${updated.changeOrderNumber} has been rejected: ${rejectionReason}`,
+        true,
+        tx
+      );
+
+      return updated;
     });
-
-    // Notify requester
-    await notifyStatusChange(
-      updatedOrder,
-      "REJECTED",
-      `Change order ${updatedOrder.changeOrderNumber} has been rejected: ${rejectionReason}`
-    );
 
     res.json(updatedOrder);
   } catch (error: any) {
@@ -373,9 +395,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       entityId: order.id,
       oldValue: JSON.stringify({ status: order.status }),
       newValue: JSON.stringify({ status: "DRAFT", reason }),
-      ipAddress: req.ip,
-      userAgent: req.get("user-agent"),
-    });
+    }, req);
 
     // Notify requester
     await notifyStatusChange(

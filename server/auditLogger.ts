@@ -2,9 +2,17 @@ import { db } from "./db";
 import { auditLog, type InsertAuditLog } from "@shared/schema";
 import type { Request } from "express";
 
-export async function logAudit(data: Omit<InsertAuditLog, "ipAddress" | "userAgent">, req?: Request): Promise<void> {
+// Extract the correct transaction type from db.transaction's callback parameter
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function logAudit(
+  data: Omit<InsertAuditLog, "ipAddress" | "userAgent">, 
+  req?: Request,
+  tx?: DbTransaction
+): Promise<void> {
   try {
-    await db.insert(auditLog).values({
+    const dbClient = tx || db;
+    await dbClient.insert(auditLog).values({
       ...data,
       ipAddress: req?.ip || req?.socket.remoteAddress || null,
       userAgent: req?.get("user-agent") || null,
@@ -20,7 +28,8 @@ export async function logCreate(
   entityType: string,
   entityId: string,
   newValue: string,
-  req?: Request
+  req?: Request,
+  tx?: DbTransaction
 ): Promise<void> {
   await logAudit({
     userId,
@@ -29,7 +38,7 @@ export async function logCreate(
     action: "CREATE",
     oldValue: null,
     newValue,
-  }, req);
+  }, req, tx);
 }
 
 export async function logUpdate(
@@ -38,7 +47,8 @@ export async function logUpdate(
   entityId: string,
   oldValue: string,
   newValue: string,
-  req?: Request
+  req?: Request,
+  tx?: DbTransaction
 ): Promise<void> {
   await logAudit({
     userId,
@@ -47,7 +57,7 @@ export async function logUpdate(
     action: "UPDATE",
     oldValue,
     newValue,
-  }, req);
+  }, req, tx);
 }
 
 export async function logDelete(
@@ -55,7 +65,8 @@ export async function logDelete(
   entityType: string,
   entityId: string,
   oldValue: string,
-  req?: Request
+  req?: Request,
+  tx?: DbTransaction
 ): Promise<void> {
   await logAudit({
     userId,
@@ -64,7 +75,7 @@ export async function logDelete(
     action: "DELETE",
     oldValue,
     newValue: null,
-  }, req);
+  }, req, tx);
 }
 
 export async function logApprove(
@@ -72,7 +83,8 @@ export async function logApprove(
   entityType: string,
   entityId: string,
   details: string,
-  req?: Request
+  req?: Request,
+  tx?: DbTransaction
 ): Promise<void> {
   await logAudit({
     userId,
@@ -81,7 +93,7 @@ export async function logApprove(
     action: "APPROVE",
     oldValue: null,
     newValue: details,
-  }, req);
+  }, req, tx);
 }
 
 export async function logReject(
@@ -89,7 +101,8 @@ export async function logReject(
   entityType: string,
   entityId: string,
   reason: string,
-  req?: Request
+  req?: Request,
+  tx?: DbTransaction
 ): Promise<void> {
   await logAudit({
     userId,
@@ -98,5 +111,8 @@ export async function logReject(
     action: "REJECT",
     oldValue: null,
     newValue: reason,
-  }, req);
+  }, req, tx);
 }
+
+// Export the transaction type for use in other files
+export type { DbTransaction };

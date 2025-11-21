@@ -598,26 +598,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Create project from bid data
-      const [newProject] = await db.insert(projects).values({
-        name: bid.name,
-        code: bid.code,
-        clientName: bid.clientName,
-        clientContactName: bid.clientContactName,
-        clientContactEmail: bid.clientContactEmail,
-        clientContactPhone: bid.clientContactPhone,
-        status: "PLANNING",
-        locationAddress: bid.locationAddress,
-        city: bid.city,
-        state: bid.state,
-        description: bid.description,
-        estimatorId: bid.estimatorId,
-        contractAmount: bid.bidAmount,
-        budget: bid.bidAmount,
-      }).returning();
+      // Use transaction to ensure atomic bid-to-project conversion
+      const newProject = await db.transaction(async (tx) => {
+        // Create project from bid data
+        const [project] = await tx.insert(projects).values({
+          name: bid.name,
+          code: bid.code,
+          clientName: bid.clientName,
+          clientContactName: bid.clientContactName,
+          clientContactEmail: bid.clientContactEmail,
+          clientContactPhone: bid.clientContactPhone,
+          status: "PLANNING",
+          locationAddress: bid.locationAddress,
+          city: bid.city,
+          state: bid.state,
+          description: bid.description,
+          estimatorId: bid.estimatorId,
+          contractAmount: bid.bidAmount,
+          budget: bid.bidAmount,
+        }).returning();
 
-      // Delete the bid after converting
-      await db.delete(bids).where(eq(bids.code, req.params.code));
+        // Delete the bid after converting (in same transaction)
+        await tx.delete(bids).where(eq(bids.code, req.params.code));
+
+        // Log audit within transaction - pass tx for atomicity
+        await logAudit({
+          userId: req.user!.id,
+          action: "CREATE",
+          entityType: "project",
+          entityId: project.id,
+          newValue: `Converted bid ${bid.code} to project`,
+        }, req, tx);
+
+        return project;
+      });
 
       res.status(201).json(newProject);
     } catch (error: any) {
@@ -678,10 +692,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await logAudit({
         userId: req.user!.id,
         action: "CREATE_BID_QUOTE",
-        resourceType: "bid_quote",
-        resourceId: newQuote.id,
-        details: `Created quote from ${validated.subcontractorName} for bid ${bid.code}`,
-      });
+        entityType: "bid_quote",
+        entityId: newQuote.id,
+        newValue: `Created quote from ${validated.subcontractorName} for bid ${bid.code}`,
+      }, req);
 
       res.status(201).json(newQuote);
     } catch (error: any) {
@@ -720,10 +734,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await logAudit({
         userId: req.user!.id,
         action: "UPDATE_BID_QUOTE",
-        resourceType: "bid_quote",
-        resourceId: updated.id,
-        details: `Updated quote from ${updated.subcontractorName} for bid ${bid.code}`,
-      });
+        entityType: "bid_quote",
+        entityId: updated.id,
+        newValue: `Updated quote from ${updated.subcontractorName} for bid ${bid.code}`,
+      }, req);
 
       res.json(updated);
     } catch (error: any) {
@@ -759,10 +773,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await logAudit({
         userId: req.user!.id,
         action: "DELETE_BID_QUOTE",
-        resourceType: "bid_quote",
-        resourceId: deleted.id,
-        details: `Deleted quote from ${deleted.subcontractorName} for bid ${bid.code}`,
-      });
+        entityType: "bid_quote",
+        entityId: deleted.id,
+        oldValue: `Deleted quote from ${deleted.subcontractorName} for bid ${bid.code}`,
+      }, req);
 
       res.json({ success: true });
     } catch (error) {
@@ -1419,10 +1433,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newEntry] = await db.insert(timeEntries).values([validationResult.data]).returning();
-      
-      // Audit log
-      await logCreate(req.user!.id, "TIME_ENTRY", newEntry.id, JSON.stringify(newEntry), req);
+      // Use transaction to ensure atomic insert + audit
+      const newEntry = await db.transaction(async (tx) => {
+        const [entry] = await tx.insert(timeEntries).values([validationResult.data]).returning();
+        
+        // Audit log within transaction
+        await logCreate(req.user!.id, "TIME_ENTRY", entry.id, JSON.stringify(entry), req, tx);
+        
+        return entry;
+      });
       
       res.status(201).json(newEntry);
     } catch (error: any) {
@@ -2411,37 +2430,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Approve time-off request (Admin/Manager only)
   app.post("/api/calendar/events/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const [event] = await db
-        .update(calendarEvents)
-        .set({
-          eventType: "TIME_OFF_APPROVED",
-          approvedById: req.user!.id,
-          approvedAt: new Date(),
-        })
-        .where(eq(calendarEvents.id, req.params.id))
-        .returning();
+      // Use transaction to ensure atomic approval + notification
+      const event = await db.transaction(async (tx) => {
+        const [approved] = await tx
+          .update(calendarEvents)
+          .set({
+            eventType: "TIME_OFF_APPROVED",
+            approvedById: req.user!.id,
+            approvedAt: new Date(),
+          })
+          .where(eq(calendarEvents.id, req.params.id))
+          .returning();
 
-      if (!event) {
-        res.status(404).json({ error: "Calendar event not found" });
-        return;
-      }
+        if (!approved) {
+          throw new Error("Calendar event not found");
+        }
 
-      // Notify the requester
-      if (event.userId) {
-        await db.insert(notifications).values({
-          userId: event.userId,
-          type: "GENERAL",
-          title: "Time Off Approved",
-          message: `Your time off request has been approved: ${event.title}`,
-          relatedEntityId: event.id,
-          relatedEntityType: "calendarEvent",
-        });
-      }
+        // Notify the requester within transaction
+        if (approved.userId) {
+          await tx.insert(notifications).values([{
+            userId: approved.userId,
+            type: "GENERAL",
+            title: "Time Off Approved",
+            message: `Your time off request has been approved: ${approved.title}`,
+            relatedEntityId: approved.id,
+            relatedEntityType: "calendarEvent",
+          }]);
+        }
+
+        return approved;
+      });
 
       res.json(event);
     } catch (error: any) {
       console.error("Approve time-off error:", error);
-      res.status(500).json({ error: "Failed to approve time-off request" });
+      if (error.message === "Calendar event not found") {
+        res.status(404).json({ error: "Calendar event not found" });
+      } else {
+        res.status(500).json({ error: "Failed to approve time-off request" });
+      }
     }
   });
 
@@ -2830,17 +2857,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
 
-      const [deleted] = await db.delete(crews).where(eq(crews.id, id)).returning();
-
-      if (!deleted) {
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db.select().from(crews).where(eq(crews.id, id)).limit(1);
+      if (!existing) {
         res.status(404).json({ error: "Crew not found" });
         return;
       }
 
-      await logDelete(req.user!.id, "crews", id, { name: deleted.name });
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx.delete(crews).where(eq(crews.id, id));
+        await logDelete(req.user!.id, "crews", id, JSON.stringify({ name: existing.name }), req, tx);
+      });
 
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting crew:", error);
       res.status(500).json({ error: "Failed to delete crew" });
     }
@@ -2887,33 +2918,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Check if member already exists
-      const [existing] = await db
-        .select()
-        .from(crewMembers)
-        .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
-        .limit(1);
+      // Use transaction to ensure atomic insert + audit
+      const newMember = await db.transaction(async (tx) => {
+        // Check if member already exists
+        const [existing] = await tx
+          .select()
+          .from(crewMembers)
+          .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
+          .limit(1);
 
-      if (existing) {
-        res.status(400).json({ error: "User is already a member of this crew" });
-        return;
-      }
+        if (existing) {
+          throw new Error("User is already a member of this crew");
+        }
 
-      const [newMember] = await db
-        .insert(crewMembers)
-        .values({ crewId: id, userId, role })
-        .returning();
+        const [member] = await tx
+          .insert(crewMembers)
+          .values({ crewId: id, userId, role })
+          .returning();
 
-      await logCreate(req.user!.id, "crew_members", newMember.id, {
-        crewId: id,
-        userId,
-        role,
+        await logCreate(req.user!.id, "crew_members", member.id, JSON.stringify({
+          crewId: id,
+          userId,
+          role,
+        }), req, tx);
+
+        return member;
       });
 
       res.status(201).json(newMember);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding crew member:", error);
-      res.status(500).json({ error: "Failed to add crew member" });
+      if (error.message === "User is already a member of this crew") {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: "Failed to add crew member" });
+      }
     }
   });
 
@@ -2922,23 +2961,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id, userId } = req.params;
 
-      const [deleted] = await db
-        .delete(crewMembers)
+      // Check existence BEFORE transaction to preserve 404 status
+      const [existing] = await db
+        .select()
+        .from(crewMembers)
         .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)))
-        .returning();
+        .limit(1);
 
-      if (!deleted) {
+      if (!existing) {
         res.status(404).json({ error: "Crew member not found" });
         return;
       }
 
-      await logDelete(req.user!.id, "crew_members", deleted.id, {
-        crewId: id,
-        userId,
+      // Use transaction to ensure atomic delete + audit
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(crewMembers)
+          .where(and(eq(crewMembers.crewId, id), eq(crewMembers.userId, userId)));
+
+        await logDelete(req.user!.id, "crew_members", existing.id, JSON.stringify({
+          crewId: id,
+          userId,
+        }), req, tx);
       });
 
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error removing crew member:", error);
       res.status(500).json({ error: "Failed to remove crew member" });
     }
@@ -3615,10 +3663,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await logAudit({
         userId: req.user!.id,
         action: "CREATE",
-        resourceType: "project_plan",
-        resourceId: plan.id,
-        details: `Uploaded plan: ${fileName}`,
-      });
+        entityType: "project_plan",
+        entityId: plan.id,
+        newValue: `Uploaded plan: ${fileName}`,
+      }, req);
 
       res.status(201).json({ plan, sheets: [sheet] });
     } catch (error) {
