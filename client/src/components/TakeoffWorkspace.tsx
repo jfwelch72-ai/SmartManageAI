@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -152,11 +153,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       depthInches?: number;
       categoryId?: string | null;
     }) => {
-      return await apiRequest({
-        url: `/api/takeoff/measurements`,
-        method: "POST",
-        body: data,
-      });
+      return await apiRequest("POST", "/api/takeoff/measurements", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
@@ -791,22 +788,35 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         {TOOL_CONFIG.map((tool) => {
           const Icon = tool.icon;
           return (
-            <Button
-              key={tool.id}
-              variant={activeTool === tool.id ? tool.color as any : "ghost"}
-              size="icon"
-              onClick={() => handleToolSelect(tool.id as Tool)}
-              data-testid={`button-tool-${tool.id}`}
-              className="toggle-elevate"
-            >
-              <Icon className="w-5 h-5" />
-            </Button>
+            <Tooltip key={tool.id}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={activeTool === tool.id ? tool.color as any : "ghost"}
+                  size="icon"
+                  onClick={() => handleToolSelect(tool.id as Tool)}
+                  data-testid={`button-tool-${tool.id}`}
+                  className="toggle-elevate"
+                >
+                  <Icon className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p>{tool.label}</p>
+              </TooltipContent>
+            </Tooltip>
           );
         })}
         <Separator className="my-2 w-12" />
-        <Button variant="ghost" size="icon" data-testid="button-upload-plan">
-          <Upload className="w-5 h-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" data-testid="button-upload-plan">
+              <Upload className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>Upload Plan</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Center Canvas */}
@@ -1233,14 +1243,14 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                   <div className="space-y-2">
                     <Label htmlFor="category-select">Quantity Category</Label>
                     <Select
-                      value={selectedCategoryId || ""}
-                      onValueChange={(value) => setSelectedCategoryId(value || null)}
+                      value={selectedCategoryId || "none"}
+                      onValueChange={(value) => setSelectedCategoryId(value === "none" ? null : value)}
                     >
                       <SelectTrigger id="category-select" data-testid="select-category">
                         <SelectValue placeholder="Select category (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {categories.map((cat) => (
                           <SelectItem key={cat.id} value={cat.id}>
                             <div className="flex items-center gap-2">
