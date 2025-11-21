@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useCalendarEvents, useCreateCalendarEvent, useApproveTimeOff } from "@/hooks/use-data";
@@ -26,7 +27,12 @@ export default function CalendarPage() {
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("17:00");
+  const [allDay, setAllDay] = useState(false);
   const [eventType, setEventType] = useState<string>("TIME_OFF_REQUEST");
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showEventDetail, setShowEventDetail] = useState(false);
 
   const { data: events = [], isLoading } = useCalendarEvents();
   const createEvent = useCreateCalendarEvent();
@@ -43,11 +49,15 @@ export default function CalendarPage() {
     }
 
     try {
+      const startDateTime = allDay ? new Date(startDate) : new Date(`${startDate}T${startTime}`);
+      const endDateTime = endDate ? (allDay ? new Date(endDate) : new Date(`${endDate}T${endTime}`)) : null;
+
       await createEvent.mutateAsync({
         title,
         description,
-        startDate: new Date(startDate),
-        ...(endDate && { endDate: new Date(endDate) }),
+        startDate: startDateTime,
+        ...(endDateTime && { endDate: endDateTime }),
+        allDay,
         eventType: eventType as any,
       });
       toast({ title: "Success", description: "Event created successfully" });
@@ -56,6 +66,9 @@ export default function CalendarPage() {
       setDescription("");
       setStartDate("");
       setEndDate("");
+      setStartTime("09:00");
+      setEndTime("17:00");
+      setAllDay(false);
     } catch (error) {
       toast({ title: "Error", description: "Failed to create event", variant: "destructive" });
     }
@@ -141,6 +154,15 @@ export default function CalendarPage() {
                     data-testid="input-event-description"
                   />
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="all-day"
+                    checked={allDay}
+                    onCheckedChange={(checked) => setAllDay(checked as boolean)}
+                    data-testid="checkbox-all-day"
+                  />
+                  <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="start-date">Start Date *</Label>
@@ -163,6 +185,30 @@ export default function CalendarPage() {
                     />
                   </div>
                 </div>
+                {!allDay && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="start-time">Start Time</Label>
+                      <Input
+                        id="start-time"
+                        type="time"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        data-testid="input-start-time"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="end-time">End Time</Label>
+                      <Input
+                        id="end-time"
+                        type="time"
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                        data-testid="input-end-time"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowRequestDialog(false)}>
@@ -240,7 +286,12 @@ export default function CalendarPage() {
                                 event.eventType === "TIME_OFF_REQUEST" ? "destructive" :
                                 "secondary"
                               }
-                              className="text-xs block truncate"
+                              className="text-xs block truncate cursor-pointer hover-elevate active-elevate-2"
+                              onClick={() => {
+                                setSelectedEvent(event);
+                                setShowEventDetail(true);
+                              }}
+                              data-testid={`event-badge-${event.id}`}
                             >
                               {event.title}
                             </Badge>
@@ -273,7 +324,15 @@ export default function CalendarPage() {
                       .filter(e => startOfDay(new Date(e.startDate)) >= startOfDay(new Date()))
                       .slice(0, 10)
                       .map(event => (
-                        <Card key={event.id} className="p-3" data-testid={`event-${event.id}`}>
+                        <Card 
+                          key={event.id} 
+                          className="p-3 cursor-pointer hover-elevate active-elevate-2" 
+                          onClick={() => {
+                            setSelectedEvent(event);
+                            setShowEventDetail(true);
+                          }}
+                          data-testid={`event-${event.id}`}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
@@ -318,6 +377,92 @@ export default function CalendarPage() {
             </Card>
           </div>
         </div>
+
+        {/* Event Detail Dialog */}
+        <Dialog open={showEventDetail} onOpenChange={setShowEventDetail}>
+          <DialogContent data-testid="dialog-event-detail">
+            <DialogHeader>
+              <DialogTitle>{selectedEvent?.title}</DialogTitle>
+            </DialogHeader>
+            {selectedEvent && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Event Type</Label>
+                  <div className="mt-1">
+                    <Badge
+                      variant={
+                        selectedEvent.eventType === "TIME_OFF_APPROVED" ? "default" :
+                        selectedEvent.eventType === "TIME_OFF_REQUEST" ? "destructive" :
+                        "secondary"
+                      }
+                    >
+                      {selectedEvent.eventType.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                </div>
+                
+                {selectedEvent.description && (
+                  <div>
+                    <Label className="text-sm font-medium">Description</Label>
+                    <p className="mt-1 text-sm text-muted-foreground">{selectedEvent.description}</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">Start</Label>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {format(new Date(selectedEvent.startDate), "MMM d, yyyy")}
+                      {!selectedEvent.allDay && (
+                        <span className="ml-2 font-medium">
+                          {format(new Date(selectedEvent.startDate), "h:mm a")}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {selectedEvent.endDate && (
+                    <div>
+                      <Label className="text-sm font-medium">End</Label>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {format(new Date(selectedEvent.endDate), "MMM d, yyyy")}
+                        {!selectedEvent.allDay && (
+                          <span className="ml-2 font-medium">
+                            {format(new Date(selectedEvent.endDate), "h:mm a")}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {selectedEvent.allDay && (
+                  <div>
+                    <Badge variant="outline">All Day Event</Badge>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              {canApprove && selectedEvent?.eventType === "TIME_OFF_REQUEST" && (
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    handleApprove(selectedEvent.id);
+                    setShowEventDetail(false);
+                  }}
+                  disabled={approveTimeOff.isPending}
+                  data-testid="button-approve-event-detail"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Approve Request
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setShowEventDetail(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
