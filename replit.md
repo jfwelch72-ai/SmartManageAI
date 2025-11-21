@@ -15,9 +15,9 @@ The TFR Construction Management Platform is a comprehensive internal tool design
 1. **Auto-Refresh AI Results**: AI PM dashboard now auto-refreshes every 5 seconds to show new tasks and analysis results without manual page refresh
 2. **Success Feedback**: Added completion toast showing how many tasks were created when AI analysis finishes
 3. **Back Button**: Added "Back" button on AI PM page using browser history navigation
-4. **Comprehensive Navigation**: AppHeader navigation available on all pages with quick access to Dashboard, Projects, Calendar, Time Clock, AI features, and Admin tools
+4. **Comprehensive Navigation**: AppHeader navigation available on ALL pages (Dashboard, Projects, Calendar, Time Clock, AI PM, CFO, Admin) with quick access to all features and consistent user experience
 5. **CFO Dashboard Interactive Cards**: All CFO dashboard cards are now clickable and navigate to project detail pages - including Textura draw date alerts, missing budget warnings, and individual project profitability cards
-6. **CFO Dashboard AppHeader**: Added consistent AppHeader navigation to CFO dashboard page for seamless site-wide navigation
+6. **AI PM & CFO Dashboard AppHeader**: Added consistent AppHeader navigation to both AI PM and CFO dashboard pages for seamless site-wide navigation
 7. **Context-Aware Back Button**: Project detail page back button now adapts based on origin - displays "Back to CFO" when coming from CFO dashboard, "Back to Projects" when coming from projects list, and navigates to the correct location
 
 ## Previous Changes (November 19, 2025)

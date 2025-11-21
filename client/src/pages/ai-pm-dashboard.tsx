@@ -10,9 +10,10 @@ import { Bot, CheckCircle, Clock, AlertCircle, XCircle, Play, TrendingUp, ArrowL
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
 import type { AITask, AIRun } from "@shared/schema";
+import AppHeader from "@/components/AppHeader";
 
 export default function AIPMDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -109,45 +110,59 @@ export default function AIPMDashboard() {
 
   if (!user) {
     return (
-      <div className="p-8 text-center">
-        <p className="text-muted-foreground">Please log in to view your AI-generated tasks</p>
+      <div className="min-h-screen bg-background">
+        <AppHeader
+          userName="Guest"
+          userRole=""
+          onLogout={logout}
+        />
+        <main className="p-8 text-center">
+          <p className="text-muted-foreground">Please log in to view your AI-generated tasks</p>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Back Button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => window.history.back()}
-        className="gap-2"
-        data-testid="button-back"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </Button>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Bot className="h-8 w-8 text-primary" />
-            AI Project Manager
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Daily tasks and insights powered by GPT-4
-          </p>
-        </div>
+    <div className="min-h-screen bg-background">
+      <AppHeader
+        userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
+        userRole={user.role || ""}
+        onLogout={logout}
+      />
+      
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        {/* Back Button */}
         <Button
-          onClick={() => triggerRunMutation.mutate()}
-          disabled={triggerRunMutation.isPending}
-          data-testid="button-run-ai-analysis"
+          variant="ghost"
+          size="sm"
+          onClick={() => window.history.back()}
+          className="gap-2 mb-6"
+          data-testid="button-back"
         >
-          <Play className="h-4 w-4 mr-2" />
-          {triggerRunMutation.isPending ? "Running..." : "Run Analysis Now"}
+          <ArrowLeft className="h-4 w-4" />
+          Back
         </Button>
-      </div>
+
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Bot className="h-8 w-8 text-primary" />
+              AI Project Manager
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Daily tasks and insights powered by GPT-4
+            </p>
+          </div>
+          <Button
+            onClick={() => triggerRunMutation.mutate()}
+            disabled={triggerRunMutation.isPending}
+            data-testid="button-run-ai-analysis"
+          >
+            <Play className="h-4 w-4 mr-2" />
+            {triggerRunMutation.isPending ? "Running..." : "Run Analysis Now"}
+          </Button>
+        </div>
 
       {runLoading ? (
         <Card>
@@ -367,6 +382,7 @@ export default function AIPMDashboard() {
           </Card>
         )}
       </div>
+      </main>
     </div>
   );
 }
