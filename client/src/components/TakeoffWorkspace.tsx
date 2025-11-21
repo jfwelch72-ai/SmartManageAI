@@ -1026,7 +1026,17 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                 {/* In-progress drawing */}
                 {isDrawing && drawingPoints.length > 0 && (
                   <>
-                    {/* Polygon lines for area/volume tools */}
+                    {/* LAYER 1: Fill for polygon preview (when 3+ points) - drawn first as background */}
+                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 3 && (
+                      <Line
+                        points={drawingPoints.flatMap(p => [p.x, p.y])}
+                        fill={hexToRgba(activeTool === "area" ? "#16a34a" : "#ea580c", 0.15)}
+                        closed={true}
+                        strokeWidth={0}
+                      />
+                    )}
+                    
+                    {/* LAYER 2: Dashed outline - drawn on top of fill */}
                     {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 2 && (
                       <Line
                         points={drawingPoints.flatMap(p => [p.x, p.y])}
@@ -1036,7 +1046,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                       />
                     )}
                     
-                    {/* Draw points */}
+                    {/* LAYER 3: Points - drawn on top so they're visible */}
                     {drawingPoints.map((point, i) => (
                       <Circle
                         key={`temp-${i}`}
@@ -1048,6 +1058,19 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                         strokeWidth={2}
                       />
                     ))}
+                    
+                    {/* LAYER 4: Highlight first point when drawing polygon with 3+ points - top layer */}
+                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 3 && (
+                      <Circle
+                        x={drawingPoints[0].x}
+                        y={drawingPoints[0].y}
+                        radius={10}
+                        stroke={activeTool === "area" ? "#16a34a" : "#ea580c"}
+                        strokeWidth={3}
+                        fill="transparent"
+                        dash={[3, 3]}
+                      />
+                    )}
                   </>
                 )}
                 
