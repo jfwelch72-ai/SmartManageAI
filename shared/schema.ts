@@ -461,6 +461,11 @@ export const insertBidSubcontractorQuoteSchema = createInsertSchema(bidSubcontra
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  fileUrl: z.string().optional(),
+  fileName: z.string().optional(),
+  fileSize: z.number().optional(),
+  mimeType: z.string().optional(),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({

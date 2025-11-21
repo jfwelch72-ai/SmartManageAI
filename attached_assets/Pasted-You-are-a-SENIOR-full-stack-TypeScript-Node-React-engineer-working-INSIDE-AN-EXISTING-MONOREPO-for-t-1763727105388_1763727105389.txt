@@ -1,0 +1,767 @@
+You are a SENIOR full-stack TypeScript/Node/React engineer working INSIDE AN EXISTING MONOREPO for the **TFR Construction internal management app** on Replit.
+
+Do NOT create a brand new project.
+Work within the existing TFR app structure, reusing the current stack, configuration, and conventions (TypeScript, React, Node/Express or similar API server, DB client such as Drizzle/Prisma/Knex, Vite/Next, etc.).
+
+Your job:
+==================================================
+BUILD A COMPLETE "TFR TAKEOFF + SCOPE + ESTIMATING ENGINE"
+==================================================
+This module must allow TFR to:
+
+1. Upload plan PDFs and spec books.
+2. Perform interactive on-screen takeoffs (linear, area, volume, count) including curves/radius shapes with scale calibration.
+3. Use AI to:
+   - Read plans (including landscaping sheets).
+   - Read spec books (project manuals).
+   - Read detail sheets.
+   - Auto-generate draft takeoffs (full sheet and region-based) with quantities and scope classification.
+4. Derive the **required scope** from plans + specs + details (mix design, rebar, base, bedding, finishes, sealers, bollard requirements, etc.).
+5. Generate **automatic estimates** from quantities + TFR’s cost database:
+   - Material + labor + equipment + consumables.
+   - Production-rate-based labor hours.
+   - Profit/margin, markups, overhead.
+6. Provide a UI for TFR to edit and finalize estimates.
+7. Track historical estimate data and production rates.
+8. Upload vendor/material quotes and associate them to line items.
+9. Export estimates to **PDF** and **Excel**.
+10. Maintain human QC at every step (AI is assistive, not final).
+
+==================================================
+ASSUMPTIONS & STACK
+==================================================
+- Use the existing React/TypeScript frontend (Vite/Next/etc.).
+- Use the existing Node/TypeScript backend (Express or similar).
+- Use the existing DB client and migration patterns.
+- Use the existing file storage abstraction (S3-style, Supabase, or custom).
+- Use OpenAI-style APIs for:
+  - LLM text reasoning.
+  - Vision on PDFs/images for plans, details, and spec pages.
+- Use environment variables for keys (e.g., `process.env.OPENAI_API_KEY`); never hard-code.
+
+If something is unclear, infer from existing patterns and implement in a clean, extensible way.
+
+==================================================
+PART 1 – TAKEOFF ENGINE (PLANS + INTERACTIVE TOOLS)
+==================================================
+
+Create a **Takeoff** module scoped to each project (and/or estimate).
+
+-------------------------------
+Data Model – Plans & Sheets
+-------------------------------
+Add tables (or equivalent entities/migrations) similar to:
+
+1. `takeoff_sheets`
+   - id (PK)
+   - project_id (and optionally estimate_id if the app separates by estimate)
+   - pdf_file_url
+   - image_url (rendered sheet image)
+   - sheet_index (0-based page index)
+   - sheet_name / label
+   - scale_px_per_foot (nullable at first)
+   - units (e.g., "ft", "m")
+   - created_at
+   - updated_at
+
+2. `project_plans` (if not already present)
+   - id
+   - project_id
+   - original_pdf_url
+   - file_name
+   - created_at
+   - updated_at
+
+When a plan PDF is uploaded for a project:
+- Store original PDF.
+- Generate per-page sheet images (e.g., using pdfjs or a backend PDF → image pipeline).
+- Insert `takeoff_sheets` records for each page.
+
+-------------------------------
+UI – Takeoff Workspace Layout
+-------------------------------
+Add a new **Takeoff** tab inside the project/estimate view.
+
+Layout (desktop):
+
+- LEFT: Tool bar + sheet thumbnails.
+- CENTER: Canvas (plan image + vector overlays).
+- RIGHT: Sidebar (calibration, measurement list, quantity roll-up, requirements panel).
+
+Components (suggested):
+
+- `TakeoffWorkspace`
+  - `TakeoffTopBar` (tabs: Takeoff, Specs, Details, Scope Summary)
+  - `TakeoffLayout`
+    - `TakeoffToolbar` (left)
+    - `TakeoffCanvas` (center)
+    - `TakeoffSidebarRight` (right)
+
+Implement the UI in a style similar to Stack (clean, minimal), with some BlueBeam-like power tools.
+
+-------------------------------
+Tools – TakeoffToolbar
+-------------------------------
+Provide these tools as buttons with icons and tooltips:
+
+- Select / Pointer
+- Pan / Hand (and Space+Drag)
+- Zoom In / Zoom Out / Fit to Screen
+- Calibration Tool
+- Linear measurement:
+  - Straight line
+  - Arc / radius line
+- Area measurement:
+  - Polygon
+  - Curved/spline polygon
+  - Circle / radial area when needed
+- Volume measurement (Area + depth → CY)
+- Count measurement (point markers)
+- Note tool (text pins)
+- Layers toggle (show/hide by type: linear, area, volume, count, notes)
+- Undo / Redo
+
+Maintain `activeTool` in state (React context or local state) and pass to `TakeoffCanvas`.
+
+-------------------------------
+Canvas – TakeoffCanvas
+-------------------------------
+Implement using `react-konva` (or an equivalent already in the repo):
+
+Props:
+- `sheetImageUrl`
+- `scalePxPerFoot`
+- `measurements`
+- `activeTool`
+- `onAddMeasurement`
+- `onUpdateMeasurement`
+- `onDeleteMeasurement`
+- `onSelectMeasurement`
+- `selectedMeasurementId`
+- `onCalibrate` (handles calibration clicks)
+- `zoom` / `setZoom`
+- `pan` / `setPan`
+
+Responsibilities:
+- Render the underlay sheet image.
+- Render overlay shapes:
+  - Lines, arcs, polygons, spline lines, count markers, notes.
+- Implement drawing interactions for:
+  - Linear → 2 points (or more for polyline).
+  - Arc → 3 points (start, end, arc point).
+  - Polygon → multi-click vertices, double-click to close.
+  - Spline polygon → same as polygon but with tension smoothing.
+  - Volume → same as area but with additional depth input.
+  - Count → click to place markers.
+  - Note → click to place note anchor, open a text editor.
+- Implement hit-testing for selecting existing shapes.
+- Support panning and zooming.
+
+==================================================
+PART 2 – MEASUREMENT DATA MODEL & CALIBRATION
+==================================================
+
+Create a table `takeoff_measurements`:
+
+- id (PK)
+- sheet_id (FK → takeoff_sheets)
+- type: "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE"
+- label: string (user editable, e.g. “Slab A”, “Sidewalk – East”)
+- points: JSON array of `{ x: number, y: number }` in canvas coordinates
+- arc_data: JSON for arc shapes (optional – center, radius, angles) if needed
+- depth_feet: number | null (for volume)
+- count: number | null (for count groups; can also be derived from points)
+- note: string | null
+- color: string | null
+- visible: boolean (default true)
+- source: "USER" | "AI"
+- status: "DRAFT" | "CONFIRMED"
+- computed_length_ft: number | null
+- computed_area_ft2: number | null
+- computed_volume_cy: number | null
+- metadata: JSON (tags, scope type, categories, etc.)
+- created_at
+- updated_at
+
+-------------------------------
+Calibration Tool
+-------------------------------
+Per sheet, store:
+
+- `scale_px_per_foot`
+- `units` ("ft", "m")
+
+User flow:
+1. Click “Set Scale”.
+2. Prompt to click first point (A).
+3. Prompt to click second point (B).
+4. Prompt for real-world distance (“24’” or “24'-0"”).
+5. Compute:
+   - `pixelDistance = distance(A, B)`
+   - `realDistanceFt` from user input.
+   - `scale_px_per_foot = pixelDistance / realDistanceFt`.
+6. Save to `takeoff_sheets`.
+
+Use this scale to compute:
+- Length (ft)
+- Area (ft²)
+- Volume (CY = area_ft2 × depth_ft / 27).
+
+Also:
+- Allow AI to pre-populate scale if a printed scale (e.g. “1” = 20’”) is detected on the sheet.
+
+-------------------------------
+Right Sidebar – TakeoffSidebarRight
+-------------------------------
+Panels:
+
+A. **CalibrationPanel**
+   - Show current scale and units.
+   - Warning if not set.
+   - Button to recalibrate.
+
+B. **MeasurementList**
+   - Groups: Linear, Area, Volume, Count, Notes.
+   - Each item:
+     - Color dot
+     - Label (inline editable)
+     - Value (e.g. “435 LF”, “3,125 SF”, “27 CY”, “9 EA”)
+     - Icons: show/hide, edit, delete.
+   - Clicking an item:
+     - Selects it and zooms canvas to it.
+
+C. **QuantitySummaryPanel**
+   - Aggregated roll-up, e.g.:
+     - Concrete slab SF/CY
+     - Sidewalk SF
+     - Curb LF
+     - Sawcut LF
+     - Footing CY
+     - Excavation CY
+     - Paver SF
+     - Base stone CY
+     - Bedding sand tons
+     - Underdrain LF
+     - Bollards count
+   - Button: “Send to Estimate” to push aggregated quantities into the estimating engine.
+
+D. **RequirementsPanel** (for selected measurement)
+   - Populated from the spec and detail analysis:
+     - Mix design (f’c, air %, slump, w/c).
+     - Thickness.
+     - Reinforcement (bar sizes, spacing, mesh).
+     - Subbase (type, depth, compaction %).
+     - Joints (spacing, depth, dowels).
+     - Finish (broom, buff wash, exposed, etc.).
+     - Curing and sealer.
+     - Paver system (unit type, bedding, base, geotextile, edge restraint).
+     - Excavation rules (over-excavation, backfill type, testing).
+     - Bollard manufacturer/model/finish & footing details.
+   - Show references:
+     - Spec sections (e.g. “03 30 00 – Part 2”).
+     - Details (e.g. “3/S502”, “5/C3.2”).
+
+==================================================
+PART 3 – SPECS, DETAILS & LANDSCAPE SCOPE VIA AI
+==================================================
+
+Implement AI-powered ingestion for:
+
+- Spec books (project manuals).
+- Plan sheets (all, including landscaping).
+- Detail sheets.
+
+------------------------------------
+A. Spec Book Ingestion
+------------------------------------
+Create tables:
+
+1. `project_specs`
+   - id
+   - project_id
+   - file_url
+   - original_file_name
+   - created_at
+   - updated_at
+
+2. `project_spec_index`
+   - id
+   - project_id
+   - data JSON (structured index of relevant sections)
+   - created_at
+   - updated_at
+
+When a spec PDF is uploaded:
+- Extract text per page.
+- Use the LLM to build an index of relevant sections:
+  - Division 03 – Concrete (03 10 00, 03 30 00, 03 35 00…).
+  - Division 31 – Earthwork.
+  - Division 32 – Exterior Improvements:
+    - Concrete paving.
+    - Unit pavers.
+    - Site furnishings, etc.
+
+Store in `project_spec_index.data` structured by:
+- CSI section.
+- Categories:
+  - Concrete mix, reinforcement, subbase, curing, sealer, finishes.
+  - Excavation: over-excavation, backfill, compaction.
+  - Pavers: bedding, base, edge restraint, joint sand, geotextile.
+  - Bollards: manufacturer, model, finish, embedment, fill.
+
+Provide backend helper functions to query this index by:
+- Scope type (concrete, excavation, pavers, bollards).
+- Plan region context.
+
+------------------------------------
+B. Detail Sheets & Linker
+------------------------------------
+Use AI (vision + OCR) to:
+
+- Detect detail callouts on plan sheets, such as:
+  - "3/S502", "5/C3.2", etc.
+- Parse detail sheets to extract:
+  - Slab thickness, rebar placement, footings.
+  - Paver section: pavers, bedding, base depth, geotextile.
+  - Buff wash/exposed aggregate instructions.
+  - Bollard footings: diameter, depth, fill, coating.
+  - Drainage/underdrain details: pipe size, bedding, depth.
+- Maintain a mapping:
+  - `plan_region` → `[detail_ids]`.
+- When a measurement is selected (slab/paver/excavation/bollard), show its linked details and summary in the RequirementsPanel.
+
+------------------------------------
+C. Landscape Scope (Pavers / Buff Wash / Base)
+------------------------------------
+Implement a `landscapeScopeAnalyzer` service that scans all sheets + specs for:
+
+- Pavers (patios, walks, aprons).
+- Bedding sand.
+- Base stone (304/411/#57).
+- Buff wash / exposed aggregate concrete.
+- Concrete mow strips, tree rings, seat walls, precast pads.
+- Underdrains beneath hardscape.
+- Landscape drainage structures.
+
+AI tasks:
+- Detect these regions and create measurement shapes:
+  - Paver areas (SF).
+  - Base + bedding volumes (CY/tons).
+  - Edging LF.
+  - Underdrain LF.
+- Attach their spec-based requirements from `project_spec_index`.
+
+------------------------------------
+D. AI Takeoff Modes (Option C)
+------------------------------------
+Provide two AI modes via API and UI:
+
+1. **Full Sheet Auto Takeoff**
+   - Endpoint: `POST /api/takeoff/ai/auto-sheet`
+     - body: { projectId, sheetId }
+   - Behavior:
+     - Use sheet image + relevant spec index + basic plan context.
+     - AI returns a list of draft items:
+       - Concrete slabs, walks, curbs (SF, LF, CY).
+       - Excavation regions (CY) with notes.
+       - Paver areas, base, bedding.
+       - Underdrains and drainage structures.
+       - Bollards and relevant site furnishings.
+     - For each item:
+       - Create draft `takeoff_measurements` with `source: "AI"` and `status: "DRAFT"` plus any associated requirements summary.
+
+2. **Region-Based AI Takeoff**
+   - Endpoint: `POST /api/takeoff/ai/auto-region`
+     - body: { projectId, sheetId, regionPolygon, scopeType }
+   - Behavior:
+     - AI analyzes just that region for the given scope type (e.g. "concrete", "excavation", "pavers") plus relevant specs/details.
+     - Returns draft measurements + requirements.
+
+In both cases:
+- Estimator can approve/reject/edit each AI item.
+- Confirmed items get `status: "CONFIRMED"`.
+
+==================================================
+PART 4 – SCOPE SUMMARY VIEW
+==================================================
+
+Add a **Scope Summary** tab in `TakeoffWorkspace`.
+
+Backend:
+- Endpoint: `GET /api/takeoff/scope-summary/:projectId` (and/or `:estimateId`).
+
+Scope summary should aggregate confirmed takeoff and spec/requirements into:
+
+- **Concrete:**
+  - Slab SF and CY by type (SOG, paving, walks, pads, buff wash).
+  - Curb LF.
+  - Footing CY.
+  - Joint LF (sawcut/control).
+  - Mix, thickness, rebar, subbase, finishes, sealing, curing per category.
+
+- **Excavation/Earthwork:**
+  - Cut/fill CY.
+  - Over-excavation CY.
+  - Backfill types and volumes.
+  - Subgrade prep.
+
+- **Pavers & Landscape Concrete:**
+  - Paver SF.
+  - Bedding sand volume/tons.
+  - Base stone CY.
+  - Edge restraint LF.
+  - Underdrain LF.
+  - Buff wash concrete SF.
+
+- **Bollards & Site Furnishings:**
+  - Counts by type with manufacturer/model and footing requirements.
+
+Frontend:
+- Render in clear, grouped sections with edit-friendly UI.
+- Include a button to "Send to Estimate" that passes a structured payload into the estimating engine.
+
+==================================================
+PART 5 – ESTIMATING ENGINE (AUTO ESTIMATE + EDITOR)
+==================================================
+
+Build a full **Estimating Engine** on top of the scope summary and takeoff module.
+
+-------------------------------
+Data – Cost Settings & Rates
+-------------------------------
+Add tables (or equivalent):
+
+1. `estimate_settings`
+   - id
+   - organization_id / global context if multi-tenant
+   - default_material_prices JSON
+   - default_labor_rates JSON
+   - default_equipment_rates JSON
+   - default_production_rates JSON
+   - default_overhead_percent
+   - default_profit_margin_percent
+   - default_markups JSON (e.g. material markup %, sub markup %, etc.)
+   - created_at
+   - updated_at
+
+2. `estimate_crews`
+   - id
+   - name (e.g. "Concrete Slab Crew", "Sidewalk Crew")
+   - description
+   - members JSON:
+     - [ { role: "Operator", hourly_rate }, { role: "Laborer", hourly_rate }, ... ]
+   - blended_rate_per_hour (pre-calculated for convenience)
+   - production_rate_mapping JSON:
+     - e.g. { "SLAB_CY_PER_HOUR": 25, "SIDEWALK_SF_PER_HOUR": 500 }
+   - created_at
+   - updated_at
+
+3. `estimates`
+   - id
+   - project_id
+   - name / label
+   - status ("DRAFT", "FINAL", etc.)
+   - version_number
+   - base_cost (materials + labor + equipment)
+   - overhead_amount
+   - profit_amount
+   - total_bid_amount
+   - created_at
+   - updated_at
+
+4. `estimate_line_items`
+   - id
+   - estimate_id
+   - category ("CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", etc.)
+   - description (e.g. "6\" SOG Slab – Area A")
+   - quantity
+   - unit ("SF", "CY", "LF", "EA", etc.)
+   - material_cost
+   - labor_hours
+   - labor_cost
+   - equipment_hours
+   - equipment_cost
+   - consumables_cost
+   - subcontract_cost
+   - overhead_allocation
+   - profit_allocation
+   - total_cost
+   - user_adjusted: boolean
+   - metadata JSON (link to measurement ids, scope summary, etc.)
+   - created_at
+   - updated_at
+
+5. `estimate_versions`
+   - id
+   - estimate_id
+   - version_number
+   - snapshot JSON (snapshot of estimate and line items at that time)
+   - created_at
+
+6. `estimate_vendor_quotes`
+   - id
+   - estimate_id
+   - vendor_name
+   - contact_info
+   - scope_description
+   - quote_amount
+   - file_url (uploaded PDF or file)
+   - linked_line_item_ids JSON (which line items this quote is associated with)
+   - created_at
+   - updated_at
+
+7. `estimate_history`
+   - id
+   - project_id
+   - estimate_id
+   - data JSON (production rates used, actual vs estimate if later integrated)
+   - created_at
+
+-------------------------------
+Estimate Generation Workflow
+-------------------------------
+Add a new tab to the project/estimate view:
+
+- **Estimate Builder**
+
+In this tab:
+
+1. Show a "Generate Estimate Automatically" button that:
+   - Reads:
+     - Scope summary (quantities per SF/LF/CY/EA).
+     - Requirements (mix, thickness, base, pavers, etc.).
+     - Global cost settings from `estimate_settings`.
+     - Crew definitions & production rates from `estimate_crews`.
+   - For each scope item (slab, sidewalk, curb, excavation, pavers, bollards, etc.):
+     - Compute required material quantities:
+       - Concrete CY = area_ft2 × thickness_ft / 27.
+       - Stone, bedding, rebar, mesh, sealers, curing compounds, etc.
+     - Compute labor hours:
+       - Use production rates & crew definitions.
+       - Example: `slab_CY / CREW_SLAB_CY_PER_HOUR`.
+     - Compute equipment hours:
+       - Based on production or specific mapping.
+     - Compute costs:
+       - Material cost = qty × unit price.
+       - Labor cost = labor_hours × blended crew rate.
+       - Equipment cost = equipment_hours × rate.
+       - Consumables (as % or fixed).
+     - Build `estimate_line_items`.
+
+2. Show the generated estimate in sections:
+   - Concrete
+   - Excavation
+   - Pavers & Landscape
+   - Bollards & Site Furnishings
+   - General Conditions / Overhead
+   - Profit & Markups
+
+3. Everything must be fully editable:
+   - Quantity
+   - Unit
+   - Unit prices
+   - Labor hours
+   - Rates
+   - Equipment hours
+   - Extra costs
+
+All edits recalculate totals immediately.
+
+-------------------------------
+Profit / Margin Calculator (A)
+-------------------------------
+Implement:
+
+- Global or per-estimate settings for:
+  - Target profit margin (%).
+  - Overhead (%).
+  - Markups:
+    - Material markup %
+    - Subcontractor markup %
+    - Labor markup %
+    - Equipment markup %
+
+UI:
+- Small panel at top or side:
+  - Input target margin %.
+  - Show:
+    - Base cost.
+    - Overhead amount.
+    - Profit amount.
+    - Total sell price.
+  - Buttons:
+    - "Apply target margin" – adjust markup or add profit line item to hit the target.
+
+Backend:
+- Add methods to recompute:
+  - Overhead_allocation and profit_allocation per line item (or as summary lines).
+  - Total_bid_amount.
+
+-------------------------------
+Crew Builder Tool (B)
+-------------------------------
+UI:
+- Under Settings → "Crews & Production".
+- Allow TFR to define multiple crews:
+  - Name.
+  - Roles with hourly rates.
+  - blended_rate_per_hour (calculate and store).
+  - Production rates:
+    - e.g. `SLAB_CY_PER_HOUR`, `SIDEWALK_SF_PER_HOUR`, `CURB_LF_PER_HOUR`, `EXCAVATION_CY_PER_HOUR`, `PAVERS_SF_PER_HOUR`, etc.
+
+Estimating Engine:
+- Map each scope item to a default crew and production rate key.
+- Allow override per line item.
+
+-------------------------------
+Historical Cost Tracking (C)
+-------------------------------
+Implement:
+
+- After each estimate is finalized:
+  - Persist a snapshot in `estimate_versions`.
+  - Optionally use `estimate_history` to track:
+    - Production rates used.
+    - Total costs for major categories.
+
+- Provide backend functions to:
+  - Compute average production rates by work type over time from past estimates.
+  - Suggest updated production rates in `estimate_settings`.
+
+UI:
+- Basic interface in Settings:
+  - Show suggested production rates based on history.
+  - Option to "Apply" or ignore.
+
+-------------------------------
+Vendor / Material Quotes Upload (D)
+-------------------------------
+UI:
+- In the Estimate Builder, under relevant sections (e.g., “Subcontractor Work” or material-heavy items):
+  - Button: "Attach Vendor Quote".
+  - Form:
+    - Vendor name.
+    - Contact details.
+    - Scope description.
+    - Quote amount.
+    - File upload (PDF or image).
+    - Map to which estimate line items it applies to.
+
+Backend:
+- Save in `estimate_vendor_quotes` table.
+- Provide list and detail endpoints.
+
+Use this info as optional overrides for material/sub costs:
+- For a line item with a linked vendor quote, show the quote as an option to set the material/subcontract cost.
+
+-------------------------------
+Export to PDF / Excel (E)
+-------------------------------
+Implement:
+
+- Backend endpoints:
+  - `GET /api/estimates/:estimateId/export/pdf`
+  - `GET /api/estimates/:estimateId/export/excel`
+
+PDF export:
+- Create a structured report:
+  - Project info.
+  - Estimate info (name, version, date).
+  - Line items grouped by category with:
+    - Description
+    - Quantity
+    - Unit
+    - Unit cost (optional)
+    - Line total
+  - Overhead & profit breakdown.
+  - Grand total.
+
+Excel export:
+- Use a library to generate an .xlsx file with:
+  - Separate sheets or clearly structured table for:
+    - Line items.
+    - Summary totals.
+    - Rates & markups (optional).
+
+Frontend:
+- “Export as PDF” and “Export as Excel” buttons in the Estimate Builder.
+
+==================================================
+PART 6 – API ENDPOINTS (SUGGESTED)
+==================================================
+
+Create REST endpoints (adapt to existing style):
+
+Takeoff:
+- `POST /api/takeoff/plans/upload`
+- `GET /api/takeoff/plans/:projectId/sheets`
+- `POST /api/takeoff/sheets/:sheetId/measurements`
+- `PATCH /api/takeoff/measurements/:measurementId`
+- `DELETE /api/takeoff/measurements/:measurementId`
+- `GET /api/takeoff/scope-summary/:projectId` (or `:estimateId`)
+
+Specs:
+- `POST /api/takeoff/specs/upload`
+- `GET /api/takeoff/specs/:projectId/index`
+
+AI:
+- `POST /api/takeoff/ai/auto-sheet`
+- `POST /api/takeoff/ai/auto-region`
+
+Estimates:
+- `POST /api/estimates` (create for project/estimate context)
+- `GET /api/estimates/:estimateId`
+- `PATCH /api/estimates/:estimateId`
+- `POST /api/estimates/:estimateId/generate-from-scope`  // auto-generate using scope summary
+- `POST /api/estimates/:estimateId/line-items`
+- `PATCH /api/estimates/line-items/:lineItemId`
+- `DELETE /api/estimates/line-items/:lineItemId`
+- `GET /api/estimates/:estimateId/export/pdf`
+- `GET /api/estimates/:estimateId/export/excel`
+
+Settings & Crews:
+- `GET /api/estimate-settings`
+- `PATCH /api/estimate-settings`
+- `GET /api/estimate-crews`
+- `POST /api/estimate-crews`
+- `PATCH /api/estimate-crews/:crewId`
+- `DELETE /api/estimate-crews/:crewId`
+
+Vendor Quotes:
+- `POST /api/estimates/:estimateId/vendor-quotes`
+- `GET /api/estimates/:estimateId/vendor-quotes`
+- `GET /api/vendor-quotes/:quoteId`
+- `PATCH /api/vendor-quotes/:quoteId`
+- `DELETE /api/vendor-quotes/:quoteId`
+
+==================================================
+PART 7 – QUALITY & GRACEFUL DEGRADATION
+==================================================
+
+- All geometry math (length, area, volume) MUST be correct and unit-tested.
+- If AI calls fail, the UI should still allow full manual takeoff and estimating.
+- Provide clear loading and error states for AI operations.
+- Keep performance reasonable for typical plan sets used by a concrete/excavation contractor.
+
+==================================================
+FINAL EXPECTATION
+==================================================
+
+When completed, the TFR app should allow:
+
+1. Upload plans and spec books.
+2. Use interactive tools (with curves/radii) to perform takeoffs.
+3. Use AI to auto-detect concrete, excavation, pavers, buff wash, bollards, base stone, bedding, etc. from ALL plan sheets (including landscaping), plus requirements from spec books and details.
+4. Review and QC all AI-generated takeoffs; confirm or edit them.
+5. View a consolidated Scope Summary (quantities + spec requirements).
+6. Generate a fully-costed estimate based on:
+   - Quantities.
+   - Material and labor rates.
+   - Production rates.
+   - Crews.
+   - Overhead and profit.
+7. Override anything as needed, attach vendor quotes, and refine.
+8. Track historical estimates and improve production rates over time.
+9. Export finished estimates to PDF and Excel.
+
+Implement all of this cleanly and idiomatically in TypeScript, matching the existing repo’s style.

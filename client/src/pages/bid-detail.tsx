@@ -201,11 +201,11 @@ export default function BidDetailPage() {
 
   const handleFileUploadComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
     try {
-      const uploadedFile = result.successful[0];
-      if (!uploadedFile) {
+      if (!result.successful || result.successful.length === 0) {
         throw new Error("No file uploaded");
       }
 
+      const uploadedFile = result.successful[0];
       const file = uploadedFile.data as File;
       const uploadUrl = uploadedFile.uploadURL;
       const filePath = uploadUrl?.split('?')[0] || '';
@@ -456,6 +456,12 @@ export default function BidDetailPage() {
                             <Badge variant="outline" className="font-mono">
                               ${Number(quote.quoteAmount).toLocaleString()}
                             </Badge>
+                            {quote.fileUrl && (
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="w-3 h-3" />
+                                Document
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">{quote.scopeOfWork}</p>
                           {(quote.contactName || quote.contactEmail || quote.contactPhone) && (
@@ -467,6 +473,37 @@ export default function BidDetailPage() {
                           )}
                           {quote.notes && (
                             <p className="text-xs text-muted-foreground mt-2 italic">{quote.notes}</p>
+                          )}
+                          {quote.fileUrl && (
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                              <FileText className="w-4 h-4 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground flex-1 truncate">
+                                {quote.fileName || "Quote document"}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    const response = await apiRequest("POST", "/api/objects/download", {
+                                      fileUrl: quote.fileUrl,
+                                    });
+                                    const data = await response.json();
+                                    window.open(data.downloadURL, '_blank');
+                                  } catch (error) {
+                                    toast({ 
+                                      title: "Error", 
+                                      description: "Failed to download document", 
+                                      variant: "destructive" 
+                                    });
+                                  }
+                                }}
+                                data-testid={`button-download-quote-${quote.id}`}
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                Download
+                              </Button>
+                            </div>
                           )}
                         </div>
                         {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
