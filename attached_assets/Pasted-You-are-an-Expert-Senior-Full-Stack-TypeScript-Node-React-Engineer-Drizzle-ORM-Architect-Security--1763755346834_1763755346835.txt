@@ -1,0 +1,374 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React Engineer, Drizzle ORM Architect, Security Auditor, Performance Engineer, DevOps/SRE, and QA Lead.
+
+You will now completely FIX, HARDEN, REFACTOR, OPTIMIZE, TEST, and PREPARE the entire **TFR Construction Management Platform** for production, using the existing comprehensive audit report stored at:
+
+/mnt/data/TFR_COMPREHENSIVE_AUDIT_REPORT.md
+
+(If this path is not valid in this environment, locate the equivalent TFR_COMPREHENSIVE_AUDIT_REPORT.md file in the repo and use that.)
+
+You must work ONLY inside the existing repository.  
+DO NOT create a new project.  
+DO NOT remove or weaken any existing feature.  
+Preserve 100% of current business functionality while making the system production-grade, secure, maintainable, and performant.
+
+=================================================================
+GLOBAL RULES
+=================================================================
+
+- Always favor:
+  - Type safety
+  - Security
+  - Maintainability
+  - Clear architecture & naming
+  - Backwards compatibility with existing features and data
+- Do NOT break existing routes, database tables, or core workflows.
+- When in doubt, implement explicit, well-typed, well-documented solutions.
+- After each major phase, ensure TypeScript passes with ZERO errors.
+
+=================================================================
+PHASE 1 — APPLY ALL AUDIT FIXES (CRITICAL CODE REPAIRS)
+=================================================================
+
+Using the audit report, FIX ALL identified issues, starting with the most critical:
+
+1. Fix ALL TypeScript errors in server/routes.ts and any other affected files:
+   - Resolve ALL 49+ compilation errors noted in the audit:
+     - Audit enum issues
+     - Insert payload mismatches
+     - Undefined/missing fields
+     - Non-existent property accesses
+     - Incorrect function arguments
+     - Type inference/broken generics issues
+   - Ensure Drizzle insert operations always use the correct array syntax:
+     ❌ db.insert(table).values(object)
+     ✔ db.insert(table).values([object])
+   - Ensure all required fields (e.g., objectKey, foreign keys, required enums) are always set before inserting.
+
+2. Fix auditActionEnum issues:
+   - Either:
+     - Add new enum values (REVOKE_TOKENS, CREATE_BID_QUOTE, UPDATE_BID_QUOTE, DELETE_BID_QUOTE), OR
+     - Map those log actions to the nearest existing enum values, as long as logging still clearly reflects what happened.
+   - Ensure all calls to the audit logger strictly use valid enum values.
+
+3. Enforce SESSION_SECRET requirement and remove insecure fallback:
+   - Remove any hardcoded default like "your-secret-key-change-in-production".
+   - On server startup, if SESSION_SECRET is missing, throw a clear error and fail fast.
+   - Ensure JWT secret and session secret are properly sourced ONLY from environment variables.
+
+4. Fix all schema + query mismatches:
+   - Ensure every insert/update/select payload matches the Drizzle schema types exactly.
+   - Remove or fix any access to columns that do not exist, such as:
+     - timeEntries.status
+     - billingEvents.projectId
+     - billingEvents.eventDate
+   - Adjust queries to use the correct fields and indexes.
+
+5. Ensure all code builds cleanly:
+   - Run TypeScript type-checking (tsc) and ensure ZERO errors.
+   - Run the backend build and ensure ZERO errors.
+   - Run the frontend build and ensure ZERO errors.
+
+=================================================================
+PHASE 2 — DATABASE TRANSACTIONS & DATA INTEGRITY
+=================================================================
+
+Introduce robust transactional integrity using Drizzle transactions for all multi-step, logically-linked operations. At minimum, wrap these in db.transaction:
+
+- Bid → Project conversion (bids, projects, related estimates, etc.)
+- Change order approval that modifies contract amounts or scope
+- Subcontractor payment creation that updates balances or schedules
+- Billing events that modify scope items (billed/completed quantities, statuses)
+- Any operation where multiple tables must remain consistent
+
+Inside each transaction:
+- Validate all incoming data using zod.
+- If any step fails, rollback the entire transaction.
+- Log failures with enough context to debug.
+
+Add strong business-rule validation (zod or equivalent) for:
+
+- Projects:
+  - startDate < endDate
+  - Budget, contract amount, and other monetary fields must be ≥ 0
+- Time clock / time entries:
+  - clock_out > clock_in
+  - hours (regular + overtime) ≥ 0
+- Scope items & billing:
+  - 0 ≤ billedQuantity ≤ completedQuantity ≤ totalQuantity
+  - Positive unit rates
+- Cost rates:
+  - overtimeRate ≥ regularRate
+- Any other logical invariant identified in the audit.
+
+For JSON fields (estimates.altPricesJson, estimates.costBreakdownJson, tmDailySheets.*Json fields, changeOrders.attachmentsJson, etc.):
+- Define explicit zod schemas.
+- Validate BEFORE inserting/updating.
+- Reject malformed data with descriptive HTTP errors.
+
+=================================================================
+PHASE 3 — SECURITY HARDENING
+=================================================================
+
+Make the application production-grade secure:
+
+1. Authentication & sessions:
+   - Ensure all auth cookies are:
+     - httpOnly
+     - secure (in production)
+     - have sensible expiration
+   - Confirm token-version-based revocation paths work correctly.
+   - Add logging for important auth events: login, logout, token revocation, password change, failed login attempts.
+
+2. Authorization:
+   - Review EVERY endpoint for:
+     - Proper requireAuth usage.
+     - Proper role checks (ADMIN, MANAGER, etc.).
+     - Proper project-specific access checks (user only sees projects they’re allowed to).
+   - Harden endpoints so hourly employees and low-privilege roles CANNOT access administrative data or other users’ projects, time, receipts, etc.
+   - Add tests that confirm unauthorized access is blocked.
+
+3. File uploads & object storage:
+   - Double-check MIME type validation for plans, specs, media, receipts, etc.
+   - Add file size limits per file and possibly per user/project.
+   - Ensure objectKey is always non-null, unique, and constructed safely.
+   - Confirm private vs public ACL behavior is correct and enforced everywhere.
+   - Optionally add simple heuristic scanning (e.g. blocking certain file types, enforcing safe mime-type lists).
+   - Add rate limiting and possibly concurrency limiting on upload endpoints.
+
+4. Logging & monitoring:
+   - Introduce a structured logger (e.g., Pino or Winston) with:
+     - log levels (debug/info/warn/error)
+     - request IDs correlated across logs
+     - IP and userId context for sensitive actions
+   - Ensure sensitive data (passwords, tokens) is NEVER logged.
+
+5. Rate limiting:
+   - Confirm existing rate limiters (authLimiter, sensitiveLimiter, apiLimiter) are correctly wired.
+   - Add stricter limits to:
+     - Auth routes (login, register, change-password)
+     - File upload routes
+   - Optionally implement per-IP and/or per-user rate limiting where appropriate.
+
+=================================================================
+PHASE 4 — FRONTEND REFACTOR & PERFORMANCE OPTIMIZATION
+=================================================================
+
+Refactor the React frontend to be modern, performant, and maintainable while preserving UI/UX:
+
+1. Routing, loading, and errors:
+   - Introduce React Error Boundaries for critical route segments (e.g., project detail, AI dashboards, takeoff workspace).
+   - Implement Suspense + proper loading states where appropriate.
+   - Use lazy-loaded route components for heavy pages:
+     - Takeoff workspace
+     - AI PM dashboard / CFO dashboard
+     - Project detail
+     - Subcontractor payables
+   - Ensure 404 and 500-style fallback views are user-friendly and consistent.
+
+2. State management & TanStack Query:
+   - Standardize query keys and ensure they are stable and well-named.
+   - Ensure all mutations correctly invalidate relevant queries.
+   - Tune staleTime and cacheTime per resource type (e.g., static config vs live time clock data).
+   - Remove direct setState patterns that conflict with query cache.
+
+3. Component optimization:
+   - For heavy components (tables, galleries, takeoff canvas, media lists), use:
+     - React.memo
+     - useCallback
+     - useMemo
+   - Avoid unnecessary rerenders by structuring props carefully.
+   - Use virtualization where beneficial for large lists (e.g., large projects or media galleries).
+
+4. Accessibility & UX:
+   - Audit all key interactive components (buttons, dialogs, menus, forms) for ARIA attributes and keyboard accessibility.
+   - Ensure shadcn/ui components are used consistently and correctly.
+   - Add focus management for modals, drawers, important dialogs.
+   - Verify color contrast is reasonable and accessible.
+
+5. UI consistency:
+   - Standardize layout components (AppHeader, main layout, sidebars, breadcrumbs).
+   - Make sure theme (light/dark) switching works cleanly everywhere.
+   - Ensure loading skeletons / spinners are consistent and not duplicated ad hoc.
+
+=================================================================
+PHASE 5 — BACKEND ARCHITECTURE REFACTOR (CLEAN LAYERS)
+=================================================================
+
+Refactor backend organization WITHOUT breaking the API surface:
+
+1. Introduce clean layering:
+   - controllers/ (Express route handlers, thin layer)
+   - services/ (business logic, transaction orchestration)
+   - repositories/ (Drizzle queries)
+   - schemas/ (zod validation schemas)
+   - lib/ (shared helpers)
+   - middleware/ (auth, rate limit, logging, error handling)
+
+2. Move business logic out of raw route files:
+   - server/routes.ts should primarily wire requests to controller/service functions.
+   - Impactful operations should live in services with well-typed interfaces.
+
+3. Standardize error handling:
+   - Implement a central error handler middleware.
+   - Use typed error classes (e.g., ValidationError, AuthError, ForbiddenError, NotFoundError).
+   - Map errors to appropriate HTTP status codes.
+
+4. Response consistency:
+   - Ensure all endpoints respond with consistent JSON structures:
+     - { data: ..., meta: ... } or similar
+   - Make error responses consistent:
+     - { error: { message, code, details? } }
+
+5. API documentation:
+   - Introduce OpenAPI/Swagger (or ts-rest-based contracts) to describe all routes, inputs, and outputs.
+   - Auto-generate client types where useful.
+
+=================================================================
+PHASE 6 — TOOLING: LINTING, FORMATTING, & TESTING
+=================================================================
+
+Set up modern tooling across the project:
+
+1. ESLint + TypeScript:
+   - Configure strict, reasonable rules for Node + React + TS.
+   - Fix all lint errors across the codebase.
+   - Enforce no-unused-vars, no-floating-promises, explicit return types for critical paths, etc.
+
+2. Prettier:
+   - Add Prettier configuration and format the whole project.
+   - Integrate Prettier with ESLint (or keep separate with clear scripts).
+
+3. Testing:
+   - Introduce unit tests and integration tests using Jest or Vitest.
+   - Write tests for:
+     - Auth flows
+     - Major project workflows
+     - Change order state machine
+     - Time clock logic
+     - AI orchestration snapshots (mock OpenAI calls)
+   - Add a testing database or use a transactional test setup.
+
+4. E2E/Integration tests:
+   - Script high-level flows:
+     - Login → open dashboard → open project → create/change scope → create/change order → approve → bill
+     - Clock in/out flow + approvals
+     - AI run triggered and tasks generated
+
+=================================================================
+PHASE 7 — LOAD / PERFORMANCE TESTING
+=================================================================
+
+Implement load and performance testing setup:
+
+1. Create scripts (e.g., k6, Artillery, or simple Node-based scripts) to:
+   - Hit key endpoints at realistic and high loads (projects listing, time-clock events, AI dashboards).
+   - Simulate concurrent users clocking in/out, uploading media, working on takeoffs, etc.
+
+2. Add basic performance telemetry:
+   - Log slow queries (>250ms) with SQL and context.
+   - Log endpoints that consistently respond slowly.
+
+3. Use the results to:
+   - Add or adjust indexes.
+   - Optimize heavy queries.
+   - Consider pagination or streaming for large result sets.
+
+=================================================================
+PHASE 8 — INFRASTRUCTURE & DEPLOYMENT HARDENING
+=================================================================
+
+Make the app production deployable and maintainable:
+
+1. Docker:
+   - Add a multi-stage Dockerfile:
+     - Build stage (Node+PNPM or npm)
+     - Runtime stage (node:slim with only built assets)
+   - Ensure correct environment variables and port configurations.
+
+2. Environment management:
+   - Document all required ENV vars:
+     - SESSION_SECRET
+     - DATABASE_URL
+     - OPENAI_API_KEY
+     - OBJECT_STORAGE_BUCKET or equivalent
+     - NODE_ENV
+     - Any AI or storage-specific configs
+   - Provide example .env.example.
+
+3. Health checks:
+   - Add /health and /ready endpoints for liveness/readiness.
+   - Health checks should verify:
+     - DB connectivity
+     - Storage connectivity
+     - AI config presence (not necessarily calling OpenAI)
+
+4. Backups & recovery:
+   - Document or script how to:
+     - Snapshot database
+     - Restore database
+     - Confirm backup integrity
+
+5. Monitoring & alerts:
+   - Integrate with Sentry or another error tracking system (optional but recommended).
+   - Add minimal metrics/logging hooks to enable basic monitoring.
+
+=================================================================
+PHASE 9 — CI/CD PIPELINE
+=================================================================
+
+Set up a CI/CD pipeline (e.g., GitHub Actions or equivalent) with the following stages:
+
+1. On every push / PR:
+   - Install dependencies
+   - Run TypeScript type-check (tsc)
+   - Run ESLint
+   - Run unit + integration tests
+   - Build frontend and backend
+
+2. On main branch merge:
+   - Run full test suite
+   - Build Docker image
+   - Optionally run short load-test smoke
+   - Deploy to staging/production
+   - Optionally support blue/green or canary deployment if environment allows.
+
+3. Add failure notifications and logs.
+
+=================================================================
+PHASE 10 — FINAL VALIDATION & REPORT
+=================================================================
+
+When ALL work above is done:
+
+1. Re-run:
+   - TypeScript compiler (no errors)
+   - Lint (no errors)
+   - Tests (all passing)
+   - Frontend build (success)
+   - Backend build (success)
+
+2. Manually validate all critical user workflows still function end-to-end:
+   - Auth & role-based access
+   - Bids → Projects → Estimates
+   - Scope & change orders
+   - Time entry & time clock
+   - T&M daily sheets
+   - Receipts & documents
+   - AI PM & CFO dashboards
+   - Takeoff engine
+   - Calendar & time-off
+   - Subcontractor management
+
+3. Produce a final textual summary in the editor or console that clearly lists:
+   - All major code changes and refactors
+   - All fixed errors (especially from the audit)
+   - All new security and validation layers
+   - All infrastructure changes (Docker, CI, env)
+   - All tests added
+   - Any remaining known limitations (if any)
+
+Then output the final confirmation statement:
+
+“ALL CODE, SECURITY, VALIDATION, TRANSACTION, FRONTEND, BACKEND, QA, LOAD-TEST, INFRASTRUCTURE, AND CI/CD FIXES COMPLETE — ZERO TYPE ERRORS — PRODUCTION-READY.”
+
+Then stop and wait for further instructions.

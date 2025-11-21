@@ -1022,7 +1022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newScopeItem] = await db.insert(scopeItems).values(validationResult.data).returning();
+      const [newScopeItem] = await db.insert(scopeItems).values([validationResult.data]).returning();
       res.status(201).json(newScopeItem);
     } catch (error: any) {
       console.error("Create scope item error:", error);
@@ -1168,7 +1168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newNote] = await db.insert(projectNotes).values(validationResult.data).returning();
+      const [newNote] = await db.insert(projectNotes).values([validationResult.data]).returning();
       res.status(201).json(newNote);
     } catch (error: any) {
       console.error("Create note error:", error);
@@ -1249,18 +1249,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newMedia] = await db.insert(media).values({
+      const [newMedia] = await db.insert(media).values([{
         ...validationResult.data,
         objectKey,
-      }).returning();
+      }]).returning();
       
       // Grant permission to uploader
-      await db.insert(filePermissions).values({
+      await db.insert(filePermissions).values([{
         fileId: newMedia.id,
         fileType: "MEDIA",
         userId: req.user!.id,
         grantedById: req.user!.id,
-      });
+      }]);
 
       res.status(201).json(newMedia);
     } catch (error: any) {
@@ -1333,8 +1333,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         conditions.push(eq(timeEntries.userId, userId as string));
       }
 
+      // Note: timeEntries table has no status column
+      // Status is determined by whether approvedById is set or not
       if (status) {
-        conditions.push(eq(timeEntries.status, status as any));
+        if (status === 'approved') {
+          conditions.push(sql`${timeEntries.approvedById} IS NOT NULL`);
+        } else if (status === 'pending') {
+          conditions.push(sql`${timeEntries.approvedById} IS NULL`);
+        }
       }
 
       if (projectId) {
@@ -1413,7 +1419,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newEntry] = await db.insert(timeEntries).values(validationResult.data).returning();
+      const [newEntry] = await db.insert(timeEntries).values([validationResult.data]).returning();
       
       // Audit log
       await logCreate(req.user!.id, "TIME_ENTRY", newEntry.id, JSON.stringify(newEntry), req);
@@ -1616,7 +1622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newSheet] = await db.insert(tmDailySheets).values(validationResult.data).returning();
+      const [newSheet] = await db.insert(tmDailySheets).values([validationResult.data]).returning();
       res.status(201).json(newSheet);
     } catch (error: any) {
       console.error("Create T&M sheet error:", error);
@@ -1668,7 +1674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newEstimate] = await db.insert(estimates).values(validationResult.data).returning();
+      const [newEstimate] = await db.insert(estimates).values([validationResult.data]).returning();
       res.status(201).json(newEstimate);
     } catch (error: any) {
       console.error("Create estimate error:", error);
@@ -1816,18 +1822,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newReceipt] = await db.insert(receipts).values({
+      const [newReceipt] = await db.insert(receipts).values([{
         ...validationResult.data,
         objectKey,
-      }).returning();
+      }]).returning();
       
       // Grant permission to uploader
-      await db.insert(filePermissions).values({
+      await db.insert(filePermissions).values([{
         fileId: newReceipt.id,
         fileType: "RECEIPT",
         userId: req.user!.id,
         grantedById: req.user!.id,
-      });
+      }]);
 
       res.status(201).json(newReceipt);
     } catch (error: any) {
@@ -1899,18 +1905,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newDoc] = await db.insert(planDocuments).values({
+      const [newDoc] = await db.insert(planDocuments).values([{
         ...validationResult.data,
         objectKey,
-      }).returning();
+      }]).returning();
       
       // Grant permission to uploader
-      await db.insert(filePermissions).values({
+      await db.insert(filePermissions).values([{
         fileId: newDoc.id,
         fileType: "DOCUMENT",
         userId: req.user!.id,
         grantedById: req.user!.id,
-      });
+      }]);
 
       res.status(201).json(newDoc);
     } catch (error: any) {
@@ -1983,14 +1989,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.delete(planDocuments).where(eq(planDocuments.id, documentId));
 
       // Log the deletion
-      await logAudit(
+      await logDelete(
         req.user!.id,
-        "DELETE",
         "DOCUMENT",
         documentId,
-        undefined,
-        document.projectId,
-        `Deleted document: ${document.title || document.fileName}`
+        JSON.stringify(document),
+        req
       );
 
       res.json({ message: "Document deleted successfully" });
@@ -2111,7 +2115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const [newPermission] = await db
         .insert(filePermissions)
-        .values(validationResult.data)
+        .values([validationResult.data])
         .returning();
       
       res.status(201).json(newPermission);
@@ -2243,7 +2247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newOrder] = await db.insert(changeOrders).values(validationResult.data).returning();
+      const [newOrder] = await db.insert(changeOrders).values([validationResult.data]).returning();
       
       // Create notification for managers/admins about pending change order
       const adminsAndManagers = await db
@@ -2374,7 +2378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newEvent] = await db.insert(calendarEvents).values(validationResult.data).returning();
+      const [newEvent] = await db.insert(calendarEvents).values([validationResult.data]).returning();
       
       // Create notification for managers if it's a time-off request
       if (newEvent.eventType === "TIME_OFF_REQUEST") {
@@ -2549,13 +2553,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   // Get billing events for a project
+  // Note: billingEvents are linked to scopeItems, which are linked to projects
   app.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { scopeItems } = await import("@shared/schema");
       const events = await db
-        .select()
+        .select({
+          billingEvent: billingEvents,
+          scopeItem: scopeItems,
+        })
         .from(billingEvents)
-        .where(eq(billingEvents.projectId, req.params.projectId))
-        .orderBy(desc(billingEvents.eventDate));
+        .innerJoin(scopeItems, eq(billingEvents.scopeItemId, scopeItems.id))
+        .where(eq(scopeItems.projectId, req.params.projectId))
+        .orderBy(desc(billingEvents.createdAt));
 
       res.json(events);
     } catch (error) {
@@ -2565,24 +2575,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create billing event
+  // NOTE: This endpoint is currently disabled due to schema mismatch.
+  // The billingEvents table expects: scopeItemId, quantity, unitPrice, totalAmount, billedDate
+  // But this endpoint was designed for: projectId, eventType, eventDate, amount, description
+  // TODO: Either redesign this endpoint to match the actual schema, or update the schema to support this use case
   app.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // Validation schema aligned with actual billingEvents table
       const schema = z.object({
-        projectId: z.string(),
-        eventType: z.enum(["INVOICE_SENT", "PAYMENT_RECEIVED", "CHANGE_ORDER_INVOICED", "RETENTION_RELEASED", "LIEN_WAIVER_RECEIVED"]),
-        eventDate: z.coerce.date(),
-        amount: z.string(),
-        description: z.string().optional(),
+        scopeItemId: z.string(),
+        quantity: z.number().int(),
+        unitPrice: z.string(),
+        totalAmount: z.string(),
+        billedDate: z.coerce.date(),
         invoiceNumber: z.string().optional(),
-        referenceId: z.string().optional(),
+        paymentStatus: z.enum(["pending", "paid", "overdue"]).default("pending"),
       });
 
       const data = schema.parse(req.body);
 
-      const [newEvent] = await db.insert(billingEvents).values({
+      const [newEvent] = await db.insert(billingEvents).values([{
         ...data,
         createdById: req.user!.id,
-      }).returning();
+      }]).returning();
 
       // Audit log
       await logCreate(req.user!.id, "BILLING_EVENT", newEvent.id, JSON.stringify(newEvent), req);

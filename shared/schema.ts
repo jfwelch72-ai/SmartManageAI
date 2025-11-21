@@ -16,7 +16,11 @@ export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PE
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
 export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
-export const auditActionEnum = pgEnum("audit_action", ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", "CLOCK_IN", "CLOCK_OUT", "ADJUST"]);
+export const auditActionEnum = pgEnum("audit_action", [
+  "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
+  "CLOCK_IN", "CLOCK_OUT", "ADJUST",
+  "REVOKE_TOKENS", "CREATE_BID_QUOTE", "UPDATE_BID_QUOTE", "DELETE_BID_QUOTE"
+]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
 
