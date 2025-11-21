@@ -301,7 +301,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create user (Admin only)
   app.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = createUserSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        firstName: sanitizeShortText(req.body.firstName),
+        lastName: sanitizeShortText(req.body.lastName),
+        email: sanitizeEmail(req.body.email),
+        phone: sanitizePhone(req.body.phone),
+        password: req.body.password, // Don't sanitize passwords - preserve exact input
+      };
+
+      const validationResult = createUserSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -337,7 +347,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update user (Admin only)
   app.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = updateUserSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        firstName: req.body.firstName ? sanitizeShortText(req.body.firstName) : undefined,
+        lastName: req.body.lastName ? sanitizeShortText(req.body.lastName) : undefined,
+        email: req.body.email ? sanitizeEmail(req.body.email) : undefined,
+        phone: req.body.phone ? sanitizePhone(req.body.phone) : undefined,
+        password: req.body.password, // Don't sanitize passwords - preserve exact input
+      };
+
+      const validationResult = updateUserSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -651,7 +671,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update bid (Admin/Manager only)
   app.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = updateBidSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
+        clientName: req.body.clientName ? sanitizeShortText(req.body.clientName) : undefined,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validationResult = updateBidSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -806,8 +834,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const validated = insertBidSubcontractorQuoteSchema.parse({
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
         ...req.body,
+        subcontractorName: sanitizeShortText(req.body.subcontractorName),
+        scopeOfWork: sanitizeText(req.body.scopeOfWork),
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+        contactName: req.body.contactName ? sanitizeShortText(req.body.contactName) : undefined,
+        contactEmail: req.body.contactEmail ? sanitizeEmail(req.body.contactEmail) : undefined,
+        contactPhone: req.body.contactPhone ? sanitizePhone(req.body.contactPhone) : undefined,
+      };
+
+      const validated = insertBidSubcontractorQuoteSchema.parse({
+        ...sanitizedBody,
         bidId: bid.id,
       });
 
@@ -842,7 +881,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const validated = insertBidSubcontractorQuoteSchema.partial().parse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        subcontractorName: req.body.subcontractorName ? sanitizeShortText(req.body.subcontractorName) : undefined,
+        scopeOfWork: req.body.scopeOfWork ? sanitizeText(req.body.scopeOfWork) : undefined,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+        contactName: req.body.contactName ? sanitizeShortText(req.body.contactName) : undefined,
+        contactEmail: req.body.contactEmail ? sanitizeEmail(req.body.contactEmail) : undefined,
+        contactPhone: req.body.contactPhone ? sanitizePhone(req.body.contactPhone) : undefined,
+      };
+
+      const validated = insertBidSubcontractorQuoteSchema.partial().parse(sanitizedBody);
 
       const [updated] = await db
         .update(bidSubcontractorQuotes)
@@ -1058,7 +1108,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update project (Admin/Manager only)
   app.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = updateProjectSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+        clientName: req.body.clientName ? sanitizeShortText(req.body.clientName) : undefined,
+        location: req.body.location ? sanitizeText(req.body.location) : undefined,
+      };
+
+      const validationResult = updateProjectSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -1210,9 +1269,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        description: sanitizeText(req.body.description),
+      };
+
       const validationResult = insertScopeItemSchema.extend({
         projectId: z.string().optional(),
-      }).safeParse({ ...req.body, projectId: project.id });
+      }).safeParse({ ...sanitizedBody, projectId: project.id });
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -1233,7 +1298,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update scope item (Admin/Manager/Superintendent only)
   app.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = updateScopeItemSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validationResult = updateScopeItemSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -1427,11 +1498,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        caption: req.body.caption ? sanitizeText(req.body.caption) : undefined,
+      };
+
       const validationResult = insertMediaSchema.extend({
         projectId: z.string().optional(),
         uploadedById: z.string().optional(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         projectId: project.id,
         uploadedById: req.user!.id,
       });
@@ -1609,11 +1686,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create time entry (All authenticated users)
   app.post("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
       const validationResult = insertTimeEntrySchema.extend({
         userId: z.string().optional(),
         date: z.coerce.date(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         userId: req.user!.id,
       });
       
@@ -1666,6 +1749,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update time entry (with locking)
   app.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
       const schema = z.object({
         date: z.coerce.date().optional(),
         hoursRegular: z.string().optional(),
@@ -1675,7 +1764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         adminOverride: z.boolean().optional(),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       // Get existing entry
       const [existingEntry] = await db
@@ -1855,11 +1944,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create T&M daily sheet (Admin/Manager/Superintendent only)
   app.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        descriptionOfWork: sanitizeText(req.body.descriptionOfWork),
+        weather: req.body.weather ? sanitizeShortText(req.body.weather) : undefined,
+      };
+
       const validationResult = insertTMDailySheetSchema.extend({
         createdById: z.string().optional(),
         date: z.coerce.date(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         createdById: req.user!.id,
       });
       
@@ -2543,10 +2639,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create change order (Admin/Manager/Superintendent)
   app.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        description: sanitizeText(req.body.description),
+      };
+
       const validationResult = insertChangeOrderSchema.extend({
         requestedById: z.string().optional(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         requestedById: req.user!.id,
       });
       
@@ -2614,7 +2716,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update change order (Admin/Manager only)
   app.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = updateChangeOrderSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validationResult = updateChangeOrderSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -2697,12 +2805,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create calendar event (All authenticated users)
   app.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        title: sanitizeShortText(req.body.title),
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
       const validationResult = insertCalendarEventSchema.extend({
         createdById: z.string().optional(),
         startDate: z.coerce.date(),
         endDate: z.coerce.date().optional(),
       }).safeParse({
-        ...req.body,
+        ...sanitizedBody,
         createdById: req.user!.id,
       });
       
@@ -3126,7 +3241,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new crew (admin only)
   app.post("/api/crews", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertCrewSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: sanitizeShortText(req.body.name),
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validationResult = insertCrewSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -3156,7 +3278,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/crews/:id", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const updateData = insertCrewSchema.partial().safeParse(req.body);
+      
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const updateData = insertCrewSchema.partial().safeParse(sanitizedBody);
 
       if (!updateData.success) {
         res.status(400).json({ error: "Invalid input", details: updateData.error.errors });
@@ -3470,7 +3600,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new skill (admin only)
   app.post("/api/skills", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertSkillSchema.safeParse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: sanitizeShortText(req.body.name),
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validationResult = insertSkillSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
@@ -4116,8 +4253,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { sheetId } = req.params;
       const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-      const validated = insertTakeoffMeasurementSchema.parse({
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
         ...req.body,
+        label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      };
+
+      const validated = insertTakeoffMeasurementSchema.parse({
+        ...sanitizedBody,
         sheetId,
       });
 
@@ -4140,7 +4283,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-      const validated = insertTakeoffMeasurementSchema.partial().parse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      };
+
+      const validated = insertTakeoffMeasurementSchema.partial().parse(sanitizedBody);
 
       const [updated] = await db
         .update(takeoffMeasurements)
@@ -4169,10 +4318,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { takeoffMeasurements, takeoffSheets, projects, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
+      };
+
       // Convert points array to JSON string if it's an array
       const bodyWithStringifiedPoints = {
-        ...req.body,
-        points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
+        ...sanitizedBody,
+        points: Array.isArray(sanitizedBody.points) ? JSON.stringify(sanitizedBody.points) : sanitizedBody.points,
       };
 
       const validated = insertTakeoffMeasurementSchema.parse(bodyWithStringifiedPoints);
@@ -4373,9 +4528,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: sanitizeShortText(req.body.name),
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
       const validated = insertQuantityCategorySchema.parse({
         projectId: project.id,  // Use the internal UUID, not the code
-        ...req.body,
+        ...sanitizedBody,
       });
 
       const [category] = await db
@@ -4400,7 +4562,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
 
-      const validated = insertQuantityCategorySchema.partial().parse(req.body);
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+      };
+
+      const validated = insertQuantityCategorySchema.partial().parse(sanitizedBody);
 
       const [updated] = await db
         .update(quantityCategories)

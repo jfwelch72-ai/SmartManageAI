@@ -12,6 +12,7 @@ import {
 } from "./ai/orchestrator";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
+import { sanitizeText, sanitizeShortText } from "./sanitization";
 
 const router = Router();
 
@@ -48,17 +49,33 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" });
     }
 
+    // SECURITY: Sanitize text inputs for data integrity - build sanitized object WITHOUT spreading req.body
+    const sanitizedBody: any = {};
+    
+    // Boolean fields (no sanitization needed)
+    if (req.body.dailyRunsEnabled !== undefined) sanitizedBody.dailyRunsEnabled = req.body.dailyRunsEnabled;
+    if (req.body.roleTasksEnabled !== undefined) sanitizedBody.roleTasksEnabled = req.body.roleTasksEnabled;
+    if (req.body.billingAlertsEnabled !== undefined) sanitizedBody.billingAlertsEnabled = req.body.billingAlertsEnabled;
+    if (req.body.profitabilityWarningsEnabled !== undefined) sanitizedBody.profitabilityWarningsEnabled = req.body.profitabilityWarningsEnabled;
+    if (req.body.crewSchedulingEnabled !== undefined) sanitizedBody.crewSchedulingEnabled = req.body.crewSchedulingEnabled;
+    if (req.body.bidRemindersEnabled !== undefined) sanitizedBody.bidRemindersEnabled = req.body.bidRemindersEnabled;
+    if (req.body.materialOrderingEnabled !== undefined) sanitizedBody.materialOrderingEnabled = req.body.materialOrderingEnabled;
+    
+    // Text fields (MUST sanitize)
+    if (req.body.dailyRunTime) sanitizedBody.dailyRunTime = sanitizeShortText(req.body.dailyRunTime);
+    if (req.body.modelName) sanitizedBody.modelName = sanitizeShortText(req.body.modelName);
+
     const [existingSettings] = await db.select().from(aiSettings).limit(1);
 
     let updated;
     if (existingSettings) {
       [updated] = await db
         .update(aiSettings)
-        .set({ ...req.body, updatedAt: new Date() })
+        .set({ ...sanitizedBody, updatedAt: new Date() })
         .where(eq(aiSettings.id, existingSettings.id))
         .returning();
     } else {
-      [updated] = await db.insert(aiSettings).values(req.body).returning();
+      [updated] = await db.insert(aiSettings).values({ ...sanitizedBody }).returning();
     }
 
     await logUpdate(db, {

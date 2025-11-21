@@ -4,6 +4,7 @@ import { timeClockShifts, timeClockEvents, users, projects, timeEntries } from "
 import { eq, and, desc, gte, lte, isNull, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
+import { sanitizeText } from "./sanitization";
 import { z } from "zod";
 
 // Geolocation radius check (in meters)
@@ -32,6 +33,12 @@ export function registerTimeClockRoutes(app: Express): void {
   // Clock In
   app.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
       const schema = z.object({
         projectId: z.string().optional().nullable(),
         latitude: z.number().optional().nullable(),
@@ -39,7 +46,7 @@ export function registerTimeClockRoutes(app: Express): void {
         notes: z.string().optional().nullable(),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       // Check if user already has an active shift
       const [activeShift] = await db
@@ -101,13 +108,19 @@ export function registerTimeClockRoutes(app: Express): void {
   // Clock Out
   app.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
       const schema = z.object({
         latitude: z.number().optional().nullable(),
         longitude: z.number().optional().nullable(),
         notes: z.string().optional().nullable(),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       // Find active shift
       const [activeShift] = await db
@@ -226,11 +239,17 @@ export function registerTimeClockRoutes(app: Express): void {
   // Update shift notes (employee only)
   app.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
       const schema = z.object({
         notes: z.string(),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       // Verify ownership
       const [shift] = await db
@@ -297,6 +316,13 @@ export function registerTimeClockRoutes(app: Express): void {
   // Adjust shift (managers only)
   app.patch("/api/time-clock/shift/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+        reason: req.body.reason ? sanitizeText(req.body.reason) : undefined,
+      };
+
       const schema = z.object({
         clockIn: z.string().optional(),
         clockOut: z.string().optional(),
@@ -306,7 +332,7 @@ export function registerTimeClockRoutes(app: Express): void {
         adminOverride: z.boolean().optional(),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       const [shift] = await db
         .select()
@@ -404,11 +430,17 @@ export function registerTimeClockRoutes(app: Express): void {
   // Admin clock-out (managers only)
   app.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        reason: req.body.reason ? sanitizeText(req.body.reason) : undefined,
+      };
+
       const schema = z.object({
         reason: z.string().min(1, "Reason is required"),
       });
 
-      const data = schema.parse(req.body);
+      const data = schema.parse(sanitizedBody);
 
       const [shift] = await db
         .select()

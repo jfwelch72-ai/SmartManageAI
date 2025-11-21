@@ -5,6 +5,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
+import { sanitizeText } from "./sanitization";
 
 const router = Router();
 
@@ -288,7 +289,8 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
  */
 router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const { rejectionReason } = req.body;
+    // SECURITY: Sanitize text inputs for data integrity
+    const rejectionReason = req.body.rejectionReason ? sanitizeText(req.body.rejectionReason) : undefined;
 
     if (!rejectionReason || rejectionReason.trim().length === 0) {
       res.status(400).json({ error: "Rejection reason is required" });
@@ -362,7 +364,8 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  */
 router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const { reason } = req.body;
+    // SECURITY: Sanitize text inputs for data integrity
+    const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
 
     const order = await getChangeOrderById(req.params.id);
 
