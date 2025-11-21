@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { TakeoffSheet, TakeoffMeasurement } from "@shared/schema";
+import * as pdfjsLib from 'pdfjs-dist';
 
 type Tool = 
   | "select" 
@@ -71,6 +72,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   
   // Select tool state
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  
+  // PDF rendering state
+  const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
   
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -130,6 +135,69 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   });
 
   const currentSheet = sheets.find(s => s.id === selectedSheet);
+
+  // Configure PDF.js worker
+  useEffect(() => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  }, []);
+
+  // Load and render PDF when sheet changes
+  useEffect(() => {
+    if (!currentSheet?.imageUrl) {
+      setPdfImage(null);
+      return;
+    }
+
+    const loadPDF = async () => {
+      try {
+        setIsPdfLoading(true);
+        setPdfImage(null);
+
+        // Load the PDF document
+        const loadingTask = pdfjsLib.getDocument(currentSheet.imageUrl);
+        const pdf = await loadingTask.promise;
+
+        // Get the first page
+        const page = await pdf.getPage(1);
+
+        // Set up the canvas with desired scale
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale });
+
+        // Create a canvas to render the PDF
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        // Render the page
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+
+        // Convert canvas to image for Konva
+        const img = new window.Image();
+        img.src = canvas.toDataURL();
+        img.onload = () => {
+          setPdfImage(img);
+          setIsPdfLoading(false);
+        };
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        setIsPdfLoading(false);
+        toast({
+          title: "Error",
+          description: "Failed to load PDF. The file may not be a valid PDF document.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    loadPDF();
+  }, [currentSheet?.imageUrl, toast]);
 
   const handleToolSelect = (tool: Tool) => {
     setActiveTool(tool);
@@ -485,8 +553,14 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
               draggable={activeTool === "pan"}
             >
               <Layer>
-                {/* Sheet image would go here */}
-                <Text text="Canvas: Plan will render here" x={20} y={20} fontSize={16} />
+                {/* Render PDF image */}
+                {isPdfLoading ? (
+                  <Text text="Loading PDF..." x={20} y={20} fontSize={16} fill="#888" />
+                ) : pdfImage ? (
+                  <KonvaImage image={pdfImage} />
+                ) : (
+                  <Text text="Select a sheet to begin" x={20} y={20} fontSize={16} fill="#888" />
+                )}
                 
                 {/* Saved measurements */}
                 {measurements.map((m) => {
