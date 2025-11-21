@@ -1404,8 +1404,8 @@ export default function ProjectDetailPage() {
                                         try {
                                           await apiRequest("DELETE", `/api/documents/${doc.id}`);
                                           toast({ title: "Success", description: "Document deleted successfully" });
-                                          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.code}/documents`] });
-                                          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                          await queryClient.invalidateQueries({ queryKey: ["/api/projects", project!.code, "documents"] });
+                                          await queryClient.invalidateQueries({ queryKey: ["/api/projects", project!.id, "takeoff", "sheets"] });
                                         } catch (error: any) {
                                           const errorMessage = error?.message || error?.error || "Failed to delete document";
                                           toast({ title: "Error", description: errorMessage, variant: "destructive" });
