@@ -3685,6 +3685,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create a new measurement (with sheetId in body)
+  app.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+
+      const validated = insertTakeoffMeasurementSchema.parse(req.body);
+
+      const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
+
+      res.status(201).json(measurement);
+    } catch (error: any) {
+      console.error("Error creating measurement:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid measurement data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create measurement" });
+      }
+    }
+  });
+
   // Delete a measurement
   app.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
     try {

@@ -150,6 +150,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       points: { x: number; y: number }[];
       label?: string;
       depthInches?: number;
+      categoryId?: string | null;
     }) => {
       return await apiRequest({
         url: `/api/takeoff/measurements`,
@@ -395,6 +396,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           type: "LINEAR",
           points: newPoints,
           label: `Line ${measurements.length + 1}`,
+          categoryId: selectedCategoryId,
         });
         
         setIsDrawing(false);
@@ -438,6 +440,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         type: "COUNT",
         points: [point],
         label: `Count ${measurements.filter(m => m.type === "COUNT").length + 1}`,
+        categoryId: selectedCategoryId,
       });
     } else if (activeTool === "note") {
       if (!selectedSheet) {
@@ -595,6 +598,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         type: "AREA",
         points: drawingPoints,
         label: `Area ${measurements.filter(m => m.type === "AREA").length + 1}`,
+        categoryId: selectedCategoryId,
       });
       
       toast({ 
@@ -610,6 +614,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         points: drawingPoints,
         label: `Volume ${measurements.filter(m => m.type === "VOLUME").length + 1}`,
         depthInches: 12, // Default 12" depth, will add UI for this later
+        categoryId: selectedCategoryId,
       });
       
       toast({ 
@@ -1110,6 +1115,43 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                         </div>
                       ))
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Active Drawing Tool Settings */}
+            {(activeTool === "linear" || activeTool === "area" || activeTool === "volume" || activeTool === "count") && (
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <h3 className="font-semibold text-sm">Drawing Settings</h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="category-select">Quantity Category</Label>
+                    <Select
+                      value={selectedCategoryId || ""}
+                      onValueChange={(value) => setSelectedCategoryId(value || null)}
+                    >
+                      <SelectTrigger id="category-select" data-testid="select-category">
+                        <SelectValue placeholder="Select category (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">None</SelectItem>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-sm" 
+                                style={{ backgroundColor: cat.color }}
+                              />
+                              {cat.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Measurements will be color-coded and grouped by category
+                    </p>
                   </div>
                 </CardContent>
               </Card>
