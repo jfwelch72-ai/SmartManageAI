@@ -3475,13 +3475,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Check if this document is already imported
+      // Check if this document is already imported by checking if a plan exists with this documentId
       const [existingPlan] = await db
         .select()
-        .from(takeoffSheets)
+        .from(projectPlans)
         .where(and(
-          eq(takeoffSheets.projectId, projectId),
-          eq(takeoffSheets.sheetName, document.title)
+          eq(projectPlans.projectId, projectId),
+          eq(projectPlans.documentId, documentId)
         ))
         .limit(1);
 
@@ -3490,30 +3490,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Create project plan record
-      const [plan] = await db.insert(projectPlans).values({
-        projectId,
-        documentId: documentId,
-        originalPdfUrl: document.fileUrl,
-        fileName: document.fileName,
-      }).returning();
+      // Validate PDF and get page count BEFORE creating any database records
+      let pageCount = 1;
+      if (!document.objectKey) {
+        res.status(400).json({ error: "Document has no file attached. Please re-upload the document." });
+        return;
+      }
 
-      // Create takeoff sheet (single sheet for now - PDF processing would create multiple)
-      const [sheet] = await db.insert(takeoffSheets).values({
-        projectId,
-        planId: plan.id,
-        imageUrl: document.fileUrl,
-        sheetIndex: 0,
-        sheetName: document.title || document.fileName, // Use filename as fallback
-      }).returning();
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
+        
+        // Download PDF to buffer
+        const pdfBuffer = await objectFile.downloadAsBuffer();
+        
+        // Load PDF with pdfjs-dist
+        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(pdfBuffer),
+          useSystemFonts: true,
+        });
+        const pdfDoc = await loadingTask.promise;
+        pageCount = pdfDoc.numPages;
+      } catch (error: any) {
+        console.error("Error processing PDF:", error);
+        res.status(400).json({ 
+          error: "Failed to process PDF file. The file may be corrupted or not a valid PDF document." 
+        });
+        return;
+      }
 
-      await logCreate(req.user!.id, "project_plans", plan.id, {
+      // Use a transaction to ensure all-or-nothing creation
+      const result = await db.transaction(async (tx) => {
+        // Create project plan record
+        const [plan] = await tx.insert(projectPlans).values({
+          projectId,
+          documentId: documentId,
+          originalPdfUrl: document.fileUrl,
+          fileName: document.fileName,
+        }).returning();
+
+        // Prepare all sheets for batch insert
+        const baseSheetName = document.title || document.fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+        const sheetValues = [];
+        
+        for (let i = 0; i < pageCount; i++) {
+          const sheetName = pageCount > 1 
+            ? `${baseSheetName} - Page ${i + 1}`
+            : baseSheetName;
+          
+          sheetValues.push({
+            projectId,
+            planId: plan.id,
+            imageUrl: document.fileUrl,
+            sheetIndex: i,
+            sheetName,
+          });
+        }
+
+        // Batch insert all sheets
+        const sheets = await tx.insert(takeoffSheets).values(sheetValues).returning();
+
+        return { plan, sheets };
+      });
+
+      await logCreate(req.user!.id, "project_plans", result.plan.id, {
         projectId,
         fileName: document.fileName,
         documentId,
+        pageCount,
       });
 
-      res.status(201).json({ plan, sheet });
+      res.status(201).json(result);
     } catch (error) {
       console.error("Error importing plan to takeoff:", error);
       res.status(500).json({ error: "Failed to import plan to takeoff" });

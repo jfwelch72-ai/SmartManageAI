@@ -171,8 +171,9 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         });
         const pdf = await loadingTask.promise;
 
-        // Get the first page
-        const page = await pdf.getPage(1);
+        // Get the page based on sheetIndex (PDF pages are 1-indexed)
+        const pageNumber = (currentSheet.sheetIndex || 0) + 1;
+        const page = await pdf.getPage(pageNumber);
 
         // Set up the canvas with desired scale
         const scale = 1.5;
