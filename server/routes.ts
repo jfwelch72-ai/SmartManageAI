@@ -27,7 +27,7 @@ import {
   revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, desc, sql, and, or, isNull } from "drizzle-orm";
+import { eq, desc, sql, and, or, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
@@ -3215,21 +3215,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .leftJoin(users, eq(crews.leadId, users.id))
         .orderBy(desc(crews.isActive), crews.name);
 
-      // Get member counts for each crew
-      const crewsWithCounts = await Promise.all(
-        allCrews.map(async ({ crew, lead }) => {
-          const [memberCount] = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(crewMembers)
-            .where(eq(crewMembers.crewId, crew.id));
-          
-          return {
-            ...crew,
-            lead: lead.id ? lead : null,
-            memberCount: Number(memberCount?.count || 0),
-          };
-        })
-      );
+      // PERFORMANCE: Get member counts efficiently with single query instead of N+1
+      let countsMap = new Map<string, number>();
+      
+      if (allCrews.length > 0) {
+        const crewIds = allCrews.map(c => c.crew.id);
+        const memberCounts = await db
+          .select({
+            crewId: crewMembers.crewId,
+            count: sql<number>`count(*)`.as('count'),
+          })
+          .from(crewMembers)
+          .where(inArray(crewMembers.crewId, crewIds))
+          .groupBy(crewMembers.crewId);
+        
+        countsMap = new Map(memberCounts.map(mc => [mc.crewId, Number(mc.count)]));
+      }
+      
+      const crewsWithCounts = allCrews.map(({ crew, lead }) => ({
+        ...crew,
+        lead: lead.id ? lead : null,
+        memberCount: countsMap.get(crew.id) || 0,
+      }));
 
       res.json(crewsWithCounts);
     } catch (error) {
