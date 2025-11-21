@@ -932,7 +932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update project financials (Admin only)
   app.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
-      const { budget, contractAmount, texturaDrawDate } = req.body;
+      const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = req.body;
 
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
       
@@ -946,6 +946,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (budget !== undefined) updateData.budget = budget;
       if (contractAmount !== undefined) updateData.contractAmount = contractAmount;
       if (texturaDrawDate !== undefined) updateData.texturaDrawDate = texturaDrawDate;
+      if (drawDayOfMonth !== undefined) updateData.drawDayOfMonth = drawDayOfMonth;
 
       // Audit log the change
       await logUpdate(
@@ -956,11 +957,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           budget: project.budget,
           contractAmount: project.contractAmount,
           texturaDrawDate: project.texturaDrawDate,
+          drawDayOfMonth: project.drawDayOfMonth,
         }),
         JSON.stringify({
           budget,
           contractAmount,
           texturaDrawDate,
+          drawDayOfMonth,
         }),
         req
       );
