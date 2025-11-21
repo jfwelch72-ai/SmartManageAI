@@ -210,7 +210,6 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       return await response.json();
     },
     onSuccess: (data: any, variables) => {
-      console.log("Category mutation success - data:", data, "variables:", variables);
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
       setCategoryDialogOpen(false);
       setEditingCategory(null);
@@ -219,14 +218,12 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       
       // Auto-select newly created category for immediate use
       if (!variables.id && data?.id) {
-        console.log("Auto-selecting category:", data.id);
         setSelectedCategoryId(data.id);
         toast({ 
           title: "Success", 
           description: "Category created and selected for measurements" 
         });
       } else {
-        console.log("Category update or missing ID - data:", data);
         toast({ title: "Success", description: "Category updated" });
       }
     },
