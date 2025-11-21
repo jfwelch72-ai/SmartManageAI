@@ -357,6 +357,7 @@ export default function ProjectDetailPage() {
   const [editBudget, setEditBudget] = useState("");
   const [editContractAmount, setEditContractAmount] = useState("");
   const [editTexturaDrawDate, setEditTexturaDrawDate] = useState("");
+  const [editDrawDayOfMonth, setEditDrawDayOfMonth] = useState<number | "">("");
 
   // Upload handlers
   const handleMediaUploadComplete = async (result: any) => {
@@ -444,6 +445,10 @@ export default function ProjectDetailPage() {
       
       if (editTexturaDrawDate) {
         payload.texturaDrawDate = editTexturaDrawDate;
+      }
+
+      if (editDrawDayOfMonth !== "") {
+        payload.drawDayOfMonth = editDrawDayOfMonth;
       }
 
       await apiRequest("PATCH", `/api/projects/${projectCode}/financials`, payload);
@@ -682,6 +687,7 @@ export default function ProjectDetailPage() {
                       setEditBudget(project.budget || "0");
                       setEditContractAmount(project.contractAmount || "0");
                       setEditTexturaDrawDate(project.texturaDrawDate || "");
+                      setEditDrawDayOfMonth(project.drawDayOfMonth || "");
                       setShowBudgetEditDialog(true);
                     }}
                     data-testid="button-edit-financials"
@@ -1640,7 +1646,7 @@ export default function ProjectDetailPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="edit-textura-draw-date">Textura Draw Date</Label>
+                <Label htmlFor="edit-textura-draw-date">Textura Draw Date (Optional Override)</Label>
                 <Input
                   id="edit-textura-draw-date"
                   type="date"
@@ -1649,6 +1655,31 @@ export default function ProjectDetailPage() {
                   placeholder="YYYY-MM-DD"
                   data-testid="input-edit-textura-draw-date"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Use this to override the recurring draw schedule for a specific month
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="edit-draw-day-of-month">Recurring Draw Day of Month</Label>
+                <Select 
+                  value={editDrawDayOfMonth === "" ? "" : String(editDrawDayOfMonth)}
+                  onValueChange={(value) => setEditDrawDayOfMonth(value === "" ? "" : parseInt(value))}
+                >
+                  <SelectTrigger id="edit-draw-day-of-month" data-testid="select-draw-day-of-month">
+                    <SelectValue placeholder="Select day of month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No recurring draw</SelectItem>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                      <SelectItem key={day} value={String(day)}>
+                        {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of each month
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Set the day each month when Textura draws are due (e.g., 1st, 15th, 30th)
+                </p>
               </div>
             </div>
             <DialogFooter>
