@@ -8,7 +8,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users } from "lucide-react";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -21,6 +22,7 @@ import type { BidSubcontractorQuote, InsertBidSubcontractorQuote } from "@shared
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
+import type { UploadResult } from "@uppy/core";
 
 const quoteFormSchema = insertBidSubcontractorQuoteSchema.omit({ bidId: true }).extend({
   quoteAmount: z.string().min(1, "Quote amount is required"),
@@ -34,6 +36,13 @@ export default function BidDetailPage() {
   const { toast } = useToast();
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const [editingQuote, setEditingQuote] = useState<BidSubcontractorQuote | null>(null);
+  const [uploadedFileData, setUploadedFileData] = useState<{
+    fileUrl: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+  } | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
   
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
@@ -143,12 +152,21 @@ export default function BidDetailPage() {
 
   const handleAddQuote = () => {
     setEditingQuote(null);
+    setUploadedFileData(null);
     form.reset();
     setShowQuoteDialog(true);
   };
 
   const handleEditQuote = (quote: BidSubcontractorQuote) => {
     setEditingQuote(quote);
+    setUploadedFileData(
+      quote.fileUrl && quote.fileName ? {
+        fileUrl: quote.fileUrl,
+        fileName: quote.fileName,
+        fileSize: quote.fileSize || 0,
+        mimeType: quote.mimeType || "",
+      } : null
+    );
     form.reset({
       subcontractorName: quote.subcontractorName,
       scopeOfWork: quote.scopeOfWork,
@@ -167,11 +185,61 @@ export default function BidDetailPage() {
     }
   };
 
+  const getUploadParameters = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/objects/upload");
+      const data = await response.json();
+      return {
+        method: "PUT" as const,
+        url: data.uploadURL,
+      };
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
+      throw error;
+    }
+  };
+
+  const handleFileUploadComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
+    try {
+      const uploadedFile = result.successful[0];
+      if (!uploadedFile) {
+        throw new Error("No file uploaded");
+      }
+
+      const file = uploadedFile.data as File;
+      const uploadUrl = uploadedFile.uploadURL;
+      const filePath = uploadUrl?.split('?')[0] || '';
+
+      setUploadedFileData({
+        fileUrl: filePath,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+      });
+
+      toast({ title: "Success", description: "Quote document uploaded" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to process uploaded file", variant: "destructive" });
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
   const onSubmitQuote = async (data: QuoteFormValues) => {
+    const payload = {
+      ...data,
+      ...(uploadedFileData && {
+        fileUrl: uploadedFileData.fileUrl,
+        fileName: uploadedFileData.fileName,
+        fileSize: uploadedFileData.fileSize,
+        mimeType: uploadedFileData.mimeType,
+      }),
+    };
+
     if (editingQuote) {
-      await updateQuote.mutateAsync({ quoteId: editingQuote.id, data });
+      await updateQuote.mutateAsync({ quoteId: editingQuote.id, data: payload });
     } else {
-      await createQuote.mutateAsync(data);
+      await createQuote.mutateAsync(payload as QuoteFormValues);
     }
   };
 
@@ -548,6 +616,46 @@ export default function BidDetailPage() {
                   </FormItem>
                 )}
               />
+              
+              <div className="space-y-2">
+                <FormLabel>Quote Document (Optional)</FormLabel>
+                <div className="flex items-center gap-3">
+                  {uploadedFileData ? (
+                    <div className="flex items-center gap-2 p-3 bg-muted rounded-md flex-1">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium flex-1 truncate">{uploadedFileData.fileName}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setUploadedFileData(null)}
+                        data-testid="button-remove-file"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <ObjectUploader
+                      maxNumberOfFiles={1}
+                      maxFileSize={104857600}
+                      allowedFileTypes={["application/pdf", "image/*", ".doc", ".docx", ".xls", ".xlsx"]}
+                      onGetUploadParameters={getUploadParameters}
+                      onComplete={(result) => {
+                        setIsUploadingFile(true);
+                        handleFileUploadComplete(result);
+                      }}
+                      buttonVariant="outline"
+                      testId="button-upload-quote-document"
+                    >
+                      {isUploadingFile ? "Uploading..." : "Upload Document"}
+                    </ObjectUploader>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  PDF, images, or Office documents (max 100MB)
+                </p>
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShowQuoteDialog(false)} data-testid="button-cancel">
                   Cancel
