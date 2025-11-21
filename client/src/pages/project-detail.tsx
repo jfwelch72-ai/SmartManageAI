@@ -11,12 +11,13 @@ import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -1378,6 +1379,46 @@ export default function ProjectDetailPage() {
                                   Import to Takeoff
                                 </Button>
                               )}
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    data-testid={`button-delete-document-${doc.id}`}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-1" />
+                                    Delete
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent data-testid={`dialog-delete-confirm-${doc.id}`}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Document</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to delete "{doc.title || doc.fileName}"? This action cannot be undone and will also remove any takeoff sheets associated with this document.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel data-testid={`button-cancel-delete-${doc.id}`}>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={async () => {
+                                        try {
+                                          await apiRequest("DELETE", `/api/documents/${doc.id}`);
+                                          toast({ title: "Success", description: "Document deleted successfully" });
+                                          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.code}/documents`] });
+                                          await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                        } catch (error: any) {
+                                          const errorMessage = error?.message || error?.error || "Failed to delete document";
+                                          toast({ title: "Error", description: errorMessage, variant: "destructive" });
+                                        }
+                                      }}
+                                      data-testid={`button-confirm-delete-${doc.id}`}
+                                      className="bg-destructive hover:bg-destructive/90"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </div>
                           </div>
                         ))}

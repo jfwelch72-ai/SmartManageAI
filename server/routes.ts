@@ -1926,7 +1926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userRole = req.user!.role;
       const userId = req.user!.id;
 
-      // Get the document
+      // Get the document with project verification
       const [document] = await db
         .select()
         .from(planDocuments)
@@ -1938,16 +1938,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Check if user has permission to delete
-      const hasRoleAccess = userRole === "ADMIN" || userRole === "MANAGER";
-      const isOwner = document.uploadedById === userId;
+      // Verify project exists
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, document.projectId))
+        .limit(1);
 
-      if (!hasRoleAccess && !isOwner) {
-        res.status(403).json({ error: "You do not have permission to delete this document" });
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
         return;
       }
 
-      // Delete the file from object storage if it exists
+      // Check if user has permission to delete
+      // Only Admin and Manager roles can delete documents
+      // This aligns with the RBAC system where these roles have project-level access
+      const canDelete = userRole === "ADMIN" || userRole === "MANAGER";
+      
+      if (!canDelete) {
+        res.status(403).json({ error: "Only administrators and managers can delete documents" });
+        return;
+      }
+
+      // Delete the file from object storage first (before DB deletion)
       if (document.objectKey) {
         try {
           const { ObjectStorageService } = await import("./objectStorage");
@@ -1956,11 +1969,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await objectFile.delete();
         } catch (error) {
           console.error("Error deleting file from object storage:", error);
-          // Continue with database deletion even if storage deletion fails
+          // Don't fail the whole operation if storage deletion fails
+          // The file becomes orphaned but we can clean it up later
         }
       }
 
-      // Delete the document record (cascade will handle related records)
+      // Delete related project_plans (which will cascade delete takeoff_sheets)
+      // This ensures no orphaned plans or sheets remain after document deletion
+      const { projectPlans } = await import("@shared/schema");
+      await db.delete(projectPlans).where(eq(projectPlans.documentId, documentId));
+
+      // Delete the document record
       await db.delete(planDocuments).where(eq(planDocuments.id, documentId));
 
       // Log the deletion
