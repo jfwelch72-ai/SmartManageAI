@@ -161,20 +161,14 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         setIsPdfLoading(true);
         setPdfImage(null);
 
-        // Get presigned URL for this sheet (required for security)
-        const response = await fetch(`/api/takeoff/sheets/${currentSheet.id}/pdf-url`);
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({ error: 'Failed to load PDF' }));
-          throw new Error(error.error || 'Failed to get PDF URL');
-        }
-        
-        const { url: pdfUrl } = await response.json();
-        if (!pdfUrl) {
-          throw new Error('No PDF URL available for this sheet');
-        }
+        // Use the streaming PDF endpoint (authorization handled server-side)
+        const pdfUrl = `/api/takeoff/sheets/${currentSheet.id}/pdf`;
 
-        // Load the PDF document
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        // Load the PDF document - PDF.js will fetch with credentials automatically
+        const loadingTask = pdfjsLib.getDocument({
+          url: pdfUrl,
+          withCredentials: true, // Send cookies for authentication
+        });
         const pdf = await loadingTask.promise;
 
         // Get the first page
@@ -195,7 +189,8 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         // Render the page
         await page.render({
           canvasContext: context,
-          viewport: viewport
+          viewport: viewport,
+          canvas: canvas
         }).promise;
 
         // Convert canvas to image for Konva

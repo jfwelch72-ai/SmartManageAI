@@ -3259,8 +3259,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get presigned URL for a takeoff sheet's PDF
-  app.get("/api/takeoff/sheets/:sheetId/pdf-url", requireAuth, async (req: AuthRequest, res) => {
+  // Stream PDF directly for a takeoff sheet (with authorization)
+  app.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { sheetId } = req.params;
       const { takeoffSheets, projectPlans, planDocuments } = await import("@shared/schema");
@@ -3331,7 +3331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // If document exists and has objectKey, generate presigned URL
+      // If document exists and has objectKey, stream the file
       if (document?.objectKey) {
         const { ObjectStorageService } = await import("./objectStorage");
         const objectStorageService = new ObjectStorageService();
@@ -3339,17 +3339,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
           
-          // Generate presigned URL (valid for 1 hour)
-          const [signedUrl] = await objectFile.getSignedUrl({
-            version: 'v4',
-            action: 'read',
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-
-          res.json({ url: signedUrl });
+          // Stream the file directly to the response with caching
+          await objectStorageService.downloadObject(objectFile, res, 3600); // 1 hour cache
           return;
         } catch (error: any) {
-          console.error("Error generating presigned URL from objectKey:", error);
+          console.error("Error streaming PDF from objectKey:", error);
           
           // If object not found, return 404 instead of 500
           if (error.name === 'ObjectNotFoundError' || error.message?.includes('not found')) {
@@ -3357,7 +3351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
           
-          res.status(500).json({ error: "Failed to generate secure PDF URL" });
+          res.status(500).json({ error: "Failed to load PDF" });
           return;
         }
       }
@@ -3365,8 +3359,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // No valid document/objectKey available - cannot serve PDF securely
       res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
     } catch (error: any) {
-      console.error("Get sheet PDF URL error:", error);
-      res.status(500).json({ error: "Failed to get PDF URL" });
+      console.error("Stream sheet PDF error:", error);
+      res.status(500).json({ error: "Failed to stream PDF" });
     }
   });
 
