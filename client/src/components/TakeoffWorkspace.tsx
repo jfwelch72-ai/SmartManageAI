@@ -455,9 +455,23 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         setDrawingPoints([point]);
         toast({ 
           title: "Drawing Polygon", 
-          description: "Click to add points. Double-click or press Enter to finish." 
+          description: "Click to add points. Click first point to close polygon." 
         });
       } else {
+        // Check if clicking near first point to close polygon (when 3+ points exist)
+        if (drawingPoints.length >= 3) {
+          const firstPoint = drawingPoints[0];
+          const distance = Math.sqrt(
+            Math.pow(point.x - firstPoint.x, 2) + Math.pow(point.y - firstPoint.y, 2)
+          );
+          
+          // If clicking within 10 pixels of first point, close the polygon
+          if (distance < 10) {
+            completePolygon();
+            return;
+          }
+        }
+        
         // Add point to polygon
         setDrawingPoints([...drawingPoints, point]);
       }
