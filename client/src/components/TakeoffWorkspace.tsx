@@ -157,16 +157,16 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         setIsPdfLoading(true);
         setPdfImage(null);
 
-        // Get presigned URL for this sheet
-        let pdfUrl = currentSheet.imageUrl;
-        try {
-          const response = await fetch(`/api/takeoff/sheets/${currentSheet.id}/pdf-url`);
-          if (response.ok) {
-            const data = await response.json();
-            pdfUrl = data.url;
-          }
-        } catch (error) {
-          console.warn('Failed to get presigned URL, using direct URL:', error);
+        // Get presigned URL for this sheet (required for security)
+        const response = await fetch(`/api/takeoff/sheets/${currentSheet.id}/pdf-url`);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: 'Failed to load PDF' }));
+          throw new Error(error.error || 'Failed to get PDF URL');
+        }
+        
+        const { url: pdfUrl } = await response.json();
+        if (!pdfUrl) {
+          throw new Error('No PDF URL available for this sheet');
         }
 
         // Load the PDF document

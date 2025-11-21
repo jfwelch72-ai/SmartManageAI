@@ -3285,7 +3285,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { sheet, plan, document } = sheetData;
 
-      // Check if user has access to this project
+      // Verify project exists and user has access
       const [project] = await db
         .select()
         .from(projects)
@@ -3294,6 +3294,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!project) {
         res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Check if user has permission to access this document
+      const userRole = req.user!.role;
+      const userId = req.user!.id;
+
+      // Admins and Managers have full access
+      const hasRoleAccess = userRole === "ADMIN" || userRole === "MANAGER";
+
+      // Check if user uploaded the document or has explicit permission
+      let hasDocumentAccess = hasRoleAccess;
+      if (!hasDocumentAccess && document) {
+        // Check if user uploaded this document
+        const isUploader = document.uploadedById === userId;
+        
+        // Check for explicit file permission
+        const [permission] = await db
+          .select()
+          .from(filePermissions)
+          .where(
+            and(
+              eq(filePermissions.fileId, document.id),
+              eq(filePermissions.fileType, "DOCUMENT"),
+              eq(filePermissions.userId, userId)
+            )
+          )
+          .limit(1);
+
+        hasDocumentAccess = isUploader || !!permission;
+      }
+
+      if (!hasDocumentAccess) {
+        res.status(403).json({ error: "You do not have permission to access this document" });
         return;
       }
 
@@ -3314,13 +3348,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           res.json({ url: signedUrl });
           return;
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error generating presigned URL from objectKey:", error);
+          
+          // If object not found, return 404 instead of 500
+          if (error.name === 'ObjectNotFoundError' || error.message?.includes('not found')) {
+            res.status(404).json({ error: "PDF file no longer exists. Please re-upload the document." });
+            return;
+          }
+          
+          res.status(500).json({ error: "Failed to generate secure PDF URL" });
+          return;
         }
       }
 
-      // Fallback to direct imageUrl if no document/objectKey
-      res.json({ url: sheet.imageUrl });
+      // No valid document/objectKey available - cannot serve PDF securely
+      res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
     } catch (error: any) {
       console.error("Get sheet PDF URL error:", error);
       res.status(500).json({ error: "Failed to get PDF URL" });

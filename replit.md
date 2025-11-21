@@ -28,14 +28,17 @@ The platform features a modern web stack designed for robustness and comprehensi
     -   **Dashboard**: Real-time KPIs and navigation.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation using OpenAI GPT-4, including role-specific tasks and CFO-level financial analysis.
-    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (linear, area, volume, count, note), measurement persistence, and quantity summaries. Includes document viewing, import of PDF plans with PDF.js rendering on canvas using Vite-compatible worker configuration, and integration with project details.
+    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (linear, area, volume, count, note), measurement persistence, and quantity summaries. Includes document viewing, import of PDF plans with PDF.js rendering on canvas using Vite-compatible worker configuration, secure PDF serving via presigned URLs from object storage to prevent CORS/403 errors, and integration with project details.
 
 ## External Dependencies
 -   **PostgreSQL (Neon)**: Primary database.
--   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.
+-   **Replit Object Storage (Google Cloud Storage backend)**: For file storage with presigned URL generation for secure access.
 -   **OpenAI GPT-4**: Powers the AI Senior PM + CFO system.
 -   **JWT**: For authentication.
 -   **Bcrypt**: For password hashing.
 -   **Uppy**: For file upload progress tracking.
 -   **node-cron**: For scheduling tasks.
 -   **react-konva, konva, pdfjs-dist, xlsx**: For interactive drawing and document processing in the takeoff engine.
+
+## Recent Changes (November 21, 2025)
+-   **PDF Presigned URL System**: Implemented secure PDF serving for takeoff workspace using presigned URLs from object storage to eliminate CORS and 403 access errors. Created `/api/takeoff/sheets/:sheetId/pdf-url` endpoint that generates time-limited signed URLs (1-hour expiry) with proper access control. Frontend updated to fetch presigned URLs before loading PDFs, with no fallback to insecure direct URLs. System handles both documents with objectKey (generates presigned URLs) and legacy data (returns appropriate error messages).
