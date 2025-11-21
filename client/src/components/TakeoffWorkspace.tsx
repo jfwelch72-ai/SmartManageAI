@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
   Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles 
@@ -62,6 +64,14 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [tempMeasurements, setTempMeasurements] = useState<any[]>([]);
   
+  // Note tool state
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [notePosition, setNotePosition] = useState<{ x: number; y: number } | null>(null);
+  const [noteText, setNoteText] = useState("");
+  
+  // Select tool state
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -101,6 +111,24 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     },
   });
 
+  // Mutation for deleting measurements
+  const deleteMeasurementMutation = useMutation({
+    mutationFn: async (measurementId: string) => {
+      return await apiRequest({
+        url: `/api/takeoff/measurements/${measurementId}`,
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      setSelectedMeasurementId(null);
+      toast({ title: "Success", description: "Measurement deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete measurement", variant: "destructive" });
+    },
+  });
+
   const currentSheet = sheets.find(s => s.id === selectedSheet);
 
   const handleToolSelect = (tool: Tool) => {
@@ -122,6 +150,15 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     // Transform pointer position to sheet space (accounting for pan/zoom)
     const transform = stage.getAbsoluteTransform().copy().invert();
     const point = transform.point(pointerPosition);
+    
+    // Clear selection when clicking empty space with select tool
+    // Only clear if clicking the stage itself, not a shape
+    if (activeTool === "select") {
+      if (e.target === stage) {
+        setSelectedMeasurementId(null);
+      }
+      return;
+    }
     
     if (activeTool === "calibrate") {
       if (calibrationMode === "first-point") {
@@ -220,6 +257,15 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         points: [point],
         label: `Count ${measurements.filter(m => m.type === "COUNT").length + 1}`,
       });
+    } else if (activeTool === "note") {
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      
+      // Open dialog to enter note text
+      setNotePosition(point);
+      setNoteDialogOpen(true);
     }
   };
 
@@ -329,6 +375,25 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     setDrawingPoints([]);
   };
 
+  const handleSaveNote = () => {
+    if (!noteText.trim() || !notePosition || !selectedSheet) {
+      toast({ title: "Error", description: "Enter note text", variant: "destructive" });
+      return;
+    }
+
+    createMeasurementMutation.mutate({
+      sheetId: selectedSheet,
+      type: "NOTE",
+      points: [notePosition],
+      label: noteText,
+    });
+
+    toast({ title: "Note Added", description: "Note saved successfully" });
+    setNoteDialogOpen(false);
+    setNoteText("");
+    setNotePosition(null);
+  };
+
   // Add keyboard handler for completing polygon (only when drawing)
   useEffect(() => {
     if (!isDrawing) return;
@@ -426,14 +491,25 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                 {/* Saved measurements */}
                 {measurements.map((m) => {
                   const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                  const isSelected = selectedMeasurementId === m.id;
+                  
+                  const handleMeasurementClick = (e: any) => {
+                    if (activeTool === "select") {
+                      e.cancelBubble = true;
+                      e.evt.stopPropagation();
+                      setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id);
+                    }
+                  };
                   
                   if (m.type === "LINEAR" && points.length >= 2) {
                     return (
                       <Line
                         key={m.id}
                         points={[points[0].x, points[0].y, points[1].x, points[1].y]}
-                        stroke="#2563eb"
-                        strokeWidth={3}
+                        stroke={isSelected ? "#3b82f6" : "#2563eb"}
+                        strokeWidth={isSelected ? 5 : 3}
+                        onClick={handleMeasurementClick}
+                        onTap={handleMeasurementClick}
                       />
                     );
                   } else if (m.type === "AREA" && points.length >= 3) {
@@ -442,10 +518,26 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                       <Line
                         key={m.id}
                         points={flatPoints}
-                        stroke="#16a34a"
-                        strokeWidth={3}
-                        fill="rgba(22, 163, 74, 0.1)"
+                        stroke={isSelected ? "#22c55e" : "#16a34a"}
+                        strokeWidth={isSelected ? 5 : 3}
+                        fill={isSelected ? "rgba(34, 197, 94, 0.2)" : "rgba(22, 163, 74, 0.1)"}
                         closed={true}
+                        onClick={handleMeasurementClick}
+                        onTap={handleMeasurementClick}
+                      />
+                    );
+                  } else if (m.type === "VOLUME" && points.length >= 3) {
+                    const flatPoints = points.flatMap((p: any) => [p.x, p.y]);
+                    return (
+                      <Line
+                        key={m.id}
+                        points={flatPoints}
+                        stroke={isSelected ? "#fb923c" : "#ea580c"}
+                        strokeWidth={isSelected ? 5 : 3}
+                        fill={isSelected ? "rgba(251, 146, 60, 0.2)" : "rgba(234, 88, 12, 0.1)"}
+                        closed={true}
+                        onClick={handleMeasurementClick}
+                        onTap={handleMeasurementClick}
                       />
                     );
                   } else if (m.type === "COUNT" && points.length >= 1) {
@@ -454,11 +546,42 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                         key={m.id}
                         x={points[0].x}
                         y={points[0].y}
-                        radius={12}
+                        radius={isSelected ? 14 : 12}
                         fill="#dc2626"
-                        stroke="white"
-                        strokeWidth={2}
+                        stroke={isSelected ? "#3b82f6" : "white"}
+                        strokeWidth={isSelected ? 3 : 2}
+                        onClick={handleMeasurementClick}
+                        onTap={handleMeasurementClick}
                       />
+                    );
+                  } else if (m.type === "NOTE" && points.length >= 1) {
+                    return (
+                      <>
+                        {/* Note pin */}
+                        <Circle
+                          key={`${m.id}-pin`}
+                          x={points[0].x}
+                          y={points[0].y}
+                          radius={isSelected ? 10 : 8}
+                          fill="#f59e0b"
+                          stroke={isSelected ? "#3b82f6" : "white"}
+                          strokeWidth={isSelected ? 3 : 2}
+                          onClick={handleMeasurementClick}
+                          onTap={handleMeasurementClick}
+                        />
+                        {/* Note label */}
+                        <Text
+                          key={`${m.id}-text`}
+                          x={points[0].x + 15}
+                          y={points[0].y - 5}
+                          text={m.label || "Note"}
+                          fontSize={isSelected ? 14 : 12}
+                          fill={isSelected ? "#3b82f6" : "#f59e0b"}
+                          fontStyle="bold"
+                          onClick={handleMeasurementClick}
+                          onTap={handleMeasurementClick}
+                        />
+                      </>
                     );
                   }
                   return null;
@@ -590,21 +713,42 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                     {measurements.map((m) => (
                       <div 
                         key={m.id} 
-                        className="p-3 rounded-md bg-muted hover-elevate cursor-pointer"
+                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${
+                          selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''
+                        }`}
+                        onClick={() => setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id)}
                         data-testid={`measurement-item-${m.id}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">{m.label || "Untitled"}</span>
-                          <Badge variant="outline">{m.type}</Badge>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+                            <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMeasurementMutation.mutate(m.id);
+                            }}
+                            data-testid={`button-delete-measurement-${m.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
                         </div>
-                        {(m.computedLengthFt || m.computedAreaFt2 || m.computedVolumeCy) && (
-                          <p className="text-sm text-muted-foreground mt-1">
+                        {(m.computedLengthFt || m.computedAreaFt2 || m.computedVolumeCy || m.type === "COUNT" || m.type === "NOTE") && (
+                          <p className="text-sm text-muted-foreground">
                             {m.type === "LINEAR" && m.computedLengthFt 
                               ? `${m.computedLengthFt.toFixed(2)} LF`
                               : m.type === "AREA" && m.computedAreaFt2
                               ? `${m.computedAreaFt2.toFixed(2)} SF`
                               : m.type === "VOLUME" && m.computedVolumeCy
                               ? `${m.computedVolumeCy.toFixed(2)} CY`
+                              : m.type === "COUNT"
+                              ? "Count marker"
+                              : m.type === "NOTE"
+                              ? "Note"
                               : ""}
                           </p>
                         )}
@@ -659,6 +803,47 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           </div>
         </ScrollArea>
       </div>
+
+      {/* Note Dialog */}
+      <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
+        <DialogContent data-testid="dialog-note">
+          <DialogHeader>
+            <DialogTitle>Add Note</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="note-text">Note Text</Label>
+              <Textarea
+                id="note-text"
+                placeholder="Enter your note here..."
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                data-testid="input-note-text"
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setNoteDialogOpen(false);
+                setNoteText("");
+                setNotePosition(null);
+              }}
+              data-testid="button-cancel-note"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveNote}
+              data-testid="button-save-note"
+            >
+              Save Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
