@@ -3235,12 +3235,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sheetName: document.title,
       }).returning();
 
-      await logAudit({
-        userId: req.user!.id,
-        action: "CREATE",
-        resourceType: "project_plan",
-        resourceId: plan.id,
-        details: `Imported plan document to takeoff: ${document.title}`,
+      await logCreate(req.user!.id, "project_plans", plan.id, {
+        projectId,
+        fileName: document.fileName,
+        documentId,
       });
 
       res.status(201).json({ plan, sheet });

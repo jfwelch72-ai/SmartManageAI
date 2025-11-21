@@ -1365,9 +1365,11 @@ export default function ProjectDetailPage() {
                                     try {
                                       await apiRequest("POST", `/api/projects/${project!.id}/takeoff/import-plan`, { documentId: doc.id });
                                       toast({ title: "Success", description: "Plan imported to takeoff workspace" });
-                                      queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
-                                    } catch (error) {
-                                      toast({ title: "Error", description: "Failed to import plan", variant: "destructive" });
+                                      await queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                      await queryClient.refetchQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                    } catch (error: any) {
+                                      const errorMessage = error?.message || error?.error || "Failed to import plan";
+                                      toast({ title: "Error", description: errorMessage, variant: "destructive" });
                                     }
                                   }}
                                   data-testid={`button-import-takeoff-${doc.id}`}
