@@ -4,8 +4,8 @@
 The TFR Construction Management Platform is a comprehensive internal tool designed for TFR Construction. Its primary purpose is to manage the entire project lifecycle, from bid tracking through project completion, using TypeScript, React, and PostgreSQL. The platform aims to centralize project data, user management, and daily operations to enhance efficiency and oversight across all construction activities. Key ambitions include improving compliance tracking, leveraging AI for operations, streamlining crew and subcontractor management, and ensuring robust data quality monitoring.
 
 ## Recent Changes (November 21, 2025)
-### Takeoff + Estimating Engine - Drawing Tools Complete (19/27 tasks)
-**Foundation + Interactive Drawing Status**: Database, backend, UI scaffold, and core measurement tools COMPLETE ✅
+### Takeoff + Estimating Engine - All Drawing Tools Complete (23/27 tasks)
+**Foundation + Interactive Drawing + Selection Status**: Database, backend, UI scaffold, all measurement tools, and selection/deletion workflows COMPLETE ✅
 
 1. **Database Schema**: Added 12 new tables for complete takeoff and estimating system (project_plans, takeoff_sheets, takeoff_measurements, project_specs, project_spec_index, estimate_settings, estimate_crews, estimate_line_items, estimate_versions, estimate_vendor_quotes, estimate_history)
 2. **Backend API**: Implemented core takeoff endpoints - plan upload, sheet retrieval, measurement CRUD, calibration updates
@@ -27,11 +27,25 @@ The TFR Construction Management Platform is a comprehensive internal tool design
    - **Area Tool**: Multi-click polygon drawing with shoelace formula area calculation (SF), double-click or Enter to complete, Escape to cancel
    - **Volume Tool**: Same polygon interaction as area with default 12" depth (depth input UI pending)
    - **Count Tool**: Single-click marker placement with auto-numbering and coordinate tracking
+   - **Note Tool**: Single-click pin placement with text dialog, orange pins with labels rendered on canvas
    - **Coordinate System**: Sheet-space normalization using stage transform inversion for pan/zoom independence - all measurements remain accurate regardless of viewport position
-   - **Visual Feedback**: Color-coded drawing states (blue=linear, green=area, orange=volume, red=count) with dashed lines for in-progress polygons
+   - **Visual Feedback**: Color-coded drawing states (blue=linear, green=area, orange=volume, red=count, orange=note) with dashed lines for in-progress polygons
    - **Keyboard Controls**: Enter to finish polygon, Escape to cancel drawing, optimized event listeners scoped to active drawing state
    - **Backend Persistence**: All measurements saved to database via API with type, points, labels, and calculated quantities
-7. **Next Phase**: Note tool implementation, measurement editing/deletion, measurements list UI, quantity summary aggregation, PDF rendering, AI auto-takeoff (8 remaining tasks)
+7. **Selection & Deletion System**: Complete measurement selection and management workflow:
+   - **Select Tool**: Activate to select measurements from canvas or sidebar list
+   - **Canvas Selection**: Click any measurement shape (lines, polygons, circles, text) to select with proper event handling (cancelBubble and stopPropagation)
+   - **List Selection**: Click measurement items in sidebar to toggle selection
+   - **Visual Highlighting**: Selected measurements show enhanced visuals on canvas (brighter colors, thicker strokes, larger sizes) and ring indicator in sidebar list
+   - **Delete Functionality**: Trash button in measurements list removes selected measurements from database, canvas, and updates quantity summary
+   - **Clear Selection**: Click empty canvas space to deselect all measurements
+   - **Event Flow**: Proper Konva event propagation with stage target checking to prevent unwanted deselection
+8. **Measurements List & Quantity Summary**: Complete sidebar UI for measurement management:
+   - **Measurements List**: All saved measurements displayed with type, label, calculated quantity, and delete button
+   - **Interactive List**: Click to select, visual ring indicator for selected items, synchronized with canvas
+   - **Quantity Summary**: Real-time aggregated totals by measurement type (Linear: ft, Area: SF, Volume: CY, Count: total)
+   - **Auto-Update**: Summary recalculates automatically when measurements are added or deleted
+9. **Next Phase**: PDF rendering integration, measurement editing (modify existing measurements), AI auto-takeoff (AI-powered quantity extraction from plans), full estimating engine with cost database and crew builder (4 remaining tasks)
 
 ### Time Clock & Calendar Fixes (Completed)
 1. **Time Entries Page Fix**: Fixed crash caused by API returning `{data: [...], pagination: {...}}` but frontend expecting direct array
