@@ -193,11 +193,43 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     ? `${Math.round((totalMaterialCost / budgetedMaterials) * 100)}% of budget`
     : 'Unknown';
 
-  // Calculate billing urgency based on textura draw date
+  // Calculate billing urgency based on recurring draw schedule or override date
   let billingUrgency: 'CRITICAL' | 'HIGH' | null = null;
   let daysUntilDraw: number | null = null;
+  
+  // Helper function to calculate next draw date from recurring day
+  const calculateNextDrawDate = (dayOfMonth: number): Date => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    
+    // Try current month first
+    let nextDraw = new Date(year, month, dayOfMonth);
+    
+    // If the date has passed this month, use next month
+    if (nextDraw <= today) {
+      nextDraw = new Date(year, month + 1, dayOfMonth);
+    }
+    
+    // Handle months with fewer days (e.g., day 31 in February becomes last day of month)
+    if (nextDraw.getDate() !== dayOfMonth) {
+      nextDraw = new Date(year, month + (nextDraw <= today ? 2 : 1), 0); // Last day of month
+    }
+    
+    return nextDraw;
+  };
+  
+  // Determine which draw date to use: override takes precedence, then recurring
+  let drawDate: Date | null = null;
   if (project.texturaDrawDate) {
-    const drawDate = new Date(project.texturaDrawDate);
+    // Use the override date if set
+    drawDate = new Date(project.texturaDrawDate);
+  } else if (project.drawDayOfMonth) {
+    // Calculate next draw based on recurring day
+    drawDate = calculateNextDrawDate(project.drawDayOfMonth);
+  }
+  
+  if (drawDate) {
     const diffDays = Math.ceil((drawDate.getTime() - now.getTime()) / 86400000);
     daysUntilDraw = diffDays;
     if (diffDays <= 3) {
