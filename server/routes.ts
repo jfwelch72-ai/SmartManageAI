@@ -3174,6 +3174,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Import a plan document to takeoff workspace
+  app.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { documentId } = req.body;
+
+      if (!documentId) {
+        res.status(400).json({ error: "Document ID is required" });
+        return;
+      }
+
+      const { planDocuments, projectPlans, takeoffSheets } = await import("@shared/schema");
+
+      // Get the document
+      const [document] = await db
+        .select()
+        .from(planDocuments)
+        .where(eq(planDocuments.id, documentId))
+        .limit(1);
+
+      if (!document) {
+        res.status(404).json({ error: "Document not found" });
+        return;
+      }
+
+      if (document.projectId !== projectId) {
+        res.status(403).json({ error: "Document does not belong to this project" });
+        return;
+      }
+
+      // Check if this document is already imported
+      const [existingPlan] = await db
+        .select()
+        .from(takeoffSheets)
+        .where(and(
+          eq(takeoffSheets.projectId, projectId),
+          eq(takeoffSheets.sheetName, document.title)
+        ))
+        .limit(1);
+
+      if (existingPlan) {
+        res.status(400).json({ error: "This document is already imported to takeoff workspace" });
+        return;
+      }
+
+      // Create project plan record
+      const [plan] = await db.insert(projectPlans).values({
+        projectId,
+        originalPdfUrl: document.fileUrl,
+        fileName: document.fileName,
+      }).returning();
+
+      // Create takeoff sheet (single sheet for now - PDF processing would create multiple)
+      const [sheet] = await db.insert(takeoffSheets).values({
+        projectId,
+        planId: plan.id,
+        imageUrl: document.fileUrl,
+        sheetIndex: 0,
+        sheetName: document.title,
+      }).returning();
+
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE",
+        resourceType: "project_plan",
+        resourceId: plan.id,
+        details: `Imported plan document to takeoff: ${document.title}`,
+      });
+
+      res.status(201).json({ plan, sheet });
+    } catch (error) {
+      console.error("Error importing plan to takeoff:", error);
+      res.status(500).json({ error: "Failed to import plan to takeoff" });
+    }
+  });
+
   // Upload a plan PDF and create sheets
   app.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {

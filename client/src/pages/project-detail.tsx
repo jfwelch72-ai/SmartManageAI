@@ -11,7 +11,7 @@ import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -1323,14 +1323,60 @@ export default function ProjectDetailPage() {
                     ) : (
                       <div className="space-y-2">
                         {documents.map(doc => (
-                          <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate" data-testid={`document-${doc.id}`}>
-                            <div>
+                          <div key={doc.id} className="flex items-center justify-between p-3 border rounded-md hover-elevate gap-4" data-testid={`document-${doc.id}`}>
+                            <div className="flex-1">
                               <p className="font-medium text-sm">{doc.title}</p>
                               <p className="text-xs text-muted-foreground">
                                 Uploaded {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
                               </p>
                             </div>
                             <Badge variant="outline">{doc.type}</Badge>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => window.open(doc.fileUrl, '_blank')}
+                                data-testid={`button-view-document-${doc.id}`}
+                              >
+                                <Eye className="w-4 h-4 mr-1" />
+                                View
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = doc.fileUrl;
+                                  link.download = doc.fileName;
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  document.body.removeChild(link);
+                                }}
+                                data-testid={`button-download-document-${doc.id}`}
+                              >
+                                <Download className="w-4 h-4 mr-1" />
+                                Download
+                              </Button>
+                              {doc.type === "PLANS" && (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={async () => {
+                                    try {
+                                      await apiRequest("POST", `/api/projects/${project!.id}/takeoff/import-plan`, { documentId: doc.id });
+                                      toast({ title: "Success", description: "Plan imported to takeoff workspace" });
+                                      queryClient.invalidateQueries({ queryKey: [`/api/projects/${project!.id}/takeoff/sheets`] });
+                                    } catch (error) {
+                                      toast({ title: "Error", description: "Failed to import plan", variant: "destructive" });
+                                    }
+                                  }}
+                                  data-testid={`button-import-takeoff-${doc.id}`}
+                                >
+                                  <FileText className="w-4 h-4 mr-1" />
+                                  Import to Takeoff
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
