@@ -194,26 +194,41 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // Mutation for creating/updating categories
   const saveCategoryMutation = useMutation({
     mutationFn: async (data: { id?: string; name: string; color: string; displayOrder?: number }) => {
+      let response;
       if (data.id) {
-        return await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, { 
+        response = await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, { 
           name: data.name, 
           color: data.color 
         });
       } else {
-        return await apiRequest("POST", `/api/projects/${projectCode}/quantity-categories`, { 
+        response = await apiRequest("POST", `/api/projects/${projectCode}/quantity-categories`, { 
           name: data.name, 
           color: data.color, 
           displayOrder: categories.length 
         });
       }
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any, variables) => {
+      console.log("Category mutation success - data:", data, "variables:", variables);
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
       setCategoryDialogOpen(false);
       setEditingCategory(null);
       setCategoryName("");
       setCategoryColor("#3b82f6");
-      toast({ title: "Success", description: editingCategory ? "Category updated" : "Category created" });
+      
+      // Auto-select newly created category for immediate use
+      if (!variables.id && data?.id) {
+        console.log("Auto-selecting category:", data.id);
+        setSelectedCategoryId(data.id);
+        toast({ 
+          title: "Success", 
+          description: "Category created and selected for measurements" 
+        });
+      } else {
+        console.log("Category update or missing ID - data:", data);
+        toast({ title: "Success", description: "Category updated" });
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save category", variant: "destructive" });
@@ -868,7 +883,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               <SelectTrigger className="w-64" data-testid="select-sheet">
                 <SelectValue placeholder="Select a sheet..." />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent container={workspaceRef.current}>
                 {sheets.map((sheet) => (
                   <SelectItem key={sheet.id} value={sheet.id}>
                     {sheet.sheetName}
@@ -1154,7 +1169,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         <SelectTrigger className="w-20">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent container={workspaceRef.current}>
                           <SelectItem value="ft">ft</SelectItem>
                           <SelectItem value="m">m</SelectItem>
                         </SelectContent>
@@ -1175,10 +1190,10 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             )}
             
             {/* Preset Scale Panel */}
-            {selectedSheet && !currentSheet?.scalePxPerFoot && (
+            {selectedSheet && (
               <Card>
                 <CardContent className="pt-6 space-y-4">
-                  <h3 className="font-semibold text-sm">Or Use Preset Scale</h3>
+                  <h3 className="font-semibold text-sm">{currentSheet?.scalePxPerFoot ? "Recalibrate with Preset Scale" : "Or Use Preset Scale"}</h3>
                   <p className="text-xs text-muted-foreground">Select a common architectural, civil, or structural scale</p>
                   <div>
                     <Label>Scale Category</Label>
@@ -1192,7 +1207,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                       <SelectTrigger data-testid="select-scale-category">
                         <SelectValue placeholder="Select category..." />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent container={workspaceRef.current}>
                         <SelectItem value="architectural">Architectural</SelectItem>
                         <SelectItem value="civil">Civil/Site</SelectItem>
                         <SelectItem value="structural">Structural</SelectItem>
@@ -1209,7 +1224,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         <SelectTrigger data-testid="select-preset-scale">
                           <SelectValue placeholder="Select scale..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent container={workspaceRef.current}>
                           {COMMON_SCALES[scaleCategory as keyof typeof COMMON_SCALES].map((scale) => (
                             <SelectItem key={scale.label} value={scale.label}>
                               {scale.label} - {scale.description}
@@ -1247,52 +1262,54 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                       Add
                     </Button>
                   </div>
-                  <div className="space-y-2">
-                    {categories.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-2">
-                        No categories yet. Create one to organize measurements.
-                      </p>
-                    ) : (
-                      categories.map((category) => (
-                        <div 
-                          key={category.id}
-                          className="flex items-center justify-between p-2 rounded border hover-elevate"
-                          style={{ borderLeft: `4px solid ${category.color}` }}
-                        >
-                          <div className="flex items-center gap-2 flex-1">
-                            <div 
-                              className="w-4 h-4 rounded"
-                              style={{ backgroundColor: category.color }}
-                            />
-                            <span className="text-sm">{category.name}</span>
+                  {categories.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      No categories yet. Create one to organize measurements.
+                    </p>
+                  ) : (
+                    <ScrollArea className="max-h-[300px]">
+                      <div className="space-y-2 pr-4">
+                        {categories.map((category) => (
+                          <div 
+                            key={category.id}
+                            className="flex items-center justify-between p-2 rounded border hover-elevate"
+                            style={{ borderLeft: `4px solid ${category.color}` }}
+                          >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <div 
+                                className="w-4 h-4 rounded flex-shrink-0"
+                                style={{ backgroundColor: category.color }}
+                              />
+                              <span className="text-sm truncate">{category.name}</span>
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6"
+                                onClick={() => {
+                                  setEditingCategory(category);
+                                  setCategoryDialogOpen(true);
+                                }}
+                                data-testid={`button-edit-category-${category.id}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6"
+                                onClick={() => handleDeleteCategory(category.id)}
+                                data-testid={`button-delete-category-${category.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => {
-                                setEditingCategory(category);
-                                setCategoryDialogOpen(true);
-                              }}
-                              data-testid={`button-edit-category-${category.id}`}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => handleDeleteCategory(category.id)}
-                              data-testid={`button-delete-category-${category.id}`}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -1311,7 +1328,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                       <SelectTrigger id="category-select" data-testid="select-category">
                         <SelectValue placeholder="Select category (optional)" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent container={workspaceRef.current}>
                         <SelectItem value="none">None</SelectItem>
                         {categories.map((cat) => (
                           <SelectItem key={cat.id} value={cat.id}>
