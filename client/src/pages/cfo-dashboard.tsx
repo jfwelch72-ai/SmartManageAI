@@ -222,7 +222,7 @@ export default function CFODashboard() {
                   {projectsWithDrawDateAlerts.map(project => (
                     <div 
                       key={project.project_code}
-                      onClick={() => setLocation(`/projects/${project.project_code}`)}
+                      onClick={() => setLocation(`/projects/${project.project_code}?from=cfo`)}
                       className={`flex items-center justify-between p-3 bg-background rounded-md cursor-pointer hover-elevate active-elevate-2 ${
                         project.billingUrgency === 'CRITICAL' ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-yellow-500'
                       }`}
@@ -284,7 +284,7 @@ export default function CFODashboard() {
                   {projectsMissingBudget.map(project => (
                     <div 
                       key={project.project_code}
-                      onClick={() => setLocation(`/projects/${project.project_code}`)}
+                      onClick={() => setLocation(`/projects/${project.project_code}?from=cfo`)}
                       className="flex items-center justify-between p-2 bg-background rounded-md cursor-pointer hover-elevate active-elevate-2"
                       data-testid={`missing-budget-${project.project_code}`}
                     >
@@ -328,7 +328,7 @@ export default function CFODashboard() {
                     return (
                       <Card 
                         key={project.project_code}
-                        onClick={() => setLocation(`/projects/${project.project_code}`)}
+                        onClick={() => setLocation(`/projects/${project.project_code}?from=cfo`)}
                         className={`cursor-pointer hover-elevate active-elevate-2 ${!hasBudget ? 'border-yellow-500' : ''}`}
                         data-testid={`card-project-${project.project_code}`}
                       >

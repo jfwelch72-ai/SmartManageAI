@@ -239,6 +239,12 @@ export default function ProjectDetailPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   
+  // Check if coming from CFO dashboard
+  const searchParams = new URLSearchParams(window.location.search);
+  const fromCFO = searchParams.get('from') === 'cfo';
+  const backPath = fromCFO ? '/cfo' : '/projects';
+  const backLabel = fromCFO ? 'Back to CFO' : 'Back to Projects';
+  
   const projectCode = params?.code || "";
   const { data: project, isLoading: projectLoading } = useProject(projectCode);
   const { data: scopeItems = [], isLoading: scopeLoading } = useScopeItems(projectCode);
@@ -540,8 +546,8 @@ export default function ProjectDetailPage() {
         />
         <div className="flex flex-col items-center justify-center h-96">
           <p className="text-muted-foreground mb-4">Project not found</p>
-          <Button onClick={() => setLocation('/projects')} data-testid="button-back-to-projects">
-            Back to Projects
+          <Button onClick={() => setLocation(backPath)} data-testid="button-back-to-projects">
+            {backLabel}
           </Button>
         </div>
       </div>
@@ -559,8 +565,8 @@ export default function ProjectDetailPage() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
-            <Button variant="ghost" onClick={() => setLocation('/projects')} data-testid="button-back">
-              ← Back to Projects
+            <Button variant="ghost" onClick={() => setLocation(backPath)} data-testid="button-back">
+              ← {backLabel}
             </Button>
           </div>
           <div className="flex items-start justify-between gap-4 flex-wrap">
