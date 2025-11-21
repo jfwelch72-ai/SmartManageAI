@@ -1,0 +1,377 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React Engineer, Drizzle ORM Specialist, and Production Refactor Lead.
+
+You are working on the **TFR Construction Management Platform**.
+
+You MUST use the current code in this repo and the findings from:
+- PRODUCTION_AUDIT_REPORT.md
+- The summary of endpoints and errors provided in the latest analysis
+
+You are running on **Replit** with:
+- Database driver: `drizzle-orm/neon-http` + `@neondatabase/serverless`
+- IMPORTANT: This driver **does NOT support transactions**.
+
+Your mission is to:
+1. REMOVE ALL remaining `db.transaction()` usage.
+2. FIX ALL TypeScript errors (server + client).
+3. FIX audit logging signature mismatches.
+4. KEEP all existing features and business logic intact.
+5. Make the app fully production-ready in this Replit/HTTP-driver environment.
+
+Do NOT introduce new technologies. Work with what’s here.
+
+=================================================================
+GLOBAL RULES
+=================================================================
+
+- Do NOT create a new project.
+- Do NOT remove or cripple any existing feature.
+- Do NOT change route URLs or core semantics.
+- Preserve ALL existing business workflows (change orders, time entries, crews, skills, takeoff, etc.).
+- Where transactions were used, preserve logical integrity through careful operation ordering and defensive checks.
+- At the end, there must be:
+  - ✅ 0 uses of `db.transaction`
+  - ✅ 0 TypeScript errors in server or client
+  - ✅ All relevant flows working at runtime
+
+Use the PROVEN bid-conversion refactor pattern as your template.
+
+=================================================================
+PHASE 1 — FIX TYPESCRIPT ERRORS (ALL OF THEM)
+=================================================================
+
+First, fix ALL TypeScript errors reported in the latest check:
+
+Summary of errors (per the last analysis):
+- server/aiRoutes.ts: ~25 errors
+  - Missing `AuthRequest` typing
+  - Incorrect `logUpdate` / `logCreate` signatures
+  - `req.user` property type issues
+- server/routes.ts: ~28 errors
+  - Drizzle schema type mismatches
+  - Optional fields not handled properly in inserts/updates
+- server/timeClockRoutes.ts: ~4 errors
+  - Query builder / `.where()` usage issues
+- server/changeOrderRoutes.ts: 1 error
+  - Implicit `any` on parameter
+- client/*: multiple TS errors (but app runs with `npm run dev`)
+
+Do the following:
+
+1. **Standardize the AuthRequest type**
+   - Locate the existing `AuthRequest` (likely in an auth or middleware file).
+   - Ensure `AuthRequest` extends `Request` and includes a properly typed `user` property:
+     - `user.id`
+     - `user.role`
+     - Any other fields currently being accessed.
+   - Import and use `AuthRequest` in:
+     - server/aiRoutes.ts
+     - server/routes.ts
+     - server/timeClockRoutes.ts
+     - server/changeOrderRoutes.ts
+     - Any other route files accessing `req.user`.
+
+2. **Fix Drizzle schema mismatches in server/routes.ts**
+   - For each TypeScript error involving `.insert(...)`, `.update(...)`, or `.where(...)`:
+     - Ensure the payload matches the schema exactly, including required and optional fields.
+     - Use `InferInsertModel` / `InferSelectModel` where appropriate to avoid manual shape drift.
+     - Make sure optional fields are handled with:
+       - `undefined` checks
+       - Default values
+       - Safe narrowing before insert/update.
+   - Fix any incorrect property names or non-existent columns.
+
+3. **Fix query builder issues in server/timeClockRoutes.ts**
+   - Errors like “Property 'where' does not exist” indicate incorrect chaining or wrong Drizzle APIs being used.
+   - Update those queries to the correct Drizzle patterns (consistent with working routes in server/routes.ts).
+
+4. **Fix audit logger signature mismatches in server/aiRoutes.ts**
+   - Determine the ACTUAL signature of `logUpdate` and `logCreate` (from the central audit logger helper).
+   - Update ALL calls in aiRoutes.ts to match that signature exactly.
+   - Ensure types line up and there are no `any` leaks or mismatches.
+
+5. **Fix implicit any in server/changeOrderRoutes.ts**
+   - Add proper typings to the parameter(s) flagged as implicit `any`.
+   - Prefer using your shared types / zod schema types where possible.
+
+6. **Fix client TypeScript errors**
+   - Run the type checker and systematically fix each TS error on the client side without changing the intended UI/UX behavior:
+     - Adjust prop types
+     - Tighten or broaden generics as needed
+     - Add missing null checks
+     - Use proper discriminated unions where needed
+
+Only proceed to the next phase once:
+- `npm run typecheck` (or equivalent) runs with **zero** TypeScript errors.
+
+=================================================================
+PHASE 2 — REMOVE ALL db.transaction() USAGE (HTTP DRIVER SAFE)
+=================================================================
+
+Because `drizzle-orm/neon-http` does NOT support transactions, you must remove ALL `db.transaction()` calls and convert them to **sequential operations** that are safe for this environment.
+
+You already have a PROVEN pattern from the refactored bid conversion:
+
+- BEFORE (transaction):
+  - `await db.transaction(async (tx) => { ... })`
+- AFTER (working, E2E-tested):
+  - Sequential calls using `db` only
+  - `logAudit` called WITHOUT `tx`
+
+Use this pattern as the template.
+
+Refactor **every endpoint listed below**, preserving behavior and audit logging.
+
+---
+
+### A. Time Entry CRUD (Payroll-Critical)
+
+File: `server/routes.ts`
+
+Endpoints using `db.transaction()`:
+1. Line ~1731: `POST /api/time-entries` — Create time entry with audit
+2. Line ~1804: `PATCH /api/time-entries/:id` — Update time entry with audit
+3. Line ~1862: `DELETE /api/time-entries/:id` — Delete time entry with audit
+4. Line ~1891: `POST /api/time-entries/:id/approve` — Approve time entry with audit
+
+Refactor plan:
+- Remove `db.transaction` wrappers.
+- Replace with sequential `await db.insert(...)`, `await db.update(...)`, `await db.delete(...)` calls.
+- Keep the logical order:
+  - Validate inputs
+  - Verify existence and permissions
+  - Perform inserts/updates/deletes
+  - Write audit log entries LAST
+- If a failure occurs mid-way:
+  - Throw an error and return a proper HTTP error
+  - Log enough context for manual reconciliation
+
+---
+
+### B. Change Order State Machine (Business-Critical)
+
+File: `server/changeOrderRoutes.ts`
+
+Endpoints using `db.transaction()`:
+15. Line ~125: `POST /api/change-orders/:id/request-approval` — DRAFT → PENDING_APPROVAL with audit + notifications
+16. Line ~185: `POST /api/change-orders/:id/submit` — PENDING_APPROVAL → SUBMITTED with audit + notifications
+17. Line ~245: `POST /api/change-orders/:id/approve` — SUBMITTED → APPROVED with audit + notifications
+18. Line ~315: `POST /api/change-orders/:id/reject` — Any → REJECTED with audit + notifications
+19. Line ~385: `POST /api/change-orders/:id/return-to-draft` — Any → DRAFT with audit + notifications
+
+Refactor plan:
+- For each of these routes:
+  - Remove the `db.transaction` wrapper.
+  - Perform operations sequentially:
+    1. Validate current state and requested transition.
+    2. Update the `changeOrders` row with the new state, amounts, etc.
+    3. Create any related records (notifications, events) with separate inserts.
+    4. Append audit log entries at the end.
+  - If there was logic relying on rollback:
+    - Replace it with:
+      - Pre-checks (so we fail early before mutating)
+      - Additional verification queries before updates
+- Ensure that illegal transitions still throw 4xx errors.
+- Update tests or add tests to verify state transitions.
+
+---
+
+### C. Crew Management (Medium Priority, But Needed)
+
+File: `server/routes.ts`
+
+Endpoints using `db.transaction()`:
+5. Line ~3264: `POST /api/crews` — Create crew with audit
+6. Line ~3309: `PATCH /api/crews/:id` — Update crew with audit
+7. Line ~3341: `DELETE /api/crews/:id` — Delete crew with audit
+8. Line ~3410: `POST /api/crews/:id/members` — Add crew member with audit
+9. Line ~3455: `DELETE /api/crews/:id/members/:userId` — Remove crew member with audit
+
+Refactor plan:
+- Remove `db.transaction` wrappers.
+- For each route:
+  - Validate crew/project existence first.
+  - Perform the create/update/delete for crews and crew members using sequential `db` calls.
+  - Log the audit entry after DB operations succeed.
+
+---
+
+### D. Skill & User Skill Management
+
+File: `server/routes.ts`
+
+Endpoints using `db.transaction()`:
+10. Line ~3658: `DELETE /api/skills/:id` — Delete skill with audit
+11. Line ~3716: `POST /api/users/:userId/skills` — Assign skill to user with audit
+12. Line ~3756: `DELETE /api/users/:userId/skills/:skillId` — Remove skill from user with audit
+
+Refactor plan:
+- Remove `db.transaction` wrappers.
+- Use sequential `db.delete`, `db.insert`, `db.delete` for skills and userSkills.
+- Ensure foreign keys are respected (e.g., user exists, skill exists).
+- Keep audit logging after DB changes.
+
+---
+
+### E. Takeoff Plan Import & Upload
+
+File: `server/routes.ts`
+
+Endpoints using `db.transaction()`:
+13. Line ~4130: `POST /api/projects/:projectId/takeoff/import-plan` — Import takeoff plan with sheets + audit
+14. Line ~4192: `POST /api/projects/:projectId/takeoff/plans` — Upload takeoff plan with sheets + audit
+
+Refactor plan:
+- Remove `db.transaction` wrappers.
+- Steps should be:
+  1. Validate project and file payload.
+  2. Insert or update `projectPlans`, `takeoffSheets`, and related records sequentially.
+  3. Ensure there are no assumptions about atomic insert across multiple tables.
+  4. Log an audit entry once everything is successfully written.
+- If partial failure is a risk, document it in comments and log enough details for manual cleanup.
+
+---
+
+### F. Confirm Time Clock Routes Have NO Transactions
+
+File: `server/timeClockRoutes.ts`
+
+The analysis says:
+- `server/timeClockRoutes.ts` — **NO transaction usage** (already refactored to sequential).
+- But there are **4 TypeScript errors** (query builder issues).
+
+Actions:
+- DO NOT add transactions.
+- Fix all TS errors and ensure those queries follow the same Drizzle patterns as working endpoints.
+
+---
+
+### G. Remove ANY remaining `db.transaction` patterns
+
+After refactoring all the endpoints listed above:
+
+1. Search the entire codebase for:
+   - `db.transaction`
+   - `transaction(`
+   - `await tx.`
+2. If ANY additional uses remain:
+   - Repeat the same refactor pattern:
+     - Remove transaction wrapper
+     - Use sequential `db` calls
+     - Keep audit logging after data writes
+3. Confirm there are **0** uses of transactions anywhere in the repo.
+
+=================================================================
+PHASE 3 — STANDARDIZE AUDIT LOGGING CALLS
+=================================================================
+
+The audit analysis shows that:
+- `logUpdate` / `logCreate` have a standard signature.
+- Some calls (especially in aiRoutes.ts and transaction-refactored routes) use different parameter shapes.
+
+Actions:
+
+1. Locate the canonical definitions of:
+   - `logCreate`
+   - `logUpdate`
+   - `logDelete`
+   - `logAudit` (if present)
+2. Determine their intended signatures:
+   - Required parameters (userId, entityType, entityId, oldValue, newValue, request, etc.)
+   - Optional transaction parameter (which will now be unused under neon-http).
+
+3. Update ALL call sites in:
+   - server/routes.ts
+   - server/changeOrderRoutes.ts
+   - server/timeClockRoutes.ts
+   - server/aiRoutes.ts
+   - Any other modules using audit logging
+
+   so that:
+   - They ALL use the same function signatures.
+   - There are no overload-conflicts or mismatched argument counts.
+
+4. For neon-http:
+   - Stop passing `tx` or transaction objects.
+   - Call the loggers with only the non-transaction arguments.
+
+5. Type-check after these changes.
+
+=================================================================
+PHASE 4 — VALIDATION & TESTING
+=================================================================
+
+After finishing Phases 1–3:
+
+1. Ensure:
+   - `npm run typecheck` passes with 0 errors.
+   - `npm run build` succeeds.
+   - The dev server starts without runtime errors.
+
+2. Manually test, at minimum:
+
+   - Time entry flows:
+     - Create time entry
+     - Update time entry
+     - Delete time entry
+     - Approve time entry
+   - Change order flows:
+     - DRAFT → PENDING_APPROVAL
+     - PENDING_APPROVAL → SUBMITTED
+     - SUBMITTED → APPROVED
+     - SUBMITTED or other → REJECTED
+     - Any → return to DRAFT
+   - Crew flows:
+     - Create crew
+     - Update crew
+     - Delete crew
+     - Add crew member
+     - Remove crew member
+   - Skills:
+     - Delete skill
+     - Add user skill
+     - Remove user skill
+   - Takeoff:
+     - Import plan
+     - Upload plan
+   - AI routes (aiRoutes.ts):
+     - AI settings update
+     - AI run, if applicable
+
+3. Confirm audit logs are written as expected for each of the above flows.
+
+4. If there are tests already:
+   - Run the existing test suite.
+   - If there are no tests, add at least basic integration-level tests for each critical refactored route.
+
+=================================================================
+PHASE 5 — FINAL SANITY CHECK & SUMMARY
+=================================================================
+
+Before finishing:
+
+1. Search the codebase for:
+   - `db.transaction`
+   - `transaction(`
+   - `await tx.`
+   Confirm there are **no remaining transaction calls**.
+
+2. Run:
+   - `npm run typecheck`
+   - `npm run build`
+
+3. If any errors remain, fix them and rerun until everything is clean.
+
+4. Then produce a final summary (in your output) that includes:
+
+   - A list of all files you modified.
+   - A list of all endpoints that were refactored to remove `db.transaction()`.
+   - Confirmation that:
+     - There are 0 TypeScript errors.
+     - There are 0 transaction calls.
+     - All critical flows function correctly in this Replit/neon-http environment.
+
+End your work by outputting:
+
+“ALL TRANSACTION REFACTORS COMPLETE — 0 TRANSACTION CALLS — 0 TYPESCRIPT ERRORS — READY FOR PRODUCTION ON NEON HTTP.”
+
+Then stop.

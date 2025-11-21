@@ -211,20 +211,20 @@ export function registerTimeClockRoutes(app: Express): void {
       const pageSizeNum = parseInt(pageSize as string);
       const offset = (pageNum - 1) * pageSizeNum;
 
-      let query = db
+      // Build conditions array to avoid query chaining issues
+      const conditions = [eq(timeClockShifts.userId, req.user!.id)];
+      
+      if (startDate) {
+        conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
+      }
+
+      const shifts = await db
         .select()
         .from(timeClockShifts)
-        .where(eq(timeClockShifts.userId, req.user!.id));
-
-      if (startDate) {
-        query = query.where(gte(timeClockShifts.clockIn, new Date(startDate as string))) as any;
-      }
-
-      if (endDate) {
-        query = query.where(lte(timeClockShifts.clockIn, new Date(endDate as string))) as any;
-      }
-
-      const shifts = await query
+        .where(and(...conditions))
         .orderBy(desc(timeClockShifts.clockIn))
         .limit(pageSizeNum)
         .offset(offset);
@@ -288,20 +288,20 @@ export function registerTimeClockRoutes(app: Express): void {
       const pageSizeNum = parseInt(pageSize as string);
       const offset = (pageNum - 1) * pageSizeNum;
 
-      let query = db
+      // Build conditions array to avoid query chaining issues
+      const conditions = [eq(timeClockShifts.userId, req.params.userId)];
+      
+      if (startDate) {
+        conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
+      }
+
+      const shifts = await db
         .select()
         .from(timeClockShifts)
-        .where(eq(timeClockShifts.userId, req.params.userId));
-
-      if (startDate) {
-        query = query.where(gte(timeClockShifts.clockIn, new Date(startDate as string))) as any;
-      }
-
-      if (endDate) {
-        query = query.where(lte(timeClockShifts.clockIn, new Date(endDate as string))) as any;
-      }
-
-      const shifts = await query
+        .where(and(...conditions))
         .orderBy(desc(timeClockShifts.clockIn))
         .limit(pageSizeNum)
         .offset(offset);

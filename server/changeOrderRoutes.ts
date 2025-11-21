@@ -72,7 +72,7 @@ async function notifyStatusChange(
       .from(users)
       .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
 
-    adminsAndManagers.forEach(user => {
+    adminsAndManagers.forEach((user: any) => {
       notificationsToCreate.push({
         userId: user.id,
         type: "CHANGE_ORDER_PENDING" as const,

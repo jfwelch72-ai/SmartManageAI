@@ -1282,7 +1282,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newScopeItem] = await db.insert(scopeItems).values([validationResult.data]).returning();
+      // Ensure projectId is set (TypeScript safety)
+      const insertData = { ...validationResult.data, projectId: project.id };
+      const [newScopeItem] = await db.insert(scopeItems).values([insertData]).returning();
       res.status(201).json(newScopeItem);
     } catch (error: any) {
       console.error("Create scope item error:", error);
@@ -1440,7 +1442,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newNote] = await db.insert(projectNotes).values([validationResult.data]).returning();
+      // Ensure required fields are set (TypeScript safety)
+      const insertData = { ...validationResult.data, projectId: project.id, authorId: req.user!.id };
+      const [newNote] = await db.insert(projectNotes).values([insertData]).returning();
       res.status(201).json(newNote);
     } catch (error: any) {
       console.error("Create note error:", error);
@@ -1527,10 +1531,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newMedia] = await db.insert(media).values([{
-        ...validationResult.data,
-        objectKey,
-      }]).returning();
+      // Ensure required fields are set (TypeScript safety)
+      const insertData = { ...validationResult.data, projectId: project.id, uploadedById: req.user!.id, objectKey };
+      const [newMedia] = await db.insert(media).values([insertData]).returning();
       
       // Grant permission to uploader
       await db.insert(filePermissions).values([{
@@ -1727,9 +1730,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Ensure required fields are set (TypeScript safety)
+      const insertData = { ...validationResult.data, userId: req.user!.id };
+      
       // Use transaction to ensure atomic insert + audit
       const newEntry = await db.transaction(async (tx) => {
-        const [entry] = await tx.insert(timeEntries).values([validationResult.data]).returning();
+        const [entry] = await tx.insert(timeEntries).values([insertData]).returning();
         
         // Audit log within transaction
         await logCreate(req.user!.id, "TIME_ENTRY", entry.id, JSON.stringify(entry), req, tx);
@@ -1962,12 +1968,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...validationResult.data, createdById: req.user!.id };
+
       // BUSINESS VALIDATION: Validate JSON fields and normalize empty strings to null
-      const jsonFields: Array<{ field: keyof typeof validationResult.data; value: string | null | undefined; name: string }> = [
-        { field: "laborSummaryJson", value: validationResult.data.laborSummaryJson, name: "Labor summary JSON" },
-        { field: "equipmentUsedJson", value: validationResult.data.equipmentUsedJson, name: "Equipment used JSON" },
-        { field: "materialsUsedJson", value: validationResult.data.materialsUsedJson, name: "Materials used JSON" },
-        { field: "attachmentsJson", value: validationResult.data.attachmentsJson, name: "Attachments JSON" },
+      const jsonFields: Array<{ field: keyof typeof insertData; value: string | null | undefined; name: string }> = [
+        { field: "laborSummaryJson", value: insertData.laborSummaryJson, name: "Labor summary JSON" },
+        { field: "equipmentUsedJson", value: insertData.equipmentUsedJson, name: "Equipment used JSON" },
+        { field: "materialsUsedJson", value: insertData.materialsUsedJson, name: "Materials used JSON" },
+        { field: "attachmentsJson", value: insertData.attachmentsJson, name: "Attachments JSON" },
       ];
 
       for (const fieldDef of jsonFields) {
@@ -1979,7 +1988,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           // Normalize empty strings to null
           if (fieldDef.value === "" || jsonCheck.parsed === null) {
-            (validationResult.data as any)[fieldDef.field] = null;
+            (insertData as any)[fieldDef.field] = null;
           }
         }
       }
@@ -1990,8 +1999,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(tmDailySheets)
         .where(
           and(
-            eq(tmDailySheets.projectId, validationResult.data.projectId),
-            sql`DATE(${tmDailySheets.date}) = DATE(${validationResult.data.date})`
+            eq(tmDailySheets.projectId, insertData.projectId),
+            sql`DATE(${tmDailySheets.date}) = DATE(${insertData.date})`
           )
         )
         .limit(1);
@@ -2004,7 +2013,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newSheet] = await db.insert(tmDailySheets).values([validationResult.data]).returning();
+      const [newSheet] = await db.insert(tmDailySheets).values([insertData]).returning();
       res.status(201).json(newSheet);
     } catch (error: any) {
       console.error("Create T&M sheet error:", error);
@@ -2076,7 +2085,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const [newEstimate] = await db.insert(estimates).values([validationResult.data]).returning();
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...validationResult.data, createdById: req.user!.id };
+      const [newEstimate] = await db.insert(estimates).values([insertData]).returning();
       res.status(201).json(newEstimate);
     } catch (error: any) {
       console.error("Create estimate error:", error);
@@ -2224,10 +2235,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newReceipt] = await db.insert(receipts).values([{
-        ...validationResult.data,
-        objectKey,
-      }]).returning();
+      // Ensure required fields are set (TypeScript safety)
+      const insertData = { ...validationResult.data, userId: req.user!.id, objectKey };
+      const [newReceipt] = await db.insert(receipts).values([insertData]).returning();
       
       // Grant permission to uploader
       await db.insert(filePermissions).values([{
@@ -2307,10 +2317,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       );
 
-      const [newDoc] = await db.insert(planDocuments).values([{
-        ...validationResult.data,
-        objectKey,
-      }]).returning();
+      // Ensure required fields are set (TypeScript safety)
+      const insertData = { ...validationResult.data, uploadedById: req.user!.id, objectKey };
+      const [newDoc] = await db.insert(planDocuments).values([insertData]).returning();
       
       // Grant permission to uploader
       await db.insert(filePermissions).values([{
@@ -2515,9 +2524,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...validationResult.data, grantedById: req.user!.id };
       const [newPermission] = await db
         .insert(filePermissions)
-        .values([validationResult.data])
+        .values([insertData])
         .returning();
       
       res.status(201).json(newPermission);
@@ -2680,7 +2691,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const [newOrder] = await db.insert(changeOrders).values([validationResult.data]).returning();
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...validationResult.data, requestedById: req.user!.id };
+      const [newOrder] = await db.insert(changeOrders).values([insertData]).returning();
       
       // Create notification for managers/admins about pending change order
       const adminsAndManagers = await db
@@ -2772,7 +2785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (conditions.length > 0) {
-        query = query.where(sql`${sql.join(conditions, sql` AND `)}`);
+        query = query.where(and(...conditions)) as any;
       }
       
       const events = await query.orderBy(calendarEvents.startDate);
@@ -2824,7 +2837,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [newEvent] = await db.insert(calendarEvents).values([validationResult.data]).returning();
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...validationResult.data, createdById: req.user!.id };
+      const [newEvent] = await db.insert(calendarEvents).values([insertData]).returning();
       
       // Create notification for managers if it's a time-off request
       if (newEvent.eventType === "TIME_OFF_REQUEST") {
@@ -3038,7 +3053,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validation schema aligned with actual billingEvents table
       const schema = z.object({
         scopeItemId: z.string(),
-        quantity: z.number().int(),
+        quantity: z.string(), // Fixed: quantity should be string in schema
         unitPrice: z.string(),
         totalAmount: z.string(),
         billedDate: z.coerce.date(),
@@ -3048,12 +3063,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const data = schema.parse(req.body);
 
+      // Ensure required field is set (TypeScript safety)
+      const insertData = { ...data, createdById: req.user!.id };
+
       // Use transaction to ensure atomic insert + audit
       const newEvent = await db.transaction(async (tx) => {
-        const [event] = await tx.insert(billingEvents).values([{
-          ...data,
-          createdById: req.user!.id,
-        }]).returning();
+        const [event] = await tx.insert(billingEvents).values([insertData]).returning();
 
         // Audit log within transaction
         await logCreate(req.user!.id, "BILLING_EVENT", event.id, JSON.stringify(event), req, tx);
@@ -3101,7 +3116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const logs = await query
-        .orderBy(desc(auditLog.timestamp))
+        .orderBy(desc(auditLog.createdAt))
         .limit(pageSizeNum)
         .offset(offset);
 
@@ -3122,7 +3137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eq(auditLog.entityType, req.params.entityType),
           eq(auditLog.entityId, req.params.entityId)
         ))
-        .orderBy(desc(auditLog.timestamp))
+        .orderBy(desc(auditLog.createdAt))
         .limit(100);
 
       res.json(logs);
@@ -3232,7 +3247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const crewsWithCounts = allCrews.map(({ crew, lead }) => ({
         ...crew,
-        lead: lead.id ? lead : null,
+        lead: lead?.id ? lead : null,
         memberCount: countsMap.get(crew.id) || 0,
       }));
 
@@ -3244,7 +3259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new crew (admin only)
-  app.post("/api/crews", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -3280,7 +3295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update crew (admin only)
-  app.patch("/api/crews/:id", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.patch("/api/crews/:id", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       
@@ -3326,7 +3341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete crew (admin only)
-  app.delete("/api/crews/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res) => {
+  app.delete("/api/crews/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
 
@@ -3381,7 +3396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add member to crew (admin only)
-  app.post("/api/crews/:id/members", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const { userId, role } = req.body;
@@ -3435,7 +3450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remove member from crew (admin only)
-  app.delete("/api/crews/:id/members/:userId", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.delete("/api/crews/:id/members/:userId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id, userId } = req.params;
 
@@ -3502,7 +3517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assign crew to project
-  app.post("/api/crew-assignments", requireRole(["ADMIN", "MANAGER", "SUPERINTENDENT"]), async (req: AuthRequest, res) => {
+  app.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { crewProjectAssignments, insertCrewProjectAssignmentSchema } = await import("@shared/schema");
       
@@ -3555,7 +3570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remove crew from project
-  app.delete("/api/crew-assignments/:id", requireRole(["ADMIN", "MANAGER", "SUPERINTENDENT"]), async (req: AuthRequest, res) => {
+  app.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { crewProjectAssignments } = await import("@shared/schema");
       const { id } = req.params;
@@ -3603,7 +3618,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new skill (admin only)
-  app.post("/api/skills", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.post("/api/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -3643,7 +3658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete skill (admin only)
-  app.delete("/api/skills/:id", requireRole(["ADMIN"]), async (req: AuthRequest, res) => {
+  app.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
 
@@ -3690,7 +3705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assign skill to user (admin only)
-  app.post("/api/users/:userId/skills", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.post("/api/users/:userId/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { userId } = req.params;
       const { skillId, proficiencyLevel, yearsExperience } = req.body;
@@ -3736,7 +3751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Remove skill from user (admin only)
-  app.delete("/api/users/:userId/skills/:skillId", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.delete("/api/users/:userId/skills/:skillId", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { userId, skillId } = req.params;
 
@@ -3849,7 +3864,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   // Get all subcontractor payables (for CFO/Office Manager dashboard)
-  app.get("/api/subcontractor-payables", requireRole(["ADMIN", "MANAGER"]), async (req: AuthRequest, res) => {
+  app.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const payables = await db
         .select({

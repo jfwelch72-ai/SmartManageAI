@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { db } from "../db";
 import { aiSettings, aiRuns, aiTasks } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { buildDataSnapshot } from "./snapshotBuilder";
 import { calculateAllProjectsProfitability } from "./profitabilityEngine";
 import { callOpenAIForAnalysis, AIAnalysisResponse } from "./openaiClient";
@@ -173,16 +173,19 @@ export async function getTasksForRun(runId: string) {
 }
 
 export async function getTasksForRole(role: string, status?: string) {
-  let query = db
-    .select()
-    .from(aiTasks)
-    .where(eq(aiTasks.role, role as any));
-
+  // Build conditions array to avoid query chaining issues
+  const conditions = [eq(aiTasks.role, role as any)];
+  
   if (status) {
-    query = query.where(eq(aiTasks.status, status as any)) as any;
+    conditions.push(eq(aiTasks.status, status as any));
   }
 
-  return query.orderBy(desc(aiTasks.priority), desc(aiTasks.createdAt)).limit(100);
+  return db
+    .select()
+    .from(aiTasks)
+    .where(and(...conditions))
+    .orderBy(desc(aiTasks.priority), desc(aiTasks.createdAt))
+    .limit(100);
 }
 
 export async function updateTaskStatus(taskId: string, status: string, userId?: string) {

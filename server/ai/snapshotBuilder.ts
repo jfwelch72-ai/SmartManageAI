@@ -29,11 +29,14 @@ export interface DataSnapshot {
       name: string;
       status: string;
       budget: number;
+      contract_amount: number;
       start_date: string | null;
       estimated_completion: string | null;
       client_name: string;
       superintendent_id: string | null;
+      missing_financials: boolean;
     }[];
+    missing_financials_count: number;
   };
   labor: {
     total_hours_this_week: number;
@@ -344,7 +347,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
         superintendent_id: p.superintendentId,
         missing_financials: !p.budget || Number(p.budget) === 0 || !p.contractAmount || Number(p.contractAmount) === 0,
       })),
-      projects_missing_financials: activeProjects.filter(p => !p.budget || Number(p.budget) === 0 || !p.contractAmount || Number(p.contractAmount) === 0).length,
+      missing_financials_count: activeProjects.filter(p => !p.budget || Number(p.budget) === 0 || !p.contractAmount || Number(p.contractAmount) === 0).length,
     },
     labor: {
       total_hours_this_week: Math.round(totalHoursThisWeek * 100) / 100,

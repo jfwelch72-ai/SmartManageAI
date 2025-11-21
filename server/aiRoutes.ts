@@ -14,10 +14,11 @@ import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
+import { type AuthRequest } from "./auth";
 
 const router = Router();
 
-router.get("/ai-settings", async (req, res) => {
+router.get("/ai-settings", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -40,7 +41,7 @@ router.get("/ai-settings", async (req, res) => {
   }
 });
 
-router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
+router.patch("/ai-settings", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -80,13 +81,14 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
       [updated] = await db.insert(aiSettings).values(validationResult.data).returning();
     }
 
-    await logUpdate(db, {
-      entityType: 'AI_SETTINGS',
-      entityId: updated.id,
-      userId: req.user.id,
-      oldValues: existingSettings,
-      newValues: updated,
-    }, req);
+    await logUpdate(
+      req.user.id,
+      'AI_SETTINGS',
+      updated.id,
+      existingSettings,
+      updated,
+      req
+    );
 
     res.json(updated);
   } catch (error: any) {
@@ -95,7 +97,7 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
   }
 });
 
-router.post("/ai-pm/run", sensitiveLimiter, async (req, res) => {
+router.post("/ai-pm/run", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -107,12 +109,13 @@ router.post("/ai-pm/run", sensitiveLimiter, async (req, res) => {
 
     const runId = await runAIAnalysis(req.user.id);
 
-    await logCreate(db, {
-      entityType: 'AI_RUN',
-      entityId: runId,
-      userId: req.user.id,
-      newValues: { runId, triggeredBy: req.user.id },
-    }, req);
+    await logCreate(
+      req.user.id,
+      'AI_RUN',
+      runId,
+      { runId, triggeredBy: req.user.id },
+      req
+    );
 
     res.json({ runId, status: 'completed' });
   } catch (error: any) {
@@ -121,7 +124,7 @@ router.post("/ai-pm/run", sensitiveLimiter, async (req, res) => {
   }
 });
 
-router.get("/ai-pm/latest-run", async (req, res) => {
+router.get("/ai-pm/latest-run", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -147,7 +150,7 @@ router.get("/ai-pm/latest-run", async (req, res) => {
   }
 });
 
-router.get("/ai-pm/runs/:runId", async (req, res) => {
+router.get("/ai-pm/runs/:runId", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -173,7 +176,7 @@ router.get("/ai-pm/runs/:runId", async (req, res) => {
   }
 });
 
-router.get("/ai-pm/tasks", async (req, res) => {
+router.get("/ai-pm/tasks", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -198,7 +201,7 @@ router.get("/ai-pm/tasks", async (req, res) => {
   }
 });
 
-router.get("/ai-pm/tasks/role/:role", async (req, res) => {
+router.get("/ai-pm/tasks/role/:role", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -223,7 +226,7 @@ router.get("/ai-pm/tasks/role/:role", async (req, res) => {
   }
 });
 
-router.patch("/ai-pm/tasks/:taskId", async (req, res) => {
+router.patch("/ai-pm/tasks/:taskId", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -235,6 +238,17 @@ router.patch("/ai-pm/tasks/:taskId", async (req, res) => {
       return res.status(400).json({ error: "Invalid status" });
     }
 
+    // Get existing task BEFORE update for audit log
+    const [existingTask] = await db
+      .select()
+      .from(aiTasks)
+      .where(eq(aiTasks.id, req.params.taskId))
+      .limit(1);
+
+    if (!existingTask) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
     await updateTaskStatus(req.params.taskId, status, req.user.id);
 
     const [updatedTask] = await db
@@ -243,23 +257,14 @@ router.patch("/ai-pm/tasks/:taskId", async (req, res) => {
       .where(eq(aiTasks.id, req.params.taskId))
       .limit(1);
 
-    if (!updatedTask) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-
-    const [existingTask] = await db
-      .select()
-      .from(aiTasks)
-      .where(eq(aiTasks.id, req.params.taskId))
-      .limit(1);
-
-    await logUpdate(db, {
-      entityType: 'AI_TASK',
-      entityId: req.params.taskId,
-      userId: req.user.id,
-      oldValues: existingTask,
-      newValues: { status },
-    }, req);
+    await logUpdate(
+      req.user.id,
+      'AI_TASK',
+      req.params.taskId,
+      existingTask,
+      { status },
+      req
+    );
 
     res.json(updatedTask);
   } catch (error: any) {
@@ -268,7 +273,7 @@ router.patch("/ai-pm/tasks/:taskId", async (req, res) => {
   }
 });
 
-router.get("/cfo/profitability", async (req, res) => {
+router.get("/cfo/profitability", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -292,7 +297,7 @@ router.get("/cfo/profitability", async (req, res) => {
   }
 });
 
-router.get("/ai-pm/runs", async (req, res) => {
+router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });

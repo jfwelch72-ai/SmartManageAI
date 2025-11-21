@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { db } from "../db";
 import { aiSettings } from "@shared/schema";
 import { runAIAnalysis } from "./orchestrator";
