@@ -5,7 +5,16 @@ import { db } from "./db";
 import { users, type User, type SelectUser } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "your-secret-key-change-in-production";
+// Enforce SESSION_SECRET - fail fast if not set
+if (!process.env.SESSION_SECRET) {
+  throw new Error(
+    "CRITICAL SECURITY ERROR: SESSION_SECRET environment variable must be set. " +
+    "This is required for JWT token signing and session security. " +
+    "The application cannot start without it."
+  );
+}
+
+const JWT_SECRET = process.env.SESSION_SECRET;
 const COOKIE_NAME = "auth_token";
 
 export interface AuthRequest extends Request {
@@ -70,8 +79,8 @@ export async function authMiddleware(
       return;
     }
 
-    // Omit password hash and tokenVersion from user object
-    const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
+    // Omit password hash from user object (keep tokenVersion for type safety)
+    const { passwordHash, ...userWithoutPassword } = user;
     req.user = userWithoutPassword;
   }
 
