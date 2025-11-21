@@ -138,7 +138,11 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
 
   // Configure PDF.js worker
   useEffect(() => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    // Use new URL() with import.meta.url - Vite will handle the rest (best practice for Vite)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).toString();
   }, []);
 
   // Load and render PDF when sheet changes
