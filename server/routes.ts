@@ -3502,8 +3502,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const objectStorageService = new ObjectStorageService();
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
         
-        // Download PDF to buffer
-        const pdfBuffer = await objectFile.downloadAsBuffer();
+        // Download PDF to buffer using GCS File.download() method
+        const [pdfBuffer] = await objectFile.download();
         
         // Load PDF with pdfjs-dist
         const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
