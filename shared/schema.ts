@@ -452,6 +452,7 @@ export const estimateItemCategoryEnum = pgEnum("estimate_item_category", ["CONCR
 export const projectPlans = pgTable("project_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  documentId: varchar("document_id").references(() => planDocuments.id, { onDelete: "set null" }),
   originalPdfUrl: text("original_pdf_url").notNull(),
   fileName: text("file_name").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

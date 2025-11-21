@@ -157,8 +157,22 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
         setIsPdfLoading(true);
         setPdfImage(null);
 
+        // Get presigned URL if sheet has documentId
+        let pdfUrl = currentSheet.imageUrl;
+        if ((currentSheet as any).documentId) {
+          try {
+            const response = await fetch(`/api/documents/${(currentSheet as any).documentId}/download-url`);
+            if (response.ok) {
+              const data = await response.json();
+              pdfUrl = data.url;
+            }
+          } catch (error) {
+            console.warn('Failed to get presigned URL, using direct URL:', error);
+          }
+        }
+
         // Load the PDF document
-        const loadingTask = pdfjsLib.getDocument(currentSheet.imageUrl);
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
         const pdf = await loadingTask.promise;
 
         // Get the first page
@@ -201,7 +215,7 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     };
 
     loadPDF();
-  }, [currentSheet?.imageUrl, toast]);
+  }, [currentSheet?.imageUrl, (currentSheet as any)?.documentId, toast]);
 
   const handleToolSelect = (tool: Tool) => {
     setActiveTool(tool);

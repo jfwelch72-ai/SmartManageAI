@@ -1919,6 +1919,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get presigned download URL for a document
+  app.get("/api/documents/:documentId/download-url", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { documentId } = req.params;
+
+      // Get the document
+      const [document] = await db
+        .select()
+        .from(planDocuments)
+        .where(eq(planDocuments.id, documentId))
+        .limit(1);
+
+      if (!document) {
+        res.status(404).json({ error: "Document not found" });
+        return;
+      }
+
+      // Check if user has permission to access this document
+      const [permission] = await db
+        .select()
+        .from(filePermissions)
+        .where(
+          and(
+            eq(filePermissions.fileId, documentId),
+            eq(filePermissions.fileType, "DOCUMENT"),
+            eq(filePermissions.userId, req.user!.id)
+          )
+        )
+        .limit(1);
+
+      // Check if user uploaded the document or has permission
+      const hasAccess = document.uploadedById === req.user!.id || 
+                        permission !== undefined ||
+                        req.user!.role === "ADMIN" ||
+                        req.user!.role === "MANAGER";
+
+      if (!hasAccess) {
+        res.status(403).json({ error: "Not authorized to access this document" });
+        return;
+      }
+
+      // If document has objectKey, generate presigned URL
+      if (document.objectKey) {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        
+        try {
+          const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
+          
+          // Generate presigned URL (valid for 1 hour)
+          const [signedUrl] = await objectFile.getSignedUrl({
+            version: 'v4',
+            action: 'read',
+            expires: Date.now() + 60 * 60 * 1000, // 1 hour
+          });
+
+          res.json({ url: signedUrl });
+        } catch (error) {
+          console.error("Error generating presigned URL:", error);
+          // Fallback to direct fileUrl if presigned URL generation fails
+          res.json({ url: document.fileUrl });
+        }
+      } else {
+        // No objectKey, return direct fileUrl
+        res.json({ url: document.fileUrl });
+      }
+    } catch (error: any) {
+      console.error("Get document download URL error:", error);
+      res.status(500).json({ error: "Failed to get download URL" });
+    }
+  });
+
   // ====================
   // File Permissions Routes
   // ====================
@@ -3159,11 +3231,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
-      const { takeoffSheets } = await import("@shared/schema");
+      const { takeoffSheets, projectPlans } = await import("@shared/schema");
 
       const sheets = await db
-        .select()
+        .select({
+          id: takeoffSheets.id,
+          projectId: takeoffSheets.projectId,
+          planId: takeoffSheets.planId,
+          imageUrl: takeoffSheets.imageUrl,
+          sheetIndex: takeoffSheets.sheetIndex,
+          sheetName: takeoffSheets.sheetName,
+          scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+          units: takeoffSheets.units,
+          createdAt: takeoffSheets.createdAt,
+          updatedAt: takeoffSheets.updatedAt,
+          documentId: projectPlans.documentId,
+        })
         .from(takeoffSheets)
+        .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
         .where(eq(takeoffSheets.projectId, projectId))
         .orderBy(takeoffSheets.sheetIndex);
 
@@ -3222,6 +3307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create project plan record
       const [plan] = await db.insert(projectPlans).values({
         projectId,
+        documentId: documentId,
         originalPdfUrl: document.fileUrl,
         fileName: document.fileName,
       }).returning();
