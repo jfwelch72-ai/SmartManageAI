@@ -26,14 +26,19 @@ export default function AIPMDashboard() {
 
   const triggerRunMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", "/api/ai-pm/run", {});
-    },
-    onSuccess: () => {
       toast({
         title: "AI Analysis Started",
-        description: "AI PM + CFO analysis is running. This may take a minute...",
+        description: "AI PM + CFO analysis is running. This may take up to 30 seconds...",
       });
+      const response = await apiRequest("POST", "/api/ai-pm/run", {});
+      return response.json();
+    },
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-pm"] });
+      toast({
+        title: "Analysis Complete!",
+        description: `Successfully generated ${data.tasksCreated || 'new'} AI tasks. Check your task list below.`,
+      });
     },
     onError: (error: any) => {
       toast({
