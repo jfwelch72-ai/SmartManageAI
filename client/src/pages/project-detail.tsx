@@ -679,7 +679,7 @@ export default function ProjectDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Financial Information</CardTitle>
-                {user?.role === "ADMIN" && (
+                {(user?.role === "ADMIN" || user?.role === "OFFICE_MANAGER") && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1662,14 +1662,14 @@ export default function ProjectDetailPage() {
               <div>
                 <Label htmlFor="edit-draw-day-of-month">Recurring Draw Day of Month</Label>
                 <Select 
-                  value={editDrawDayOfMonth === "" ? "" : String(editDrawDayOfMonth)}
-                  onValueChange={(value) => setEditDrawDayOfMonth(value === "" ? "" : parseInt(value))}
+                  value={editDrawDayOfMonth === "" ? "none" : String(editDrawDayOfMonth)}
+                  onValueChange={(value) => setEditDrawDayOfMonth(value === "none" ? "" : parseInt(value))}
                 >
                   <SelectTrigger id="edit-draw-day-of-month" data-testid="select-draw-day-of-month">
                     <SelectValue placeholder="Select day of month" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No recurring draw</SelectItem>
+                    <SelectItem value="none">No recurring draw</SelectItem>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                       <SelectItem key={day} value={String(day)}>
                         {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of each month
