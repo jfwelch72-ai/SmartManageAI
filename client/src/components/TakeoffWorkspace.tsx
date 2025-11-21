@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogPortal } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
@@ -507,6 +507,25 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       ? pixelDistance / parseFloat(calibrationDistance)
       : pixelDistance / (parseFloat(calibrationDistance) * 3.28084);
 
+    // Validate scalePxPerFoot is a valid positive number
+    if (!Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
+      console.error("Invalid calibration value:", { pixelDistance, calibrationDistance, scalePxPerFoot });
+      toast({ 
+        title: "Error", 
+        description: "Invalid calibration value. Please check your measurements.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    console.log("Applying manual calibration:", { 
+      sheetId: selectedSheet, 
+      pixelDistance, 
+      calibrationDistance, 
+      scalePxPerFoot,
+      units 
+    });
+
     try {
       await apiRequest({
         url: `/api/takeoff/sheets/${selectedSheet}/calibration`,
@@ -520,8 +539,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       setCalibrationPoints([]);
       setCalibrationDistance("");
       setActiveTool("select");
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save calibration", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Failed to save manual calibration:", error);
+      const errorMessage = error?.message || error?.error || "Failed to save calibration";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -540,6 +561,19 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       return;
     }
 
+    // Validate scalePxPerFoot is a valid positive number
+    if (!Number.isFinite(scale.pxPerFoot) || scale.pxPerFoot <= 0) {
+      console.error("Invalid scale value:", scale.pxPerFoot);
+      toast({ title: "Error", description: "Invalid scale value", variant: "destructive" });
+      return;
+    }
+
+    console.log("Applying preset scale:", { 
+      sheetId: selectedSheet, 
+      scale: scale.label, 
+      pxPerFoot: scale.pxPerFoot 
+    });
+
     try {
       await apiRequest({
         url: `/api/takeoff/sheets/${selectedSheet}/calibration`,
@@ -554,8 +588,10 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       });
       setScaleCategory("");
       setSelectedPresetScale("");
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to apply scale", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Failed to apply preset scale:", error);
+      const errorMessage = error?.message || error?.error || "Failed to apply scale";
+      toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -1475,43 +1511,45 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
 
       {/* Note Dialog */}
       <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
-        <DialogContent data-testid="dialog-note">
-          <DialogHeader>
-            <DialogTitle>Add Note</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="note-text">Note Text</Label>
-              <Textarea
-                id="note-text"
-                placeholder="Enter your note here..."
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                data-testid="input-note-text"
-                rows={4}
-              />
+        <DialogPortal container={workspaceRef.current}>
+          <DialogContent data-testid="dialog-note">
+            <DialogHeader>
+              <DialogTitle>Add Note</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="note-text">Note Text</Label>
+                <Textarea
+                  id="note-text"
+                  placeholder="Enter your note here..."
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  data-testid="input-note-text"
+                  rows={4}
+                />
+              </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setNoteDialogOpen(false);
-                setNoteText("");
-                setNotePosition(null);
-              }}
-              data-testid="button-cancel-note"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSaveNote}
-              data-testid="button-save-note"
-            >
-              Save Note
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setNoteDialogOpen(false);
+                  setNoteText("");
+                  setNotePosition(null);
+                }}
+                data-testid="button-cancel-note"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveNote}
+                data-testid="button-save-note"
+              >
+                Save Note
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
       </Dialog>
 
       {/* Category Dialog */}
@@ -1521,63 +1559,65 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           setEditingCategory(null);
         }
       }}>
-        <DialogContent data-testid="dialog-category">
-          <DialogHeader>
-            <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="category-name">Category Name</Label>
-              <Input
-                id="category-name"
-                placeholder="e.g., Sidewalk, Curb, Curb & Gutter..."
-                value={categoryName}
-                onChange={(e) => setCategoryName(e.target.value)}
-                data-testid="input-category-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="category-color">Color</Label>
-              <div className="flex gap-2 items-center">
+        <DialogPortal container={workspaceRef.current}>
+          <DialogContent data-testid="dialog-category">
+            <DialogHeader>
+              <DialogTitle>{editingCategory ? "Edit Category" : "Add Category"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="category-name">Category Name</Label>
                 <Input
-                  id="category-color"
-                  type="color"
-                  value={categoryColor}
-                  onChange={(e) => setCategoryColor(e.target.value)}
-                  className="w-20 h-10 cursor-pointer"
-                  data-testid="input-category-color"
-                />
-                <Input
-                  type="text"
-                  value={categoryColor}
-                  onChange={(e) => setCategoryColor(e.target.value)}
-                  placeholder="#3b82f6"
-                  className="flex-1 font-mono"
-                  data-testid="input-category-color-text"
+                  id="category-name"
+                  placeholder="e.g., Sidewalk, Curb, Curb & Gutter..."
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value)}
+                  data-testid="input-category-name"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="category-color">Color</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="category-color"
+                    type="color"
+                    value={categoryColor}
+                    onChange={(e) => setCategoryColor(e.target.value)}
+                    className="w-20 h-10 cursor-pointer"
+                    data-testid="input-category-color"
+                  />
+                  <Input
+                    type="text"
+                    value={categoryColor}
+                    onChange={(e) => setCategoryColor(e.target.value)}
+                    placeholder="#3b82f6"
+                    className="flex-1 font-mono"
+                    data-testid="input-category-color-text"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setCategoryDialogOpen(false);
-                setEditingCategory(null);
-              }}
-              data-testid="button-cancel-category"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleSaveCategory}
-              data-testid="button-save-category"
-              disabled={saveCategoryMutation.isPending}
-            >
-              {saveCategoryMutation.isPending ? "Saving..." : (editingCategory ? "Update" : "Create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setCategoryDialogOpen(false);
+                  setEditingCategory(null);
+                }}
+                data-testid="button-cancel-category"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveCategory}
+                data-testid="button-save-category"
+                disabled={saveCategoryMutation.isPending}
+              >
+                {saveCategoryMutation.isPending ? "Saving..." : (editingCategory ? "Update" : "Create")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
       </Dialog>
     </div>
   );
