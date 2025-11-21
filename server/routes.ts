@@ -507,6 +507,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return { valid: true };
   }
 
+  // Validate JSON string is parseable
+  function validateJSONField(jsonString: string | null | undefined, fieldName: string): { valid: boolean; error?: string; parsed?: any } {
+    if (jsonString === null || jsonString === undefined) {
+      return { valid: true }; // Optional fields are allowed to be null/undefined
+    }
+
+    // Empty strings should default to null
+    if (jsonString === "") {
+      return { valid: true, parsed: null };
+    }
+
+    try {
+      const parsed = JSON.parse(jsonString);
+      return { valid: true, parsed };
+    } catch (error) {
+      return { 
+        valid: false, 
+        error: `${fieldName} contains invalid JSON: ${error instanceof Error ? error.message : 'Parse error'}` 
+      };
+    }
+  }
+
   // Validate project status transitions (state machine)
   type ProjectStatus = "BID" | "PLANNING" | "ACTIVE" | "COMPLETE" | "CLOSED";
   function validateProjectStatusTransition(currentStatus: ProjectStatus, newStatus: ProjectStatus): { valid: boolean; error?: string } {
@@ -1799,6 +1821,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Validate JSON fields and normalize empty strings to null
+      const jsonFields: Array<{ field: keyof typeof validationResult.data; value: string | null | undefined; name: string }> = [
+        { field: "laborSummaryJson", value: validationResult.data.laborSummaryJson, name: "Labor summary JSON" },
+        { field: "equipmentUsedJson", value: validationResult.data.equipmentUsedJson, name: "Equipment used JSON" },
+        { field: "materialsUsedJson", value: validationResult.data.materialsUsedJson, name: "Materials used JSON" },
+        { field: "attachmentsJson", value: validationResult.data.attachmentsJson, name: "Attachments JSON" },
+      ];
+
+      for (const fieldDef of jsonFields) {
+        if (fieldDef.value !== null && fieldDef.value !== undefined) {
+          const jsonCheck = validateJSONField(fieldDef.value, fieldDef.name);
+          if (!jsonCheck.valid) {
+            res.status(400).json({ error: jsonCheck.error });
+            return;
+          }
+          // Normalize empty strings to null
+          if (fieldDef.value === "" || jsonCheck.parsed === null) {
+            (validationResult.data as any)[fieldDef.field] = null;
+          }
+        }
+      }
+
       // BUSINESS VALIDATION: Check if T&M sheet already exists for this project/date
       const [existingSheet] = await db
         .select()
@@ -1869,6 +1913,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
+      }
+
+      // BUSINESS VALIDATION: Validate JSON fields and normalize empty strings to null
+      const jsonFields: Array<{ field: keyof typeof validationResult.data; value: string | null | undefined; name: string }> = [
+        { field: "altPricesJson", value: validationResult.data.altPricesJson, name: "Alternative prices JSON" },
+        { field: "costBreakdownJson", value: validationResult.data.costBreakdownJson, name: "Cost breakdown JSON" },
+      ];
+
+      for (const fieldDef of jsonFields) {
+        if (fieldDef.value !== null && fieldDef.value !== undefined) {
+          const jsonCheck = validateJSONField(fieldDef.value, fieldDef.name);
+          if (!jsonCheck.valid) {
+            res.status(400).json({ error: jsonCheck.error });
+            return;
+          }
+          // Normalize empty strings to null
+          if (fieldDef.value === "" || jsonCheck.parsed === null) {
+            (validationResult.data as any)[fieldDef.field] = null;
+          }
+        }
       }
 
       const [newEstimate] = await db.insert(estimates).values([validationResult.data]).returning();
@@ -2454,6 +2518,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!amountCheck.valid) {
         res.status(400).json({ error: amountCheck.error });
         return;
+      }
+
+      // BUSINESS VALIDATION: Validate JSON fields and normalize empty strings to null
+      if (validationResult.data.attachmentsJson !== null && validationResult.data.attachmentsJson !== undefined) {
+        const jsonCheck = validateJSONField(validationResult.data.attachmentsJson, "Attachments JSON");
+        if (!jsonCheck.valid) {
+          res.status(400).json({ error: jsonCheck.error });
+          return;
+        }
+        // Normalize empty strings to null
+        if (validationResult.data.attachmentsJson === "" || jsonCheck.parsed === null) {
+          validationResult.data.attachmentsJson = null;
+        }
       }
 
       const [newOrder] = await db.insert(changeOrders).values([validationResult.data]).returning();
