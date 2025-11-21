@@ -185,6 +185,29 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
           description: `${lengthFt.toFixed(2)} LF` 
         });
       }
+    } else if (activeTool === "area" || activeTool === "volume") {
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!currentSheet?.scalePxPerFoot) {
+        toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!isDrawing) {
+        // Start polygon - first point
+        setIsDrawing(true);
+        setDrawingPoints([point]);
+        toast({ 
+          title: "Drawing Polygon", 
+          description: "Click to add points. Double-click or press Enter to finish." 
+        });
+      } else {
+        // Add point to polygon
+        setDrawingPoints([...drawingPoints, point]);
+      }
     } else if (activeTool === "count") {
       if (!selectedSheet) {
         toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
@@ -255,6 +278,75 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     });
   };
 
+  const completePolygon = () => {
+    if (!selectedSheet || !currentSheet?.scalePxPerFoot || drawingPoints.length < 3) {
+      toast({ title: "Error", description: "Need at least 3 points for polygon", variant: "destructive" });
+      return;
+    }
+
+    // Calculate area using shoelace formula
+    let area = 0;
+    for (let i = 0; i < drawingPoints.length; i++) {
+      const j = (i + 1) % drawingPoints.length;
+      area += drawingPoints[i].x * drawingPoints[j].y;
+      area -= drawingPoints[j].x * drawingPoints[i].y;
+    }
+    area = Math.abs(area / 2);
+    
+    // Convert pixel area to square feet
+    const areaFt2 = area / (currentSheet.scalePxPerFoot * currentSheet.scalePxPerFoot);
+    
+    if (activeTool === "area") {
+      createMeasurementMutation.mutate({
+        sheetId: selectedSheet,
+        type: "AREA",
+        points: drawingPoints,
+        label: `Area ${measurements.filter(m => m.type === "AREA").length + 1}`,
+      });
+      
+      toast({ 
+        title: "Area Measurement Created", 
+        description: `${areaFt2.toFixed(2)} SF` 
+      });
+    } else if (activeTool === "volume") {
+      // For volume, we'll need to prompt for depth
+      // For now, just create as area type until we add depth input
+      createMeasurementMutation.mutate({
+        sheetId: selectedSheet,
+        type: "VOLUME",
+        points: drawingPoints,
+        label: `Volume ${measurements.filter(m => m.type === "VOLUME").length + 1}`,
+        depthInches: 12, // Default 12" depth, will add UI for this later
+      });
+      
+      toast({ 
+        title: "Volume Measurement Created", 
+        description: `Base area: ${areaFt2.toFixed(2)} SF (depth needed)` 
+      });
+    }
+    
+    setIsDrawing(false);
+    setDrawingPoints([]);
+  };
+
+  // Add keyboard handler for completing polygon (only when drawing)
+  useEffect(() => {
+    if (!isDrawing) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && drawingPoints.length >= 3) {
+        completePolygon();
+      } else if (e.key === "Escape") {
+        setIsDrawing(false);
+        setDrawingPoints([]);
+        toast({ title: "Drawing Cancelled" });
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isDrawing, drawingPoints, activeTool, selectedSheet, currentSheet]);
+
   return (
     <div className="flex h-screen">
       {/* Left Toolbar */}
@@ -318,6 +410,12 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
               x={stagePosition.x}
               y={stagePosition.y}
               onClick={handleStageClick}
+              onDblClick={(e) => {
+                if ((activeTool === "area" || activeTool === "volume") && isDrawing && drawingPoints.length >= 3) {
+                  e.evt.preventDefault();
+                  completePolygon();
+                }
+              }}
               onWheel={handleWheel}
               draggable={activeTool === "pan"}
             >
@@ -369,13 +467,24 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
                 {/* In-progress drawing */}
                 {isDrawing && drawingPoints.length > 0 && (
                   <>
+                    {/* Polygon lines for area/volume tools */}
+                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 2 && (
+                      <Line
+                        points={drawingPoints.flatMap(p => [p.x, p.y])}
+                        stroke={activeTool === "area" ? "#16a34a" : "#ea580c"}
+                        strokeWidth={2}
+                        dash={[5, 5]}
+                      />
+                    )}
+                    
+                    {/* Draw points */}
                     {drawingPoints.map((point, i) => (
                       <Circle
                         key={`temp-${i}`}
                         x={point.x}
                         y={point.y}
                         radius={6}
-                        fill="#2563eb"
+                        fill={activeTool === "area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
                         stroke="white"
                         strokeWidth={2}
                       />
