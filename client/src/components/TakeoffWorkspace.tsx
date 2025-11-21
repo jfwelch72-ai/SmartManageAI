@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize 
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -77,9 +77,13 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
   // Fetch sheets for this project
   const { data: sheets = [], isLoading: sheetsLoading } = useQuery<TakeoffSheet[]>({
@@ -496,8 +500,39 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isDrawing, drawingPoints, activeTool, selectedSheet, currentSheet]);
 
+  // Fullscreen handlers
+  const toggleFullscreen = async () => {
+    if (!workspaceRef.current) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await workspaceRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (error) {
+      toast({ 
+        title: "Fullscreen Error", 
+        description: "Could not toggle fullscreen mode", 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  // Listen for fullscreen changes (e.g., when user presses ESC)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   return (
-    <div className="flex h-screen">
+    <div ref={workspaceRef} className="flex h-screen">
       {/* Left Toolbar */}
       <div className="w-20 bg-card border-r flex flex-col items-center py-4 gap-2">
         {TOOL_CONFIG.map((tool) => {
@@ -524,27 +559,38 @@ export default function TakeoffWorkspace({ projectId }: TakeoffWorkspaceProps) {
       {/* Center Canvas */}
       <div className="flex-1 flex flex-col bg-muted/30">
         {/* Sheet Selector */}
-        <div className="h-14 bg-card border-b px-4 flex items-center gap-4">
-          <Label className="text-sm font-medium">Sheet:</Label>
-          <Select value={selectedSheet || ""} onValueChange={setSelectedSheet}>
-            <SelectTrigger className="w-64" data-testid="select-sheet">
-              <SelectValue placeholder="Select a sheet..." />
-            </SelectTrigger>
-            <SelectContent>
-              {sheets.map((sheet) => (
-                <SelectItem key={sheet.id} value={sheet.id}>
-                  {sheet.sheetName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {currentSheet && (
-            <Badge variant="outline" data-testid="badge-calibration-status">
-              {currentSheet.scalePxPerFoot 
-                ? `Calibrated (${currentSheet.units})` 
-                : "Not Calibrated"}
-            </Badge>
-          )}
+        <div className="h-14 bg-card border-b px-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Label className="text-sm font-medium">Sheet:</Label>
+            <Select value={selectedSheet || ""} onValueChange={setSelectedSheet}>
+              <SelectTrigger className="w-64" data-testid="select-sheet">
+                <SelectValue placeholder="Select a sheet..." />
+              </SelectTrigger>
+              <SelectContent>
+                {sheets.map((sheet) => (
+                  <SelectItem key={sheet.id} value={sheet.id}>
+                    {sheet.sheetName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {currentSheet && (
+              <Badge variant="outline" data-testid="badge-calibration-status">
+                {currentSheet.scalePxPerFoot 
+                  ? `Calibrated (${currentSheet.units})` 
+                  : "Not Calibrated"}
+              </Badge>
+            )}
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={toggleFullscreen}
+            data-testid="button-toggle-fullscreen"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+          </Button>
         </div>
 
         {/* Canvas Area */}
