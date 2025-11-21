@@ -157,7 +157,7 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Request approval error:", error);
-    res.status(500).json({ error: "Failed to request approval" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -217,7 +217,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Submit change order error:", error);
-    res.status(500).json({ error: "Failed to submit change order" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -279,7 +279,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Approve change order error:", error);
-    res.status(500).json({ error: "Failed to approve change order" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -354,7 +354,7 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Reject change order error:", error);
-    res.status(500).json({ error: "Failed to reject change order" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -417,7 +417,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Return to draft error:", error);
-    res.status(500).json({ error: "Failed to return change order to draft" });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

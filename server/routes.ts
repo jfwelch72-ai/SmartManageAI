@@ -121,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Registration error:", error);
-      res.status(500).json({ error: "Registration failed" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -164,7 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ user: userWithoutPassword });
     } catch (error) {
       console.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -209,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Init error:", error);
-      res.status(500).json({ error: "Initialization failed" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -250,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Dashboard stats error:", error);
-      res.status(500).json({ error: "Failed to fetch dashboard statistics" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -266,7 +266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(usersWithoutPasswords);
     } catch (error) {
       console.error("Get users error:", error);
-      res.status(500).json({ error: "Failed to fetch users" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -284,7 +284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(userWithoutPassword);
     } catch (error) {
       console.error("Get user error:", error);
-      res.status(500).json({ error: "Failed to fetch user" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -339,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.code === '23505') { // Unique violation
         res.status(409).json({ error: "Email already exists" });
       } else {
-        res.status(500).json({ error: "Failed to create user" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -395,7 +395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.code === '23505') {
         res.status(409).json({ error: "Email already exists" });
       } else {
-        res.status(500).json({ error: "Failed to update user" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -444,7 +444,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(userWithoutPassword);
     } catch (error) {
       console.error("Update cost rates error:", error);
-      res.status(500).json({ error: "Failed to update cost rates" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -473,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "All tokens revoked. User will need to log in again." });
     } catch (error) {
       console.error("Revoke tokens error:", error);
-      res.status(500).json({ error: "Failed to revoke tokens" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -511,7 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "Password changed successfully" });
     } catch (error) {
       console.error("Change password error:", error);
-      res.status(500).json({ error: "Failed to change password" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -605,7 +605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(allBids);
     } catch (error) {
       console.error("Get bids error:", error);
-      res.status(500).json({ error: "Failed to fetch bids" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -622,7 +622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(bid);
     } catch (error) {
       console.error("Get bid error:", error);
-      res.status(500).json({ error: "Failed to fetch bid" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -660,7 +660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.code === '23505') {
         res.status(409).json({ error: "Bid code already exists" });
       } else {
-        res.status(500).json({ error: "Failed to create bid" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -702,7 +702,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedBid);
     } catch (error: any) {
       console.error("Update bid error:", error);
-      res.status(500).json({ error: "Failed to update bid" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -722,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete bid error:", error);
-      res.status(500).json({ error: "Failed to delete bid" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -792,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.code === '23505') {
         res.status(409).json({ error: "Project with this code already exists" });
       } else {
-        res.status(500).json({ error: "Failed to convert bid" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -821,7 +821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(quotes);
     } catch (error) {
       console.error("Get bid quotes error:", error);
-      res.status(500).json({ error: "Failed to fetch bid quotes" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -867,7 +867,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid quote data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create bid quote" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -920,7 +920,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid quote data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to update bid quote" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -956,7 +956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete bid quote error:", error);
-      res.status(500).json({ error: "Failed to delete bid quote" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1043,7 +1043,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Get projects error:", error);
-      res.status(500).json({ error: "Failed to fetch projects" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1066,7 +1066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ...project, scopeItems: projectScopeItems });
     } catch (error) {
       console.error("Get project error:", error);
-      res.status(500).json({ error: "Failed to fetch project" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1097,7 +1097,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.code === '23505') {
         res.status(409).json({ error: "Project code already exists" });
       } else {
-        res.status(500).json({ error: "Failed to create project" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -1164,7 +1164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedProject);
     } catch (error: any) {
       console.error("Update project error:", error);
-      res.status(500).json({ error: "Failed to update project" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1233,7 +1233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       console.error("Update project financials error:", error);
-      res.status(500).json({ error: "Failed to update project financials" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1255,7 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(items);
     } catch (error) {
       console.error("Get scope items error:", error);
-      res.status(500).json({ error: "Failed to fetch scope items" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1288,7 +1288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newScopeItem);
     } catch (error: any) {
       console.error("Create scope item error:", error);
-      res.status(500).json({ error: "Failed to create scope item" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1359,7 +1359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedItem);
     } catch (error: any) {
       console.error("Update scope item error:", error);
-      res.status(500).json({ error: "Failed to update scope item" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1379,7 +1379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete scope item error:", error);
-      res.status(500).json({ error: "Failed to delete scope item" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1408,7 +1408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(notes);
     } catch (error) {
       console.error("Get notes error:", error);
-      res.status(500).json({ error: "Failed to fetch notes" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1446,7 +1446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newNote);
     } catch (error: any) {
       console.error("Create note error:", error);
-      res.status(500).json({ error: "Failed to create note" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1483,7 +1483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projectMedia);
     } catch (error) {
       console.error("Get media error:", error);
-      res.status(500).json({ error: "Failed to fetch media" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1545,7 +1545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newMedia);
     } catch (error: any) {
       console.error("Create media error:", error);
-      res.status(500).json({ error: "Failed to create media" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1574,7 +1574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete media error:", error);
-      res.status(500).json({ error: "Failed to delete media" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1656,7 +1656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Get time entries error:", error);
-      res.status(500).json({ error: "Failed to fetch time entries" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1679,7 +1679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(entries);
     } catch (error) {
       console.error("Get project time entries error:", error);
-      res.status(500).json({ error: "Failed to fetch time entries" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1742,7 +1742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newEntry);
     } catch (error: any) {
       console.error("Create time entry error:", error);
-      res.status(500).json({ error: "Failed to create time entry" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1827,7 +1827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedEntry);
     } catch (error) {
       console.error("Update time entry error:", error);
-      res.status(500).json({ error: "Failed to update time entry" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1871,7 +1871,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       console.error("Delete time entry error:", error);
-      res.status(500).json({ error: "Failed to delete time entry" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1910,7 +1910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedEntry);
     } catch (error) {
       console.error("Approve time entry error:", error);
-      res.status(500).json({ error: "Failed to approve time entry" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1937,7 +1937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(sheets);
     } catch (error) {
       console.error("Get T&M sheets error:", error);
-      res.status(500).json({ error: "Failed to fetch T&M sheets" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2010,7 +2010,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newSheet);
     } catch (error: any) {
       console.error("Create T&M sheet error:", error);
-      res.status(500).json({ error: "Failed to create T&M sheet" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2039,7 +2039,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projectEstimates);
     } catch (error) {
       console.error("Get estimates error:", error);
-      res.status(500).json({ error: "Failed to fetch estimates" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2082,7 +2082,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newEstimate);
     } catch (error: any) {
       console.error("Create estimate error:", error);
-      res.status(500).json({ error: "Failed to create estimate" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2108,7 +2108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(items);
     } catch (error) {
       console.error("Get procurement items error:", error);
-      res.status(500).json({ error: "Failed to fetch procurement items" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2126,7 +2126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newItem);
     } catch (error: any) {
       console.error("Create procurement item error:", error);
-      res.status(500).json({ error: "Failed to create procurement item" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2159,7 +2159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedItem);
     } catch (error: any) {
       console.error("Update procurement item error:", error);
-      res.status(500).json({ error: "Failed to update procurement item" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2196,7 +2196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projectReceipts);
     } catch (error) {
       console.error("Get receipts error:", error);
-      res.status(500).json({ error: "Failed to fetch receipts" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2242,7 +2242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newReceipt);
     } catch (error: any) {
       console.error("Create receipt error:", error);
-      res.status(500).json({ error: "Failed to create receipt" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2279,7 +2279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(docs);
     } catch (error) {
       console.error("Get documents error:", error);
-      res.status(500).json({ error: "Failed to fetch documents" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2325,7 +2325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newDoc);
     } catch (error: any) {
       console.error("Create document error:", error);
-      res.status(500).json({ error: "Failed to create document" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2404,7 +2404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Document deleted successfully" });
     } catch (error: any) {
       console.error("Delete document error:", error);
-      res.status(500).json({ error: "Failed to delete document" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2476,7 +2476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error: any) {
       console.error("Get document download URL error:", error);
-      res.status(500).json({ error: "Failed to get download URL" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2525,7 +2525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newPermission);
     } catch (error: any) {
       console.error("Grant file permission error:", error);
-      res.status(500).json({ error: "Failed to grant file permission" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2545,7 +2545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Permission revoked successfully" });
     } catch (error) {
       console.error("Revoke file permission error:", error);
-      res.status(500).json({ error: "Failed to revoke file permission" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2581,7 +2581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(permissions);
     } catch (error) {
       console.error("Get file permissions error:", error);
-      res.status(500).json({ error: "Failed to fetch file permissions" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2605,7 +2605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(permissions);
     } catch (error) {
       console.error("Get user file permissions error:", error);
-      res.status(500).json({ error: "Failed to fetch user file permissions" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2632,7 +2632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(orders);
     } catch (error) {
       console.error("Get change orders error:", error);
-      res.status(500).json({ error: "Failed to fetch change orders" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2706,7 +2706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newOrder);
     } catch (error: any) {
       console.error("Create change order error:", error);
-      res.status(500).json({ error: "Failed to create change order" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2745,7 +2745,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedOrder);
     } catch (error: any) {
       console.error("Update change order error:", error);
-      res.status(500).json({ error: "Failed to update change order" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2782,7 +2782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(events);
     } catch (error) {
       console.error("Get calendar events error:", error);
-      res.status(500).json({ error: "Failed to fetch calendar events" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2798,7 +2798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(events);
     } catch (error) {
       console.error("Get user calendar events error:", error);
-      res.status(500).json({ error: "Failed to fetch calendar events" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2852,7 +2852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newEvent);
     } catch (error: any) {
       console.error("Create calendar event error:", error);
-      res.status(500).json({ error: "Failed to create calendar event" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2896,7 +2896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.message === "Calendar event not found") {
         res.status(404).json({ error: "Calendar event not found" });
       } else {
-        res.status(500).json({ error: "Failed to approve time-off request" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -2928,7 +2928,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error: any) {
       console.error("Delete calendar event error:", error);
-      res.status(500).json({ error: "Failed to delete calendar event" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2949,7 +2949,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(userNotifications);
     } catch (error) {
       console.error("Get notifications error:", error);
-      res.status(500).json({ error: "Failed to fetch notifications" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2964,7 +2964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ count: result.count });
     } catch (error) {
       console.error("Get unread count error:", error);
-      res.status(500).json({ error: "Failed to fetch unread count" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2985,7 +2985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(notification);
     } catch (error: any) {
       console.error("Mark notification read error:", error);
-      res.status(500).json({ error: "Failed to mark notification as read" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3000,7 +3000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Mark all notifications read error:", error);
-      res.status(500).json({ error: "Failed to mark all notifications as read" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3026,7 +3026,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(events);
     } catch (error) {
       console.error("Get billing events error:", error);
-      res.status(500).json({ error: "Failed to fetch billing events" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3066,7 +3066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newEvent);
     } catch (error) {
       console.error("Create billing event error:", error);
-      res.status(500).json({ error: "Failed to create billing event" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3110,7 +3110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(logs);
     } catch (error) {
       console.error("Get audit logs error:", error);
-      res.status(500).json({ error: "Failed to fetch audit logs" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3130,7 +3130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(logs);
     } catch (error) {
       console.error("Get entity audit logs error:", error);
-      res.status(500).json({ error: "Failed to fetch audit logs" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3146,7 +3146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ uploadURL });
     } catch (error: any) {
       console.error("Get upload URL error:", error);
-      res.status(500).json({ error: "Failed to get upload URL" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3191,7 +3191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Object not found" });
         return;
       }
-      res.status(500).json({ error: "Failed to download object" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3234,7 +3234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(crewsWithCounts);
     } catch (error) {
       console.error("Error fetching crews:", error);
-      res.status(500).json({ error: "Failed to fetch crews" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3270,7 +3270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newCrew);
     } catch (error) {
       console.error("Error creating crew:", error);
-      res.status(500).json({ error: "Failed to create crew" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3316,7 +3316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       console.error("Error updating crew:", error);
-      res.status(500).json({ error: "Failed to update crew" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3341,7 +3341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting crew:", error);
-      res.status(500).json({ error: "Failed to delete crew" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3371,7 +3371,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(members);
     } catch (error) {
       console.error("Error fetching crew members:", error);
-      res.status(500).json({ error: "Failed to fetch crew members" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3422,9 +3422,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error adding crew member:", error);
       if (error.message === "User is already a member of this crew") {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: "User is already a member of this crew" });
       } else {
-        res.status(500).json({ error: "Failed to add crew member" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -3461,7 +3461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error removing crew member:", error);
-      res.status(500).json({ error: "Failed to remove crew member" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3492,7 +3492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(assignments);
     } catch (error) {
       console.error("Error fetching crew assignments:", error);
-      res.status(500).json({ error: "Failed to fetch crew assignments" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3544,7 +3544,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid input", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create crew assignment" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -3582,7 +3582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Error removing crew assignment:", error);
-      res.status(500).json({ error: "Failed to remove crew assignment" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3593,7 +3593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(allSkills);
     } catch (error) {
       console.error("Error fetching skills:", error);
-      res.status(500).json({ error: "Failed to fetch skills" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3633,7 +3633,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ error: "A skill with this name already exists" });
         return;
       }
-      res.status(500).json({ error: "Failed to create skill" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3658,7 +3658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting skill:", error);
-      res.status(500).json({ error: "Failed to delete skill" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3680,7 +3680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(userSkillsList);
     } catch (error) {
       console.error("Error fetching user skills:", error);
-      res.status(500).json({ error: "Failed to fetch user skills" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3726,7 +3726,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(newUserSkill);
     } catch (error) {
       console.error("Error assigning skill:", error);
-      res.status(500).json({ error: "Failed to assign skill" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3762,7 +3762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true});
     } catch (error) {
       console.error("Error removing skill:", error);
-      res.status(500).json({ error: "Failed to remove skill" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3817,7 +3817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(contracts);
     } catch (error) {
       console.error("Error fetching subcontractor contracts:", error);
-      res.status(500).json({ error: "Failed to fetch subcontractor contracts" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3835,7 +3835,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payments);
     } catch (error) {
       console.error("Error fetching payments:", error);
-      res.status(500).json({ error: "Failed to fetch payments" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3866,7 +3866,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payables);
     } catch (error) {
       console.error("Error fetching subcontractor payables:", error);
-      res.status(500).json({ error: "Failed to fetch subcontractor payables" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3900,7 +3900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(qualityScore);
     } catch (error) {
       console.error("Error fetching data quality score:", error);
-      res.status(500).json({ error: "Failed to fetch data quality score" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -3936,7 +3936,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(sheets);
     } catch (error) {
       console.error("Error fetching takeoff sheets:", error);
-      res.status(500).json({ error: "Failed to fetch takeoff sheets" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4032,7 +4032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return;
           }
           
-          res.status(500).json({ error: "Failed to load PDF" });
+          res.status(500).json({ error: "Internal server error" });
           return;
         }
       }
@@ -4041,7 +4041,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
     } catch (error: any) {
       console.error("Stream sheet PDF error:", error);
-      res.status(500).json({ error: "Failed to stream PDF" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4166,7 +4166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(result);
     } catch (error) {
       console.error("Error importing plan to takeoff:", error);
-      res.status(500).json({ error: "Failed to import plan to takeoff" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4218,7 +4218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(result);
     } catch (error) {
       console.error("Error uploading plan:", error);
-      res.status(500).json({ error: "Failed to upload plan" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4243,7 +4243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(parsedMeasurements);
     } catch (error) {
       console.error("Error fetching measurements:", error);
-      res.status(500).json({ error: "Failed to fetch measurements" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4272,7 +4272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid measurement data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create measurement" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -4308,7 +4308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid measurement data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to update measurement" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -4379,7 +4379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid measurement data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create measurement" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -4403,7 +4403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting measurement:", error);
-      res.status(500).json({ error: "Failed to delete measurement" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4471,7 +4471,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       console.error("Error updating calibration:", error);
-      res.status(500).json({ error: "Failed to update calibration" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4506,7 +4506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(categories);
     } catch (error) {
       console.error("Error fetching quantity categories:", error);
-      res.status(500).json({ error: "Failed to fetch quantity categories" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -4551,7 +4551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid category data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to create quantity category" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -4588,7 +4588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid category data", details: error.errors });
       } else {
-        res.status(500).json({ error: "Failed to update quantity category" });
+        res.status(500).json({ error: "Internal server error" });
       }
     }
   });
@@ -4612,7 +4612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting quantity category:", error);
-      res.status(500).json({ error: "Failed to delete quantity category" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

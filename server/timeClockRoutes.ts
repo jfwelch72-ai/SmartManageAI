@@ -101,7 +101,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.status(201).json(newShift);
     } catch (error) {
       console.error("Clock-in error:", error);
-      res.status(500).json({ error: "Failed to clock in" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -179,7 +179,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(updatedShift);
     } catch (error) {
       console.error("Clock-out error:", error);
-      res.status(500).json({ error: "Failed to clock out" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -198,7 +198,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(activeShift || null);
     } catch (error) {
       console.error("Get current shift error:", error);
-      res.status(500).json({ error: "Failed to get current shift" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -232,7 +232,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(shifts);
     } catch (error) {
       console.error("Get my shifts error:", error);
-      res.status(500).json({ error: "Failed to get shifts" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -275,7 +275,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(updatedShift);
     } catch (error) {
       console.error("Update notes error:", error);
-      res.status(500).json({ error: "Failed to update notes" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -309,7 +309,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(shifts);
     } catch (error) {
       console.error("Get employee shifts error:", error);
-      res.status(500).json({ error: "Failed to get employee shifts" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -423,7 +423,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(updatedShift);
     } catch (error) {
       console.error("Adjust shift error:", error);
-      res.status(500).json({ error: "Failed to adjust shift" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -494,7 +494,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(updatedShift);
     } catch (error) {
       console.error("Admin clock-out error:", error);
-      res.status(500).json({ error: "Failed to admin clock-out" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -583,7 +583,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });
     } catch (error) {
       console.error("Approve shift error:", error);
-      res.status(500).json({ error: "Failed to approve shift" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -615,7 +615,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json(activeShifts);
     } catch (error) {
       console.error("Get live shifts error:", error);
-      res.status(500).json({ error: "Failed to get live shifts" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -665,7 +665,7 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json({ count: results.length, shifts: results });
     } catch (error) {
       console.error("Auto clock-out worker error:", error);
-      res.status(500).json({ error: "Auto clock-out failed" });
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }

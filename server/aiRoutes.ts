@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { aiSettings, aiRuns, aiTasks } from "@shared/schema";
+import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { 
   runAIAnalysis, 
@@ -13,6 +13,7 @@ import {
 import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
+import { fromZodError } from "zod-validation-error";
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.get("/ai-settings", async (req, res) => {
     res.json(settings);
   } catch (error: any) {
     console.error("Error fetching AI settings:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -49,21 +50,22 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" });
     }
 
-    // SECURITY: Sanitize text inputs for data integrity - build sanitized object WITHOUT spreading req.body
-    const sanitizedBody: any = {};
+    // SECURITY: Sanitize text inputs BEFORE Zod validation
+    const sanitizedInput = {
+      ...req.body,
+      dailyRunTime: req.body.dailyRunTime ? sanitizeShortText(req.body.dailyRunTime) : undefined,
+      modelName: req.body.modelName ? sanitizeShortText(req.body.modelName) : undefined,
+    };
+
+    // Validate with partial Zod schema to support PATCH partial updates
+    const validationResult = insertAISettingsSchema.partial().safeParse(sanitizedInput);
     
-    // Boolean fields (no sanitization needed)
-    if (req.body.dailyRunsEnabled !== undefined) sanitizedBody.dailyRunsEnabled = req.body.dailyRunsEnabled;
-    if (req.body.roleTasksEnabled !== undefined) sanitizedBody.roleTasksEnabled = req.body.roleTasksEnabled;
-    if (req.body.billingAlertsEnabled !== undefined) sanitizedBody.billingAlertsEnabled = req.body.billingAlertsEnabled;
-    if (req.body.profitabilityWarningsEnabled !== undefined) sanitizedBody.profitabilityWarningsEnabled = req.body.profitabilityWarningsEnabled;
-    if (req.body.crewSchedulingEnabled !== undefined) sanitizedBody.crewSchedulingEnabled = req.body.crewSchedulingEnabled;
-    if (req.body.bidRemindersEnabled !== undefined) sanitizedBody.bidRemindersEnabled = req.body.bidRemindersEnabled;
-    if (req.body.materialOrderingEnabled !== undefined) sanitizedBody.materialOrderingEnabled = req.body.materialOrderingEnabled;
-    
-    // Text fields (MUST sanitize)
-    if (req.body.dailyRunTime) sanitizedBody.dailyRunTime = sanitizeShortText(req.body.dailyRunTime);
-    if (req.body.modelName) sanitizedBody.modelName = sanitizeShortText(req.body.modelName);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid AI settings data", 
+        details: fromZodError(validationResult.error).toString() 
+      });
+    }
 
     const [existingSettings] = await db.select().from(aiSettings).limit(1);
 
@@ -71,11 +73,11 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
     if (existingSettings) {
       [updated] = await db
         .update(aiSettings)
-        .set({ ...sanitizedBody, updatedAt: new Date() })
+        .set({ ...validationResult.data, updatedAt: new Date() })
         .where(eq(aiSettings.id, existingSettings.id))
         .returning();
     } else {
-      [updated] = await db.insert(aiSettings).values({ ...sanitizedBody }).returning();
+      [updated] = await db.insert(aiSettings).values(validationResult.data).returning();
     }
 
     await logUpdate(db, {
@@ -89,7 +91,7 @@ router.patch("/ai-settings", sensitiveLimiter, async (req, res) => {
     res.json(updated);
   } catch (error: any) {
     console.error("Error updating AI settings:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -115,7 +117,7 @@ router.post("/ai-pm/run", sensitiveLimiter, async (req, res) => {
     res.json({ runId, status: 'completed' });
   } catch (error: any) {
     console.error("Error running AI analysis:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -141,7 +143,7 @@ router.get("/ai-pm/latest-run", async (req, res) => {
     res.json(parsedRun);
   } catch (error: any) {
     console.error("Error fetching latest AI run:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -167,7 +169,7 @@ router.get("/ai-pm/runs/:runId", async (req, res) => {
     res.json(parsedRun);
   } catch (error: any) {
     console.error("Error fetching AI run:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -192,7 +194,7 @@ router.get("/ai-pm/tasks", async (req, res) => {
     res.json(parsedTasks);
   } catch (error: any) {
     console.error("Error fetching AI tasks:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -217,7 +219,7 @@ router.get("/ai-pm/tasks/role/:role", async (req, res) => {
     res.json(parsedTasks);
   } catch (error: any) {
     console.error("Error fetching AI tasks:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -262,7 +264,7 @@ router.patch("/ai-pm/tasks/:taskId", async (req, res) => {
     res.json(updatedTask);
   } catch (error: any) {
     console.error("Error updating AI task:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -286,7 +288,7 @@ router.get("/cfo/profitability", async (req, res) => {
     res.json(profitabilityData);
   } catch (error: any) {
     console.error("Error fetching profitability data:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -309,7 +311,7 @@ router.get("/ai-pm/runs", async (req, res) => {
     res.json(runs);
   } catch (error: any) {
     console.error("Error fetching AI runs:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
