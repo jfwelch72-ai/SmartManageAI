@@ -224,60 +224,58 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
     return <div className="text-center py-8 text-muted-foreground">Loading scope items...</div>;
   }
 
-  if (scopeItems.length === 0) {
-    return <div className="text-center py-8 text-muted-foreground">No scope items yet</div>;
-  }
-
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Quantity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-total-quantity">
-              {summary.totalQuantity.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-completed-quantity">
-              {summary.completedQuantity.toLocaleString()}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {summaryProgressPercent.toFixed(1)}% complete
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Billed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-billed-quantity">
-              {summary.billedQuantity.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-remaining-quantity">
-              {summaryRemaining.toLocaleString()}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Summary Cards - Only show when there are scope items */}
+      {scopeItems.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Quantity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold" data-testid="text-total-quantity">
+                {summary.totalQuantity.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-completed-quantity">
+                {summary.completedQuantity.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {summaryProgressPercent.toFixed(1)}% complete
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Billed</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-billed-quantity">
+                {summary.billedQuantity.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold" data-testid="text-remaining-quantity">
+                {summaryRemaining.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      {/* Filter and Actions Bar */}
+      {/* Filter and Actions Bar - Always visible */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-4 items-end">
@@ -330,24 +328,34 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
         </CardContent>
       </Card>
 
-      {/* Scope Items Table with Expandable Progress */}
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10"></TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Unit</TableHead>
-              <TableHead className="text-right">Total Qty</TableHead>
-              <TableHead className="text-right">Completed</TableHead>
-              <TableHead className="text-right">Billed</TableHead>
-              <TableHead className="text-right">Remaining</TableHead>
-              <TableHead>Billing Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredScopeItems.map((item) => {
+      {/* Scope Items Table with Expandable Progress or Empty State */}
+      {scopeItems.length === 0 ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              <p className="text-lg font-medium">No scope items yet</p>
+              <p className="text-sm mt-2">Click "New Scope Item" to get started</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10"></TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead className="text-right">Total Qty</TableHead>
+                <TableHead className="text-right">Completed</TableHead>
+                <TableHead className="text-right">Billed</TableHead>
+                <TableHead className="text-right">Remaining</TableHead>
+                <TableHead>Billing Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredScopeItems.map((item) => {
               const total = parseFloat(item.totalQuantity);
               const completed = parseFloat(item.completedQuantity || "0");
               const billed = parseFloat(item.billedQuantity || "0");
@@ -413,6 +421,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
           </TableBody>
         </Table>
       </div>
+      )}
 
       {/* Add Progress Dialog */}
       <Dialog open={showProgressDialog} onOpenChange={setShowProgressDialog}>
