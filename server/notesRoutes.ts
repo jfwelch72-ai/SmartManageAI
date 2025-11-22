@@ -57,6 +57,74 @@ router.get("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, r
   }
 });
 
+// Update a project note (creator OR admin only)
+router.patch("/projects/:projectId/notes/:noteId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    // Fetch the existing note
+    const [existingNote] = await db
+      .select()
+      .from(projectNotes)
+      .where(eq(projectNotes.id, noteId))
+      .limit(1);
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Check authorization: must be the creator OR an admin
+    const isCreator = existingNote.authorId === userId;
+    const isAdmin = userRole === "ADMIN";
+
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: "You do not have permission to edit this note" });
+    }
+
+    // Validate the update
+    if (!req.body.text || typeof req.body.text !== "string" || !req.body.text.trim()) {
+      return res.status(400).json({ error: "Note text is required" });
+    }
+
+    // Update the note
+    await db
+      .update(projectNotes)
+      .set({ text: req.body.text.trim() })
+      .where(eq(projectNotes.id, noteId));
+
+    // Fetch the updated note with user details
+    const [updatedNote] = await db
+      .select({
+        id: projectNotes.id,
+        projectId: projectNotes.projectId,
+        authorId: projectNotes.authorId,
+        authorFirstName: users.firstName,
+        authorLastName: users.lastName,
+        authorRole: users.role,
+        noteType: projectNotes.noteType,
+        text: projectNotes.text,
+        createdAt: projectNotes.createdAt,
+      })
+      .from(projectNotes)
+      .leftJoin(users, eq(projectNotes.authorId, users.id))
+      .where(eq(projectNotes.id, noteId));
+
+    res.json(updatedNote);
+  } catch (error: any) {
+    console.error("Error updating project note:", error);
+    res.status(500).json({ 
+      error: "Failed to update project note",
+      details: error.message 
+    });
+  }
+});
+
 // Create a project note
 router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -165,6 +233,76 @@ router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response
     console.error("Error fetching company notes:", error);
     res.status(500).json({ 
       error: "Failed to fetch company notes",
+      details: error.message 
+    });
+  }
+});
+
+// Update a company daily note (creator OR admin only)
+router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { noteId } = req.params;
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    // Fetch the existing note
+    const [existingNote] = await db
+      .select()
+      .from(companyDailyNotes)
+      .where(eq(companyDailyNotes.id, noteId))
+      .limit(1);
+
+    if (!existingNote) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Check authorization: must be the creator OR an admin
+    const isCreator = existingNote.authorId === userId;
+    const isAdmin = userRole === "ADMIN";
+
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: "You do not have permission to edit this note" });
+    }
+
+    // Validate the update
+    if (!req.body.text || typeof req.body.text !== "string" || !req.body.text.trim()) {
+      return res.status(400).json({ error: "Note text is required" });
+    }
+
+    // Update the note
+    await db
+      .update(companyDailyNotes)
+      .set({ text: req.body.text.trim() })
+      .where(eq(companyDailyNotes.id, noteId));
+
+    // Fetch the updated note with user and project details
+    const [updatedNote] = await db
+      .select({
+        id: companyDailyNotes.id,
+        authorId: companyDailyNotes.authorId,
+        authorFirstName: users.firstName,
+        authorLastName: users.lastName,
+        authorRole: users.role,
+        projectId: companyDailyNotes.projectId,
+        projectName: projects.name,
+        projectCode: projects.code,
+        text: companyDailyNotes.text,
+        createdAt: companyDailyNotes.createdAt,
+      })
+      .from(companyDailyNotes)
+      .leftJoin(users, eq(companyDailyNotes.authorId, users.id))
+      .leftJoin(projects, eq(companyDailyNotes.projectId, projects.id))
+      .where(eq(companyDailyNotes.id, noteId));
+
+    res.json(updatedNote);
+  } catch (error: any) {
+    console.error("Error updating company note:", error);
+    res.status(500).json({ 
+      error: "Failed to update company note",
       details: error.message 
     });
   }

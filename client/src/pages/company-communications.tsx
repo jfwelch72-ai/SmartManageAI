@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { MessageSquare, Calendar, User, Filter, X, Building2 } from "lucide-react";
+import { MessageSquare, Calendar, User, Filter, X, Building2, Edit2, Save, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,11 +48,14 @@ export default function CompanyCommunicationsPage() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [startDateFilter, setStartDateFilter] = useState<string>("");
   const [endDateFilter, setEndDateFilter] = useState<string>("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   // Fetch all projects for filter dropdown and note creation
-  const { data: projects = [] } = useQuery<Project[]>({
+  const { data: projectsResponse } = useQuery<{ data: Project[] }>({
     queryKey: ["/api/projects"],
   });
+  const projects = projectsResponse?.data || [];
 
   // Fetch all users for filter dropdown
   const { data: allUsers = [] } = useQuery<User[]>({
@@ -104,6 +107,29 @@ export default function CompanyCommunicationsPage() {
     },
   });
 
+  // Update note mutation
+  const updateNoteMutation = useMutation({
+    mutationFn: async ({ noteId, text }: { noteId: string; text: string }) => {
+      return apiRequest("PATCH", `/api/company-notes/${noteId}`, { text });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-notes"] });
+      setEditingNoteId(null);
+      setEditText("");
+      toast({
+        title: "Note Updated",
+        description: "Your note has been updated successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update note. Please try again.",
+      });
+    },
+  });
+
   const handleSubmit = () => {
     if (newNote.trim()) {
       createNoteMutation.mutate({
@@ -111,6 +137,27 @@ export default function CompanyCommunicationsPage() {
         projectId: selectedProjectId || undefined,
       });
     }
+  };
+
+  const startEditing = (note: CompanyNote) => {
+    setEditingNoteId(note.id);
+    setEditText(note.text);
+  };
+
+  const cancelEditing = () => {
+    setEditingNoteId(null);
+    setEditText("");
+  };
+
+  const saveEdit = () => {
+    if (editingNoteId && editText.trim()) {
+      updateNoteMutation.mutate({ noteId: editingNoteId, text: editText });
+    }
+  };
+
+  const canEditNote = (note: CompanyNote) => {
+    if (!user) return false;
+    return user.id === note.authorId || user.role === "ADMIN";
   };
 
   const clearFilters = () => {
@@ -291,6 +338,8 @@ export default function CompanyCommunicationsPage() {
               notes.map((note) => {
                 const initials = `${note.authorFirstName[0]}${note.authorLastName[0]}`.toUpperCase();
                 const noteDate = new Date(note.createdAt);
+                const isEditing = editingNoteId === note.id;
+                const canEdit = canEditNote(note);
 
                 return (
                   <div
@@ -317,18 +366,66 @@ export default function CompanyCommunicationsPage() {
                             </div>
                           )}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs text-muted-foreground" data-testid={`note-date-${note.id}`}>
-                            {format(noteDate, "MMM d, yyyy")}
-                          </p>
-                          <p className="text-xs text-muted-foreground" data-testid={`note-time-${note.id}`}>
-                            {format(noteDate, "h:mm a")}
-                          </p>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right shrink-0">
+                            <p className="text-xs text-muted-foreground" data-testid={`note-date-${note.id}`}>
+                              {format(noteDate, "MMM d, yyyy")}
+                            </p>
+                            <p className="text-xs text-muted-foreground" data-testid={`note-time-${note.id}`}>
+                              {format(noteDate, "h:mm a")}
+                            </p>
+                          </div>
+                          {canEdit && !isEditing && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => startEditing(note)}
+                              data-testid={`button-edit-company-note-${note.id}`}
+                              className="shrink-0"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <p className="text-sm text-card-foreground whitespace-pre-wrap" data-testid={`note-text-${note.id}`}>
-                        {note.text}
-                      </p>
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <Textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            className="min-h-24"
+                            data-testid={`textarea-edit-company-note-${note.id}`}
+                            disabled={updateNoteMutation.isPending}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={saveEdit}
+                              disabled={!editText.trim() || updateNoteMutation.isPending}
+                              data-testid={`button-save-company-note-${note.id}`}
+                              className="gap-2"
+                            >
+                              <Save className="w-3 h-3" />
+                              {updateNoteMutation.isPending ? "Saving..." : "Save"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={cancelEditing}
+                              disabled={updateNoteMutation.isPending}
+                              data-testid={`button-cancel-edit-company-note-${note.id}`}
+                              className="gap-2"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-card-foreground whitespace-pre-wrap" data-testid={`note-text-${note.id}`}>
+                          {note.text}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
