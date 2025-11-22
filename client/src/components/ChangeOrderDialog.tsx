@@ -50,7 +50,8 @@ export function ChangeOrderDialog({
   const [editedAmount, setEditedAmount] = useState("");
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
-  const canEdit = changeOrder?.status === "DRAFT";
+  // Only ADMIN/MANAGER can edit change orders (enforced by backend)
+  const canEdit = canManage && changeOrder?.status === "DRAFT";
 
   useEffect(() => {
     if (changeOrder) {
