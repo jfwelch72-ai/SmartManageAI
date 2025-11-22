@@ -26,6 +26,14 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
     -   **Daily Scope Progress Tracking**: Enables daily tracking of scope item completion quantities, billed quantities, and billing status changes with dedicated API endpoints and UI components for management and visualization.
+    -   **Billing Status Workflow**: Production-grade workflow for managing billing lifecycle from field completion to invoicing:
+        -   **Field Recording**: Workers record daily progress with initial billing status
+        -   **Verification**: Superintendents mark quantities as "READY_TO_BILL" → Office Managers automatically notified
+        -   **Billing Completion**: Office Managers update status to "BILLED" via inline dropdown → billedDate and billedById auto-filled
+        -   **Audit Trail**: Complete tracking of who billed quantities and when
+        -   **RBAC**: Strict role-based access (SUPERINTENDENT, OFFICE_MANAGER, ADMIN, MANAGER can update status)
+        -   **Data Integrity**: Database transactions ensure atomic updates, strict enum validation prevents invalid status values
+        -   **Notifications**: Automatic alerts to office managers when quantities are ready for billing
 
 ## External Dependencies
 -   **PostgreSQL (Neon)**: Primary database with HTTP driver (neon-http).
