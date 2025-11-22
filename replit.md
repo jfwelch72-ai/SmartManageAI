@@ -34,7 +34,15 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
         -   **Adjusted Contract Amount**: Displays in Financial Information card as original contract + sum of all APPROVED change orders
         -   **Visual Indicators**: Color-coded amounts with Addition/Deduction badges throughout UI
         -   **Helper Text**: Form inputs include guidance on entering positive/negative values
-    -   **Daily Operations**: Project notes, media uploads, and daily scope progress tracking with quantity completion and billing status management.
+    -   **Daily Notes & Company Communications**: Comprehensive system for project-specific and company-wide daily communications:
+        -   **Project Daily Notes**: Per-project note tracking on each project detail page with auto-generated metadata (author, timestamp, date)
+        -   **Company Communications**: Dedicated company-wide communications page accessible from main navigation
+        -   **Filtering**: Advanced filtering by author, date range, and project for both note systems
+        -   **API**: RESTful endpoints with query parameter support for flexible data retrieval
+        -   **Database**: Dedicated tables (projectNotes, companyDailyNotes, aiNoteInsights) with proper indexing for performance
+        -   **Auto-generated Metadata**: System automatically captures user ID, timestamp, and date for all notes
+        -   **Future AI Integration**: Schema prepared for AI-powered note scanning and task generation (aiNoteInsights table ready for implementation)
+    -   **Daily Operations**: Media uploads and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.

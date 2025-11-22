@@ -36,6 +36,7 @@ import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from ".
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import aiRoutes from "./aiRoutes";
+import notesRoutes from "./notesRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -52,6 +53,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);
+
+  // Register daily notes routes
+  app.use("/api", notesRoutes);
 
   // ====================
   // Auth Routes

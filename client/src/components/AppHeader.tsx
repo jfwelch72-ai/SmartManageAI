@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
@@ -89,6 +89,12 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             <Link href="/calendar">
               <Calendar className="w-4 h-4" />
               Calendar
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-communications">
+            <Link href="/communications">
+              <MessageSquare className="w-4 h-4" />
+              Communications
             </Link>
           </Button>
           

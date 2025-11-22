@@ -23,6 +23,9 @@ export const auditActionEnum = pgEnum("audit_action", [
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
+export const aiNoteInsightCategoryEnum = pgEnum("ai_note_insight_category", ["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]);
+export const aiNoteInsightSeverityEnum = pgEnum("ai_note_insight_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const aiNoteInsightSourceTypeEnum = pgEnum("ai_note_insight_source_type", ["PROJECT", "COMPANY"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -222,7 +225,44 @@ export const projectNotes = pgTable("project_notes", {
   noteType: noteTypeEnum("note_type").notNull().default("GENERAL"),
   text: text("text").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  projectIdIdx: index("project_notes_project_id_idx").on(table.projectId),
+  authorIdIdx: index("project_notes_author_id_idx").on(table.authorId),
+  createdAtIdx: index("project_notes_created_at_idx").on(table.createdAt),
+}));
+
+// Company Daily Notes table (company-wide communications)
+export const companyDailyNotes = pgTable("company_daily_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  authorId: varchar("author_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  text: text("text").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  authorIdIdx: index("company_daily_notes_author_id_idx").on(table.authorId),
+  projectIdIdx: index("company_daily_notes_project_id_idx").on(table.projectId),
+  createdAtIdx: index("company_daily_notes_created_at_idx").on(table.createdAt),
+}));
+
+// AI Note Insights table (stores AI analysis of daily notes)
+export const aiNoteInsights = pgTable("ai_note_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => aiRuns.id),
+  sourceType: aiNoteInsightSourceTypeEnum("source_type").notNull(),
+  sourceId: varchar("source_id").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  category: aiNoteInsightCategoryEnum("category").notNull(),
+  summary: text("summary").notNull(),
+  recommendedActions: text("recommended_actions_json"),
+  severity: aiNoteInsightSeverityEnum("severity").notNull().default("MEDIUM"),
+  recipients: text("recipients_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  runIdIdx: index("ai_note_insights_run_id_idx").on(table.runId),
+  projectIdIdx: index("ai_note_insights_project_id_idx").on(table.projectId),
+  categoryIdx: index("ai_note_insights_category_idx").on(table.category),
+  severityIdx: index("ai_note_insights_severity_idx").on(table.severity),
+}));
 
 // Scope of Work Items table
 export const scopeItems = pgTable("scope_items", {
@@ -726,6 +766,16 @@ export const insertProjectNoteSchema = createInsertSchema(projectNotes).omit({
   createdAt: true,
 });
 
+export const insertCompanyDailyNoteSchema = createInsertSchema(companyDailyNotes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAINoteInsightSchema = createInsertSchema(aiNoteInsights).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   id: true,
   createdAt: true,
@@ -784,6 +834,12 @@ export type Receipt = typeof receipts.$inferSelect;
 
 export type InsertProjectNote = z.infer<typeof insertProjectNoteSchema>;
 export type ProjectNote = typeof projectNotes.$inferSelect;
+
+export type InsertCompanyDailyNote = z.infer<typeof insertCompanyDailyNoteSchema>;
+export type CompanyDailyNote = typeof companyDailyNotes.$inferSelect;
+
+export type InsertAINoteInsight = z.infer<typeof insertAINoteInsightSchema>;
+export type AINoteInsight = typeof aiNoteInsights.$inferSelect;
 
 export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
 export type ScopeItem = typeof scopeItems.$inferSelect;

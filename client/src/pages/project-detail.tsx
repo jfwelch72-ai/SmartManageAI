@@ -397,6 +397,15 @@ export default function ProjectDetailPage() {
     enabled: !!projectCode,
   });
 
+  // Query all users for daily notes filter
+  const { data: allUsers = [] } = useQuery<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+  }>>({
+    queryKey: ["/api/users"],
+  });
+
   // Subcontractor payables query (for payment tracking on this project)
   const { data: allPayables = [] } = useQuery<Array<{
     paymentId: string;
@@ -1178,34 +1187,7 @@ export default function ProjectDetailPage() {
           />
 
           <TabsContent value="daily-notes">
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {notesLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading notes...</div>
-                ) : projectNotes.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No daily notes yet</div>
-                ) : (
-                  <div className="space-y-4">
-                    {projectNotes.map((note) => (
-                      <Card key={note.id} data-testid={`note-${note.id}`}>
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-4 mb-2">
-                            <p className="text-sm font-medium">{note.noteType.replace("_", " ")}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(note.createdAt), "MMM d, yyyy h:mm a")}
-                            </p>
-                          </div>
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{note.text}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <DailyNoteFeed projectId={project.id} availableUsers={allUsers} />
           </TabsContent>
 
           <TabsContent value="media">
