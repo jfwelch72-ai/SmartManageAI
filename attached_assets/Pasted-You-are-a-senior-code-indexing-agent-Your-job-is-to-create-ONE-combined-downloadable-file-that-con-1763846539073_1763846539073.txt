@@ -1,0 +1,98 @@
+You are a senior code-indexing agent.
+
+Your job is to create ONE combined downloadable file that contains ALL code related to the following modules in my TFR app:
+
+- Takeoff engine (frontend + backend)
+- Measurement tools (lines, polygons, arcs, curves, notes, counts)
+- Canvas / interaction logic
+- Calibration logic
+- Geometry utilities
+- All Takeoff UI components
+- All AI endpoints (auto-sheet, auto-region)
+- All AI services (vision, spec analysis, detail analysis)
+- PDF/plan upload + sheet rendering
+- Spec book ingestion
+- Detail linking
+- Scope summary logic
+- Estimating engine files
+- Cost settings
+- Crew builder
+- Vendor quotes
+- Estimate builder UI
+- Any models, migrations, utilities, or hooks used by these systems
+
+===========================
+SEARCH INSTRUCTIONS
+===========================
+Search the entire project for any file paths or code containing these keywords:
+
+“takeoff”
+“Takeoff”
+“measurement”
+“canvas”
+“calibration”
+“estimate”
+“estimating”
+“scope”
+“spec”
+“detail”
+“ai”
+“auto-sheet”
+“auto-region”
+“plan”
+“pdf”
+“raster”
+“polygon”
+“curve”
+“area”
+“volume”
+“count”
+“sidebar”
+“toolbar”
+“sheet”
+“quantities”
+“scope-summary”
+“cost settings”
+“production rates”
+“crew”
+“vendor”
+“quote”
+
+===========================
+OUTPUT REQUIREMENTS
+===========================
+Create ONE file named:
+
+TAKEOFF_ESTIMATE_ENGINE_FULL_SOURCE_DUMP.md
+
+The file must include:
+
+- File path headers
+- Full exact code content of each file
+- Do NOT summarize or paraphrase
+- Do NOT omit any code
+- Separate each file with:
+
+---- FILE START: <path> ----
+<full file contents>
+---- FILE END: <path> ----
+
+If the combined file becomes too large for one output,
+split into multiple files:
+
+TAKEOFF_ESTIMATE_ENGINE_FULL_SOURCE_DUMP_PART1.md  
+TAKEOFF_ESTIMATE_ENGINE_FULL_SOURCE_DUMP_PART2.md  
+...and so on.
+
+===========================
+FINAL ACTION
+===========================
+When complete:
+
+1. Save the output file(s) to the Replit workspace.
+2. Provide them to me as downloadable artifacts.
+
+Do NOT attempt to improve, refactor, or repair any code now.
+Your ONLY job is extraction and bundling.
+
+Begin.
