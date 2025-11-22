@@ -47,27 +47,6 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const summaryRemaining = summary.totalQuantity - summary.completedQuantity;
   const summaryProgressPercent = summary.totalQuantity > 0 ? (summary.completedQuantity / summary.totalQuantity) * 100 : 0;
 
-  // Fetch daily progress for expanded scope items using useQueries (respecting React hook rules)
-  // Only fetch for expanded rows to avoid N parallel requests on initial load
-  const progressQueries = useQueries({
-    queries: scopeItems.map((item) => ({
-      queryKey: ["/api/scope-items", item.id, "progress"],
-      queryFn: async () => {
-        const response = await fetch(`/api/scope-items/${item.id}/progress`);
-        if (!response.ok) throw new Error("Failed to fetch progress");
-        return response.json() as Promise<DailyProgressWithCreator[]>;
-      },
-      // Only fetch when row is expanded to avoid performance issues on large projects
-      enabled: expandedItems.has(item.id),
-    })),
-  });
-
-  // Create a map of scope item ID to progress data
-  const progressDataMap = new Map<string, DailyProgressWithCreator[]>();
-  scopeItems.forEach((item, index) => {
-    progressDataMap.set(item.id, progressQueries[index]?.data || []);
-  });
-
   // Create daily progress mutation
   const createProgressMutation = useMutation({
     mutationFn: async (data: {
@@ -241,7 +220,6 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
               const billed = parseFloat(item.billedQuantity || "0");
               const remaining = total - completed;
               const isExpanded = expandedItems.has(item.id);
-              const progressEntries = progressDataMap.get(item.id) || [];
 
               return (
                 <Fragment key={item.id}>
@@ -291,71 +269,10 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
                     </TableCell>
                   </TableRow>
                   {isExpanded && (
-                    <TableRow>
-                      <TableCell colSpan={9} className="bg-muted/50 p-4">
-                        <div className="space-y-2">
-                          <h4 className="font-semibold text-sm mb-3">Daily Progress History</h4>
-                          {!progressEntries || progressEntries.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No daily progress entries yet</p>
-                          ) : (
-                            <div className="rounded-md border bg-background">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Date</TableHead>
-                                    <TableHead className="text-right">Qty Completed</TableHead>
-                                    <TableHead className="text-right">Qty Billed</TableHead>
-                                    <TableHead>Billing Status</TableHead>
-                                    <TableHead>Notes</TableHead>
-                                    <TableHead>Recorded By</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {progressEntries.map(({ progress, creator }) => (
-                                    <TableRow key={progress.id} data-testid={`row-progress-${progress.id}`}>
-                                      <TableCell>
-                                        <div className="flex items-center gap-1">
-                                          <Calendar className="h-3 w-3 text-muted-foreground" />
-                                          {format(new Date(progress.workDate), "MMM d, yyyy")}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono">
-                                        {parseFloat(progress.quantityCompleted).toLocaleString()}
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono">
-                                        {parseFloat(progress.billedQuantity).toLocaleString()}
-                                      </TableCell>
-                                      <TableCell>
-                                        <Badge variant="outline" className="text-xs">
-                                          {progress.billingStatus.replace("_", " ")}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="text-sm text-muted-foreground">
-                                        {progress.notes || "—"}
-                                      </TableCell>
-                                      <TableCell className="text-sm">
-                                        {creator ? `${creator.firstName} ${creator.lastName}` : "—"}
-                                      </TableCell>
-                                      <TableCell className="text-right">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleDeleteProgress(item.id, progress.id)}
-                                          data-testid={`button-delete-progress-${progress.id}`}
-                                        >
-                                          <Trash2 className="h-3 w-3 text-destructive" />
-                                        </Button>
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                    <ScopeItemProgressRow 
+                      scopeItemId={item.id}
+                      onDelete={(progressId) => handleDeleteProgress(item.id, progressId)}
+                    />
                   )}
                 </Fragment>
               );
