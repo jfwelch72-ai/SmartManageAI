@@ -240,6 +240,25 @@ export const scopeItems = pgTable("scope_items", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Daily Scope Progress table - tracks daily quantities completed for each scope item
+export const dailyScopeProgress = pgTable("daily_scope_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workDate: date("work_date").notNull(),
+  quantityCompleted: decimal("quantity_completed", { precision: 12, scale: 2 }).notNull(),
+  billedQuantity: decimal("billed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
+  billingStatus: billingStatusEnum("billing_status").notNull().default("NOT_READY"),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  scopeItemIdIdx: index("daily_scope_progress_scope_item_id_idx").on(table.scopeItemId),
+  projectIdIdx: index("daily_scope_progress_project_id_idx").on(table.projectId),
+  workDateIdx: index("daily_scope_progress_work_date_idx").on(table.workDate),
+}));
+
 // Media table (photos and videos)
 export const media = pgTable("media", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -710,6 +729,12 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
   updatedAt: true,
 });
 
+export const insertDailyScopeProgressSchema = createInsertSchema(dailyScopeProgress).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertMediaSchema = createInsertSchema(media).omit({
   id: true,
   uploadedAt: true,
@@ -757,6 +782,9 @@ export type ProjectNote = typeof projectNotes.$inferSelect;
 
 export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
 export type ScopeItem = typeof scopeItems.$inferSelect;
+
+export type InsertDailyScopeProgress = z.infer<typeof insertDailyScopeProgressSchema>;
+export type DailyScopeProgress = typeof dailyScopeProgress.$inferSelect;
 
 export type InsertMedia = z.infer<typeof insertMediaSchema>;
 export type Media = typeof media.$inferSelect;
