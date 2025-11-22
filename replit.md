@@ -27,6 +27,13 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
         -   **RBAC**: ADMIN, MANAGER, OFFICE_MANAGER have unrestricted access; project superintendents, estimators, and change order requesters have project-level access
         -   **Delete Permissions**: File uploader OR ADMIN/MANAGER/OFFICE_MANAGER can delete files
         -   **Integration**: Files stored in change order's attachmentsJson field with object storage references and ACL policies
+    -   **Change Order Deductions & Adjusted Contract**: Support for both additions and deductions to contract value:
+        -   **Additions**: Positive amounts for additional scope (displayed with + prefix in primary color)
+        -   **Deductions**: Negative amounts for scope reductions (displayed with - prefix in red/destructive color)
+        -   **Validation**: Amounts must be non-zero, range ±$100M, validated on both frontend and backend
+        -   **Adjusted Contract Amount**: Displays in Financial Information card as original contract + sum of all APPROVED change orders
+        -   **Visual Indicators**: Color-coded amounts with Addition/Deduction badges throughout UI
+        -   **Helper Text**: Form inputs include guidance on entering positive/negative values
     -   **Daily Operations**: Project notes, media uploads, and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.
