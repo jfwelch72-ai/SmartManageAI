@@ -397,7 +397,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Adjust shift (managers only)
-  app.patch("/api/time-clock/shift/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -582,7 +582,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Approve shift (managers only)
-  app.post("/api/time-clock/approve/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const schema = z.object({
         createTimeEntry: z.boolean().optional(),
@@ -666,6 +666,61 @@ export function registerTimeClockRoutes(app: Express): void {
       res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });
     } catch (error) {
       console.error("Approve shift error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reject shift (managers only)
+  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        reason: req.body.reason ? sanitizeText(req.body.reason) : undefined,
+      };
+
+      const schema = z.object({
+        reason: z.string().min(1, "Rejection reason is required"),
+      });
+
+      const data = schema.parse(sanitizedBody);
+
+      const [shift] = await db
+        .select()
+        .from(timeClockShifts)
+        .where(eq(timeClockShifts.id, req.params.id))
+        .limit(1);
+
+      if (!shift) {
+        res.status(404).json({ error: "Shift not found" });
+        return;
+      }
+
+      const [updatedShift] = await db
+        .update(timeClockShifts)
+        .set({
+          approvalStatus: "REJECTED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          notes: shift.notes ? `${shift.notes}\nREJECTED: ${data.reason}` : `REJECTED: ${data.reason}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(timeClockShifts.id, req.params.id))
+        .returning();
+
+      // Audit log
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "TIME_CLOCK_SHIFT",
+        entityId: req.params.id,
+        action: "REJECT",
+        oldValue: JSON.stringify({ status: "PENDING" }),
+        newValue: JSON.stringify({ status: "REJECTED", reason: data.reason }),
+      }, req);
+
+      res.json(updatedShift);
+    } catch (error) {
+      console.error("Reject shift error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
