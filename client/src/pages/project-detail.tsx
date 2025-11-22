@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { FeaturePermissions } from "@/lib/rbac";
-import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
+import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
   const { toast } = useToast();
 
   const createMutation = useCreateChangeOrder();
+  const requestApprovalMutation = useRequestApprovalChangeOrder();
   const approveMutation = useApproveChangeOrder();
   const rejectMutation = useRejectChangeOrder();
   const submitMutation = useSubmitChangeOrder();
@@ -115,6 +116,15 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
       toast({ title: "Success", description: "Change order returned to draft" });
     } catch (error) {
       toast({ title: "Error", description: "Failed to return to draft", variant: "destructive" });
+    }
+  };
+
+  const handleRequestApproval = async (id: string) => {
+    try {
+      await requestApprovalMutation.mutateAsync({ id, projectCode });
+      toast({ title: "Success", description: "Change order sent for approval" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to request approval", variant: "destructive" });
     }
   };
 
@@ -222,6 +232,20 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold font-mono">${parseFloat(co.amount).toLocaleString()}</p>
+                        {co.status === "DRAFT" && (
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleRequestApproval(co.id)}
+                              disabled={requestApprovalMutation.isPending}
+                              data-testid={`button-request-approval-${co.id}`}
+                            >
+                              <Clock className="w-4 h-4 mr-1" />
+                              Request Approval
+                            </Button>
+                          </div>
+                        )}
                         {canManage && co.status === "PENDING_APPROVAL" && (
                           <div className="flex gap-2 mt-2">
                             <Button

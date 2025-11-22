@@ -113,6 +113,21 @@ export function useRejectChangeOrder() {
   });
 }
 
+export function useRequestApprovalChangeOrder() {
+  return useMutation({
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
+      const response = await apiRequest("POST", `/api/change-orders/${id}/request-approval`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
 export function useSubmitChangeOrder() {
   return useMutation({
     mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
