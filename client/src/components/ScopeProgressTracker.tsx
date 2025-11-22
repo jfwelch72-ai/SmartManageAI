@@ -112,7 +112,23 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const uniqueUnits = Array.from(new Set(scopeItems.map(item => item.unit))).sort();
   const uniqueStatuses = ["NOT_READY", "READY_TO_BILL", "BILLED"];
 
-  // Note: We don't aggregate totals across different scope items because mixing units (SF, LF, CY, EA, etc.) is meaningless
+  // Calculate summary totals grouped by unit (filtering and aggregating same units makes sense!)
+  const summaryByUnit = filteredScopeItems.reduce((acc, item) => {
+    const unit = item.unit;
+    if (!acc[unit]) {
+      acc[unit] = { total: 0, completed: 0, billed: 0, remaining: 0 };
+    }
+    const total = parseFloat(item.totalQuantity);
+    const completed = parseFloat(item.completedQuantity || "0");
+    const billed = parseFloat(item.billedQuantity || "0");
+    const remaining = total - completed;
+    
+    acc[unit].total += total;
+    acc[unit].completed += completed;
+    acc[unit].billed += billed;
+    acc[unit].remaining += remaining;
+    return acc;
+  }, {} as Record<string, { total: number; completed: number; billed: number; remaining: number }>);
 
   // Create daily progress mutation
   const createProgressMutation = useMutation({
@@ -124,7 +140,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
       billingStatus: string;
       notes?: string;
     }) => {
-      return apiRequest(`/api/scope-items/${data.scopeItemId}/progress`, "POST", data);
+      return apiRequest("POST", `/api/scope-items/${data.scopeItemId}/progress`, data);
     },
     onSuccess: async (_data, variables) => {
       // Await invalidation to ensure fresh data before showing success
@@ -145,7 +161,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   // Delete progress mutation
   const deleteProgressMutation = useMutation({
     mutationFn: async ({ scopeItemId, progressId }: { scopeItemId: string; progressId: string }) => {
-      return apiRequest(`/api/scope-items/${scopeItemId}/progress/${progressId}`, "DELETE");
+      return apiRequest("DELETE", `/api/scope-items/${scopeItemId}/progress/${progressId}`);
     },
     onSuccess: async (_data, variables) => {
       // Await invalidation to ensure fresh data before showing success
@@ -169,7 +185,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
       totalQuantity: string;
       unitPrice?: string;
     }) => {
-      return apiRequest(`/api/projects/${projectCode}/scope`, "POST", data);
+      return apiRequest("POST", `/api/projects/${projectCode}/scope`, data);
     },
     onSuccess: async () => {
       await Promise.all([
@@ -268,6 +284,42 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
 
   return (
     <div className="space-y-6">
+      {/* Summary Cards Grouped by Unit */}
+      {Object.keys(summaryByUnit).length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {Object.entries(summaryByUnit).map(([unit, totals]) => (
+            <Card key={unit}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  {unit} Quantities
+                </CardTitle>
+                <Badge variant="outline">{unit}</Badge>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total:</span>
+                    <span className="font-mono font-medium">{totals.total.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Completed:</span>
+                    <span className="font-mono font-medium text-green-600 dark:text-green-400">{totals.completed.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Billed:</span>
+                    <span className="font-mono font-medium text-blue-600 dark:text-blue-400">{totals.billed.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Remaining:</span>
+                    <span className="font-mono font-medium text-orange-600 dark:text-orange-400">{totals.remaining.toLocaleString()}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+      
       {/* Filter and Actions Bar - Always visible */}
       <Card>
         <CardContent className="pt-6">
