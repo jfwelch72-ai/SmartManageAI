@@ -27,16 +27,41 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [showProgressDialog, setShowProgressDialog] = useState(false);
   const [selectedScopeItem, setSelectedScopeItem] = useState<ScopeItem | null>(null);
+  const [showNewScopeDialog, setShowNewScopeDialog] = useState(false);
   
-  // Form state
+  // Filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [unitFilter, setUnitFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  
+  // Form state for daily progress
   const [workDate, setWorkDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [quantityCompleted, setQuantityCompleted] = useState("");
   const [billedQuantity, setBilledQuantity] = useState("");
   const [billingStatus, setBillingStatus] = useState<"NOT_READY" | "READY_TO_BILL" | "BILLED">("NOT_READY");
   const [notes, setNotes] = useState("");
 
-  // Calculate summary totals
-  const summary = scopeItems.reduce(
+  // Form state for new scope item
+  const [newScopeDescription, setNewScopeDescription] = useState("");
+  const [newScopeUnit, setNewScopeUnit] = useState("");
+  const [newScopeTotalQty, setNewScopeTotalQty] = useState("");
+  const [newScopeUnitPrice, setNewScopeUnitPrice] = useState("");
+
+  // Apply filters to scope items
+  const filteredScopeItems = scopeItems.filter((item) => {
+    const matchesSearch = searchTerm === "" || 
+      item.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesUnit = unitFilter === "all" || item.unit === unitFilter;
+    const matchesStatus = statusFilter === "all" || item.billingStatus === statusFilter;
+    return matchesSearch && matchesUnit && matchesStatus;
+  });
+
+  // Get unique units and statuses for filter dropdowns
+  const uniqueUnits = Array.from(new Set(scopeItems.map(item => item.unit))).sort();
+  const uniqueStatuses = ["NOT_READY", "READY_TO_BILL", "BILLED"];
+
+  // Calculate summary totals from filtered items
+  const summary = filteredScopeItems.reduce(
     (acc, item) => ({
       totalQuantity: acc.totalQuantity + parseFloat(item.totalQuantity),
       completedQuantity: acc.completedQuantity + parseFloat(item.completedQuantity || "0"),
@@ -94,6 +119,34 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
     },
   });
 
+  // Create new scope item mutation
+  const createScopeItemMutation = useMutation({
+    mutationFn: async (data: {
+      description: string;
+      unit: string;
+      totalQuantity: string;
+      unitPrice?: string;
+    }) => {
+      return apiRequest(`/api/projects/${projectCode}/scope`, "POST", data);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
+      ]);
+      toast({ title: "Success", description: "Scope item created successfully" });
+      setShowNewScopeDialog(false);
+      resetNewScopeForm();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to create scope item", 
+        variant: "destructive" 
+      });
+    },
+  });
+
   const toggleExpand = (itemId: string) => {
     const newExpanded = new Set(expandedItems);
     if (newExpanded.has(itemId)) {
@@ -111,6 +164,13 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
     setBillingStatus("NOT_READY");
     setNotes("");
     setSelectedScopeItem(null);
+  };
+
+  const resetNewScopeForm = () => {
+    setNewScopeDescription("");
+    setNewScopeUnit("");
+    setNewScopeTotalQty("");
+    setNewScopeUnitPrice("");
   };
 
   const handleCreateProgress = () => {
@@ -133,6 +193,26 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
     if (confirm("Are you sure you want to delete this progress entry?")) {
       deleteProgressMutation.mutate({ scopeItemId, progressId });
     }
+  };
+
+  const handleCreateScopeItem = () => {
+    if (!newScopeDescription || !newScopeUnit || !newScopeTotalQty) {
+      toast({ title: "Error", description: "Please fill in required fields", variant: "destructive" });
+      return;
+    }
+
+    const totalQty = parseFloat(newScopeTotalQty);
+    if (isNaN(totalQty) || totalQty <= 0) {
+      toast({ title: "Error", description: "Total quantity must be a positive number", variant: "destructive" });
+      return;
+    }
+
+    createScopeItemMutation.mutate({
+      description: newScopeDescription,
+      unit: newScopeUnit,
+      totalQuantity: newScopeTotalQty,
+      unitPrice: newScopeUnitPrice || undefined,
+    });
   };
 
   const openProgressDialog = (item: ScopeItem) => {
@@ -197,6 +277,59 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
         </Card>
       </div>
 
+      {/* Filter and Actions Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-4 items-end">
+            <div className="flex-1 min-w-[200px]">
+              <Label htmlFor="search">Search Description</Label>
+              <Input
+                id="search"
+                placeholder="Search scope items..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-scope"
+              />
+            </div>
+            <div className="w-[180px]">
+              <Label htmlFor="unit-filter">Filter by Unit</Label>
+              <Select value={unitFilter} onValueChange={setUnitFilter}>
+                <SelectTrigger id="unit-filter" data-testid="select-unit-filter">
+                  <SelectValue placeholder="All Units" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Units</SelectItem>
+                  {uniqueUnits.map(unit => (
+                    <SelectItem key={unit} value={unit}>{unit}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-[180px]">
+              <Label htmlFor="status-filter">Filter by Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger id="status-filter" data-testid="select-status-filter">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {uniqueStatuses.map(status => (
+                    <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              onClick={() => setShowNewScopeDialog(true)}
+              data-testid="button-new-scope-item"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Scope Item
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Scope Items Table with Expandable Progress */}
       <div className="rounded-md border">
         <Table>
@@ -214,7 +347,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
             </TableRow>
           </TableHeader>
           <TableBody>
-            {scopeItems.map((item) => {
+            {filteredScopeItems.map((item) => {
               const total = parseFloat(item.totalQuantity);
               const completed = parseFloat(item.completedQuantity || "0");
               const billed = parseFloat(item.billedQuantity || "0");
@@ -370,6 +503,82 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
               data-testid="button-save-progress"
             >
               {createProgressMutation.isPending ? "Saving..." : "Save Progress"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Scope Item Dialog */}
+      <Dialog open={showNewScopeDialog} onOpenChange={setShowNewScopeDialog}>
+        <DialogContent data-testid="dialog-new-scope-item">
+          <DialogHeader>
+            <DialogTitle>Create New Scope Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="new-description">Description *</Label>
+              <Input
+                id="new-description"
+                value={newScopeDescription}
+                onChange={(e) => setNewScopeDescription(e.target.value)}
+                placeholder="e.g., Install drywall, Pour concrete, etc."
+                data-testid="input-new-description"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="new-unit">Unit *</Label>
+                <Input
+                  id="new-unit"
+                  value={newScopeUnit}
+                  onChange={(e) => setNewScopeUnit(e.target.value)}
+                  placeholder="e.g., SF, LF, EA, CY"
+                  data-testid="input-new-unit"
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-total-qty">Total Quantity *</Label>
+                <Input
+                  id="new-total-qty"
+                  type="number"
+                  step="0.01"
+                  value={newScopeTotalQty}
+                  onChange={(e) => setNewScopeTotalQty(e.target.value)}
+                  placeholder="0.00"
+                  data-testid="input-new-total-qty"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="new-unit-price">Unit Price (Optional)</Label>
+              <Input
+                id="new-unit-price"
+                type="number"
+                step="0.01"
+                value={newScopeUnitPrice}
+                onChange={(e) => setNewScopeUnitPrice(e.target.value)}
+                placeholder="0.00"
+                data-testid="input-new-unit-price"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNewScopeDialog(false);
+                resetNewScopeForm();
+              }}
+              data-testid="button-cancel-new-scope"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateScopeItem}
+              disabled={createScopeItemMutation.isPending}
+              data-testid="button-save-new-scope"
+            >
+              {createScopeItemMutation.isPending ? "Creating..." : "Create Scope Item"}
             </Button>
           </DialogFooter>
         </DialogContent>
