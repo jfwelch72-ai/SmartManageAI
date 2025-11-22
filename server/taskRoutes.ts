@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects } from "@shared/schema";
-import { eq, and, desc, isNull, or, alias } from "drizzle-orm";
+import { eq, and, desc, isNull, or } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { z } from "zod";
 
@@ -162,9 +162,9 @@ router.get("/api/tasks", requireAuth, async (req, res) => {
       );
     }
 
-    // Use Drizzle's alias helper for creator and assignee joins
-    const creator = alias(users, "creator");
-    const assignee = alias(users, "assignee");
+    // Use .as() method for aliasing when joining users table twice
+    const creator = users.as("creator");
+    const assignee = users.as("assignee");
 
     const taskList = await db
       .select({
