@@ -33,7 +33,7 @@ export function ChangeOrderFileUploader({
     }
 
     const data = await response.json();
-    return { method: "PUT" as const, url: data.url };
+    return { method: "PUT" as const, url: data.uploadURL };
   };
 
   const handleComplete = async (
