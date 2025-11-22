@@ -37,6 +37,7 @@ import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
+import aiNotesRoutes from "./aiNotesRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -56,6 +57,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register daily notes routes
   app.use("/api", notesRoutes);
+
+  // Register AI notes analysis routes
+  app.use("/api/ai-notes", aiNotesRoutes);
 
   // ====================
   // Auth Routes

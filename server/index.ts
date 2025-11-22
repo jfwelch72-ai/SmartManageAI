@@ -4,6 +4,7 @@ import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAIScheduler } from "./ai/scheduler";
+import { aiNotesScheduler } from "./aiNotesScheduler";
 
 const app = express();
 
@@ -91,9 +92,17 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
     
-    // Initialize AI scheduler after server starts
+    // Initialize AI PM + CFO scheduler
     initializeAIScheduler().catch(error => {
       console.error('Failed to initialize AI scheduler:', error);
     });
+    
+    // Initialize AI Notes Analysis scheduler
+    try {
+      aiNotesScheduler.start();
+      console.log('✅ AI Notes Scheduler started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start AI Notes Scheduler:', error);
+    }
   });
 })();

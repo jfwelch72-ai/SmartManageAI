@@ -13,6 +13,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { AIInsights } from "@/components/AIInsights";
 
 interface CompanyNote {
   id: string;
@@ -236,6 +237,14 @@ export default function CompanyCommunicationsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* AI Insights Section */}
+      <AIInsights 
+        roleFiltered={false} 
+        limit={20} 
+        title="AI-Generated Insights from Daily Notes"
+        showProject={true}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">

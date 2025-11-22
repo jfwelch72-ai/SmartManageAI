@@ -43,7 +43,16 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
         -   **Database**: Dedicated tables (projectNotes, companyDailyNotes, aiNoteInsights) with proper indexing for performance
         -   **Auto-generated Metadata**: System automatically captures user ID, timestamp, and date for all notes
         -   **RBAC for Editing**: Note creators and admins can edit notes via inline editing UI with save/cancel controls
-        -   **Future AI Integration**: Schema prepared for AI-powered note scanning and task generation (aiNoteInsights table ready for implementation)
+        -   **AI-Powered Note Analysis**: OpenAI GPT-4 integration for automated note scanning and actionable task generation:
+            -   **Automated Analysis**: Hourly (last 2 hours) and daily (6 PM, last 24 hours) scheduled scans via node-cron
+            -   **Manual Trigger**: ADMIN/MANAGER can manually trigger analysis via "Analyze Now" button
+            -   **Insight Categories**: SUPPLY_NEED, EQUIPMENT_REPAIR, WEATHER_DELAY, CHANGE_ORDER, SAFETY, CLIENT_COMMUNICATION, OTHER
+            -   **Severity Levels**: LOW, MEDIUM, HIGH, CRITICAL with visual badges and color coding
+            -   **Smart Routing**: AI determines appropriate recipients (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER) based on insight type
+            -   **RBAC Security**: Role-based filtering ensures users only see insights relevant to their role; admins/managers see all insights
+            -   **Deduplication**: Prevents duplicate insights for same note + category combination
+            -   **Performance**: Optimized SQL joins to avoid N+1 queries when fetching notes
+            -   **UI Component**: Expandable insight cards with recommended actions, severity indicators, and project context
     -   **Daily Operations**: Media uploads and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.
