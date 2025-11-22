@@ -179,10 +179,25 @@ export function AIInsights({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            {title}
-          </CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              {title}
+            </CardTitle>
+            {canTriggerAnalysis && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => triggerAnalysisMutation.mutate()}
+                disabled={triggerAnalysisMutation.isPending}
+                data-testid="button-trigger-ai-analysis"
+                className="gap-2"
+              >
+                <RefreshCw className={`w-3 h-3 ${triggerAnalysisMutation.isPending ? 'animate-spin' : ''}`} />
+                {triggerAnalysisMutation.isPending ? "Analyzing..." : "Analyze Now"}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8 text-muted-foreground">

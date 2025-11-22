@@ -156,7 +156,7 @@ Analyze each note and extract actionable insights. Return your analysis as a JSO
 
 ${notesContext}
 
-Return a JSON array of insights. Each insight should have:
+Return a JSON object with an "insights" array. Each insight in the array should have:
 {
   "sourceNoteId": "the note ID",
   "category": "one of the categories above",
@@ -168,7 +168,8 @@ Return a JSON array of insights. Each insight should have:
 }
 
 Only include notes that have actionable items. Skip general observations or non-actionable comments.
-Return ONLY the JSON array, no additional text.`;
+
+Return format: { "insights": [ ... ] }`;
 
     try {
       const completion = await openai.chat.completions.create({
@@ -188,12 +189,25 @@ Return ONLY the JSON array, no additional text.`;
 
       // Parse the response
       const parsed = JSON.parse(responseText);
-      const insights = parsed.insights || parsed.items || parsed;
+      console.log("[AI Notes] OpenAI response structure:", Object.keys(parsed));
       
+      // Try multiple possible response structures
+      let insights = parsed.insights || parsed.items || parsed.results || parsed.data;
+      
+      // If still not an array, check if the entire parsed object might be structured differently
       if (!Array.isArray(insights)) {
-        console.error("Unexpected AI response format:", parsed);
-        return [];
+        // Check if parsed has any array values
+        const arrayValues = Object.values(parsed).filter(Array.isArray);
+        if (arrayValues.length > 0) {
+          insights = arrayValues[0];
+          console.log("[AI Notes] Found insights in array property:", insights);
+        } else {
+          console.error("[AI Notes] Unexpected AI response format - no array found:", parsed);
+          return [];
+        }
       }
+      
+      console.log(`[AI Notes] Parsed ${insights.length} insights from OpenAI`);
 
       // Map to our insight format and enrich with project data
       return insights.map((insight: {
@@ -225,8 +239,11 @@ Return ONLY the JSON array, no additional text.`;
 
   /**
    * Store insights in the database (with deduplication)
+   * @returns Array of insights that were actually persisted (excluding duplicates)
    */
-  private async storeInsights(runId: string, insights: AIInsight[]): Promise<void> {
+  private async storeInsights(runId: string, insights: AIInsight[]): Promise<AIInsight[]> {
+    const persistedInsights: AIInsight[] = [];
+
     for (const insight of insights) {
       // Check if insight already exists for this source note + category (deduplication)
       const existing = await db
@@ -258,7 +275,12 @@ Return ONLY the JSON array, no additional text.`;
         severity: insight.severity,
         recipients: JSON.stringify(insight.recipients),
       });
+
+      // Track successfully persisted insights
+      persistedInsights.push(insight);
     }
+
+    return persistedInsights;
   }
 
   /**
@@ -297,25 +319,38 @@ Return ONLY the JSON array, no additional text.`;
       }
 
       // Analyze with AI
-      const insights = await this.analyzeNotesWithAI(notes);
+      const aiGeneratedInsights = await this.analyzeNotesWithAI(notes);
 
-      // Store insights
-      await this.storeInsights(run.id, insights);
+      // Store insights (with deduplication) - returns only persisted insights
+      const persistedInsights = await this.storeInsights(run.id, aiGeneratedInsights);
+
+      // Log warning if all insights were deduplicated
+      if (aiGeneratedInsights.length > 0 && persistedInsights.length === 0) {
+        console.warn(`[AI Notes Service] AI generated ${aiGeneratedInsights.length} insights but all were duplicates - none persisted`);
+      }
 
       // Update run status
       await db.update(aiRuns)
         .set({ 
           status: "completed", 
           completedAt: new Date(),
-          snapshotData: JSON.stringify({ notesAnalyzed: notes.length }),
-          aiResponse: JSON.stringify({ insightsGenerated: insights.length })
+          snapshotData: JSON.stringify({ 
+            notesAnalyzed: notes.length,
+            insightsGenerated: aiGeneratedInsights.length,
+            insightsPersisted: persistedInsights.length,
+            dedupCount: aiGeneratedInsights.length - persistedInsights.length
+          }),
+          aiResponse: JSON.stringify({ 
+            insightsGenerated: aiGeneratedInsights.length,
+            insightsPersisted: persistedInsights.length 
+          })
         })
         .where(eq(aiRuns.id, run.id));
 
       return {
         runId: run.id,
-        insightsCount: insights.length,
-        insights,
+        insightsCount: persistedInsights.length,
+        insights: persistedInsights, // Return only persisted insights, not all AI-generated ones
       };
     } catch (error) {
       // Update run with error
