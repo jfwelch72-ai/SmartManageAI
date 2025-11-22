@@ -38,9 +38,11 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
         -   **Project Daily Notes**: Per-project note tracking on each project detail page with auto-generated metadata (author, timestamp, date)
         -   **Company Communications**: Dedicated company-wide communications page accessible from main navigation
         -   **Filtering**: Advanced filtering by author, date range, and project for both note systems
-        -   **API**: RESTful endpoints with query parameter support for flexible data retrieval
+        -   **Note Editing**: Inline editing capability for notes with RBAC (note creator OR admin can edit)
+        -   **API**: RESTful endpoints (GET, POST, PATCH) with query parameter support and proper authentication
         -   **Database**: Dedicated tables (projectNotes, companyDailyNotes, aiNoteInsights) with proper indexing for performance
         -   **Auto-generated Metadata**: System automatically captures user ID, timestamp, and date for all notes
+        -   **RBAC for Editing**: Note creators and admins can edit notes via inline editing UI with save/cancel controls
         -   **Future AI Integration**: Schema prepared for AI-powered note scanning and task generation (aiNoteInsights table ready for implementation)
     -   **Daily Operations**: Media uploads and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
