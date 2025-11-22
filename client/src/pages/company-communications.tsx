@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { MessageSquare, Calendar, User, Filter, X, Building2, Edit2, Save, XCircle } from "lucide-react";
+import { MessageSquare, Calendar, User, Filter, X, Building2, Edit2, Save, XCircle, Home, ArrowLeft } from "lucide-react";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -171,11 +172,21 @@ export default function CompanyCommunicationsPage() {
 
   return (
     <div className="container max-w-5xl mx-auto py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <MessageSquare className="w-8 h-8 text-primary" />
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="heading-company-communications">Company Communications</h1>
-          <p className="text-sm text-muted-foreground">Daily updates and notes from across the company</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <MessageSquare className="w-8 h-8 text-primary" />
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="heading-company-communications">Company Communications</h1>
+            <p className="text-sm text-muted-foreground">Daily updates and notes from across the company</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/">
+            <Button variant="outline" className="gap-2" data-testid="button-back-to-dashboard">
+              <Home className="w-4 h-4" />
+              Dashboard
+            </Button>
+          </Link>
         </div>
       </div>
 
