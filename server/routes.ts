@@ -1535,19 +1535,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.billedById = req.user!.id;
       }
 
-      // TRANSACTION: Atomic update of progress + notifications + scope totals
-      const updatedProgress = await db.transaction(async (tx) => {
-        // Update the progress entry
-        const [updated] = await tx
-          .update(dailyScopeProgress)
-          .set(updateData)
-          .where(eq(dailyScopeProgress.id, req.params.progressId))
-          .returning();
+      // Update the progress entry
+      const [updatedProgress] = await db
+        .update(dailyScopeProgress)
+        .set(updateData)
+        .where(eq(dailyScopeProgress.id, req.params.progressId))
+        .returning();
 
-        // Create notification for office manager when status changes to READY_TO_BILL
-        if (validationResult.data.billingStatus === "READY_TO_BILL" && existingProgress.billingStatus !== "READY_TO_BILL") {
+      // Create notification for office manager when status changes to READY_TO_BILL
+      if (validationResult.data.billingStatus === "READY_TO_BILL" && existingProgress.billingStatus !== "READY_TO_BILL") {
+        try {
           // Get scope item details for notification
-          const [scopeItem] = await tx
+          const [scopeItem] = await db
             .select()
             .from(scopeItems)
             .where(eq(scopeItems.id, existingProgress.scopeItemId))
@@ -1555,14 +1554,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (scopeItem) {
             // Get project details
-            const [project] = await tx
+            const [project] = await db
               .select()
               .from(projects)
               .where(eq(projects.id, existingProgress.projectId))
               .limit(1);
 
             // Find all office managers
-            const officeManagers = await tx
+            const officeManagers = await db
               .select()
               .from(users)
               .where(eq(users.role, "OFFICE_MANAGER"));
@@ -1573,36 +1572,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 userId: manager.id,
                 type: "BILLING_READY" as const,
                 title: "Quantities Ready to Bill",
-                message: `${scopeItem.description} (${updated.billedQuantity} ${scopeItem.unit}) is ready to bill on project ${project?.code || 'Unknown'}`,
-                relatedEntityId: updated.id,
+                message: `${scopeItem.description} (${updatedProgress.billedQuantity} ${scopeItem.unit}) is ready to bill on project ${project?.code || 'Unknown'}`,
+                relatedEntityId: updatedProgress.id,
                 relatedEntityType: "daily_scope_progress" as const,
               }));
               
-              await tx.insert(notifications).values(notificationValues);
+              await db.insert(notifications).values(notificationValues);
             }
           }
+        } catch (notificationError) {
+          console.error("Failed to create notifications:", notificationError);
+          // Continue execution - notification failure shouldn't block the update
         }
+      }
 
-        // Recalculate scope item totals
-        const allProgress = await tx
-          .select()
-          .from(dailyScopeProgress)
-          .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
+      // Recalculate scope item totals
+      const allProgress = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
 
-        const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
-        const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+      const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
+      const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
 
-        await tx
-          .update(scopeItems)
-          .set({
-            completedQuantity: totalCompleted.toString(),
-            billedQuantity: totalBilled.toString(),
-            updatedAt: new Date(),
-          })
-          .where(eq(scopeItems.id, existingProgress.scopeItemId));
-
-        return updated;
-      });
+      await db
+        .update(scopeItems)
+        .set({
+          completedQuantity: totalCompleted.toString(),
+          billedQuantity: totalBilled.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scopeItems.id, existingProgress.scopeItemId));
 
       res.json(updatedProgress);
     } catch (error: any) {
