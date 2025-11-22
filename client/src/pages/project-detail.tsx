@@ -15,6 +15,7 @@ import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCir
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { FeaturePermissions } from "@/lib/rbac";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -585,7 +586,7 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        {(!project.budget || Number(project.budget) === 0) && (!project.contractAmount || Number(project.contractAmount) === 0) && (
+        {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (!project.budget || Number(project.budget) === 0) && (!project.contractAmount || Number(project.contractAmount) === 0) && (
           <Alert variant="destructive" className="mb-6" data-testid="alert-missing-budget">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Missing Financial Data</AlertTitle>
@@ -609,12 +610,22 @@ export default function ProjectDetailPage() {
             </TabsTrigger>
             <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
             <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
-            <TabsTrigger value="estimate" data-testid="tab-estimate">Estimate</TabsTrigger>
-            <TabsTrigger value="procurement" data-testid="tab-procurement">Procurement</TabsTrigger>
+            {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
+              <TabsTrigger value="estimate" data-testid="tab-estimate">Estimate</TabsTrigger>
+            )}
+            {FeaturePermissions.VIEW_PROCUREMENT_TAB(user?.role) && (
+              <TabsTrigger value="procurement" data-testid="tab-procurement">Procurement</TabsTrigger>
+            )}
             <TabsTrigger value="plans" data-testid="tab-plans">Plans & Takeoff</TabsTrigger>
-            <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
-            <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
-            <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">Subcontractors</TabsTrigger>
+            {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
+              <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
+            )}
+            {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
+              <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
+            )}
+            {FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(user?.role) && (
+              <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">Subcontractors</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">

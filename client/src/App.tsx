@@ -1,9 +1,10 @@
-import { Switch, Route, Redirect, useLocation } from "wouter";
+import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { RoutePermissions } from "@/lib/rbac";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
@@ -25,7 +26,13 @@ import CrewsPage from "@/pages/crews";
 import CostRatesPage from "@/pages/cost-rates";
 import SubcontractorPayablesPage from "@/pages/subcontractor-payables";
 
-function ProtectedRoute({ component: Component }: { component: () => JSX.Element | null }) {
+function ProtectedRoute({ 
+  component: Component,
+  permission
+}: { 
+  component: () => JSX.Element | null;
+  permission?: (role?: string) => boolean;
+}) {
   const { user, isLoading } = useAuth();
   const [location] = useLocation();
 
@@ -41,6 +48,27 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
     return <Redirect to={`/login?redirect=${encodeURIComponent(location)}`} />;
   }
 
+  // Check role-based permission if provided
+  if (permission && !permission(user.role)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4 p-8">
+          <h2 className="text-2xl font-bold text-destructive">Access Denied</h2>
+          <p className="text-muted-foreground">
+            You don't have permission to access this page.
+          </p>
+          <Link 
+            href="/dashboard" 
+            className="inline-block px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            data-testid="link-return-dashboard"
+          >
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return <Component />;
 }
 
@@ -50,23 +78,30 @@ function Router() {
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
+      
+      {/* Routes accessible to all authenticated users */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
-      <Route path="/users" component={() => <ProtectedRoute component={UsersPage} />} />
-      <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} />} />
-      <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
-      <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} />} />
-      <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
-      <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} />} />
-      <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} />} />
-      <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} />} />
-      <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} />} />
-      <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} />} />
-      <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} />} />
-      <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} />} />
+      
+      {/* Admin-only routes */}
+      <Route path="/users" component={() => <ProtectedRoute component={UsersPage} permission={RoutePermissions.USERS} />} />
+      <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} permission={RoutePermissions.AI_SETTINGS} />} />
+      <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} />} />
+      <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} />} />
+      <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} permission={RoutePermissions.SUBCONTRACTOR_PAYABLES} />} />
+      
+      {/* Management routes (blocked for hourly employees) */}
+      <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />
+      <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} />} />
+      <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} />} />
+      <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} />} />
+      <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} />} />
+      <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} />} />
+      
       <Route component={NotFound} />
     </Switch>
   );

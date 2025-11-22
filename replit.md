@@ -110,6 +110,34 @@ Comprehensive production readiness audit documented in `PRODUCTION_AUDIT_REPORT.
 - Deployment checklist (environment, database, monitoring)
 - Future work priorities (HIGH/MEDIUM/LOW)
 
+### ✅ COMPLETED FRONTEND RBAC IMPLEMENTATION (November 22, 2025)
+- **Objective**: Restrict hourly employees from viewing financial data and management features
+- **Implementation**: Comprehensive role-based access control across UI components
+- **Role Hierarchy**:
+  - `ADMIN`: Full system access including user management
+  - `MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER`: Full access except user management
+  - `HOURLY_EMPLOYEE`: Limited access (active projects, daily notes, calendar, time clock only)
+- **Key Changes**:
+  - **RBAC Utilities** (`client/src/lib/rbac.ts`): Permission helpers for routes, features, and navigation
+  - **Route Protection** (`client/src/App.tsx`): ProtectedRoute component with role-based access denied screen
+  - **Navigation** (`client/src/components/AppHeader.tsx`): Dynamic menu filtering based on user role
+  - **Dashboard** (`client/src/pages/dashboard.tsx`): Hidden budget KPIs, financial alerts, and bids section for hourly employees
+  - **Projects Page** (`client/src/pages/projects.tsx`): Hidden "New Project" and "View Bids" buttons, filtered project statuses (ACTIVE only for hourly)
+  - **Project Detail** (`client/src/pages/project-detail.tsx`): Hidden financial tabs (Estimate, Procurement, Time & T&M, Receipts, Subcontractors) for hourly employees
+- **Accessible for Hourly Employees**:
+  - Dashboard with project count and change order metrics (no financials)
+  - Active projects list only (no BID, PLANNING, COMPLETE, CLOSED statuses)
+  - Project detail tabs: Overview, Scope & Progress, Change Orders, Daily Notes, Photos & Videos, Plans & Takeoff
+  - Calendar and personal time clock
+- **Restricted for Hourly Employees**:
+  - All financial data (budgets, estimates, procurement, receipts, contracts)
+  - Bids section and bid management
+  - User management
+  - AI PM/CFO tools
+  - Time clock manager and time entries
+  - Crew and cost rate management
+- **Status**: ✅ COMPLETED (all pages and components updated with role-based restrictions)
+
 ### 🚀 DEPLOYMENT READINESS
 **Production Status**: ✅ PARTIAL - Core workflows ready, secondary features require refactoring  
 **Security**: ✅ PRODUCTION-READY  

@@ -12,6 +12,7 @@ import {
 import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
+import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link } from "wouter";
@@ -50,7 +51,12 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
     await onLogout();
   };
 
-  const isManagerOrAdmin = userRole === "ADMIN" || userRole === "MANAGER";
+  // Filter navigation items based on user role
+  const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
+  const visibleAIItems = NavigationConfig.aiMenu.filter(item => item.visible(userRole));
+  const visibleAdminItems = NavigationConfig.adminMenu.filter(item => item.visible(userRole));
+  const hasAdminMenu = visibleAdminItems.length > 0;
+  const hasAIMenu = visibleAIItems.length > 0;
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -102,63 +108,46 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                   My Time Clock
                 </Link>
               </DropdownMenuItem>
-              {isManagerOrAdmin && (
-                <DropdownMenuItem asChild data-testid="nav-manage-time-clock">
-                  <Link href="/time-clock-manager">
-                    <UsersIcon className="mr-2 h-4 w-4" />
-                    Manage Time Clock
-                  </Link>
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild data-testid="nav-time-entry">
-                <Link href="/time-entry">
-                  Time Entries
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* AI Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-ai">
-                <Bot className="w-4 h-4" />
-                AI
-                <ChevronDown className="w-3 h-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem asChild data-testid="nav-ai-pm">
-                <Link href="/ai-pm">
-                  <Bot className="mr-2 h-4 w-4" />
-                  AI Project Manager
-                </Link>
-              </DropdownMenuItem>
-              {isManagerOrAdmin && (
-                <DropdownMenuItem asChild data-testid="nav-cfo">
-                  <Link href="/cfo">
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    CFO Dashboard
-                  </Link>
-                </DropdownMenuItem>
-              )}
-              {userRole === "ADMIN" && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild data-testid="nav-ai-settings">
-                    <Link href="/ai-settings">
-                      <Settings className="mr-2 h-4 w-4" />
-                      AI Settings
-                    </Link>
+              {NavigationConfig.timeClockMenu.slice(1).map((item) => 
+                item.visible(userRole) && (
+                  <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
+                    <Link href={item.href}>{item.label}</Link>
                   </DropdownMenuItem>
-                </>
+                )
               )}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Admin Menu */}
-          {isManagerOrAdmin && (
+          {/* AI Menu - Only show if user has access to at least one AI feature */}
+          {hasAIMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-ai">
+                  <Bot className="w-4 h-4" />
+                  AI
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {visibleAIItems.map((item, index) => (
+                  <div key={item.href}>
+                    {index === visibleAIItems.length - 1 && visibleAIItems.length > 1 && <DropdownMenuSeparator />}
+                    <DropdownMenuItem asChild data-testid={item.testId}>
+                      <Link href={item.href}>
+                        {item.href === "/ai-pm" && <Bot className="mr-2 h-4 w-4" />}
+                        {item.href === "/cfo" && <DollarSign className="mr-2 h-4 w-4" />}
+                        {item.href === "/ai-settings" && <Settings className="mr-2 h-4 w-4" />}
+                        {item.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Admin Menu - Only show if user has access to admin features */}
+          {hasAdminMenu && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-admin">
@@ -168,32 +157,14 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {userRole === "ADMIN" && (
-                  <DropdownMenuItem asChild data-testid="nav-users">
-                    <Link href="/users">
+                {visibleAdminItems.map((item) => (
+                  <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
+                    <Link href={item.href}>
                       <UsersIcon className="mr-2 h-4 w-4" />
-                      Users
+                      {item.label}
                     </Link>
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild data-testid="nav-crews">
-                  <Link href="/crews">
-                    <UsersIcon className="mr-2 h-4 w-4" />
-                    Crews & Skills
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild data-testid="nav-cost-rates">
-                  <Link href="/cost-rates">
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    Cost Rates
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild data-testid="nav-subcontractor-payables">
-                  <Link href="/subcontractor-payables">
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    Subcontractor Payables
-                  </Link>
-                </DropdownMenuItem>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

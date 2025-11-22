@@ -14,11 +14,13 @@ import { Search, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useProjects } from "@/hooks/use-data";
+import { FeaturePermissions, getAllowedProjectStatuses, canViewProjectStatus } from "@/lib/rbac";
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const allowedStatuses = getAllowedProjectStatuses(user?.role);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
   const { data: projects = [], isLoading } = useProjects();
@@ -31,7 +33,10 @@ export default function ProjectsPage() {
     
     const matchesStatus = statusFilter === "ALL" || project.status === statusFilter;
     
-    return matchesSearch && matchesStatus;
+    // Filter by allowed project statuses based on role
+    const isAllowedStatus = canViewProjectStatus(user?.role, project.status);
+    
+    return matchesSearch && matchesStatus && isAllowedStatus;
   });
 
   return (
@@ -50,15 +55,17 @@ export default function ProjectsPage() {
               View and manage all awarded construction projects
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
-              View Bids
-            </Button>
-            <Button data-testid="button-new-project">
-              <Plus className="w-4 h-4 mr-2" />
-              New Project
-            </Button>
-          </div>
+          {FeaturePermissions.CREATE_PROJECT(user?.role) && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
+                View Bids
+              </Button>
+              <Button data-testid="button-new-project">
+                <Plus className="w-4 h-4 mr-2" />
+                New Project
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -78,10 +85,10 @@ export default function ProjectsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Statuses</SelectItem>
-              <SelectItem value="PLANNING">Planning</SelectItem>
-              <SelectItem value="ACTIVE">Active</SelectItem>
-              <SelectItem value="COMPLETE">Complete</SelectItem>
-              <SelectItem value="CLOSED">Closed</SelectItem>
+              {allowedStatuses.includes("PLANNING") && <SelectItem value="PLANNING">Planning</SelectItem>}
+              {allowedStatuses.includes("ACTIVE") && <SelectItem value="ACTIVE">Active</SelectItem>}
+              {allowedStatuses.includes("COMPLETE") && <SelectItem value="COMPLETE">Complete</SelectItem>}
+              {allowedStatuses.includes("CLOSED") && <SelectItem value="CLOSED">Closed</SelectItem>}
             </SelectContent>
           </Select>
         </div>

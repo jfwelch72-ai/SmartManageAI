@@ -9,6 +9,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
+import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
@@ -59,10 +60,12 @@ export default function DashboardPage() {
               Overview of all active projects and key metrics
             </p>
           </div>
-          <Button data-testid="button-new-project">
-            <Plus className="w-4 h-4 mr-2" />
-            New Project
-          </Button>
+          {FeaturePermissions.CREATE_PROJECT(user?.role) && (
+            <Button data-testid="button-new-project">
+              <Plus className="w-4 h-4 mr-2" />
+              New Project
+            </Button>
+          )}
         </div>
 
         <div className="space-y-8">
@@ -70,7 +73,7 @@ export default function DashboardPage() {
             <div className="text-center py-12 text-muted-foreground">Loading dashboard...</div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className={`grid grid-cols-1 md:grid-cols-2 ${hasManagementAccess(user?.role) ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6`}>
                 <KPICard
                   title="Active Projects"
                   value={stats?.activeProjectsCount || 0}
@@ -89,16 +92,18 @@ export default function DashboardPage() {
                   icon={CalendarClock}
                   data-testid="kpi-pending-time-off"
                 />
-                <KPICard
-                  title="Missing Budget Data"
-                  value={projectsMissingBudget.length}
-                  icon={DollarSign}
-                  data-testid="kpi-missing-budget"
-                />
+                {FeaturePermissions.VIEW_BUDGET_METRICS(user?.role) && (
+                  <KPICard
+                    title="Missing Budget Data"
+                    value={projectsMissingBudget.length}
+                    icon={DollarSign}
+                    data-testid="kpi-missing-budget"
+                  />
+                )}
               </div>
 
-              {/* Budget Data Warning Alert */}
-              {projectsMissingBudget.length > 0 && (
+              {/* Budget Data Warning Alert - Only for management */}
+              {FeaturePermissions.VIEW_BUDGET_METRICS(user?.role) && projectsMissingBudget.length > 0 && (
                 <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20" data-testid="card-budget-warning">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -205,50 +210,53 @@ export default function DashboardPage() {
             </>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Active Bids</h2>
-                <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-all-bids">
-                  View All
-                </Button>
-              </div>
-              {bidsLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading bids...</div>
-              ) : activeBids.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No active bids</div>
-              ) : (
-                <div className="space-y-4">
-                  {activeBids.slice(0, 2).map((bid) => {
-                    const bidAmountNum = Number(bid.bidAmount);
-                    const hasBudget = bid.bidAmount && !isNaN(bidAmountNum) && bidAmountNum > 0;
-                    return (
-                      <div
-                        key={bid.code}
-                        className="p-4 border rounded-md hover-elevate cursor-pointer"
-                        onClick={() => setLocation(`/bids/${encodeURIComponent(bid.code)}`)}
-                        data-testid={`bid-${encodeURIComponent(bid.code)}`}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline" className="font-mono text-xs">{bid.code}</Badge>
-                          <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">BID</Badge>
-                          {!hasBudget && (
-                            <Badge variant="outline" className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500 text-xs">
-                              <DollarSign className="w-3 h-3 mr-1" />
-                              No Budget
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="font-medium mb-1">{bid.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {bid.clientName}{bid.dueDate && ` • Due: ${new Date(bid.dueDate).toLocaleDateString()}`}
-                        </p>
-                      </div>
-                    );
-                  })}
+          <div className={`grid grid-cols-1 ${hasManagementAccess(user?.role) ? 'lg:grid-cols-2' : ''} gap-8`}>
+            {/* Active Bids - Only for management users */}
+            {hasManagementAccess(user?.role) && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">Active Bids</h2>
+                  <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-all-bids">
+                    View All
+                  </Button>
                 </div>
-              )}
-            </div>
+                {bidsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading bids...</div>
+                ) : activeBids.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No active bids</div>
+                ) : (
+                  <div className="space-y-4">
+                    {activeBids.slice(0, 2).map((bid) => {
+                      const bidAmountNum = Number(bid.bidAmount);
+                      const hasBudget = bid.bidAmount && !isNaN(bidAmountNum) && bidAmountNum > 0;
+                      return (
+                        <div
+                          key={bid.code}
+                          className="p-4 border rounded-md hover-elevate cursor-pointer"
+                          onClick={() => setLocation(`/bids/${encodeURIComponent(bid.code)}`)}
+                          data-testid={`bid-${encodeURIComponent(bid.code)}`}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="font-mono text-xs">{bid.code}</Badge>
+                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">BID</Badge>
+                            {!hasBudget && (
+                              <Badge variant="outline" className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500 text-xs">
+                                <DollarSign className="w-3 h-3 mr-1" />
+                                No Budget
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="font-medium mb-1">{bid.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {bid.clientName}{bid.dueDate && ` • Due: ${new Date(bid.dueDate).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-4">
