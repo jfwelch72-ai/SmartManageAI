@@ -154,20 +154,29 @@ Comprehensive production readiness audit documented in `PRODUCTION_AUDIT_REPORT.
 - **API Endpoints** (`server/routes.ts`):
   - GET `/api/scope-items/:scopeItemId/progress` - List all daily progress entries for a scope item
   - POST `/api/scope-items/:scopeItemId/progress` - Create new daily progress entry
+  - POST `/api/projects/:code/scope` - Create custom scope item (MANAGER, SUPERINTENDENT, ADMIN only)
   - PATCH `/api/scope-items/:scopeItemId/progress/:progressId` - Update existing progress entry
   - DELETE `/api/scope-items/:scopeItemId/progress/:progressId` - Delete progress entry
   - Backend automatically recalculates scope item `completedQuantity` and `billedQuantity` totals after mutations
 - **UI Components**:
   - **ScopeProgressTracker** (`client/src/components/ScopeProgressTracker.tsx`):
     - Summary cards showing aggregated totals across all scope items (Total, Completed, Billed, Remaining)
+    - **Client-Side Filtering**: Search by description, filter by unit, filter by billing status with bidirectional URL sync
+    - **URL Query Parameter Persistence**: Filter state synced to URL (`?search=X&unit=Y&status=Z`) for shareability and browser navigation
+    - **Custom Scope Item Creation**: "New Scope Item" button and dialog form (MANAGER, SUPERINTENDENT, ADMIN only)
     - Expandable scope item rows with chevron toggle
     - "Record Progress" button opens dialog form
     - Daily progress history table per scope item
+    - Filter controls always visible even when no scope items exist
   - **ScopeItemProgressRow** (`client/src/components/ScopeItemProgressRow.tsx`):
     - Child component that lazy-loads progress data only when row is expanded
     - Displays date, quantities, billing status, notes, creator, and delete action
 - **Features**:
-  - Summary totals at top showing project-wide progress
+  - Summary totals at top showing project-wide progress (calculated from filtered subset)
+  - Client-side filtering by search term, unit, and billing status
+  - URL query parameter persistence with bidirectional sync (FROM URL when location changes, TO URL when filters change)
+  - Browser navigation support (back/forward maintains filter state)
+  - Custom scope item creation for items not in original estimate
   - Daily quantity entry with date picker
   - Billing status dropdown (NOT_READY, READY_TO_BILL, BILLED)
   - Custom notes field for each entry
@@ -175,7 +184,7 @@ Comprehensive production readiness audit documented in `PRODUCTION_AUDIT_REPORT.
   - Real-time cache invalidation to update summary cards after mutations
   - RBAC: Accessible to all roles except HOURLY_EMPLOYEE (who can view but not edit)
 - **Integration**: Integrated into project detail page "Scope & Progress" tab
-- **Status**: ✅ COMPLETED (schema, API, UI implemented; zero LSP errors, application running)
+- **Status**: ✅ COMPLETED (schema, API, UI, filtering, URL persistence implemented; architect approved; zero LSP errors, application running)
 
 ### 🚀 DEPLOYMENT READINESS
 **Production Status**: ✅ PARTIAL - Core workflows ready, secondary features require refactoring  
