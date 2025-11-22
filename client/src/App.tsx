@@ -26,6 +26,7 @@ import CrewsPage from "@/pages/crews";
 import CostRatesPage from "@/pages/cost-rates";
 import SubcontractorPayablesPage from "@/pages/subcontractor-payables";
 import CompanyCommunicationsPage from "@/pages/company-communications";
+import TasksPage from "@/pages/tasks";
 
 function ProtectedRoute({ 
   component: Component,
@@ -86,6 +87,7 @@ function Router() {
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
+      <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
       
       {/* Admin-only routes */}

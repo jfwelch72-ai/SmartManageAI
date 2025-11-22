@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects } from "@shared/schema";
-import { eq, and, desc, isNull, or } from "drizzle-orm";
+import { eq, and, desc, isNull, or, alias } from "drizzle-orm";
 import { requireAuth } from "./auth";
 import { z } from "zod";
 
@@ -30,9 +30,19 @@ router.patch("/api/insights/:insightId/status", requireAuth, async (req, res) =>
     const updates: any = { status };
     const now = new Date();
 
-    if (status === "IN_PROGRESS" && !req.body.acknowledgedById) {
-      updates.acknowledgedById = userId;
-      updates.acknowledgedAt = now;
+    // Always set acknowledged fields when transitioning to IN_PROGRESS or COMPLETED
+    if ((status === "IN_PROGRESS" || status === "COMPLETED")) {
+      // Get current insight to check if already acknowledged
+      const [currentInsight] = await db
+        .select({ acknowledgedById: aiNoteInsights.acknowledgedById })
+        .from(aiNoteInsights)
+        .where(eq(aiNoteInsights.id, insightId))
+        .limit(1);
+
+      if (currentInsight && !currentInsight.acknowledgedById) {
+        updates.acknowledgedById = userId;
+        updates.acknowledgedAt = now;
+      }
     }
 
     if (status === "COMPLETED") {
@@ -41,11 +51,13 @@ router.patch("/api/insights/:insightId/status", requireAuth, async (req, res) =>
     }
 
     if (status === "DISMISSED") {
+      // Require dismiss reason
+      if (!dismissReason || dismissReason.trim().length === 0) {
+        return res.status(400).json({ error: "Dismiss reason is required" });
+      }
       updates.dismissedById = userId;
       updates.dismissedAt = now;
-      if (dismissReason) {
-        updates.dismissReason = dismissReason;
-      }
+      updates.dismissReason = dismissReason;
     }
 
     // Update insight
@@ -150,6 +162,10 @@ router.get("/api/tasks", requireAuth, async (req, res) => {
       );
     }
 
+    // Use Drizzle's alias helper for creator and assignee joins
+    const creator = alias(users, "creator");
+    const assignee = alias(users, "assignee");
+
     const taskList = await db
       .select({
         id: tasks.id,
@@ -162,10 +178,11 @@ router.get("/api/tasks", requireAuth, async (req, res) => {
         priority: tasks.priority,
         status: tasks.status,
         createdById: tasks.createdById,
-        createdByName: users.firstName,
+        createdByFirstName: creator.firstName,
+        createdByLastName: creator.lastName,
         assignedToId: tasks.assignedToId,
-        assignedToFirstName: users.firstName,
-        assignedToLastName: users.lastName,
+        assignedToFirstName: assignee.firstName,
+        assignedToLastName: assignee.lastName,
         dueDate: tasks.dueDate,
         acknowledgedById: tasks.acknowledgedById,
         acknowledgedAt: tasks.acknowledgedAt,
@@ -179,7 +196,8 @@ router.get("/api/tasks", requireAuth, async (req, res) => {
       })
       .from(tasks)
       .leftJoin(projects, eq(tasks.projectId, projects.id))
-      .leftJoin(users, eq(tasks.createdById, users.id))
+      .leftJoin(creator, eq(tasks.createdById, creator.id))
+      .leftJoin(assignee, eq(tasks.assignedToId, assignee.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(tasks.createdAt));
 
@@ -305,7 +323,8 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req, res) => {
     // Handle status-specific updates
     const updates: any = { ...validated, updatedAt: new Date() };
 
-    if (validated.status === "IN_PROGRESS" && !existingTask.acknowledgedById) {
+    // Always set acknowledged fields when transitioning to IN_PROGRESS or COMPLETED
+    if ((validated.status === "IN_PROGRESS" || validated.status === "COMPLETED") && !existingTask.acknowledgedById) {
       updates.acknowledgedById = userId;
       updates.acknowledgedAt = new Date();
     }
@@ -315,9 +334,15 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req, res) => {
       updates.completedAt = new Date();
     }
 
-    if (validated.status === "DISMISSED" && !existingTask.dismissedById) {
-      updates.dismissedById = userId;
-      updates.dismissedAt = new Date();
+    if (validated.status === "DISMISSED") {
+      // Require dismiss reason
+      if (!validated.dismissReason || validated.dismissReason.trim().length === 0) {
+        return res.status(400).json({ error: "Dismiss reason is required when dismissing a task" });
+      }
+      if (!existingTask.dismissedById) {
+        updates.dismissedById = userId;
+        updates.dismissedAt = new Date();
+      }
     }
 
     // Update task
