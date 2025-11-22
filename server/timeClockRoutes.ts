@@ -295,6 +295,73 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
+  // Get pending shift approvals (managers only)
+  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      // Get all shifts that are clocked out and pending approval
+      const pendingShifts = await db
+        .select({
+          shift: timeClockShifts,
+          user: users,
+          project: projects,
+        })
+        .from(timeClockShifts)
+        .leftJoin(users, eq(timeClockShifts.userId, users.id))
+        .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
+        .where(and(
+          eq(timeClockShifts.approvalStatus, "PENDING"),
+          sql`${timeClockShifts.clockOut} IS NOT NULL`
+        ))
+        .orderBy(desc(timeClockShifts.clockOut));
+
+      // Flatten the response to match the expected frontend format
+      const formattedShifts = pendingShifts.map(({ shift, user, project }) => ({
+        ...shift,
+        userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
+        userEmail: user?.email,
+        projectName: project?.name,
+        projectCode: project?.code,
+      }));
+
+      res.json(formattedShifts);
+    } catch (error) {
+      console.error("Get pending approvals error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get active shifts (managers only)
+  app.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      // Get all shifts that are currently clocked in (no clock out time)
+      const activeShifts = await db
+        .select({
+          shift: timeClockShifts,
+          user: users,
+          project: projects,
+        })
+        .from(timeClockShifts)
+        .leftJoin(users, eq(timeClockShifts.userId, users.id))
+        .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
+        .where(sql`${timeClockShifts.clockOut} IS NULL`)
+        .orderBy(desc(timeClockShifts.clockIn));
+
+      // Flatten the response to match the expected frontend format
+      const formattedShifts = activeShifts.map(({ shift, user, project }) => ({
+        ...shift,
+        userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
+        userEmail: user?.email,
+        projectName: project?.name,
+        projectCode: project?.code,
+      }));
+
+      res.json(formattedShifts);
+    } catch (error) {
+      console.error("Get active shifts error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get employee shifts (managers only)
   app.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
