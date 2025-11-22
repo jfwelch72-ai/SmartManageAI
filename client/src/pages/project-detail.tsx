@@ -200,7 +200,7 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold font-mono">${parseFloat(co.amount).toLocaleString()}</p>
-                        {canApprove && co.status === "PENDING_APPROVAL" && (
+                        {canApprove && co.status === "SUBMITTED" && (
                           <div className="flex gap-2 mt-2">
                             <Button
                               size="sm"
