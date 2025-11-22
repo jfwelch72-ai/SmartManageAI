@@ -426,4 +426,269 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
   }
 });
 
+// ====================
+// Change Order File Attachments
+// ====================
+
+/**
+ * Upload and attach a file to a change order
+ * Note: File should already be uploaded to object storage via /api/objects/upload
+ * This endpoint saves the file metadata to the change order's attachmentsJson field
+ * RBAC: Only admins, managers, and users associated with the project can upload files
+ */
+router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+    
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    // SECURITY: Verify user has permission to attach files to this change order
+    // Only admins, managers, office managers, and users associated with the project can upload
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
+      // Get project to verify user is superintendent or associated with project
+      const { projects } = await import("@shared/schema");
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, order.projectId))
+        .limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      
+      // Verify user is the project superintendent, estimator, or the change order requester
+      if (project.superintendentId !== userId && 
+          project.estimatorId !== userId && 
+          order.requestedById !== userId) {
+        res.status(403).json({ error: "You don't have permission to upload files to this change order" });
+        return;
+      }
+    }
+
+    // Validate file metadata
+    const fileSchema = z.object({
+      fileUrl: z.string(),
+      fileName: z.string(),
+      fileSize: z.number(),
+      mimeType: z.string(),
+      description: z.string().optional(),
+    });
+
+    const validationResult = fileSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      res.status(400).json({ error: "Invalid file metadata", details: validationResult.error.errors });
+      return;
+    }
+
+    const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
+
+    // Set object ACL policy for the file
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    
+    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+      fileUrl,
+      {
+        owner: req.user!.id,
+        visibility: "private", // Change order files are private
+      }
+    );
+
+    // Get current attachments or initialize empty array
+    const currentAttachments = order.attachmentsJson 
+      ? JSON.parse(order.attachmentsJson) 
+      : [];
+
+    // Add new file to attachments
+    const newAttachment = {
+      id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      fileUrl,
+      fileName,
+      fileSize,
+      mimeType,
+      description: description || "",
+      uploadedById: req.user!.id,
+      uploadedAt: new Date().toISOString(),
+      objectKey,
+    };
+
+    const updatedAttachments = [...currentAttachments, newAttachment];
+
+    // Update change order with new attachments
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        attachmentsJson: JSON.stringify(updatedAttachments),
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: null,
+      newValue: JSON.stringify({ fileName, fileSize }),
+    }, req);
+
+    res.status(201).json(newAttachment);
+  } catch (error: any) {
+    console.error("Upload change order file error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Get all files attached to a change order
+ * RBAC: Only admins, managers, and users associated with the project can view files
+ */
+router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+    
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    // SECURITY: Verify user has permission to view files for this change order
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
+      // Get project to verify user is superintendent or associated with project
+      const { projects } = await import("@shared/schema");
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, order.projectId))
+        .limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      
+      // Verify user is the project superintendent, estimator, or the change order requester
+      if (project.superintendentId !== userId && 
+          project.estimatorId !== userId && 
+          order.requestedById !== userId) {
+        res.status(403).json({ error: "You don't have permission to view files for this change order" });
+        return;
+      }
+    }
+
+    const attachments = order.attachmentsJson 
+      ? JSON.parse(order.attachmentsJson) 
+      : [];
+
+    res.json(attachments);
+  } catch (error: any) {
+    console.error("Get change order files error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Delete a file from a change order
+ * RBAC: Only the uploader, admins, and managers can delete files
+ */
+router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const order = await getChangeOrderById(req.params.id);
+    
+    if (!order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    // SECURITY: First verify user has basic access to view this change order
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
+      // Get project to verify user is superintendent or associated with project
+      const { projects } = await import("@shared/schema");
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, order.projectId))
+        .limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      
+      // Verify user is the project superintendent, estimator, or the change order requester
+      if (project.superintendentId !== userId && 
+          project.estimatorId !== userId && 
+          order.requestedById !== userId) {
+        res.status(403).json({ error: "You don't have permission to access this change order" });
+        return;
+      }
+    }
+
+    const attachments = order.attachmentsJson 
+      ? JSON.parse(order.attachmentsJson) 
+      : [];
+
+    const fileToDelete = attachments.find((f: any) => f.id === req.params.fileId);
+    
+    if (!fileToDelete) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    // Check permissions: uploader, admin, manager, or office manager can delete
+    const isUploader = fileToDelete.uploadedById === req.user!.id;
+    const isAuthorized = ["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(req.user!.role);
+
+    if (!isUploader && !isAuthorized) {
+      res.status(403).json({ error: "Permission denied" });
+      return;
+    }
+
+    // Remove file from attachments
+    const updatedAttachments = attachments.filter((f: any) => f.id !== req.params.fileId);
+
+    // Update change order
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        attachmentsJson: JSON.stringify(updatedAttachments),
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    // Audit log
+    await logAudit({
+      userId: req.user!.id,
+      action: "DELETE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ fileName: fileToDelete.fileName }),
+      newValue: null,
+    }, req);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Delete change order file error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
