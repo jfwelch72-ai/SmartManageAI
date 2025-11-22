@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt } from "@shared/schema";
+import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt, TimeClockShift, Crew, CrewProjectAssignment } from "@shared/schema";
 
 // Dashboard
 interface DashboardStats {
@@ -528,7 +528,7 @@ interface ClockOutData {
 }
 
 export function useCurrentShift() {
-  return useQuery({
+  return useQuery<{ shift: TimeClockShift | null; project?: Project | null }>({
     queryKey: ["/api/time-clock/current-shift"],
     refetchInterval: 30000, // Refetch every 30 seconds to keep shift status fresh
   });
@@ -563,20 +563,20 @@ export function useClockOut() {
 }
 
 export function useMyShifts() {
-  return useQuery({
+  return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/my-shifts"],
   });
 }
 
 export function useActiveShifts() {
-  return useQuery({
+  return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/active-shifts"],
     refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
   });
 }
 
 export function usePendingShiftApprovals() {
-  return useQuery({
+  return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/pending-approvals"],
   });
 }

@@ -1,0 +1,96 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React/Drizzle Engineer. Perform a COMPLETE, FINAL cleanup, repair, and type-correction of this entire repository so that it builds with ZERO TypeScript errors, ZERO broken routes, ZERO invalid audit logger calls, ZERO schema mismatches, and ZERO transaction usage (compatible with drizzle-orm/neon-http).
+
+Everything below is one unified instruction. DO NOT ask for clarification. DO NOT break this apart. DO NOT simplify. Execute EVERYTHING here as a single task.
+
+────────────────────────────────────────────────────────
+FULL OBJECTIVE
+────────────────────────────────────────────────────────
+The TFR Construction Management Platform must:
+- Compile with 0 TypeScript errors
+- Build successfully with `npm run build`
+- Start cleanly with `npm run dev`
+- Contain NO usages of `db.transaction`
+- Have ALL backend routes fully type-correct
+- Have ALL audit logging unified and valid
+- Have ALL frontend pages fully typed (no `unknown`, no implicit any)
+- Have NO broken Drizzle queries
+- Preserve 100% of business logic and behavior
+
+Use the repo’s current state, the migrated files, and ALL error logs provided.
+
+────────────────────────────────────────────────────────
+REQUIRED ACTIONS (DO ALL OF THESE)
+────────────────────────────────────────────────────────
+
+1. ***Fix ALL remaining TypeScript errors*** across backend AND frontend exactly as shown in the provided typecheck output. After your work, `npm run typecheck` must return **zero** errors.
+
+2. ***Fix all audit logging errors*** in `server/changeOrderRoutes.ts` and anywhere else:
+   - `oldValue` and `newValue` must ALWAYS be `string | null`
+   - Use `JSON.stringify` OR use the existing helpers `logCreate`, `logUpdate`, `logDelete`, `logApprove`, `logReject` everywhere, consistently.
+   - Remove all object literals passed directly to logAudit unless stringified.
+
+3. ***Fix all Drizzle ORM schema mismatches***:
+   - Ensure `.insert()`, `.update()`, `.delete()` match the schema’s `InferInsertModel` or `InferSelectModel`
+   - Fix any `.where()` misuse
+   - Fix any invalid returns/mismatched types
+
+4. ***Fix all frontend errors*** in:
+   - AppHeader.tsx
+   - ProjectsTable.tsx
+   - dashboard.tsx
+   - time-clock-manager.tsx
+   - time-clock.tsx
+
+   Specifically:
+   - Add proper generics to all `useQuery` calls so `data` is no longer `unknown`
+   - Fix handler mismatch in AppHeader (`void` vs `Promise<void>`)
+   - Normalize ProjectsTable mapping so output matches `ProjectWithNames[]`
+   - Fix all strict mode typing issues WITHOUT using `any`
+
+5. ***Ensure NO `db.transaction()` calls remain*** anywhere in the repo:
+   - If found, refactor those routes using the known working pattern (sequential operations + audit logging last).
+
+6. ***Preserve all business logic*** exactly:
+   - Change order state machine
+   - Time entry CRUD + approvals
+   - Crew creation, update, deletion, and assignment
+   - User skill assignment/removal
+   - Takeoff plan import and plan upload
+
+7. ***Ensure the entire repo builds***:
+   - `npm run typecheck` → 0 errors
+   - `npm run build` → success
+   - `npm run dev` → no runtime errors
+
+8. ***Do not weaken types***:
+   - No “any”
+   - No removing strict mode
+   - No bypass hacks
+
+────────────────────────────────────────────────────────
+ABSOLUTE RULES
+────────────────────────────────────────────────────────
+
+- DO NOT remove features.
+- DO NOT downgrade type safety.
+- DO NOT suppress TypeScript errors.
+- DO NOT modify schema structures.
+- DO NOT change business rules or flows.
+- DO NOT ask for further instructions.
+
+You MUST finish with a clean, compiling, type-safe codebase.
+
+────────────────────────────────────────────────────────
+FINAL OUTPUT REQUIREMENTS
+────────────────────────────────────────────────────────
+
+When you finish your changes, provide a SINGLE summary containing:
+
+1. "✔ All TypeScript errors fixed"
+2. "✔ Zero transaction calls"
+3. "✔ Backend builds cleanly"
+4. "✔ Frontend builds cleanly"
+5. "✔ Audit logging standardized"
+6. List of all files modified
+
+Then stop.

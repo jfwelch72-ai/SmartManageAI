@@ -18,12 +18,12 @@ export default function DashboardPage() {
   const { data: bids = [], isLoading: bidsLoading } = useBids();
 
   // Fetch crew assignments for superintendents
-  const { data: crewAssignments = [] } = useQuery({
+  const { data: crewAssignments = [] } = useQuery<import("@shared/schema").CrewProjectAssignment[]>({
     queryKey: ["/api/crew-assignments"],
     enabled: user?.role === "SUPERINTENDENT",
   });
 
-  const { data: crews = [] } = useQuery({
+  const { data: crews = [] } = useQuery<import("@shared/schema").Crew[]>({
     queryKey: ["/api/crews"],
     enabled: user?.role === "SUPERINTENDENT",
   });

@@ -172,16 +172,16 @@ export default function TimeClockPage() {
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Clocked in at</p>
                       <p className="text-2xl font-bold" data-testid="text-clock-in-time">
-                        {format(new Date(currentShift.shift.clockIn), "h:mm a")}
+                        {currentShift.shift && format(new Date(currentShift.shift.clockIn), "h:mm a")}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(currentShift.shift.clockIn))} ago
+                        {currentShift.shift && formatDistanceToNow(new Date(currentShift.shift.clockIn))} ago
                       </p>
                     </div>
                     <div className="text-right space-y-2">
                       <p className="text-sm text-muted-foreground">Duration</p>
                       <p className="text-2xl font-bold" data-testid="text-shift-duration">
-                        {getShiftDuration(currentShift.shift.clockIn)}
+                        {currentShift.shift && getShiftDuration(String(currentShift.shift.clockIn))}
                       </p>
                     </div>
                   </div>

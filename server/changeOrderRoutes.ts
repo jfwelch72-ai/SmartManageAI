@@ -137,14 +137,14 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    // Audit log (pass raw objects, not JSON.stringify)
+    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "SUBMIT",
       entityType: "changeOrder",
       entityId: order.id,
-      oldValue: { status: order.status },
-      newValue: { status: "PENDING_APPROVAL" },
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
     }, req);
 
     // Notify relevant users
@@ -198,14 +198,14 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Audit log (pass raw objects, not JSON.stringify)
+    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "SUBMIT",
       entityType: "changeOrder",
       entityId: order.id,
-      oldValue: { status: order.status },
-      newValue: { status: "SUBMITTED" },
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "SUBMITTED" }),
     }, req);
 
     // Notify requester
@@ -261,14 +261,14 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       return;
     }
 
-    // Audit log (pass raw objects, not JSON.stringify)
+    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "APPROVE",
       entityType: "changeOrder",
       entityId: order.id,
-      oldValue: { status: order.status },
-      newValue: { status: "APPROVED", approvedById: req.user!.id },
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
     }, req);
 
     // Notify requester
@@ -333,18 +333,18 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Audit log (pass raw objects, not JSON.stringify)
+    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "REJECT",
       entityType: "changeOrder",
       entityId: order.id,
-      oldValue: { status: order.status },
-      newValue: { 
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ 
         status: "REJECTED", 
         rejectionReason,
         approvedById: req.user!.id 
-      },
+      }),
     }, req);
 
     // Notify requester
@@ -401,14 +401,14 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
-    // Audit log (pass raw objects, not JSON.stringify)
+    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "UPDATE",
       entityType: "changeOrder",
       entityId: order.id,
-      oldValue: { status: order.status },
-      newValue: { status: "DRAFT", reason },
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "DRAFT", reason }),
     }, req);
 
     // Notify requester

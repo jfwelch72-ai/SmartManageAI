@@ -5,7 +5,7 @@ export default function AppHeaderExample() {
     <AppHeader 
       userName="John Smith" 
       userRole="Project Manager" 
-      onLogout={() => console.log('Logout clicked')} 
+      onLogout={async () => console.log('Logout clicked')} 
     />
   );
 }
