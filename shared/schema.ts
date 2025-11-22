@@ -249,6 +249,8 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   quantityCompleted: decimal("quantity_completed", { precision: 12, scale: 2 }).notNull(),
   billedQuantity: decimal("billed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
   billingStatus: billingStatusEnum("billing_status").notNull().default("NOT_READY"),
+  billedDate: timestamp("billed_date"),
+  billedById: varchar("billed_by_id").references(() => users.id),
   notes: text("notes"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -257,6 +259,7 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   scopeItemIdIdx: index("daily_scope_progress_scope_item_id_idx").on(table.scopeItemId),
   projectIdIdx: index("daily_scope_progress_project_id_idx").on(table.projectId),
   workDateIdx: index("daily_scope_progress_work_date_idx").on(table.workDate),
+  billingStatusIdx: index("daily_scope_progress_billing_status_idx").on(table.billingStatus),
 }));
 
 // Media table (photos and videos)
@@ -731,6 +734,8 @@ export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
 
 export const insertDailyScopeProgressSchema = createInsertSchema(dailyScopeProgress).omit({
   id: true,
+  billedDate: true,
+  billedById: true,
   createdAt: true,
   updatedAt: true,
 });

@@ -1486,11 +1486,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Check permissions: creator or admin/manager/superintendent
+      // Check permissions: creator or admin/manager/superintendent/office_manager
       const isCreator = existingProgress.createdById === req.user!.id;
-      const isManager = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
+      const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
       
-      if (!isCreator && !isManager) {
+      if (!isCreator && !isAuthorized) {
         res.status(403).json({ error: "Permission denied" });
         return;
       }
@@ -1500,6 +1500,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
       };
+
+      // SECURITY: Strict validation for billing status enum
+      if (sanitizedBody.billingStatus) {
+        const validStatuses = ["NOT_READY", "READY_TO_BILL", "BILLED"];
+        if (!validStatuses.includes(sanitizedBody.billingStatus)) {
+          res.status(400).json({ error: "Invalid billing status. Must be one of: NOT_READY, READY_TO_BILL, BILLED" });
+          return;
+        }
+      }
 
       const updateSchema = insertDailyScopeProgressSchema.omit({
         scopeItemId: true,
@@ -1514,29 +1523,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const [updatedProgress] = await db
-        .update(dailyScopeProgress)
-        .set({ ...validationResult.data, updatedAt: new Date() })
-        .where(eq(dailyScopeProgress.id, req.params.progressId))
-        .returning();
+      // Prepare update data with automatic billing fields
+      const updateData: any = {
+        ...validationResult.data,
+        updatedAt: new Date(),
+      };
 
-      // Recalculate scope item totals
-      const allProgress = await db
-        .select()
-        .from(dailyScopeProgress)
-        .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
+      // If billing status changed to BILLED, record who and when
+      if (validationResult.data.billingStatus === "BILLED" && existingProgress.billingStatus !== "BILLED") {
+        updateData.billedDate = new Date();
+        updateData.billedById = req.user!.id;
+      }
 
-      const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
-      const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+      // TRANSACTION: Atomic update of progress + notifications + scope totals
+      const updatedProgress = await db.transaction(async (tx) => {
+        // Update the progress entry
+        const [updated] = await tx
+          .update(dailyScopeProgress)
+          .set(updateData)
+          .where(eq(dailyScopeProgress.id, req.params.progressId))
+          .returning();
 
-      await db
-        .update(scopeItems)
-        .set({
-          completedQuantity: totalCompleted.toString(),
-          billedQuantity: totalBilled.toString(),
-          updatedAt: new Date(),
-        })
-        .where(eq(scopeItems.id, existingProgress.scopeItemId));
+        // Create notification for office manager when status changes to READY_TO_BILL
+        if (validationResult.data.billingStatus === "READY_TO_BILL" && existingProgress.billingStatus !== "READY_TO_BILL") {
+          // Get scope item details for notification
+          const [scopeItem] = await tx
+            .select()
+            .from(scopeItems)
+            .where(eq(scopeItems.id, existingProgress.scopeItemId))
+            .limit(1);
+
+          if (scopeItem) {
+            // Get project details
+            const [project] = await tx
+              .select()
+              .from(projects)
+              .where(eq(projects.id, existingProgress.projectId))
+              .limit(1);
+
+            // Find all office managers
+            const officeManagers = await tx
+              .select()
+              .from(users)
+              .where(eq(users.role, "OFFICE_MANAGER"));
+
+            // Batch insert notifications for all office managers
+            if (officeManagers.length > 0) {
+              const notificationValues = officeManagers.map(manager => ({
+                userId: manager.id,
+                type: "BILLING_READY" as const,
+                title: "Quantities Ready to Bill",
+                message: `${scopeItem.description} (${updated.billedQuantity} ${scopeItem.unit}) is ready to bill on project ${project?.code || 'Unknown'}`,
+                relatedEntityId: updated.id,
+                relatedEntityType: "daily_scope_progress" as const,
+              }));
+              
+              await tx.insert(notifications).values(notificationValues);
+            }
+          }
+        }
+
+        // Recalculate scope item totals
+        const allProgress = await tx
+          .select()
+          .from(dailyScopeProgress)
+          .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
+
+        const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
+        const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+
+        await tx
+          .update(scopeItems)
+          .set({
+            completedQuantity: totalCompleted.toString(),
+            billedQuantity: totalBilled.toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(scopeItems.id, existingProgress.scopeItemId));
+
+        return updated;
+      });
 
       res.json(updatedProgress);
     } catch (error: any) {
@@ -1559,11 +1625,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Check permissions: creator or admin/manager/superintendent
+      // Check permissions: creator or admin/manager/superintendent/office_manager
       const isCreator = existingProgress.createdById === req.user!.id;
-      const isManager = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
+      const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
       
-      if (!isCreator && !isManager) {
+      if (!isCreator && !isAuthorized) {
         res.status(403).json({ error: "Permission denied" });
         return;
       }
