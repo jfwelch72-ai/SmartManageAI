@@ -112,17 +112,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const uniqueUnits = Array.from(new Set(scopeItems.map(item => item.unit))).sort();
   const uniqueStatuses = ["NOT_READY", "READY_TO_BILL", "BILLED"];
 
-  // Calculate summary totals from filtered items
-  const summary = filteredScopeItems.reduce(
-    (acc, item) => ({
-      totalQuantity: acc.totalQuantity + parseFloat(item.totalQuantity),
-      completedQuantity: acc.completedQuantity + parseFloat(item.completedQuantity || "0"),
-      billedQuantity: acc.billedQuantity + parseFloat(item.billedQuantity || "0"),
-    }),
-    { totalQuantity: 0, completedQuantity: 0, billedQuantity: 0 }
-  );
-  const summaryRemaining = summary.totalQuantity - summary.completedQuantity;
-  const summaryProgressPercent = summary.totalQuantity > 0 ? (summary.completedQuantity / summary.totalQuantity) * 100 : 0;
+  // Note: We don't aggregate totals across different scope items because mixing units (SF, LF, CY, EA, etc.) is meaningless
 
   // Create daily progress mutation
   const createProgressMutation = useMutation({
@@ -140,7 +130,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
       // Await invalidation to ensure fresh data before showing success
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["/api/scope-items", variables.scopeItemId, "progress"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
       ]);
       toast({ title: "Success", description: "Daily progress recorded" });
@@ -161,7 +151,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
       // Await invalidation to ensure fresh data before showing success
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["/api/scope-items", variables.scopeItemId, "progress"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
       ]);
       toast({ title: "Success", description: "Progress entry deleted" });
@@ -183,7 +173,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope-items"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "scope"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] }),
       ]);
       toast({ title: "Success", description: "Scope item created successfully" });
@@ -278,64 +268,15 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards - Only show when there are scope items */}
-      {scopeItems.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Quantity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold" data-testid="text-total-quantity">
-                {summary.totalQuantity.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Completed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-completed-quantity">
-                {summary.completedQuantity.toLocaleString()}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {summaryProgressPercent.toFixed(1)}% complete
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Billed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-billed-quantity">
-                {summary.billedQuantity.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold" data-testid="text-remaining-quantity">
-                {summaryRemaining.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Filter and Actions Bar - Always visible */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
-              <Label htmlFor="search">Search Description</Label>
+              <Label htmlFor="search">Search SOW (Scope of Work)</Label>
               <Input
                 id="search"
-                placeholder="Search scope items..."
+                placeholder="Search scope of work..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 data-testid="input-search-scope"
@@ -396,7 +337,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10"></TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead>SOW (Scope of Work)</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead className="text-right">Total Qty</TableHead>
                 <TableHead className="text-right">Completed</TableHead>
@@ -577,12 +518,12 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="new-description">Description *</Label>
+              <Label htmlFor="new-description">SOW (Scope of Work) *</Label>
               <Input
                 id="new-description"
                 value={newScopeDescription}
                 onChange={(e) => setNewScopeDescription(e.target.value)}
-                placeholder="e.g., Install drywall, Pour concrete, etc."
+                placeholder="e.g., 4' Sidewalk, Slab on Grade, 18' Curb, Excavation, Bollards"
                 data-testid="input-new-description"
               />
             </div>
