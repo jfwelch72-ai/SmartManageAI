@@ -21,7 +21,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Time-Clock System**: Native time-clock with GPS, shift management, and approvals.
     -   **Audit & Compliance**: Comprehensive audit logging.
     -   **Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, and Change Orders, including a strict Change-Order State Machine.
-    -   **Daily Operations**: Project notes, media uploads, and daily progress tracking.
+    -   **Daily Operations**: Project notes, media uploads, and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation using OpenAI GPT-4.
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (linear, area, volume, count, note), measurement persistence, quantity summaries, and multi-page PDF rendering via PDF.js, with secure PDF serving. Includes preset scale calibration and robust category management for organizing measurements.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
@@ -137,6 +137,45 @@ Comprehensive production readiness audit documented in `PRODUCTION_AUDIT_REPORT.
   - Time clock manager and time entries
   - Crew and cost rate management
 - **Status**: ✅ COMPLETED (all pages and components updated with role-based restrictions)
+
+### ✅ COMPLETED DAILY SCOPE PROGRESS TRACKING (November 22, 2025)
+- **Objective**: Enable daily tracking of scope item completion quantities, billed quantities, and billing status changes
+- **Database Schema** (`shared/schema.ts`):
+  - New table: `dailyScopeProgress` with fields:
+    - `id`: UUID primary key
+    - `scopeItemId`: Foreign key to scope_items
+    - `workDate`: Date of work performed
+    - `quantityCompleted`: Decimal quantity completed on this date
+    - `billedQuantity`: Decimal quantity billed on this date
+    - `billingStatus`: Enum (NOT_READY, READY_TO_BILL, BILLED)
+    - `notes`: Optional text notes
+    - `createdById`: User who created the entry
+    - `createdAt`: Timestamp
+- **API Endpoints** (`server/routes.ts`):
+  - GET `/api/scope-items/:scopeItemId/progress` - List all daily progress entries for a scope item
+  - POST `/api/scope-items/:scopeItemId/progress` - Create new daily progress entry
+  - PATCH `/api/scope-items/:scopeItemId/progress/:progressId` - Update existing progress entry
+  - DELETE `/api/scope-items/:scopeItemId/progress/:progressId` - Delete progress entry
+  - Backend automatically recalculates scope item `completedQuantity` and `billedQuantity` totals after mutations
+- **UI Components**:
+  - **ScopeProgressTracker** (`client/src/components/ScopeProgressTracker.tsx`):
+    - Summary cards showing aggregated totals across all scope items (Total, Completed, Billed, Remaining)
+    - Expandable scope item rows with chevron toggle
+    - "Record Progress" button opens dialog form
+    - Daily progress history table per scope item
+  - **ScopeItemProgressRow** (`client/src/components/ScopeItemProgressRow.tsx`):
+    - Child component that lazy-loads progress data only when row is expanded
+    - Displays date, quantities, billing status, notes, creator, and delete action
+- **Features**:
+  - Summary totals at top showing project-wide progress
+  - Daily quantity entry with date picker
+  - Billing status dropdown (NOT_READY, READY_TO_BILL, BILLED)
+  - Custom notes field for each entry
+  - Delete capability for correcting errors
+  - Real-time cache invalidation to update summary cards after mutations
+  - RBAC: Accessible to all roles except HOURLY_EMPLOYEE (who can view but not edit)
+- **Integration**: Integrated into project detail page "Scope & Progress" tab
+- **Status**: ✅ COMPLETED (schema, API, UI implemented; zero LSP errors, application running)
 
 ### 🚀 DEPLOYMENT READINESS
 **Production Status**: ✅ PARTIAL - Core workflows ready, secondary features require refactoring  
