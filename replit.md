@@ -21,6 +21,12 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Time-Clock System**: Native time-clock with GPS, shift management, and approvals.
     -   **Audit & Compliance**: Comprehensive audit logging.
     -   **Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, and Change Orders, including a strict Change-Order State Machine.
+    -   **Change Order File Attachments**: Full file upload system for change orders using Uppy + Object Storage:
+        -   **Upload**: Supports images, PDFs, CAD files (.dwg, .dxf), Office docs (max 10 files, 50MB each)
+        -   **Display**: Collapsible file sections showing filename, size, date with download/delete controls
+        -   **RBAC**: ADMIN, MANAGER, OFFICE_MANAGER have unrestricted access; project superintendents, estimators, and change order requesters have project-level access
+        -   **Delete Permissions**: File uploader OR ADMIN/MANAGER/OFFICE_MANAGER can delete files
+        -   **Integration**: Files stored in change order's attachmentsJson field with object storage references and ACL policies
     -   **Daily Operations**: Project notes, media uploads, and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
     -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.

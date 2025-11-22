@@ -70,8 +70,8 @@ export function ChangeOrderFileUploader({
         description: `Successfully uploaded ${result.successful.length} file(s)`,
       });
 
-      // Invalidate change order queries to refresh file list
-      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
+      // Invalidate specific change order files query to refresh file list
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrderId, "files"] });
       
       onUploadComplete?.();
     } catch (error: any) {
