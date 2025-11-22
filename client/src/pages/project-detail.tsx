@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import FileUploadZone from "@/components/FileUploadZone";
 import ScopeOfWorkTable from "@/components/ScopeOfWorkTable";
+import ScopeProgressTracker from "@/components/ScopeProgressTracker";
 import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2 } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -26,9 +27,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { ChangeOrder } from "@shared/schema";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { ChangeOrder, ScopeItem, DailyScopeProgress } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -942,63 +944,7 @@ export default function ProjectDetailPage() {
                 <CardTitle>Scope of Work & Progress Tracking</CardTitle>
               </CardHeader>
               <CardContent>
-                {scopeLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading scope items...</div>
-                ) : scopeItems.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No scope items yet</div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Unit</TableHead>
-                          <TableHead className="text-right">Total Qty</TableHead>
-                          <TableHead className="text-right">Completed</TableHead>
-                          <TableHead className="text-right">Billed</TableHead>
-                          <TableHead className="text-right">Remaining</TableHead>
-                          <TableHead>Billing Status</TableHead>
-                          <TableHead className="text-right">Unit Price</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scopeItems.map((item) => {
-                          const total = parseFloat(item.totalQuantity);
-                          const completed = parseFloat(item.completedQuantity || "0");
-                          const billed = parseFloat(item.billedQuantity || "0");
-                          const remaining = total - completed;
-                          const progressPercent = (completed / total) * 100;
-
-                          return (
-                            <TableRow key={item.id} data-testid={`row-scope-${item.id}`}>
-                              <TableCell className="font-medium">{item.description}</TableCell>
-                              <TableCell>{item.unit}</TableCell>
-                              <TableCell className="text-right font-mono">{total.toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-mono">{completed.toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-mono">{billed.toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-mono">{remaining.toLocaleString()}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    item.billingStatus === "BILLED" ? "default" :
-                                    item.billingStatus === "READY_TO_BILL" ? "destructive" :
-                                    "secondary"
-                                  }
-                                  data-testid={`badge-billing-${item.id}`}
-                                >
-                                  {item.billingStatus?.replace("_", " ") || "NOT READY"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">
-                                {item.unitPrice ? `$${parseFloat(item.unitPrice).toFixed(2)}` : "—"}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
+                <ScopeProgressTracker scopeItems={scopeItems} isLoading={scopeLoading} projectCode={projectCode} />
               </CardContent>
             </Card>
           </TabsContent>

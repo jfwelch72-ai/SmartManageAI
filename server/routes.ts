@@ -1383,6 +1383,218 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // =============================
+  // Daily Scope Progress Routes
+  // =============================
+
+  const { dailyScopeProgress, insertDailyScopeProgressSchema } = await import("@shared/schema");
+
+  // Get all daily progress entries for a scope item
+  app.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const progressEntries = await db
+        .select({
+          progress: dailyScopeProgress,
+          creator: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+          },
+        })
+        .from(dailyScopeProgress)
+        .leftJoin(users, eq(dailyScopeProgress.createdById, users.id))
+        .where(eq(dailyScopeProgress.scopeItemId, req.params.scopeItemId))
+        .orderBy(desc(dailyScopeProgress.workDate), desc(dailyScopeProgress.createdAt));
+
+      res.json(progressEntries);
+    } catch (error) {
+      console.error("Get daily progress error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create daily progress entry (All authenticated users)
+  app.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [scopeItem] = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.id, req.params.scopeItemId))
+        .limit(1);
+
+      if (!scopeItem) {
+        res.status(404).json({ error: "Scope item not found" });
+        return;
+      }
+
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
+      const validationResult = insertDailyScopeProgressSchema.safeParse({
+        ...sanitizedBody,
+        scopeItemId: req.params.scopeItemId,
+        projectId: scopeItem.projectId,
+        createdById: req.user!.id,
+      });
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newProgress] = await db.insert(dailyScopeProgress).values([validationResult.data]).returning();
+
+      // Update the scope item's completed and billed quantities
+      const allProgress = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.scopeItemId, req.params.scopeItemId));
+
+      const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
+      const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+
+      await db
+        .update(scopeItems)
+        .set({
+          completedQuantity: totalCompleted.toString(),
+          billedQuantity: totalBilled.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scopeItems.id, req.params.scopeItemId));
+
+      res.status(201).json(newProgress);
+    } catch (error: any) {
+      console.error("Create daily progress error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update daily progress entry (Creator, Admin, Manager, Superintendent)
+  app.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [existingProgress] = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.id, req.params.progressId))
+        .limit(1);
+
+      if (!existingProgress) {
+        res.status(404).json({ error: "Progress entry not found" });
+        return;
+      }
+
+      // Check permissions: creator or admin/manager/superintendent
+      const isCreator = existingProgress.createdById === req.user!.id;
+      const isManager = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
+      
+      if (!isCreator && !isManager) {
+        res.status(403).json({ error: "Permission denied" });
+        return;
+      }
+
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
+      };
+
+      const updateSchema = insertDailyScopeProgressSchema.omit({
+        scopeItemId: true,
+        projectId: true,
+        createdById: true,
+      }).partial();
+
+      const validationResult = updateSchema.safeParse(sanitizedBody);
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [updatedProgress] = await db
+        .update(dailyScopeProgress)
+        .set({ ...validationResult.data, updatedAt: new Date() })
+        .where(eq(dailyScopeProgress.id, req.params.progressId))
+        .returning();
+
+      // Recalculate scope item totals
+      const allProgress = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
+
+      const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
+      const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+
+      await db
+        .update(scopeItems)
+        .set({
+          completedQuantity: totalCompleted.toString(),
+          billedQuantity: totalBilled.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scopeItems.id, existingProgress.scopeItemId));
+
+      res.json(updatedProgress);
+    } catch (error: any) {
+      console.error("Update daily progress error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete daily progress entry (Creator, Admin, Manager, Superintendent)
+  app.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [existingProgress] = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.id, req.params.progressId))
+        .limit(1);
+
+      if (!existingProgress) {
+        res.status(404).json({ error: "Progress entry not found" });
+        return;
+      }
+
+      // Check permissions: creator or admin/manager/superintendent
+      const isCreator = existingProgress.createdById === req.user!.id;
+      const isManager = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(req.user!.role);
+      
+      if (!isCreator && !isManager) {
+        res.status(403).json({ error: "Permission denied" });
+        return;
+      }
+
+      await db.delete(dailyScopeProgress).where(eq(dailyScopeProgress.id, req.params.progressId));
+
+      // Recalculate scope item totals
+      const allProgress = await db
+        .select()
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.scopeItemId, existingProgress.scopeItemId));
+
+      const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
+      const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
+
+      await db
+        .update(scopeItems)
+        .set({
+          completedQuantity: totalCompleted.toString(),
+          billedQuantity: totalBilled.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(scopeItems.id, existingProgress.scopeItemId));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete daily progress error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // Project Notes Routes
   // ====================
