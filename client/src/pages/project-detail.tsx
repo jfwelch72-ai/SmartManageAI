@@ -1006,6 +1006,91 @@ export default function ProjectDetailPage() {
               )}
             </CardContent>
             </Card>
+
+            {/* Change Orders Summary */}
+            <Card data-testid="card-change-orders-summary">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Change Orders</CardTitle>
+                  <CardDescription>Track status and value of project change orders</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setActiveTab("change-orders")}
+                  data-testid="button-view-all-change-orders"
+                >
+                  View All
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {changeOrders.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No change orders yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {changeOrders.slice(0, 5).map((co) => (
+                      <div 
+                        key={co.id} 
+                        className="flex items-center justify-between gap-4 p-3 rounded-md border hover-elevate active-elevate-2 cursor-pointer"
+                        onClick={() => setActiveTab("change-orders")}
+                        data-testid={`change-order-summary-${co.id}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {co.changeOrderNumber}
+                            </Badge>
+                            <Badge
+                              variant={
+                                co.status === "APPROVED" ? "default" :
+                                co.status === "REJECTED" ? "destructive" :
+                                co.status === "PENDING_APPROVAL" ? "destructive" :
+                                co.status === "SUBMITTED" ? "secondary" :
+                                "outline"
+                              }
+                              className="text-xs"
+                            >
+                              {co.status?.replace("_", " ")}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-medium truncate">{co.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Created {format(new Date(co.createdAt), "MMM d, yyyy")}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold font-mono">
+                            ${parseFloat(co.amount).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {changeOrders.length > 5 && (
+                      <p className="text-xs text-muted-foreground text-center pt-2">
+                        + {changeOrders.length - 5} more change order{changeOrders.length - 5 !== 1 ? 's' : ''}
+                      </p>
+                    )}
+                    <div className="pt-3 border-t mt-3 grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Total Value</p>
+                        <p className="text-xl font-bold font-mono">
+                          ${changeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Approved Value</p>
+                        <p className="text-xl font-bold font-mono text-green-600">
+                          ${changeOrders
+                            .filter(co => co.status === "APPROVED")
+                            .reduce((sum, co) => sum + parseFloat(co.amount), 0)
+                            .toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="scope">

@@ -56,13 +56,40 @@ export interface DataSnapshot {
     }[];
   };
   change_orders: {
-    pending_approval_count: number;
-    pending_approval_value: number;
+    total_count: number;
+    total_value: number;
+    by_status: {
+      draft_count: number;
+      draft_value: number;
+      pending_approval_count: number;
+      pending_approval_value: number;
+      submitted_count: number;
+      submitted_value: number;
+      approved_count: number;
+      approved_value: number;
+      rejected_count: number;
+      rejected_value: number;
+    };
+    by_project: {
+      project_code: string;
+      project_name: string;
+      total_count: number;
+      total_value: number;
+      approved_value: number;
+      status_breakdown: string;
+    }[];
     recent_approvals: {
       project_code: string | null;
       description: string;
       amount: number;
       status: string;
+    }[];
+    needs_attention: {
+      project_code: string | null;
+      description: string;
+      amount: number;
+      status: string;
+      days_pending: number;
     }[];
   };
   billing: {
@@ -204,12 +231,29 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       estimated_cost: Number(item.unitCost || 0) * Number(item.quantity || 0),
     }));
 
-  // Change orders pending approval
-  const pendingChangeOrders = await db
+  // Change orders - comprehensive analysis
+  const allChangeOrders = await db
     .select()
     .from(changeOrders)
-    .where(sql`${changeOrders.status} IN ('PENDING_APPROVAL', 'SUBMITTED')`)
-    .limit(50);
+    .limit(200);
+
+  // Build project ID to code mapping
+  const projectIdToCode = new Map<string, string>();
+  const projectIdToName = new Map<string, string>();
+  activeProjects.forEach(p => {
+    projectIdToCode.set(p.code, p.code); // code to code (for completed projects fetched separately)
+  });
+  
+  // Also fetch all projects (not just active) to get complete mapping
+  const allProjectsForMapping = await db
+    .select({ id: projects.id, code: projects.code, name: projects.name })
+    .from(projects)
+    .limit(200);
+  
+  allProjectsForMapping.forEach(p => {
+    projectIdToCode.set(p.id, p.code);
+    projectIdToName.set(p.id, p.name);
+  });
 
   const recentApprovedCOs = await db
     .select()
@@ -217,6 +261,68 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .where(eq(changeOrders.status, 'APPROVED'))
     .orderBy(desc(changeOrders.approvedAt))
     .limit(10);
+
+  // Change orders needing attention (pending >7 days)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const changeOrdersNeedingAttention = allChangeOrders
+    .filter(co => 
+      (co.status === 'PENDING_APPROVAL' || co.status === 'SUBMITTED') &&
+      new Date(co.createdAt) < sevenDaysAgo
+    )
+    .map(co => ({
+      project_code: projectIdToCode.get(co.projectId) || co.projectId,
+      description: co.description,
+      amount: Number(co.amount || 0),
+      status: co.status,
+      days_pending: Math.floor((now.getTime() - new Date(co.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+    }));
+
+  // Calculate change order totals by status
+  const coByStatus = {
+    draft_count: allChangeOrders.filter(co => co.status === 'DRAFT').length,
+    draft_value: allChangeOrders.filter(co => co.status === 'DRAFT').reduce((sum, co) => sum + Number(co.amount || 0), 0),
+    pending_approval_count: allChangeOrders.filter(co => co.status === 'PENDING_APPROVAL').length,
+    pending_approval_value: allChangeOrders.filter(co => co.status === 'PENDING_APPROVAL').reduce((sum, co) => sum + Number(co.amount || 0), 0),
+    submitted_count: allChangeOrders.filter(co => co.status === 'SUBMITTED').length,
+    submitted_value: allChangeOrders.filter(co => co.status === 'SUBMITTED').reduce((sum, co) => sum + Number(co.amount || 0), 0),
+    approved_count: allChangeOrders.filter(co => co.status === 'APPROVED').length,
+    approved_value: allChangeOrders.filter(co => co.status === 'APPROVED').reduce((sum, co) => sum + Number(co.amount || 0), 0),
+    rejected_count: allChangeOrders.filter(co => co.status === 'REJECTED').length,
+    rejected_value: allChangeOrders.filter(co => co.status === 'REJECTED').reduce((sum, co) => sum + Number(co.amount || 0), 0),
+  };
+
+  // Group change orders by project
+  const coByProject = new Map<string, any>();
+  for (const co of allChangeOrders) {
+    const projectCode = projectIdToCode.get(co.projectId) || co.projectId;
+    const projectName = projectIdToName.get(co.projectId) || 'Unknown';
+    
+    if (!coByProject.has(projectCode)) {
+      coByProject.set(projectCode, {
+        project_code: projectCode,
+        project_name: projectName,
+        total_count: 0,
+        total_value: 0,
+        approved_value: 0,
+        statuses: { DRAFT: 0, PENDING_APPROVAL: 0, SUBMITTED: 0, APPROVED: 0, REJECTED: 0 }
+      });
+    }
+    const projectData = coByProject.get(projectCode);
+    projectData.total_count++;
+    projectData.total_value += Number(co.amount || 0);
+    if (co.status === 'APPROVED') {
+      projectData.approved_value += Number(co.amount || 0);
+    }
+    projectData.statuses[co.status]++;
+  }
+
+  const coByProjectArray = Array.from(coByProject.values()).map(p => ({
+    ...p,
+    status_breakdown: Object.entries(p.statuses)
+      .filter(([_, count]) => (count as number) > 0)
+      .map(([status, count]) => `${status}: ${count as number}`)
+      .join(', ')
+  }));
 
   // Billing events (using current schema: scopeItemId, quantity, unitPrice, totalAmount)
   const recentBillingEvents = await db
@@ -362,14 +468,17 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       urgent_items: urgentItems,
     },
     change_orders: {
-      pending_approval_count: pendingChangeOrders.length,
-      pending_approval_value: pendingChangeOrders.reduce((sum, co) => sum + Number(co.amount || 0), 0),
+      total_count: allChangeOrders.length,
+      total_value: allChangeOrders.reduce((sum, co) => sum + Number(co.amount || 0), 0),
+      by_status: coByStatus,
+      by_project: coByProjectArray,
       recent_approvals: recentApprovedCOs.map(co => ({
-        project_code: co.projectId,
+        project_code: projectIdToCode.get(co.projectId) || co.projectId,
         description: co.description,
         amount: Number(co.amount || 0),
         status: co.status,
       })),
+      needs_attention: changeOrdersNeedingAttention,
     },
     billing: {
       total_invoiced_ytd: Math.round(totalBilled * 100) / 100,
