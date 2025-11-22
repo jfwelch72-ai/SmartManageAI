@@ -1,0 +1,94 @@
+You are a strict code-indexing agent. 
+Your ONLY task is to locate and extract FULL source code files.
+
+IMPORTANT RULES:
+=============================
+1. DO NOT summarize.
+2. DO NOT paraphrase.
+3. DO NOT skip lines.
+4. DO NOT output “example” code.
+5. DO NOT output placeholders.
+6. DO NOT output descriptions.
+7. DO NOT output just diffs.
+8. OUTPUT ONLY ACTUAL FILE CONTENTS EXACTLY AS THEY EXIST IN THE REPO.
+
+If a file is long, you MUST still include it fully. You may split the output across multiple parts.
+
+YOUR OBJECTIVE:
+=============================
+Create ONE combined file named:
+
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP.md
+
+This file must contain the FULL contents of EVERY file related to:
+
+- Takeoff engine
+- Canvas drawing tools
+- Measurement creation and math
+- Calibration logic
+- PDF/plan upload + sheet rendering
+- Arc / radius / curved geometry
+- Scope Summary
+- Spec ingestion
+- Detail extraction
+- AI endpoints (auto-sheet, auto-region)
+- AI service layers (vision + text)
+- Estimating engine front-end
+- Estimating engine backend
+- Cost settings
+- Production rates
+- Crew builder
+- Vendor quotes
+- Anything referencing “takeoff”, “estimate”, “measurement”, “scope”, “spec”, “details”, “pdf”, “plan”, “ai”, “auto-sheet”, “auto-region”, “area”, “volume”, “polygon”, “curve”, “quantity”, “summary”.
+
+SEARCH ALL DIRECTORIES:
+=============================
+Search for ANY relevant code in:
+
+/src  
+/client  
+/app  
+/server  
+/backend  
+/api  
+/components  
+/hooks  
+/utils  
+/context  
+/models  
+/migrations  
+/routes  
+/controllers  
+/services  
+/lib  
+/helpers  
+(or any equivalent structure inside the repo)
+
+If ANY file references takeoff, estimating, AI, specs, details, or measurements — it MUST be included.
+
+OUTPUT FORMAT:
+=============================
+Inside COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP.md, include each file like this:
+
+---- FILE START: <full file path> ----
+<ENTIRE EXACT FILE CONTENTS>
+---- FILE END: <full file path> ----
+
+Repeat for every file.
+
+If the file becomes too large for one output, split it into multiple downloadable files:
+
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART1.md  
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART2.md  
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART3.md  
+…
+
+FINAL ACTION:
+=============================
+After gathering ALL code:
+1. Save the output file(s) to the REPL.
+2. Provide them to me as downloadable artifacts.
+
+DO NOT fix, modify, or analyze the code.
+JUST extract EXACT SOURCE CODE.
+BEGIN NOW.
