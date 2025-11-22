@@ -529,7 +529,7 @@ interface ClockOutData {
 
 export function useCurrentShift() {
   return useQuery<{ shift: TimeClockShift | null; project?: Project | null }>({
-    queryKey: ["/api/time-clock/current-shift"],
+    queryKey: ["/api/time-clock/my-current-shift"],
     refetchInterval: 30000, // Refetch every 30 seconds to keep shift status fresh
   });
 }
@@ -541,7 +541,7 @@ export function useClockIn() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/current-shift"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-current-shift"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
     },
@@ -555,7 +555,7 @@ export function useClockOut() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/current-shift"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-current-shift"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
     },

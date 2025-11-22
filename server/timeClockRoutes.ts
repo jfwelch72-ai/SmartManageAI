@@ -195,7 +195,23 @@ export function registerTimeClockRoutes(app: Express): void {
         ))
         .limit(1);
 
-      res.json(activeShift || null);
+      if (!activeShift) {
+        res.json({ shift: null, project: null });
+        return;
+      }
+
+      // Fetch project if shift has projectId
+      let project = null;
+      if (activeShift.projectId) {
+        const [projectData] = await db
+          .select()
+          .from(projects)
+          .where(eq(projects.id, activeShift.projectId))
+          .limit(1);
+        project = projectData || null;
+      }
+
+      res.json({ shift: activeShift, project });
     } catch (error) {
       console.error("Get current shift error:", error);
       res.status(500).json({ error: "Internal server error" });
