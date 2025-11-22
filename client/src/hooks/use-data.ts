@@ -113,6 +113,36 @@ export function useRejectChangeOrder() {
   });
 }
 
+export function useSubmitChangeOrder() {
+  return useMutation({
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
+      const response = await apiRequest("POST", `/api/change-orders/${id}/submit`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
+export function useReturnToDraftChangeOrder() {
+  return useMutation({
+    mutationFn: async ({ id, reason, projectCode }: { id: string; reason?: string; projectCode: string }) => {
+      const response = await apiRequest("POST", `/api/change-orders/${id}/return-to-draft`, { reason });
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
 // Calendar Events
 export function useCalendarEvents() {
   return useQuery<CalendarEvent[]>({

@@ -17,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { FeaturePermissions } from "@/lib/rbac";
-import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
+import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,8 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
   const createMutation = useCreateChangeOrder();
   const approveMutation = useApproveChangeOrder();
   const rejectMutation = useRejectChangeOrder();
+  const submitMutation = useSubmitChangeOrder();
+  const returnToDraftMutation = useReturnToDraftChangeOrder();
 
   const handleCreate = async () => {
     if (!changeOrderNumber || !description || !amount) {
@@ -96,7 +98,27 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
     }
   };
 
-  const canApprove = ["ADMIN", "MANAGER"].includes(userRole);
+  const handleSubmit = async (id: string) => {
+    try {
+      await submitMutation.mutateAsync({ id, projectCode });
+      toast({ title: "Success", description: "Change order submitted to client" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to submit", variant: "destructive" });
+    }
+  };
+
+  const handleReturnToDraft = async (id: string) => {
+    const reason = prompt("Reason for returning to draft (optional):");
+    
+    try {
+      await returnToDraftMutation.mutateAsync({ id, reason: reason || undefined, projectCode });
+      toast({ title: "Success", description: "Change order returned to draft" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to return to draft", variant: "destructive" });
+    }
+  };
+
+  const canManage = ["ADMIN", "MANAGER"].includes(userRole);
 
   return (
     <TabsContent value="change-orders">
@@ -200,7 +222,31 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-bold font-mono">${parseFloat(co.amount).toLocaleString()}</p>
-                        {canApprove && co.status === "SUBMITTED" && (
+                        {canManage && co.status === "PENDING_APPROVAL" && (
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleSubmit(co.id)}
+                              disabled={submitMutation.isPending}
+                              data-testid={`button-submit-${co.id}`}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                              Submit to Client
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleReturnToDraft(co.id)}
+                              disabled={returnToDraftMutation.isPending}
+                              data-testid={`button-return-draft-${co.id}`}
+                            >
+                              <Edit className="w-4 h-4 mr-1" />
+                              Return to Draft
+                            </Button>
+                          </div>
+                        )}
+                        {canManage && co.status === "SUBMITTED" && (
                           <div className="flex gap-2 mt-2">
                             <Button
                               size="sm"
