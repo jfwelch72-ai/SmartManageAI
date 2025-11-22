@@ -1,4 +1,5 @@
-import { useState, Fragment } from "react";
+import { useState, Fragment, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,15 +25,66 @@ interface ScopeProgressTrackerProps {
 
 export default function ScopeProgressTracker({ scopeItems, isLoading, projectCode }: ScopeProgressTrackerProps) {
   const { toast } = useToast();
+  const [location, setLocation] = useLocation();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [showProgressDialog, setShowProgressDialog] = useState(false);
   const [selectedScopeItem, setSelectedScopeItem] = useState<ScopeItem | null>(null);
   const [showNewScopeDialog, setShowNewScopeDialog] = useState(false);
   
   // Filter state
-  const [searchTerm, setSearchTerm] = useState("");
-  const [unitFilter, setUnitFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [unitFilter, setUnitFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Sync filter state FROM URL when location changes
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.split('?')[1] || '');
+    const urlSearch = searchParams.get('search') || '';
+    const urlUnit = searchParams.get('unit') || 'all';
+    const urlStatus = searchParams.get('status') || 'all';
+    
+    // Only update state if ALL values differ to avoid redundant renders
+    const needsUpdate = urlSearch !== searchTerm || urlUnit !== unitFilter || urlStatus !== statusFilter;
+    
+    if (needsUpdate) {
+      if (urlSearch !== searchTerm) setSearchTerm(urlSearch);
+      if (urlUnit !== unitFilter) setUnitFilter(urlUnit);
+      if (urlStatus !== statusFilter) setStatusFilter(urlStatus);
+    }
+  }, [location, searchTerm, unitFilter, statusFilter]);
+
+  // Sync filter state TO URL when filters change
+  useEffect(() => {
+    // Start from current URL params to preserve other query parameters
+    const params = new URLSearchParams(location.split('?')[1] || '');
+    
+    // Update or remove filter-specific params
+    if (searchTerm) {
+      params.set('search', searchTerm);
+    } else {
+      params.delete('search');
+    }
+    
+    if (unitFilter !== 'all') {
+      params.set('unit', unitFilter);
+    } else {
+      params.delete('unit');
+    }
+    
+    if (statusFilter !== 'all') {
+      params.set('status', statusFilter);
+    } else {
+      params.delete('status');
+    }
+    
+    const queryString = params.toString();
+    const newPath = location.split('?')[0] + (queryString ? `?${queryString}` : '');
+    
+    // Only update if the path has changed to avoid infinite loops
+    if (newPath !== location) {
+      setLocation(newPath, { replace: true });
+    }
+  }, [searchTerm, unitFilter, statusFilter, location, setLocation]);
   
   // Form state for daily progress
   const [workDate, setWorkDate] = useState(format(new Date(), "yyyy-MM-dd"));
