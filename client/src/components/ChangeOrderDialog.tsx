@@ -241,18 +241,28 @@ export function ChangeOrderDialog({
             <div>
               <Label htmlFor="view-co-amount">Amount</Label>
               {isEditing ? (
-                <Input
-                  id="view-co-amount"
-                  type="number"
-                  step="0.01"
-                  value={editedAmount}
-                  onChange={(e) => setEditedAmount(e.target.value)}
-                  data-testid="input-edit-co-amount"
-                />
+                <>
+                  <Input
+                    id="view-co-amount"
+                    type="number"
+                    step="0.01"
+                    value={editedAmount}
+                    onChange={(e) => setEditedAmount(e.target.value)}
+                    data-testid="input-edit-co-amount"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter positive for additions or negative for deductions
+                  </p>
+                </>
               ) : (
-                <p className="mt-1 text-2xl font-bold font-mono">
-                  ${parseFloat(changeOrder.amount).toLocaleString()}
-                </p>
+                <div className="mt-1">
+                  <p className={`text-2xl font-bold font-mono ${parseFloat(changeOrder.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
+                    {parseFloat(changeOrder.amount) >= 0 ? '+' : ''}${parseFloat(changeOrder.amount).toLocaleString()}
+                  </p>
+                  <Badge variant={parseFloat(changeOrder.amount) >= 0 ? "default" : "destructive"} className="mt-1">
+                    {parseFloat(changeOrder.amount) >= 0 ? 'Addition' : 'Deduction'}
+                  </Badge>
+                </div>
               )}
             </div>
           </div>

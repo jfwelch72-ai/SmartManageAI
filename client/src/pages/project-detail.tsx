@@ -182,6 +182,9 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                     placeholder="2500.00"
                     data-testid="input-change-order-amount"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter positive for additions or negative for deductions (e.g., -500 for scope reduction)
+                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -250,7 +253,12 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                         <ChangeOrderFiles changeOrderId={co.id} />
                       </div>
                       <div className="text-right">
-                        <p className="text-xl font-bold font-mono">${parseFloat(co.amount).toLocaleString()}</p>
+                        <p className={`text-xl font-bold font-mono ${parseFloat(co.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
+                          {parseFloat(co.amount) >= 0 ? '+' : ''}${parseFloat(co.amount).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {parseFloat(co.amount) >= 0 ? 'Addition' : 'Deduction'}
+                        </p>
                         {co.status === "DRAFT" && (
                           <div className="flex gap-2 mt-2">
                             <Button
@@ -838,13 +846,39 @@ export default function ProjectDetailPage() {
                   <div className="flex items-start gap-3">
                     <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium">Contract Amount</p>
+                      <p className="text-sm font-medium">Original Contract Amount</p>
                       <p className="text-2xl font-bold font-mono">
                         ${parseFloat(project.contractAmount || "0").toLocaleString()}
                       </p>
                       {(!project.contractAmount || parseFloat(project.contractAmount) === 0) && (
                         <p className="text-xs text-destructive mt-1">⚠ Missing contract data</p>
                       )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <DollarSign className="w-5 h-5 text-primary mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Adjusted Contract Amount</p>
+                      <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
+                        ${(() => {
+                          const originalAmount = parseFloat(project.contractAmount || "0");
+                          const approvedChangeOrders = changeOrders?.filter(co => co.status === "APPROVED") || [];
+                          const changeOrderTotal = approvedChangeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0);
+                          return (originalAmount + changeOrderTotal).toLocaleString();
+                        })()}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {(() => {
+                          const approvedChangeOrders = changeOrders?.filter(co => co.status === "APPROVED") || [];
+                          const changeOrderTotal = approvedChangeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0);
+                          const additions = approvedChangeOrders.filter(co => parseFloat(co.amount) > 0).length;
+                          const deductions = approvedChangeOrders.filter(co => parseFloat(co.amount) < 0).length;
+                          if (approvedChangeOrders.length === 0) {
+                            return "No approved change orders";
+                          }
+                          return `Includes ${approvedChangeOrders.length} approved change order${approvedChangeOrders.length > 1 ? 's' : ''} (${additions > 0 ? `${additions} addition${additions > 1 ? 's' : ''}` : ''}${additions > 0 && deductions > 0 ? ', ' : ''}${deductions > 0 ? `${deductions} deduction${deductions > 1 ? 's' : ''}` : ''}) totaling ${changeOrderTotal >= 0 ? '+' : ''}$${changeOrderTotal.toLocaleString()}`;
+                        })()}
+                      </p>
                     </div>
                   </div>
                 </CardContent>

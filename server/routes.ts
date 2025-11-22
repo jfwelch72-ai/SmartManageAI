@@ -543,6 +543,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return { valid: true };
   }
 
+  // Validate change order amount (can be positive or negative for additions/deductions)
+  function validateChangeOrderAmount(amount: string | number | null | undefined, fieldName: string): { valid: boolean; error?: string } {
+    if (amount === null || amount === undefined) {
+      return { valid: false, error: `${fieldName} is required` };
+    }
+    
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    
+    if (isNaN(numAmount)) {
+      return { valid: false, error: `${fieldName} must be a valid number` };
+    }
+    
+    if (numAmount === 0) {
+      return { valid: false, error: `${fieldName} cannot be zero (use positive for additions, negative for deductions)` };
+    }
+    
+    // Reasonable limits: -$100 million to +$100 million
+    if (Math.abs(numAmount) > 100000000) {
+      return { valid: false, error: `${fieldName} exceeds maximum allowed value (±$100,000,000)` };
+    }
+    
+    return { valid: true };
+  }
+
   // Validate JSON string is parseable
   function validateJSONField(jsonString: string | null | undefined, fieldName: string): { valid: boolean; error?: string; parsed?: any } {
     if (jsonString === null || jsonString === undefined) {
@@ -2929,13 +2953,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // BUSINESS VALIDATION: Validate monetary amounts (REQUIRED for change orders)
-      if (validationResult.data.amount === undefined || validationResult.data.amount === null) {
-        res.status(400).json({ error: "Change order amount is required" });
-        return;
-      }
-
-      const amountCheck = validateMonetaryAmount(validationResult.data.amount, "Change order amount");
+      // BUSINESS VALIDATION: Validate change order amount (allows positive additions or negative deductions)
+      const amountCheck = validateChangeOrderAmount(validationResult.data.amount, "Change order amount");
       if (!amountCheck.valid) {
         res.status(400).json({ error: amountCheck.error });
         return;
@@ -3001,6 +3020,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
+      }
+
+      // BUSINESS VALIDATION: Validate change order amount if being updated (allows positive additions or negative deductions)
+      if (validationResult.data.amount !== undefined && validationResult.data.amount !== null) {
+        const amountCheck = validateChangeOrderAmount(validationResult.data.amount, "Change order amount");
+        if (!amountCheck.valid) {
+          res.status(400).json({ error: amountCheck.error });
+          return;
+        }
       }
 
       const updateData: any = { ...validationResult.data, updatedAt: new Date() };
