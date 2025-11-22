@@ -187,50 +187,11 @@ Return format: { "insights": [ ... ] }`;
         throw new Error("No response from OpenAI");
       }
 
-      // Parse the response
-      const parsed = JSON.parse(responseText);
-      console.log("[AI Notes] OpenAI response structure:", Object.keys(parsed));
-      
-      // Try multiple possible response structures
-      let insights = parsed.insights || parsed.items || parsed.results || parsed.data;
-      
-      // If still not an array, check if the entire parsed object might be structured differently
-      if (!Array.isArray(insights)) {
-        // Check if parsed has any array values
-        const arrayValues = Object.values(parsed).filter(Array.isArray);
-        if (arrayValues.length > 0) {
-          insights = arrayValues[0];
-          console.log("[AI Notes] Found insights in array property:", insights);
-        } else {
-          console.error("[AI Notes] Unexpected AI response format - no array found:", parsed);
-          return [];
-        }
-      }
-      
-      console.log(`[AI Notes] Parsed ${insights.length} insights from OpenAI`);
+      // Parse and validate response
+      const validInsights = this.parseAndValidateAIResponse(responseText, notes);
+      console.log(`[AI Notes] Successfully validated ${validInsights.length} insights from OpenAI`);
 
-      // Map to our insight format and enrich with project data
-      return insights.map((insight: {
-        category: string;
-        summary: string;
-        recommendedActions?: string[];
-        severity: string;
-        recipients?: string[];
-        sourceNoteId: string;
-        reasoning?: string;
-      }) => {
-        const sourceNote = notes.find(n => n.id === insight.sourceNoteId);
-        return {
-          category: insight.category as AIInsight["category"],
-          summary: insight.summary,
-          recommendedActions: insight.recommendedActions || [],
-          severity: insight.severity as AIInsight["severity"],
-          recipients: insight.recipients || [],
-          sourceNoteId: insight.sourceNoteId,
-          projectId: sourceNote?.projectId || null,
-          sourceType: (sourceNote?.sourceType || "COMPANY") as "PROJECT" | "COMPANY",
-        };
-      });
+      return validInsights;
     } catch (error) {
       console.error("Error analyzing notes with AI:", error);
       throw error;
@@ -238,11 +199,119 @@ Return format: { "insights": [ ... ] }`;
   }
 
   /**
-   * Store insights in the database (with deduplication)
-   * @returns Array of insights that were actually persisted (excluding duplicates)
+   * Parse and validate OpenAI response
    */
-  private async storeInsights(runId: string, insights: AIInsight[]): Promise<AIInsight[]> {
-    const persistedInsights: AIInsight[] = [];
+  private parseAndValidateAIResponse(responseText: string, notes: NoteForAnalysis[]): AIInsight[] {
+    let parsed: any;
+    
+    try {
+      parsed = JSON.parse(responseText);
+    } catch (error) {
+      console.error("[AI Notes] Failed to parse OpenAI JSON response:", error);
+      throw new Error("Invalid JSON response from OpenAI");
+    }
+
+    console.log("[AI Notes] OpenAI response structure:", Object.keys(parsed));
+    
+    // Try multiple possible response structures
+    let insights = parsed.insights || parsed.items || parsed.results || parsed.data;
+    
+    // If still not an array, check if the entire parsed object might be structured differently
+    if (!Array.isArray(insights)) {
+      // Check if parsed has any array values
+      const arrayValues = Object.values(parsed).filter(Array.isArray);
+      if (arrayValues.length > 0) {
+        insights = arrayValues[0];
+        console.log("[AI Notes] Found insights in array property");
+      } else {
+        console.warn("[AI Notes] No array found in response, returning empty array");
+        return [];
+      }
+    }
+
+    // Valid categories and severities
+    const validCategories = [
+      "SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", 
+      "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"
+    ];
+    const validSeverities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+    const validRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HOURLY_EMPLOYEE"];
+
+    // Validate and map each insight
+    const validatedInsights: AIInsight[] = [];
+    
+    for (const [index, rawInsight] of insights.entries()) {
+      try {
+        // Validate required fields
+        if (!rawInsight.sourceNoteId || typeof rawInsight.sourceNoteId !== 'string') {
+          console.warn(`[AI Notes] Insight ${index}: Missing or invalid sourceNoteId`);
+          continue;
+        }
+
+        if (!rawInsight.summary || typeof rawInsight.summary !== 'string') {
+          console.warn(`[AI Notes] Insight ${index}: Missing or invalid summary`);
+          continue;
+        }
+
+        // Validate and normalize category
+        const category = rawInsight.category?.toUpperCase();
+        if (!validCategories.includes(category)) {
+          console.warn(`[AI Notes] Insight ${index}: Invalid category "${rawInsight.category}", defaulting to OTHER`);
+        }
+
+        // Validate and normalize severity
+        const severity = rawInsight.severity?.toUpperCase();
+        if (!validSeverities.includes(severity)) {
+          console.warn(`[AI Notes] Insight ${index}: Invalid severity "${rawInsight.severity}", defaulting to MEDIUM`);
+        }
+
+        // Validate recipients
+        const recipients = Array.isArray(rawInsight.recipients) 
+          ? rawInsight.recipients.filter((r: string) => validRoles.includes(r.toUpperCase()))
+          : [];
+        
+        if (Array.isArray(rawInsight.recipients) && recipients.length !== rawInsight.recipients.length) {
+          console.warn(`[AI Notes] Insight ${index}: Filtered out invalid recipients`);
+        }
+
+        // Validate recommended actions
+        const recommendedActions = Array.isArray(rawInsight.recommendedActions)
+          ? rawInsight.recommendedActions.filter((a: any) => typeof a === 'string')
+          : [];
+
+        // Find source note
+        const sourceNote = notes.find(n => n.id === rawInsight.sourceNoteId);
+        if (!sourceNote) {
+          console.warn(`[AI Notes] Insight ${index}: Source note not found for ID ${rawInsight.sourceNoteId}`);
+          continue;
+        }
+
+        // Create validated insight
+        validatedInsights.push({
+          category: validCategories.includes(category) ? category as AIInsight["category"] : "OTHER",
+          summary: rawInsight.summary.substring(0, 500), // Truncate if too long
+          recommendedActions,
+          severity: validSeverities.includes(severity) ? severity as AIInsight["severity"] : "MEDIUM",
+          recipients,
+          sourceNoteId: rawInsight.sourceNoteId,
+          projectId: sourceNote.projectId,
+          sourceType: sourceNote.sourceType,
+        });
+      } catch (error) {
+        console.error(`[AI Notes] Error validating insight ${index}:`, error);
+        continue;
+      }
+    }
+
+    return validatedInsights;
+  }
+
+  /**
+   * Store insights in the database (with deduplication)
+   * @returns Array of actual database records that were persisted (excluding duplicates)
+   */
+  private async storeInsights(runId: string, insights: AIInsight[]): Promise<any[]> {
+    const persistedRecords: any[] = [];
 
     for (const insight of insights) {
       // Check if insight already exists for this source note + category (deduplication)
@@ -263,24 +332,36 @@ Return format: { "insights": [ ... ] }`;
         continue;
       }
 
-      // Insert new insight
-      await db.insert(aiNoteInsights).values({
-        runId,
-        sourceType: insight.sourceType,
-        sourceId: insight.sourceNoteId,
-        projectId: insight.projectId,
-        category: insight.category,
-        summary: insight.summary,
-        recommendedActions: JSON.stringify(insight.recommendedActions),
-        severity: insight.severity,
-        recipients: JSON.stringify(insight.recipients),
-      });
+      try {
+        // Insert new insight and return the actual database record
+        const [insertedRecord] = await db.insert(aiNoteInsights).values({
+          runId,
+          sourceType: insight.sourceType,
+          sourceId: insight.sourceNoteId,
+          projectId: insight.projectId,
+          category: insight.category,
+          summary: insight.summary,
+          recommendedActions: JSON.stringify(insight.recommendedActions),
+          severity: insight.severity,
+          recipients: JSON.stringify(insight.recipients),
+        }).returning();
 
-      // Track successfully persisted insights
-      persistedInsights.push(insight);
+        // Parse JSON fields for response
+        const recordWithParsedFields = {
+          ...insertedRecord,
+          recommendedActions: JSON.parse(insertedRecord.recommendedActions || "[]"),
+          recipients: JSON.parse(insertedRecord.recipients || "[]"),
+        };
+
+        persistedRecords.push(recordWithParsedFields);
+      } catch (error) {
+        console.error(`[AI Notes Service] Failed to insert insight for note ${insight.sourceNoteId}:`, error);
+        // Skip this insight and continue with others
+        continue;
+      }
     }
 
-    return persistedInsights;
+    return persistedRecords;
   }
 
   /**

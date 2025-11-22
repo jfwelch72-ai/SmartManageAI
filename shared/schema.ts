@@ -26,6 +26,8 @@ export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING
 export const aiNoteInsightCategoryEnum = pgEnum("ai_note_insight_category", ["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]);
 export const aiNoteInsightSeverityEnum = pgEnum("ai_note_insight_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
 export const aiNoteInsightSourceTypeEnum = pgEnum("ai_note_insight_source_type", ["PROJECT", "COMPANY"]);
+export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
+export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -256,13 +258,56 @@ export const aiNoteInsights = pgTable("ai_note_insights", {
   recommendedActions: text("recommended_actions_json"),
   severity: aiNoteInsightSeverityEnum("severity").notNull().default("MEDIUM"),
   recipients: text("recipients_json"),
+  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  completedById: varchar("completed_by_id").references(() => users.id),
+  completedAt: timestamp("completed_at"),
+  dismissedById: varchar("dismissed_by_id").references(() => users.id),
+  dismissedAt: timestamp("dismissed_at"),
+  dismissReason: text("dismiss_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   runIdIdx: index("ai_note_insights_run_id_idx").on(table.runId),
   projectIdIdx: index("ai_note_insights_project_id_idx").on(table.projectId),
   categoryIdx: index("ai_note_insights_category_idx").on(table.category),
   severityIdx: index("ai_note_insights_severity_idx").on(table.severity),
+  statusIdx: index("ai_note_insights_status_idx").on(table.status),
 }));
+
+// Manual Tasks table (user-created tasks separate from AI insights)
+export const tasks = pgTable("tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: aiNoteInsightCategoryEnum("category").notNull().default("OTHER"),
+  priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
+  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  assignedToId: varchar("assigned_to_id").references(() => users.id),
+  dueDate: timestamp("due_date"),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  completedById: varchar("completed_by_id").references(() => users.id),
+  completedAt: timestamp("completed_at"),
+  dismissedById: varchar("dismissed_by_id").references(() => users.id),
+  dismissedAt: timestamp("dismissed_at"),
+  dismissReason: text("dismiss_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("tasks_project_id_idx").on(table.projectId),
+  assignedToIdIdx: index("tasks_assigned_to_id_idx").on(table.assignedToId),
+  statusIdx: index("tasks_status_idx").on(table.status),
+  priorityIdx: index("tasks_priority_idx").on(table.priority),
+  dueDateIdx: index("tasks_due_date_idx").on(table.dueDate),
+}));
+
+export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
+export const updateTaskSchema = insertTaskSchema.partial();
+export type Task = typeof tasks.$inferSelect;
+export type InsertTask = z.infer<typeof insertTaskSchema>;
 
 // Scope of Work Items table
 export const scopeItems = pgTable("scope_items", {
@@ -478,9 +523,6 @@ export const aiRuns = pgTable("ai_runs", {
 }));
 
 // AI Tasks table (role-based prioritized tasks)
-export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
-export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
-
 export const aiTasks = pgTable("ai_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   runId: varchar("run_id").notNull().references(() => aiRuns.id, { onDelete: "cascade" }),
