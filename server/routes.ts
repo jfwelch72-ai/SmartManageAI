@@ -38,6 +38,7 @@ import changeOrderRoutes from "./changeOrderRoutes";
 import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
+import taskRoutes from "./taskRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -60,6 +61,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI notes analysis routes
   app.use("/api/ai-notes", aiNotesRoutes);
+
+  // Register task management routes
+  app.use(taskRoutes);
 
   // ====================
   // Auth Routes
