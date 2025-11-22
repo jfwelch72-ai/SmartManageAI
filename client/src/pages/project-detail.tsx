@@ -696,54 +696,57 @@ export default function ProjectDetailPage() {
               </Card>
             </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
-                <CardTitle>Financial Information</CardTitle>
-                {(user?.role === "ADMIN" || user?.role === "OFFICE_MANAGER") && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditBudget(project.budget || "0");
-                      setEditContractAmount(project.contractAmount || "0");
-                      setEditTexturaDrawDate(project.texturaDrawDate || "");
-                      setEditDrawDayOfMonth(project.drawDayOfMonth || "");
-                      setShowBudgetEditDialog(true);
-                    }}
-                    data-testid="button-edit-financials"
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Project Budget</p>
-                    <p className="text-2xl font-bold font-mono">
-                      ${parseFloat(project.budget || "0").toLocaleString()}
-                    </p>
-                    {(!project.budget || parseFloat(project.budget) === 0) && (
-                      <p className="text-xs text-destructive mt-1">⚠ Missing budget data</p>
-                    )}
+            {/* Financial Information - Hidden from hourly employees */}
+            {FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role) && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle>Financial Information</CardTitle>
+                  {(user?.role === "ADMIN" || user?.role === "OFFICE_MANAGER") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditBudget(project.budget || "0");
+                        setEditContractAmount(project.contractAmount || "0");
+                        setEditTexturaDrawDate(project.texturaDrawDate || "");
+                        setEditDrawDayOfMonth(project.drawDayOfMonth || "");
+                        setShowBudgetEditDialog(true);
+                      }}
+                      data-testid="button-edit-financials"
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Project Budget</p>
+                      <p className="text-2xl font-bold font-mono">
+                        ${parseFloat(project.budget || "0").toLocaleString()}
+                      </p>
+                      {(!project.budget || parseFloat(project.budget) === 0) && (
+                        <p className="text-xs text-destructive mt-1">⚠ Missing budget data</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Contract Amount</p>
-                    <p className="text-2xl font-bold font-mono">
-                      ${parseFloat(project.contractAmount || "0").toLocaleString()}
-                    </p>
-                    {(!project.contractAmount || parseFloat(project.contractAmount) === 0) && (
-                      <p className="text-xs text-destructive mt-1">⚠ Missing contract data</p>
-                    )}
+                  <div className="flex items-start gap-3">
+                    <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Contract Amount</p>
+                      <p className="text-2xl font-bold font-mono">
+                        ${parseFloat(project.contractAmount || "0").toLocaleString()}
+                      </p>
+                      {(!project.contractAmount || parseFloat(project.contractAmount) === 0) && (
+                        <p className="text-xs text-destructive mt-1">⚠ Missing contract data</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>
