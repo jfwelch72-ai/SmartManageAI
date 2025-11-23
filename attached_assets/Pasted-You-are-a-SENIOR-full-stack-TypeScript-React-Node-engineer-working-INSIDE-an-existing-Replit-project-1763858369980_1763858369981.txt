@@ -1,0 +1,391 @@
+You are a SENIOR full-stack TypeScript/React/Node engineer working INSIDE an existing Replit project for the TFR Construction internal app.
+
+The repo is ALREADY LOADED. 
+You MUST work IN-PLACE. DO NOT create a new project.
+
+Your job: 
+Stabilize, refine, and COMPLETE the entire TFR “Takeoff + Scope + Estimating Engine” with AI, while preserving ALL current working functionality.
+
+==================================================
+ABSOLUTE CONSTRAINTS (DO NOT BREAK THESE)
+==================================================
+1. DO NOT remove or break any currently working features.
+2. DO NOT delete or rename public APIs that the existing frontend uses, unless you update all consumers.
+3. If you refactor, you MUST preserve current behaviors and data flows (or improve them without regressions).
+4. DO NOT replace the whole app. You are enhancing and repairing the existing implementation.
+5. Be extremely careful with DB migrations – additive only (no destructive changes to live tables).
+
+Before you change anything, you MUST:
+- Scan the repo and build an internal map of:
+  - All “takeoff” related frontend files.
+  - All backend routes/services for takeoff, plans, specs, AI, estimating.
+  - All DB schemas/migrations for takeoff, specs, estimates, crews, cost settings, vendor quotes.
+
+==================================================
+PHASE 0 – DISCOVER & MAP EXISTING IMPLEMENTATION
+==================================================
+1. SEARCH the repo for these keywords and note all files:
+   - "takeoff"
+   - "measurement"
+   - "canvas"
+   - "calibration"
+   - "estimate"
+   - "estimating"
+   - "scope"
+   - "spec"
+   - "detail"
+   - "pdf"
+   - "plan"
+   - "sheet"
+   - "auto-sheet"
+   - "auto-region"
+   - "ai" / "AI"
+   - "scope-summary"
+   - "project_spec_index"
+   - "estimate_settings"
+   - "estimate_line_items"
+   - "crew"
+   - "vendor"
+
+2. Build an internal understanding of:
+   - How takeoff sheets are stored (e.g., `takeoff_sheets`).
+   - How measurements are stored (e.g., `takeoff_measurements`).
+   - How calibration is stored (e.g., `scale_px_per_foot`, units).
+   - How the current canvas & tools work (lines, polygons, etc.).
+   - How the estimating engine is currently wired (front + back).
+   - Any partially implemented AI endpoints or stubs.
+
+3. DO NOT start rewriting until you understand the current architecture.
+
+==================================================
+PHASE 1 – STABILIZE CURRENT TAKEOFF FEATURE (NO FEATURE LOSS)
+==================================================
+Goal: Make the existing takeoff feature fully reliable and not clunky, WITHOUT removing any current capabilities.
+
+1. FRONTEND – Takeoff Workspace
+   - Find the main takeoff workspace component (e.g., `TakeoffWorkspace`, `TakeoffCanvas`, `TakeoffToolbar`, `TakeoffSidebar`).
+   - Ensure:
+     - PDFs/sheets load reliably.
+     - You can set calibration.
+     - You can draw:
+       - Lines (linear measurement).
+       - Polygons/areas.
+       - Volume shapes (area + depth).
+       - Counts (markers).
+       - Notes.
+
+2. FIX QUANTITY CALCULATIONS
+   - Identify where length, area, and volume are computed.
+   - Ensure:
+     - ALL length values are in real-world feet (or appropriate units), using the sheet’s `scale_px_per_foot`.
+     - ALL polygon areas are computed correctly using a robust algorithm (e.g., shoelace in real-world units).
+     - Volume = area_ft2 × depth_ft / 27 for CY (where applicable).
+     - Computed values are stored consistently (e.g., `computed_length_ft`, `computed_area_ft2`, `computed_volume_cy`).
+
+   - Add or fix a central geometry util module (e.g., `utils/geometry.ts`) with:
+     - `computeDistanceInFeet(points[], scalePxPerFoot)` for lines.
+     - `computePolygonAreaInFt2(points[], scalePxPerFoot)` for polygons.
+     - `computeVolumeInCY(areaFt2, depthFt)` for volumes.
+   - Ensure Measurement list and Quantity Summary use these computed fields.
+
+3. FIX CALIBRATION
+   - Ensure calibration UI correctly:
+     - Records two clicked points on the canvas.
+     - Computes pixel distance.
+     - Stores `scale_px_per_foot` (and units) on the relevant sheet record.
+   - Ensure calibration changes immediately update existing measurement displays (recompute quantities where needed).
+
+4. FULLSCREEN & PERFORMANCE
+   - Make the takeoff canvas use as much of the available screen as possible in its tab.
+   - Lazy-load sheet images.
+   - Avoid unnecessary re-renders when interacting with the canvas.
+
+==================================================
+PHASE 2 – STACK-LIKE INTERACTION / UX BEHAVIOR
+==================================================
+Goal: Make the takeoff canvas interaction behave like STACK: click vs drag is reliable, panning is smooth, Shift+Click arcs are supported, and keyboard shortcuts feel natural.
+
+1. CLICK vs DRAG – CRITICAL RULE
+   - Implement a small movement threshold:
+     - If mouse down → mouse up happens with only minimal movement, treat it as a CLICK and add a point.
+     - If mouse moves beyond that threshold before mouse up, treat it as DRAG (for panning), NOT as adding a point.
+   - This rule must apply to:
+     - Line tool.
+     - Area tool.
+     - Volume tool.
+     - Count tool.
+     - Note tool.
+
+2. PANNING
+   - When the dedicated Pan/Hand tool is active:
+     - Click + hold + move pans the canvas.
+     - No points should be added in this mode.
+   - Spacebar:
+     - Temporarily activates pan (hand) tool regardless of current tool.
+     - On release, revert to previous tool.
+   - Mouse wheel:
+     - Zoom in/out centered on cursor.
+
+3. AREA / LINE DRAWING
+   - Lines:
+     - First click: start point.
+     - Second click: end point, finalize line.
+   - Polygons (Area/Volume):
+     - Click sequence to add vertices.
+     - Double-click or Enter closes polygon.
+     - ESC cancels current drawing safely.
+
+4. ARC / RADIUS TOOL (WITH SHIFT+CLICK)
+   - Behavior:
+     - While using Line or Area tool, Shift+Click should begin an arc/radius operation.
+     - 3-click pattern:
+       1) Start point.
+       2) End point.
+       3) Arc control point (to define curvature).
+     - For linear arc: compute arc length and store as part of the measurement.
+     - For area with arc edges: support curved boundary segments (approximate with enough sample points or maintain arc param and compute area mathematically).
+   - Add any necessary geometry helpers for:
+     - Circle center & radius given 3 points.
+     - Arc length.
+     - Arc area contribution.
+
+5. KEYBOARD SHORTCUTS
+   Implement logical shortcuts (where not conflicting with existing app):
+
+   - S → Select/Pointer tool
+   - H or Space (hold) → Pan/Hand tool
+   - L → Linear tool
+   - A → Area tool
+   - V → Volume tool
+   - C → Count tool
+   - N → Note tool
+   - ESC → Cancel current drawing
+   - Ctrl/Cmd+Z → Undo
+   - Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z → Redo
+   - F → Fit sheet to viewport
+   - +/- → Zoom in/out
+
+6. LIVE PREVIEW
+   - While drawing:
+     - Show live length (for lines).
+     - Show live area (for polygons).
+     - For volume tool, optionally show area and ask for depth afterwards.
+
+==================================================
+PHASE 3 – AI FEATURES (AUTO SHEET & AUTO REGION)
+==================================================
+Goal: Implement AI assist for takeoffs, without breaking manual tools. AI should propose DRAFT measurements, which users confirm or edit.
+
+1. BACKEND AI SERVICE LAYER
+   - In server code (e.g., `server/services/ai/`), implement:
+     - `autoSheetTakeoff(projectId, sheetId)`:
+       - Loads sheet image + any relevant plan context.
+       - Calls an LLM + Vision model with a carefully crafted prompt to detect:
+         - Concrete slabs, sidewalks, curbs, pads.
+         - Excavation regions.
+         - Pavers & base.
+         - Bollards & relevant site furnishings.
+       - Returns a structured list of measurement candidates:
+         - type (LINEAR/AREA/VOLUME/COUNT)
+         - points (canvas coordinate approximation)
+         - optional depth
+         - label guess
+         - extra metadata (e.g., scope type: “Slab”, “Sidewalk”).
+     - `autoRegionTakeoff(projectId, sheetId, regionPolygon, scopeType)`:
+       - Same as above but restricted to a polygon region and a given scope type (e.g., “concrete”, “excavation”, “pavers”).
+
+   - Use OpenAI-style APIs (Vision + text). IMPORTANT:
+     - Put all keys in env vars.
+     - Add graceful fallback: if env var not set or call fails, return a clear error.
+
+2. BACKEND ROUTES
+   - Implement or fix:
+     - `POST /api/takeoff/ai/auto-sheet`
+       - body: { projectId, sheetId }
+       - returns: list of measurement candidates.
+     - `POST /api/takeoff/ai/auto-region`
+       - body: { projectId, sheetId, regionPolygon, scopeType }
+       - returns: list of measurement candidates.
+
+   - For each candidate, you can either:
+     - Directly create `takeoff_measurements` with `status = "DRAFT"`, or
+     - Just return them for the frontend to create.
+
+3. FRONTEND INTEGRATION
+   - In the Takeoff UI:
+     - Add buttons:
+       - “AI Auto Takeoff (Sheet)”
+       - “AI Auto Takeoff (Region)” after drawing a bounding region.
+     - On click:
+       - Call the backend AI endpoints.
+       - Show a loading spinner.
+       - Render DRAFT measurements visually (e.g., dashed outlines, different color).
+   - Provide a DRAFT review panel:
+     - List AI-proposed items with:
+       - Type, label, quantity, scope type.
+       - Buttons:
+         - Accept → convert to `status = "CONFIRMED"`.
+         - Reject → delete.
+         - Edit → open measurement edit flow.
+
+==================================================
+PHASE 4 – SPEC BOOK & DETAIL INTEGRATION (SCOPE REQUIREMENTS)
+==================================================
+Goal: From uploaded spec books and detail sheets, extract requirements (mix, rebar, base, finishes, etc.) and attach them to measurements and scope summary.
+
+1. SPEC INGESTION
+   - Implement (or fix) endpoints:
+     - `POST /api/takeoff/specs/upload`
+     - `GET /api/takeoff/specs/:projectId/index`
+   - For upload:
+     - Store spec PDF.
+     - Extract text (with a PDF parser on backend).
+     - Use LLM to:
+       - Identify Div 03, 31, 32 relevant sections.
+       - Extract key structured data into `project_spec_index` (mix design, rebar, subbase, curing, sealer, paver system, excavation rules, bollard details, etc.).
+   - Store as JSON per project: `project_spec_index.data`.
+
+2. DETAIL INTERPRETATION
+   - Implement a service that:
+     - For each plan sheet:
+       - Detects references like “3/S502”, “5/C3.2”.
+     - For each detail sheet:
+       - Parse slabs, footings, base, paver cross-sections, bollard footings, etc.
+     - Links details to regions or measurement types logically (heuristic is fine).
+
+3. FRONTEND – REQUIREMENTS PANEL
+   - In the Takeoff sidebar, when a measurement is selected:
+     - Show a “Requirements” panel:
+       - Mix design (psi, air, slump, w/c).
+       - Reinforcement (bar size, spacing, mesh).
+       - Subbase depth & type.
+       - Joints (spacing, depth, dowels).
+       - Finish type (broom, buff wash, exposed).
+       - Curing and sealer.
+       - For pavers: bedding, base, geotextile, edge restraint, joint sand.
+       - For excavation: over-excavation, backfill, compaction %.
+       - For bollards: manufacturer/model, finish, embedment, fill, footing.
+
+   - Display also the source references:
+     - Spec section (e.g., “03 30 00 – Part 2”)
+     - Detail ID (e.g., “3/S502”)
+
+==================================================
+PHASE 5 – SCOPE SUMMARY + ESTIMATE ENGINE INTEGRATION
+==================================================
+Goal: Use confirmed takeoff quantities + spec requirements to generate an automatic estimate using TFR’s cost settings and production rates, while allowing full manual override.
+
+1. SCOPE SUMMARY
+   - Implement or fix an endpoint:
+     - `GET /api/takeoff/scope-summary/:projectId` (or by estimateId).
+   - Aggregate CONFIRMED takeoff measurements into a structured scope object:
+     - Concrete:
+       - Slab SF & CY by type.
+       - Walk SF.
+       - Curb LF.
+       - Footing CY.
+       - Buff wash SF.
+       - Joints LF.
+     - Excavation:
+       - Cut CY, fill CY, over-excavation CY.
+     - Pavers & Landscape:
+       - Paver SF, base CY, bedding tons, edge LF, underdrain LF.
+     - Bollards & Site Furnishings:
+       - Counts by type and spec.
+
+   - Surface this in a “Scope Summary” tab in the UI.
+
+2. ESTIMATE GENERATION
+   - Using existing tables (e.g., `estimate_settings`, `estimate_crews`, `estimate_line_items`, etc.), implement a backend service:
+     - `generateEstimateFromScope(projectId, scopeSummary, settings)`:
+       - Computes:
+         - Material quantities (concrete CY, stone tons, sand tons, rebar LB, etc.).
+         - Labor hours from production rates.
+         - Equipment hours.
+         - Costs (materials, labor, equipment, consumables, subs).
+       - Creates or updates an `estimate` record and associated `estimate_line_items`.
+
+   - Implement endpoint:
+     - `POST /api/estimates/:estimateId/generate-from-scope`
+       - Uses current scope summary + settings to populate/refresh line items.
+
+3. FRONTEND – ESTIMATE BUILDER
+   - In the Estimate Builder UI:
+     - Provide a button: “Generate/Refresh from Takeoff Scope”.
+     - Show line items grouped by:
+       - Concrete
+       - Excavation
+       - Pavers/Landscape
+       - Bollards/Furnishings
+       - General Conditions
+       - Overhead/Profit
+     - Allow:
+       - Editing of quantities, unit costs, labor hours, crew assignments.
+       - Manual addition/deletion of line items.
+       - Attaching vendor quotes to items.
+
+4. PROFIT / MARGIN / CREWS / QUOTES
+   - Ensure:
+     - Global settings allow:
+       - Material prices, labor rates, equipment rates.
+       - Production rates.
+       - Overhead % and target profit %.
+     - Crew definitions are stored and used for blended rates.
+     - Vendor quotes can be uploaded and mapped to line items.
+     - Profit/margin calculations are applied clearly in estimate summary.
+
+==================================================
+PHASE 6 – LOGGING, TRACKING, & DEBUGGING
+==================================================
+Goal: Add robust logging and tracking so that actions and failures are observable.
+
+1. BACKEND LOGGING
+   - Implement or extend a centralized logger (e.g., using console + environment flag or a small logger utility).
+   - Log at least:
+     - AI calls (request metadata, success/failure, duration).
+     - Spec ingestion jobs.
+     - Detail parsing jobs.
+     - Estimate generation runs.
+     - Any unexpected errors in takeoff endpoints.
+
+2. FRONTEND EVENT TRACKING (LOCAL ONLY, NO EXTERNAL ANALYTICS)
+   - Implement a simple in-app event log (can be dev-only or toggled):
+     - Track:
+       - Tool switches.
+       - Calibration changes.
+       - Creation/edit/delete of measurements.
+       - AI auto-takeoff requests & responses.
+       - Estimate regenerate actions.
+   - Optional: Expose a “Debug Panel” in dev mode to show recent events.
+
+3. ERROR HANDLING & UX
+   - All async operations (AI calls, spec ingestion, estimate generation) must:
+     - Show loading states.
+     - Show clear error messages when they fail.
+     - Never leave the UI in a corrupt or “stuck” state.
+
+==================================================
+FINAL CHECKLIST
+==================================================
+Before you finish:
+
+1. Confirm:
+   - Manual takeoff still works exactly (or better) than before.
+   - Quantities display correctly for lines, areas, volumes, counts.
+   - Calibration can be set and updated without breaking shapes.
+   - Panning and zooming are smooth and do not accidentally add vertices.
+   - Shift+Click creates arcs/radii as specified.
+   - Scope Summary shows correct aggregated quantities.
+   - Estimate generation uses scope summary + cost settings + production rates.
+   - Estimates can be manually edited after auto-generation.
+
+2. Confirm AI features:
+   - AI auto-sheet generates draft measurements (even if approximate).
+   - AI auto-region works when a region is provided.
+   - Draft review flow (Accept/Reject/Edit) works end-to-end.
+
+3. Confirm that ALL existing endpoints and main UI flows that previously worked still do.
+
+4. Ensure TypeScript builds, tests pass (if present), and the dev server runs without crashes.
+
+Implement all changes cleanly, following the existing code style.

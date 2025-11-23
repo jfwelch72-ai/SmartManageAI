@@ -4712,7 +4712,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const { scalePxPerFoot, units } = req.body;
-      const { takeoffSheets, projects, crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const { takeoffSheets, takeoffMeasurements, projects, crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const { 
+        computeDistanceInFeet, 
+        computePolygonAreaInFt2, 
+        computeVolumeInCY, 
+        inchesToFeet 
+      } = await import("@shared/utils/geometry");
 
       if (!scalePxPerFoot || !Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
         res.status(400).json({ error: "Valid scale is required" });
@@ -4768,6 +4774,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(takeoffSheets.id, id))
         .returning();
 
+      // Recompute all measurements for this sheet with the new scale
+      const measurements = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.sheetId, id));
+
+      console.log(`Recalculating ${measurements.length} measurements with new scale: ${scalePxPerFoot} px/ft`);
+
+      for (const measurement of measurements) {
+        if (!measurement.points) {
+          continue;
+        }
+
+        // Parse points from JSON string (Drizzle may auto-parse or leave as string)
+        let points: Array<{ x: number; y: number }>;
+        try {
+          points = typeof measurement.points === 'string' 
+            ? JSON.parse(measurement.points) 
+            : measurement.points as any;
+        } catch (parseError) {
+          console.error(`Error parsing points for measurement ${measurement.id}:`, parseError);
+          continue;
+        }
+
+        // Skip measurements with no points
+        if (!points || points.length === 0) {
+          continue;
+        }
+
+        const updates: any = {};
+
+        try {
+          switch (measurement.type) {
+            case "LINEAR":
+              if (points.length >= 2) {
+                const lengthFt = computeDistanceInFeet(points, scalePxPerFoot);
+                updates.computedLengthFt = lengthFt;
+              }
+              break;
+
+            case "AREA":
+              if (points.length >= 3) {
+                const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                updates.computedAreaFt2 = areaFt2;
+              }
+              break;
+
+            case "VOLUME":
+              if (points.length >= 3 && measurement.depthFeet) {
+                const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                const volumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+                updates.computedAreaFt2 = areaFt2;
+                updates.computedVolumeCy = volumeCy;
+              }
+              break;
+
+            default:
+              // COUNT and NOTE don't have computed quantities
+              break;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await db
+              .update(takeoffMeasurements)
+              .set({ ...updates, updatedAt: new Date() })
+              .where(eq(takeoffMeasurements.id, measurement.id));
+          }
+        } catch (error) {
+          console.error(`Error recalculating measurement ${measurement.id}:`, error);
+          // Continue with other measurements even if one fails
+        }
+      }
+
+      console.log(`Successfully recalculated ${measurements.length} measurements`);
       res.json(updated);
     } catch (error) {
       console.error("Error updating calibration:", error);

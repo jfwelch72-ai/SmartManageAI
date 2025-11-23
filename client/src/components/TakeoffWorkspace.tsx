@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text } from "react-konva";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import * as pdfjsLib from 'pdfjs-dist';
+import {
+  computePixelDistance,
+  computeDistanceInFeet,
+  computePolygonAreaInFt2,
+  computeVolumeInCY,
+  inchesToFeet,
+  type Point
+} from "@shared/utils/geometry";
 
 type Tool = 
   | "select" 
@@ -157,7 +165,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       type: MeasurementType;
       points: { x: number; y: number }[];
       label?: string;
-      depthInches?: number;
+      depthFeet?: number;
       categoryId?: string | null;
     }) => {
       return await apiRequest("POST", "/api/takeoff/measurements", data);
@@ -246,7 +254,54 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     },
   });
 
-  const currentSheet = sheets.find(s => s.id === selectedSheet);
+  // PERFORMANCE OPTIMIZATION: Single comprehensive aggregation - O(N) once per measurements change
+  const aggregatedMeasurements = useMemo(() => {
+    const byType = { linear: [] as TakeoffMeasurement[], area: [] as TakeoffMeasurement[], volume: [] as TakeoffMeasurement[], count: [] as TakeoffMeasurement[] };
+    const byCategory: Record<string, TakeoffMeasurement[]> = {};
+    const uncategorized: TakeoffMeasurement[] = [];
+    let linearTotal = 0, areaTotal = 0, volumeTotal = 0, countTotal = 0;
+
+    measurements.forEach(m => {
+      // Group by type
+      if (m.type === "LINEAR") { 
+        byType.linear.push(m);
+        const val = Number(m.computedLengthFt);
+        linearTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "AREA") {
+        byType.area.push(m);
+        const val = Number(m.computedAreaFt2);
+        areaTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "VOLUME") {
+        byType.volume.push(m);
+        const val = Number(m.computedVolumeCy);
+        volumeTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "COUNT") {
+        byType.count.push(m);
+        countTotal += 1;
+      }
+
+      // Group by category
+      if (m.categoryId) {
+        if (!byCategory[m.categoryId]) byCategory[m.categoryId] = [];
+        byCategory[m.categoryId].push(m);
+      } else {
+        uncategorized.push(m);
+      }
+    });
+
+    return {
+      byType,
+      byCategory,
+      uncategorized,
+      grandTotals: { linearTotal, areaTotal, volumeTotal, countTotal }
+    };
+  }, [measurements]);
+
+  // PERFORMANCE OPTIMIZATION: Memoize current sheet lookup
+  const currentSheet = useMemo(
+    () => sheets.find(s => s.id === selectedSheet),
+    [sheets, selectedSheet]
+  );
 
   // Helper to validate and sanitize hex colors (supports 3, 4, 6, and 8 digit hex)
   const validateHexColor = (color: string | undefined): string | null => {
@@ -403,10 +458,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         setCalibrationPoints(newPoints);
         setCalibrationMode("idle");
         
-        const pixelDistance = Math.sqrt(
-          Math.pow(newPoints[1].x - newPoints[0].x, 2) + 
-          Math.pow(newPoints[1].y - newPoints[0].y, 2)
-        );
+        const pixelDistance = computePixelDistance(newPoints[0], newPoints[1]);
         
         toast({ 
           title: "Calibration Complete", 
@@ -431,12 +483,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       } else {
         // End drawing - second point, save measurement
         const newPoints = [...drawingPoints, point];
-        const pixelDistance = Math.sqrt(
-          Math.pow(newPoints[1].x - newPoints[0].x, 2) + 
-          Math.pow(newPoints[1].y - newPoints[0].y, 2)
-        );
-        
-        const lengthFt = pixelDistance / currentSheet.scalePxPerFoot;
+        const lengthFt = computeDistanceInFeet(newPoints, currentSheet.scalePxPerFoot);
         
         createMeasurementMutation.mutate({
           sheetId: selectedSheet,
@@ -476,9 +523,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         // Check if clicking near first point to close polygon (when 3+ points exist)
         if (drawingPoints.length >= 3) {
           const firstPoint = drawingPoints[0];
-          const distance = Math.sqrt(
-            Math.pow(point.x - firstPoint.x, 2) + Math.pow(point.y - firstPoint.y, 2)
-          );
+          const distance = computePixelDistance(point, firstPoint);
           
           // If clicking within 10 pixels of first point, close the polygon
           if (distance < 10) {
@@ -500,7 +545,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         sheetId: selectedSheet,
         type: "COUNT",
         points: [point],
-        label: `Count ${measurements.filter(m => m.type === "COUNT").length + 1}`,
+        label: `Count ${aggregatedMeasurements.byType.count.length + 1}`,
         categoryId: selectedCategoryId,
       });
     } else if (activeTool === "note") {
@@ -544,10 +589,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       return;
     }
 
-    const pixelDistance = Math.sqrt(
-      Math.pow(calibrationPoints[1].x - calibrationPoints[0].x, 2) + 
-      Math.pow(calibrationPoints[1].y - calibrationPoints[0].y, 2)
-    );
+    const pixelDistance = computePixelDistance(calibrationPoints[0], calibrationPoints[1]);
 
     const scalePxPerFoot = units === "ft" 
       ? pixelDistance / distanceValue
@@ -692,24 +734,15 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       return;
     }
 
-    // Calculate area using shoelace formula
-    let area = 0;
-    for (let i = 0; i < drawingPoints.length; i++) {
-      const j = (i + 1) % drawingPoints.length;
-      area += drawingPoints[i].x * drawingPoints[j].y;
-      area -= drawingPoints[j].x * drawingPoints[i].y;
-    }
-    area = Math.abs(area / 2);
-    
-    // Convert pixel area to square feet
-    const areaFt2 = area / (currentSheet.scalePxPerFoot * currentSheet.scalePxPerFoot);
+    // Calculate area using robust geometry utilities
+    const areaFt2 = computePolygonAreaInFt2(drawingPoints, currentSheet.scalePxPerFoot);
     
     if (activeTool === "area") {
       createMeasurementMutation.mutate({
         sheetId: selectedSheet,
         type: "AREA",
         points: drawingPoints,
-        label: `Area ${measurements.filter(m => m.type === "AREA").length + 1}`,
+        label: `Area ${aggregatedMeasurements.byType.area.length + 1}`,
         categoryId: selectedCategoryId,
       });
       
@@ -718,20 +751,23 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         description: `${areaFt2.toFixed(2)} SF` 
       });
     } else if (activeTool === "volume") {
-      // For volume, we'll need to prompt for depth
-      // For now, just create as area type until we add depth input
+      // For volume, calculate both area and volume with default depth
+      const defaultDepthInches = 12; // 12" default
+      const depthFt = inchesToFeet(defaultDepthInches);
+      const volumeCy = computeVolumeInCY(areaFt2, depthFt);
+      
       createMeasurementMutation.mutate({
         sheetId: selectedSheet,
         type: "VOLUME",
         points: drawingPoints,
-        label: `Volume ${measurements.filter(m => m.type === "VOLUME").length + 1}`,
-        depthInches: 12, // Default 12" depth, will add UI for this later
+        label: `Volume ${aggregatedMeasurements.byType.volume.length + 1}`,
+        depthFeet: depthFt,
         categoryId: selectedCategoryId,
       });
       
       toast({ 
         title: "Volume Measurement Created", 
-        description: `Base area: ${areaFt2.toFixed(2)} SF (depth needed)` 
+        description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` 
       });
     }
     
@@ -1419,7 +1455,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 <div className="space-y-4">
                   {/* Category-wise breakdown */}
                   {categories.map((category) => {
-                    const categoryMeasurements = measurements.filter(m => m.categoryId === category.id);
+                    const categoryMeasurements = aggregatedMeasurements.byCategory[category.id] || [];
                     if (categoryMeasurements.length === 0) return null;
 
                     const linearTotal = categoryMeasurements
@@ -1480,22 +1516,22 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   })}
 
                   {/* Uncategorized measurements */}
-                  {measurements.filter(m => !m.categoryId).length > 0 && (
+                  {aggregatedMeasurements.uncategorized.length > 0 && (
                     <div className="border-l-4 border-muted pl-3">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="font-medium text-sm text-muted-foreground">Uncategorized</span>
                         <Badge variant="outline" className="text-xs">
-                          {measurements.filter(m => !m.categoryId).length}
+                          {aggregatedMeasurements.uncategorized.length}
                         </Badge>
                       </div>
                       <div className="space-y-1 text-xs ml-5">
-                        {measurements.filter(m => !m.categoryId && m.type === "LINEAR").length > 0 && (
+                        {aggregatedMeasurements.uncategorized.filter(m => m.type === "LINEAR").length > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Linear:</span>
                             <span>
                               {(() => {
-                                const total = measurements
-                                  .filter(m => !m.categoryId && m.type === "LINEAR")
+                                const total = aggregatedMeasurements.uncategorized
+                                  .filter(m => m.type === "LINEAR")
                                   .reduce((sum, m) => {
                                     const val = Number(m.computedLengthFt);
                                     return sum + (Number.isFinite(val) ? val : 0);
@@ -1505,13 +1541,13 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             </span>
                           </div>
                         )}
-                        {measurements.filter(m => !m.categoryId && m.type === "AREA").length > 0 && (
+                        {aggregatedMeasurements.uncategorized.filter(m => m.type === "AREA").length > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Area:</span>
                             <span>
                               {(() => {
-                                const total = measurements
-                                  .filter(m => !m.categoryId && m.type === "AREA")
+                                const total = aggregatedMeasurements.uncategorized
+                                  .filter(m => m.type === "AREA")
                                   .reduce((sum, m) => {
                                     const val = Number(m.computedAreaFt2);
                                     return sum + (Number.isFinite(val) ? val : 0);
@@ -1521,13 +1557,13 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             </span>
                           </div>
                         )}
-                        {measurements.filter(m => !m.categoryId && m.type === "VOLUME").length > 0 && (
+                        {aggregatedMeasurements.uncategorized.filter(m => m.type === "VOLUME").length > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Volume:</span>
                             <span>
                               {(() => {
-                                const total = measurements
-                                  .filter(m => !m.categoryId && m.type === "VOLUME")
+                                const total = aggregatedMeasurements.uncategorized
+                                  .filter(m => m.type === "VOLUME")
                                   .reduce((sum, m) => {
                                     const val = Number(m.computedVolumeCy);
                                     return sum + (Number.isFinite(val) ? val : 0);
@@ -1537,10 +1573,10 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             </span>
                           </div>
                         )}
-                        {measurements.filter(m => !m.categoryId && m.type === "COUNT").length > 0 && (
+                        {aggregatedMeasurements.uncategorized.filter(m => m.type === "COUNT").length > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Count:</span>
-                            <span>{measurements.filter(m => !m.categoryId && m.type === "COUNT").length}</span>
+                            <span>{aggregatedMeasurements.uncategorized.filter(m => m.type === "COUNT").length}</span>
                           </div>
                         )}
                       </div>
@@ -1555,49 +1591,25 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Linear:</span>
                           <span className="font-medium">
-                            {(() => {
-                              const total = measurements
-                                .filter(m => m.type === "LINEAR")
-                                .reduce((sum, m) => {
-                                  const val = Number(m.computedLengthFt);
-                                  return sum + (Number.isFinite(val) ? val : 0);
-                                }, 0);
-                              return (Number.isFinite(total) ? total : 0).toFixed(2);
-                            })()} LF
+                            {(Number.isFinite(aggregatedMeasurements.grandTotals.linearTotal) ? aggregatedMeasurements.grandTotals.linearTotal : 0).toFixed(2)} LF
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Area:</span>
                           <span className="font-medium">
-                            {(() => {
-                              const total = measurements
-                                .filter(m => m.type === "AREA")
-                                .reduce((sum, m) => {
-                                  const val = Number(m.computedAreaFt2);
-                                  return sum + (Number.isFinite(val) ? val : 0);
-                                }, 0);
-                              return (Number.isFinite(total) ? total : 0).toFixed(2);
-                            })()} SF
+                            {(Number.isFinite(aggregatedMeasurements.grandTotals.areaTotal) ? aggregatedMeasurements.grandTotals.areaTotal : 0).toFixed(2)} SF
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Volume:</span>
                           <span className="font-medium">
-                            {(() => {
-                              const total = measurements
-                                .filter(m => m.type === "VOLUME")
-                                .reduce((sum, m) => {
-                                  const val = Number(m.computedVolumeCy);
-                                  return sum + (Number.isFinite(val) ? val : 0);
-                                }, 0);
-                              return (Number.isFinite(total) ? total : 0).toFixed(2);
-                            })()} CY
+                            {(Number.isFinite(aggregatedMeasurements.grandTotals.volumeTotal) ? aggregatedMeasurements.grandTotals.volumeTotal : 0).toFixed(2)} CY
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Count:</span>
                           <span className="font-medium">
-                            {measurements.filter(m => m.type === "COUNT").length}
+                            {aggregatedMeasurements.grandTotals.countTotal}
                           </span>
                         </div>
                       </div>
