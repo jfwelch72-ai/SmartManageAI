@@ -504,7 +504,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       } else if (calibrationMode === "second-point") {
         const newPoints = [...calibrationPoints, point];
         setCalibrationPoints(newPoints);
-        setCalibrationMode("idle");
+        // Keep mode as "second-point" so panel stays visible for distance entry
+        // Mode will be reset to "idle" after successful save
         
         const pixelDistance = computePixelDistance(newPoints[0], newPoints[1]);
         

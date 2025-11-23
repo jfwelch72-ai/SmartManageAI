@@ -62,7 +62,15 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
             -   **Calibration Auto-Recalculation**: Backend automatically recomputes all measurements when sheet scale changes
             -   **Performance Optimization**: Single aggregatedMeasurements memo structure with precomputed grand totals, eliminating redundant filter/reduce operations in render paths
             -   **Schema Fixes**: Resolved depthInches → depthFeet field mismatch, fixed points parsing to handle both JSON strings and pre-parsed arrays
-        -   **Phase 2-6 Pending**: STACK-like UX improvements, AI auto-takeoff, spec book parsing, estimate auto-generation, comprehensive logging
+        -   **Phase 2.1 Complete (November 23, 2025)**: Click vs Drag Threshold - Production-Ready UX Enhancement
+            -   **5px Movement Threshold**: Industry-standard threshold prevents accidental point placement during panning (mousedown position tracking, Euclidean distance calculation)
+            -   **Null Guard Implementation**: Comprehensive null checks prevent crashes when cursor leaves canvas during drag (Konva's getPointerPosition() returns null off-canvas)
+            -   **Edge Case Handling**: Drag-off-canvas interactions cancelled gracefully, state cleared properly to prevent memory leaks
+            -   **Zoom-Independent**: Threshold measured in screen pixels, works correctly at all zoom levels
+            -   **All Tools Supported**: Works seamlessly with Linear, Area, Volume, Count drawing tools
+            -   **Calibration Bug Fix**: Panel now stays visible after placing second calibration point (removed premature mode reset), enabling proper distance entry workflow
+            -   **End-to-End Tested**: Playwright verification confirms < 5px = click (point placed), >= 5px = drag (canvas pans, no point), off-canvas release handled safely
+        -   **Phase 2.2-2.6 Pending**: Hand tool + spacebar pan, mouse wheel zoom, arc tool with curved boundaries, keyboard shortcuts, live measurement preview
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
     -   **Daily Scope Progress Tracking**: Enables daily tracking of scope item completion quantities, billed quantities, and billing status changes with dedicated API endpoints and UI components for management and visualization.
     -   **Billing Status Workflow**: Production-grade workflow for managing billing lifecycle from field completion to invoicing:
