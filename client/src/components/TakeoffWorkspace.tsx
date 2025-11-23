@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard 
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -55,16 +55,16 @@ interface TakeoffWorkspaceProps {
 }
 
 const TOOL_CONFIG = [
-  { id: "select", icon: MousePointer2, label: "Select", color: "default" },
-  { id: "pan", icon: Hand, label: "Pan", color: "default" },
-  { id: "zoom", icon: ZoomIn, label: "Zoom", color: "default" },
-  { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary" },
-  { id: "linear", icon: Ruler, label: "Linear", color: "primary" },
-  { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary" },
-  { id: "area", icon: Square, label: "Area", color: "primary" },
-  { id: "volume", icon: Box, label: "Volume", color: "primary" },
-  { id: "count", icon: MapPin, label: "Count", color: "primary" },
-  { id: "note", icon: StickyNote, label: "Note", color: "default" },
+  { id: "select", icon: MousePointer2, label: "Select", color: "default", shortcut: "S" },
+  { id: "pan", icon: Hand, label: "Pan", color: "default", shortcut: "H" },
+  { id: "zoom", icon: ZoomIn, label: "Zoom", color: "default", shortcut: null },
+  { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary", shortcut: null },
+  { id: "linear", icon: Ruler, label: "Linear", color: "primary", shortcut: "L" },
+  { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary", shortcut: "R" },
+  { id: "area", icon: Square, label: "Area", color: "primary", shortcut: "A" },
+  { id: "volume", icon: Box, label: "Volume", color: "primary", shortcut: "V" },
+  { id: "count", icon: MapPin, label: "Count", color: "primary", shortcut: "C" },
+  { id: "note", icon: StickyNote, label: "Note", color: "default", shortcut: "N" },
 ] as const;
 
 // Common architectural, civil, and structural scales
@@ -127,6 +127,13 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [notePosition, setNotePosition] = useState<{ x: number; y: number } | null>(null);
   const [noteText, setNoteText] = useState("");
+  
+  // PHASE 2.4: Keyboard shortcuts help dialog
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  
+  // PHASE 2.5: Live measurement preview
+  const [livePreviewValue, setLivePreviewValue] = useState<string | null>(null);
+  const [livePreviewPosition, setLivePreviewPosition] = useState<{ x: number; y: number } | null>(null);
   
   // Select tool state
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
@@ -1071,6 +1078,136 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     };
   }, [activeTool, isSpacebarHeld, toolBeforeSpacebar, isDrawing, currentDrawingTool]); // PHASE 2.3a: Added drawing states
 
+  // PHASE 2.4: Keyboard shortcuts for tools and actions
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      // Don't trigger if typing in an input field
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      // Check if inside a Radix portal using composedPath (dialogs, selects, tooltips, etc.)
+      // Walk up the DOM tree to find portal roots
+      const path = event.composedPath();
+      const isInPortal = path.some(node => {
+        // Filter out non-Element nodes (text nodes, etc.)
+        if (!(node instanceof Element)) {
+          return false;
+        }
+        
+        // Check if this element or any ancestor is a Radix portal
+        const closestPortal = node.closest('[data-radix-portal]');
+        if (closestPortal) {
+          return true;
+        }
+        
+        // Check for other Radix markers and ARIA roles
+        return (
+          node.hasAttribute('data-radix-focus-guard') ||
+          node.hasAttribute('data-radix-popper-content-wrapper') ||
+          node.getAttribute('role') === 'dialog' ||
+          node.getAttribute('role') === 'menu' ||
+          node.getAttribute('role') === 'listbox' ||
+          node.getAttribute('role') === 'combobox'
+        );
+      });
+      
+      // Check if focus is inside an iframe (PDF viewer, embedded content)
+      const activeElement = document.activeElement;
+      const isInIframe = activeElement?.tagName === 'IFRAME' ||
+                        (target instanceof HTMLElement && target.closest('iframe') !== null);
+
+      // Tool shortcuts should not fire in portals, iframes, or during calibration
+      const canUseToolShortcuts = !isInPortal && !isInIframe && calibrationMode === "idle" && !(isDrawing && currentDrawingTool);
+      
+      // Navigation/view shortcuts can fire even during calibration, but not in portals or iframes
+      const canUseNavigationShortcuts = !isInPortal && !isInIframe;
+      
+      const key = event.key.toLowerCase();
+      
+      // Tool selection shortcuts (blocked in portals, during calibration, or while drawing)
+      if (canUseToolShortcuts) {
+        switch (key) {
+          case 's':
+            event.preventDefault();
+            setActiveTool("select");
+            break;
+          case 'h':
+            event.preventDefault();
+            setActiveTool("pan");
+            break;
+          case 'l':
+            event.preventDefault();
+            setActiveTool("linear");
+            break;
+          case 'a':
+            event.preventDefault();
+            setActiveTool("area");
+            break;
+          case 'v':
+            event.preventDefault();
+            setActiveTool("volume");
+            break;
+          case 'c':
+            event.preventDefault();
+            setActiveTool("count");
+            break;
+          case 'n':
+            event.preventDefault();
+            setActiveTool("note");
+            break;
+          case 'r':
+            event.preventDefault();
+            setActiveTool("arc");
+            break;
+        }
+      }
+      
+      // ESC - Cancel current drawing (only when actually drawing, allowed even in calibration)
+      if (key === 'escape' && isDrawing && canUseNavigationShortcuts) {
+        event.preventDefault();
+        setIsDrawing(false);
+        setCurrentDrawingTool(null);
+        setDrawingPoints([]);
+        toast({ title: "Drawing Cancelled", description: "Press ESC to cancel drawing" });
+      }
+      
+      // F - Toggle fullscreen (navigation shortcut, works during calibration)
+      if (key === 'f' && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts) {
+        event.preventDefault();
+        toggleFullscreen();
+      }
+      
+      // ? - Show keyboard shortcuts help (Shift + /, navigation shortcut)
+      // Handle both browsers that send '?' and browsers that send '/' with Shift
+      if ((event.key === '?' || (event.shiftKey && event.key === '/')) && canUseNavigationShortcuts) {
+        event.preventDefault();
+        setShortcutsDialogOpen(true);
+      }
+      
+      // + or = - Zoom in (navigation shortcut, works during calibration, excludes browser zoom)
+      if ((key === '+' || key === '=') && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) {
+        event.preventDefault();
+        setStageScale(prev => Math.min(prev * 1.2, 10)); // Max 10x zoom
+      }
+      
+      // - - Zoom out (navigation shortcut, works during calibration, excludes browser zoom)
+      if (key === '-' && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) {
+        event.preventDefault();
+        setStageScale(prev => Math.max(prev / 1.2, 0.1)); // Min 0.1x zoom
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode]);
+
   // Update Stage dimensions when container size changes
   useLayoutEffect(() => {
     const updateDimensions = () => {
@@ -1116,7 +1253,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">
-                <p>{tool.label}</p>
+                <div className="flex items-center gap-2">
+                  <span>{tool.label}</span>
+                  {tool.shortcut && (
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">
+                      {tool.shortcut}
+                    </kbd>
+                  )}
+                </div>
               </TooltipContent>
             </Tooltip>
           );
@@ -1160,15 +1304,35 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </Badge>
             )}
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={toggleFullscreen}
-            data-testid="button-toggle-fullscreen"
-            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-          >
-            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => setShortcutsDialogOpen(true)}
+                  data-testid="button-keyboard-shortcuts"
+                >
+                  <Keyboard className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="flex items-center gap-2">
+                  <span>Keyboard Shortcuts</span>
+                  <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">?</kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={toggleFullscreen}
+              data-testid="button-toggle-fullscreen"
+              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+            >
+              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </Button>
+          </div>
         </div>
 
         {/* Canvas Area */}
@@ -2047,6 +2211,97 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+
+      {/* PHASE 2.4: Keyboard Shortcuts Help Dialog */}
+      <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Keyboard Shortcuts</DialogTitle>
+            <DialogDescription>
+              Speed up your workflow with these keyboard shortcuts
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6">
+            <div>
+              <h3 className="font-semibold mb-3">Tools</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Select Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">S</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Hand/Pan Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">H</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Linear Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">L</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Arc/Radius Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">R</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Area Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">A</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Volume Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">V</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Count Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">C</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Note Tool</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">N</kbd>
+                </div>
+              </div>
+            </div>
+            <Separator />
+            <div>
+              <h3 className="font-semibold mb-3">Navigation & View</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Temporary Pan</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">Space</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Zoom In</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">+ / =</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Zoom Out</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">-</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Mouse Wheel Zoom</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">Scroll</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Toggle Fullscreen</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">F</kbd>
+                </div>
+              </div>
+            </div>
+            <Separator />
+            <div>
+              <h3 className="font-semibold mb-3">Actions</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Cancel Drawing</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">ESC</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Complete Polygon</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">Enter</kbd>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
