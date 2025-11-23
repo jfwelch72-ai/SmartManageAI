@@ -129,6 +129,10 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
   const CLICK_DRAG_THRESHOLD = 5; // pixels - movement less than this is considered a click, not a drag
   
+  // PHASE 2.2b: Spacebar temporary pan - hold spacebar to temporarily pan from any tool
+  const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
+  const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
+  
   // PDF rendering state
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -422,6 +426,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
   const handleToolSelect = (tool: Tool) => {
     setActiveTool(tool);
+    
+    // PHASE 2.2b: If user explicitly selects a tool while spacebar is held,
+    // clear the spacebar state so releasing spacebar doesn't restore the old tool
+    if (isSpacebarHeld) {
+      setToolBeforeSpacebar(null);
+      setIsSpacebarHeld(false);
+    }
+    
     if (tool === "calibrate") {
       setCalibrationMode("first-point");
       setCalibrationPoints([]);
@@ -891,6 +903,59 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  // PHASE 2.2b: Spacebar temporary pan - hold spacebar to temporarily switch to pan mode
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger for spacebar
+      if (event.key !== " " && event.code !== "Space") {
+        return;
+      }
+      
+      // Don't trigger if typing in an input field
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      
+      // Prevent default spacebar behavior (page scroll)
+      event.preventDefault();
+      
+      // Only switch to pan if not already in spacebar pan mode
+      if (!isSpacebarHeld && activeTool !== "pan") {
+        setToolBeforeSpacebar(activeTool);
+        setActiveTool("pan");
+        setIsSpacebarHeld(true);
+      }
+    };
+    
+    const handleKeyUp = (event: KeyboardEvent) => {
+      // Only trigger for spacebar
+      if (event.key !== " " && event.code !== "Space") {
+        return;
+      }
+      
+      // Restore previous tool if spacebar was being held
+      if (isSpacebarHeld && toolBeforeSpacebar) {
+        setActiveTool(toolBeforeSpacebar);
+        setToolBeforeSpacebar(null);
+        setIsSpacebarHeld(false);
+      }
+    };
+    
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [activeTool, isSpacebarHeld, toolBeforeSpacebar]);
 
   // Update Stage dimensions when container size changes
   useLayoutEffect(() => {
