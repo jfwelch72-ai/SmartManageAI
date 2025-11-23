@@ -141,6 +141,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // PHASE 2.1: Click vs Drag threshold - track mousedown position to prevent accidental clicks during panning
   const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
   const CLICK_DRAG_THRESHOLD = 5; // pixels - movement less than this is considered a click, not a drag
+  const [isDraggingStage, setIsDraggingStage] = useState(false); // Track Stage drag to suppress clicks during pan
   
   // PHASE 2.2b: Spacebar temporary pan - hold spacebar to temporarily pan from any tool
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
@@ -489,6 +490,12 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       return; // Cursor outside canvas, treat as cancelled interaction
     }
     
+    // PHASE 2.1 FIX: Suppress clicks if Stage drag occurred (pan operation)
+    if (isDraggingStage) {
+      // User was panning - don't trigger click handlers
+      return;
+    }
+    
     // Calculate pixel distance moved since mousedown
     const deltaX = pointerPosition.x - mouseDownPosition.x;
     const deltaY = pointerPosition.y - mouseDownPosition.y;
@@ -499,6 +506,15 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       handleStageClick(e);
     }
     // Otherwise it was a drag (pan) - ignore
+  };
+
+  // PHASE 2.1 FIX: Track Stage drag lifecycle to suppress clicks during pan
+  const handleStageDragStart = () => {
+    setIsDraggingStage(true);
+  };
+
+  const handleStageDragEnd = () => {
+    setIsDraggingStage(false);
   };
 
   const handleStageClick = (e: any) => {
@@ -1364,6 +1380,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               }}
               onWheel={handleWheel}
               draggable={activeTool === "pan"}
+              onDragStart={handleStageDragStart}
+              onDragEnd={handleStageDragEnd}
             >
               <Layer>
                 {/* Render PDF image */}
