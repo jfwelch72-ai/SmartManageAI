@@ -767,21 +767,34 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     }
   }, [editingCategory]);
 
+  // PHASE 2.2c: Mouse wheel zoom centered on cursor with limits and null guards
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     
     const scaleBy = 1.1;
+    const MIN_SCALE = 0.1; // 10% minimum zoom
+    const MAX_SCALE = 10;  // 1000% maximum zoom
+    
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
     
+    // Guard against null - cursor may be outside canvas
+    if (!pointer) {
+      return;
+    }
+    
+    // Calculate point under cursor in stage coordinates
     const mousePointTo = {
       x: (pointer.x - stage.x()) / oldScale,
       y: (pointer.y - stage.y()) / oldScale,
     };
     
-    const newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+    // Calculate new scale with limits
+    let newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
+    newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
     
+    // Update scale and position so cursor point stays in same screen position
     setStageScale(newScale);
     setStagePosition({
       x: pointer.x - mousePointTo.x * newScale,
