@@ -514,7 +514,12 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   };
 
   // PHASE 2.2 FIX: Update Stage position during drag to prevent snap-back
+  // Only update position when pan is actually active (pan tool or spacebar)
   const handleStageDragMove = (e: any) => {
+    // Guard: Only sync position when Stage is draggable (pan mode)
+    if (activeTool !== "pan") {
+      return;
+    }
     const stage = e.target;
     setStagePosition({ x: stage.x(), y: stage.y() });
   };
