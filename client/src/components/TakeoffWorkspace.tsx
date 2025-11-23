@@ -125,6 +125,10 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // Select tool state
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
   
+  // PHASE 2.1: Click vs Drag threshold - track mousedown position to prevent accidental clicks during panning
+  const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
+  const CLICK_DRAG_THRESHOLD = 5; // pixels - movement less than this is considered a click, not a drag
+  
   // PDF rendering state
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -426,6 +430,50 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         description: "Click two points on a known distance to calibrate scale" 
       });
     }
+  };
+
+  // PHASE 2.1: Mouse down handler - record position to detect click vs drag
+  const handleStageMouseDown = (e: any) => {
+    const stage = e.target.getStage();
+    const pointerPosition = stage.getPointerPosition();
+    
+    // Guard against null - cursor may be outside canvas
+    if (!pointerPosition) {
+      return;
+    }
+    
+    // Store screen position (not transformed) to measure actual pixel movement
+    setMouseDownPosition(pointerPosition);
+  };
+
+  // PHASE 2.1: Mouse up handler - only register as click if movement < threshold
+  const handleStageMouseUp = (e: any) => {
+    // Guard against missing mousedown or cursor outside canvas
+    if (!mouseDownPosition) {
+      return; // No mousedown recorded, ignore
+    }
+
+    const stage = e.target.getStage();
+    const pointerPosition = stage.getPointerPosition();
+    
+    // Clear mousedown position first (before any early returns)
+    setMouseDownPosition(null);
+    
+    // Guard against null - cursor may have left canvas before release
+    if (!pointerPosition) {
+      return; // Cursor outside canvas, treat as cancelled interaction
+    }
+    
+    // Calculate pixel distance moved since mousedown
+    const deltaX = pointerPosition.x - mouseDownPosition.x;
+    const deltaY = pointerPosition.y - mouseDownPosition.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    // Only register as a click if movement is below threshold
+    if (distance < CLICK_DRAG_THRESHOLD) {
+      handleStageClick(e);
+    }
+    // Otherwise it was a drag (pan) - ignore
   };
 
   const handleStageClick = (e: any) => {
@@ -954,7 +1002,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               scaleY={stageScale}
               x={stagePosition.x}
               y={stagePosition.y}
-              onClick={handleStageClick}
+              onMouseDown={handleStageMouseDown}
+              onMouseUp={handleStageMouseUp}
               onDblClick={(e) => {
                 if ((activeTool === "area" || activeTool === "volume") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
