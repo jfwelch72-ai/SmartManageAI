@@ -9,100 +9,31 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 ## System Architecture
 The platform utilizes a modern web stack for robustness and comprehensive functionality, adhering to a client-server architecture with a strong emphasis on security, scalability, and user experience.
 
--   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, and styled with Tailwind CSS and shadcn/ui.
+-   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
 -   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
--   **Database**: PostgreSQL on Neon, managed with Drizzle ORM, supporting audit logs, billing, time clock, AI operations, crew/skills, equipment, data quality, and subcontractor management.
+-   **Database**: PostgreSQL on Neon, managed with Drizzle ORM, supporting various modules including audit logs, billing, time clock, AI operations, and project management.
 -   **Authentication**: JWT-based authentication using httpOnly cookies, bcrypt for password hashing, and token versioning, featuring Role-Based Access Control (RBAC) across six user roles and self-service registration.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
--   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS.
+-   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS with a focus on intuitive project management workflows.
 -   **Key Features**:
-    -   **Authentication & Authorization**: Secure JWT with RBAC.
-    -   **User Management**: Admin tools for accounts, roles, and activation.
-    -   **Time-Clock System**: Native time-clock with GPS, shift management, and approvals.
-    -   **Audit & Compliance**: Comprehensive audit logging.
-    -   **Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, and Change Orders, including a strict Change-Order State Machine.
-    -   **Change Order File Attachments**: Full file upload system for change orders using Uppy + Object Storage:
-        -   **Upload**: Supports images, PDFs, CAD files (.dwg, .dxf), Office docs (max 10 files, 50MB each)
-        -   **Display**: Collapsible file sections showing filename, size, date with download/delete controls
-        -   **RBAC**: ADMIN, MANAGER, OFFICE_MANAGER have unrestricted access; project superintendents, estimators, and change order requesters have project-level access
-        -   **Delete Permissions**: File uploader OR ADMIN/MANAGER/OFFICE_MANAGER can delete files
-        -   **Integration**: Files stored in change order's attachmentsJson field with object storage references and ACL policies
-    -   **Change Order Deductions & Adjusted Contract**: Support for both additions and deductions to contract value:
-        -   **Additions**: Positive amounts for additional scope (displayed with + prefix in primary color)
-        -   **Deductions**: Negative amounts for scope reductions (displayed with - prefix in red/destructive color)
-        -   **Validation**: Amounts must be non-zero, range ±$100M, validated on both frontend and backend
-        -   **Adjusted Contract Amount**: Displays in Financial Information card as original contract + sum of all APPROVED change orders
-        -   **Visual Indicators**: Color-coded amounts with Addition/Deduction badges throughout UI
-        -   **Helper Text**: Form inputs include guidance on entering positive/negative values
-    -   **Daily Notes & Company Communications**: Comprehensive system for project-specific and company-wide daily communications:
-        -   **Project Daily Notes**: Per-project note tracking on each project detail page with auto-generated metadata (author, timestamp, date)
-        -   **Company Communications**: Dedicated company-wide communications page accessible from main navigation
-        -   **Filtering**: Advanced filtering by author, date range, and project for both note systems
-        -   **Note Editing**: Inline editing capability for notes with RBAC (note creator OR admin can edit)
-        -   **API**: RESTful endpoints (GET, POST, PATCH) with query parameter support and proper authentication
-        -   **Database**: Dedicated tables (projectNotes, companyDailyNotes, aiNoteInsights) with proper indexing for performance
-        -   **Auto-generated Metadata**: System automatically captures user ID, timestamp, and date for all notes
-        -   **RBAC for Editing**: Note creators and admins can edit notes via inline editing UI with save/cancel controls
-        -   **AI-Powered Note Analysis**: OpenAI GPT-4 integration for automated note scanning and actionable task generation:
-            -   **Automated Analysis**: Hourly (last 2 hours) and daily (6 PM, last 24 hours) scheduled scans via node-cron
-            -   **Manual Trigger**: ADMIN/MANAGER can manually trigger analysis via "Analyze Now" button
-            -   **Insight Categories**: SUPPLY_NEED, EQUIPMENT_REPAIR, WEATHER_DELAY, CHANGE_ORDER, SAFETY, CLIENT_COMMUNICATION, OTHER
-            -   **Severity Levels**: LOW, MEDIUM, HIGH, CRITICAL with visual badges and color coding
-            -   **Smart Routing**: AI determines appropriate recipients (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER) based on insight type
-            -   **RBAC Security**: Role-based filtering ensures users only see insights relevant to their role; admins/managers see all insights
-            -   **Deduplication**: Prevents duplicate insights for same note + category combination
-            -   **Performance**: Optimized SQL joins to avoid N+1 queries when fetching notes
-            -   **UI Component**: Expandable insight cards with recommended actions, severity indicators, and project context
+    -   **Authentication & Authorization**: Secure JWT with RBAC for granular access control.
+    -   **User Management**: Admin tools for managing accounts, roles, and user activation.
+    -   **Time-Clock System**: Native time-clock with GPS, shift management, and approval workflows.
+    -   **Audit & Compliance**: Comprehensive audit logging for all critical actions.
+    -   **Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, and Change Orders, including a strict Change-Order State Machine and attachment management with file uploads (images, PDFs, CAD, Office docs) and RBAC. Support for change order deductions and adjusted contract calculations.
+    -   **Daily Notes & Company Communications**: System for project-specific and company-wide daily communications with filtering, inline editing, and AI-powered analysis for actionable task generation, smart routing of insights, and severity levels.
     -   **Daily Operations**: Media uploads and daily scope progress tracking with quantity completion and billing status management.
     -   **AI Senior PM + CFO System**: AI-driven task generation, profitability analysis, scheduling, ordering, bid tracking, and billing automation.
-    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools, measurement persistence, quantity summaries, and multi-page PDF rendering.
-        -   **Phase 1 Complete (November 2025)**: Stabilization & Performance Optimization
-            -   **Geometry Utilities**: Centralized calculation library (shared/utils/geometry.ts) for distance, area, volume, arc length, curved boundaries
-            -   **Calculation Refactoring**: All TakeoffWorkspace calculations use geometry utils for consistency and maintainability
-            -   **Calibration Auto-Recalculation**: Backend automatically recomputes all measurements when sheet scale changes
-            -   **Performance Optimization**: Single aggregatedMeasurements memo structure with precomputed grand totals, eliminating redundant filter/reduce operations in render paths
-            -   **Schema Fixes**: Resolved depthInches → depthFeet field mismatch, fixed points parsing to handle both JSON strings and pre-parsed arrays
-        -   **Phase 2.1 Complete (November 23, 2025)**: Click vs Drag Threshold - Production-Ready UX Enhancement
-            -   **5px Movement Threshold**: Industry-standard threshold prevents accidental point placement during panning (mousedown position tracking, Euclidean distance calculation)
-            -   **Null Guard Implementation**: Comprehensive null checks prevent crashes when cursor leaves canvas during drag (Konva's getPointerPosition() returns null off-canvas)
-            -   **Edge Case Handling**: Drag-off-canvas interactions cancelled gracefully, state cleared properly to prevent memory leaks
-            -   **Zoom-Independent**: Threshold measured in screen pixels, works correctly at all zoom levels
-            -   **All Tools Supported**: Works seamlessly with Linear, Area, Volume, Count drawing tools
-            -   **Calibration Bug Fix**: Panel now stays visible after placing second calibration point (removed premature mode reset), enabling proper distance entry workflow
-            -   **End-to-End Tested**: Playwright verification confirms < 5px = click (point placed), >= 5px = drag (canvas pans, no point), off-canvas release handled safely
-        -   **Phase 2.2 Complete (November 23, 2025)**: STACK-like Pan & Zoom - Professional CAD Navigation
-            -   **Dedicated Hand Tool**: Enhanced existing pan tool with dynamic cursor feedback (grab for pan, crosshair for drawing, default for select)
-            -   **Spacebar Temporary Pan**: CAD-style hold-spacebar-to-pan from any tool, release restores previous tool, guards against input fields, respects mid-hold tool changes
-            -   **Mouse Wheel Zoom Centered on Cursor**: Industry-standard cursor-centered zoom with sensible limits (0.1x-10x), mathematically correct point-under-cursor stability, null guards prevent crashes
-            -   **Seamless Integration**: All pan/zoom features work together flawlessly with Phase 2.1 click/drag threshold, no regressions, proper cleanup on unmount
-            -   **Edge Cases Handled**: Input field guards, zoom limits, null pointer checks, spacebar state management, cursor positioning accuracy
-        -   **Phase 2.3a Complete (November 23, 2025)**: Arc/Radius Tool - Production-Ready Curved Measurements
-            -   **3-Point Arc Definition**: Start point, middle point (defines arc), end point for accurate arc creation
-            -   **Frontend UI**: Dedicated arc tool button with proper visual feedback during drawing workflow
-            -   **Backend Arc Length Computation**: Uses `createArcSegment` from geometry utils for mathematically correct arc length calculations
-            -   **Data Storage**: Arc measurements stored as LINEAR type with 3 points, `computedLengthFt` contains arc length
-            -   **Spacebar Pan Fix**: Added `currentDrawingTool` state lock to prevent spacebar pan from interrupting multi-point drawing workflows
-            -   **Tool State Management**: Prevents tool changes while drawing (isDrawing && currentDrawingTool guards)
-            -   **Edge Cases**: Collinear point validation, graceful error handling, proper state cleanup on completion/cancellation
-            -   **Debug Logging**: Comprehensive console logging for troubleshooting arc creation workflow
-        -   **Phase 2.3b-2.6 Pending**: Arc length calculations verification, curved boundaries in area/volume, keyboard shortcuts, live measurement preview, final comprehensive testing
+    -   **Takeoff + Estimating Engine**: Comprehensive system for managing project plans, interactive drawing tools (Linear, Area, Volume, Count, Arc/Radius), measurement persistence, quantity summaries, and multi-page PDF rendering. Includes advanced pan/zoom (STACK-like, spacebar pan, cursor-centered zoom), a 5px click vs. drag threshold, and comprehensive keyboard shortcuts.
     -   **File Storage & Permissions**: Management via Replit Object Storage with presigned URLs and granular ACLs.
-    -   **Daily Scope Progress Tracking**: Enables daily tracking of scope item completion quantities, billed quantities, and billing status changes with dedicated API endpoints and UI components for management and visualization.
-    -   **Billing Status Workflow**: Production-grade workflow for managing billing lifecycle from field completion to invoicing:
-        -   **Field Recording**: Workers record daily progress with initial billing status
-        -   **Verification**: Superintendents mark quantities as "READY_TO_BILL" → Office Managers automatically notified
-        -   **Billing Completion**: Office Managers update status to "BILLED" via inline dropdown → billedDate and billedById auto-filled
-        -   **Audit Trail**: Complete tracking of who billed quantities and when
-        -   **RBAC**: Strict role-based access (SUPERINTENDENT, OFFICE_MANAGER, ADMIN, MANAGER can update status)
-        -   **Data Integrity**: Database transactions ensure atomic updates, strict enum validation prevents invalid status values
-        -   **Notifications**: Automatic alerts to office managers when quantities are ready for billing
+    -   **Billing Status Workflow**: Production-grade workflow for managing billing lifecycle from field recording to invoicing, with strict RBAC and audit trails.
 
 ## External Dependencies
--   **PostgreSQL (Neon)**: Primary database with HTTP driver (neon-http).
+-   **PostgreSQL (Neon)**: Primary database.
 -   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.
--   **OpenAI GPT-4**: Powers the AI Senior PM + CFO system.
+-   **OpenAI GPT-4**: Powers AI functionalities including Senior PM + CFO system and note analysis.
 -   **JWT**: For authentication.
 -   **Bcrypt**: For password hashing.
 -   **Uppy**: For file upload progress tracking.
--   **node-cron**: For scheduling tasks.
+-   **node-cron**: For scheduling backend tasks.
 -   **react-konva, konva, pdfjs-dist, xlsx**: For interactive drawing, document processing, and PDF rendering in the takeoff engine.
