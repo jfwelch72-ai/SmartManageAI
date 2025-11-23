@@ -39,6 +39,7 @@ import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
+import { createArcSegment } from "@shared/utils/geometry";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -4581,7 +4582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+      const { takeoffMeasurements, takeoffSheets, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -4591,9 +4592,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validated = insertTakeoffMeasurementSchema.partial().parse(sanitizedBody);
 
+      // PHASE 2.3a: If updating points, recompute arc length if applicable
+      let finalValues = { ...validated };
+      if (validated.points && validated.type === "LINEAR") {
+        // Get the sheet's scale to compute arc length
+        const measurement = await db
+          .select({ sheetId: takeoffMeasurements.sheetId })
+          .from(takeoffMeasurements)
+          .where(eq(takeoffMeasurements.id, id))
+          .limit(1);
+
+        if (measurement && measurement.length > 0) {
+          const sheet = await db
+            .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+            .from(takeoffSheets)
+            .where(eq(takeoffSheets.id, measurement[0].sheetId))
+            .limit(1);
+
+          if (sheet && sheet.length > 0 && sheet[0].scalePxPerFoot) {
+            const points = typeof validated.points === 'string' ? JSON.parse(validated.points) : validated.points;
+            
+            // If 3 points, this is an arc - compute arc length
+            if (points.length === 3) {
+              try {
+                const [start, middle, end] = points;
+                const arcSegment = createArcSegment(start, end, middle, sheet[0].scalePxPerFoot);
+                
+                if (arcSegment) {
+                  finalValues = {
+                    ...validated,
+                    computedLengthFt: arcSegment.arcLength,
+                  };
+                  console.log(`[Arc Measurement Update] Recomputed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
+                }
+              } catch (error) {
+                console.error("Error computing arc length during update:", error);
+              }
+            }
+          }
+        }
+      }
+
       const [updated] = await db
         .update(takeoffMeasurements)
-        .set({ ...validated, updatedAt: new Date() })
+        .set({ ...finalValues, updatedAt: new Date() })
         .where(eq(takeoffMeasurements.id, id))
         .returning();
 
@@ -4638,6 +4680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sheetId: takeoffSheets.id,
           projectId: takeoffSheets.projectId,
           projectCode: projects.code,
+          scalePxPerFoot: takeoffSheets.scalePxPerFoot,
         })
         .from(takeoffSheets)
         .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
@@ -4671,7 +4714,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const [measurement] = await db.insert(takeoffMeasurements).values(validated).returning();
+      // PHASE 2.3a: Compute arc length for 3-point LINEAR measurements (arcs)
+      let finalValues = { ...validated };
+      if (validated.type === "LINEAR" && sheetWithProject[0].scalePxPerFoot) {
+        const points = JSON.parse(validated.points);
+        
+        // If 3 points, this is an arc - compute arc length
+        if (points.length === 3) {
+          try {
+            const [start, middle, end] = points;
+            const arcSegment = createArcSegment(start, end, middle, sheetWithProject[0].scalePxPerFoot);
+            
+            if (arcSegment) {
+              // Store the computed arc length in feet
+              finalValues = {
+                ...validated,
+                computedLengthFt: arcSegment.arcLength,
+              };
+              console.log(`[Arc Measurement] Computed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
+            }
+          } catch (error) {
+            console.error("Error computing arc length:", error);
+            // If arc computation fails, don't block the measurement creation
+            // The frontend will handle displaying the measurement
+          }
+        }
+      }
+
+      const [measurement] = await db.insert(takeoffMeasurements).values(finalValues).returning();
 
       res.status(201).json(measurement);
     } catch (error: any) {

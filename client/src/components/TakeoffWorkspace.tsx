@@ -29,7 +29,10 @@ import {
   computePolygonAreaInFt2,
   computeVolumeInCY,
   inchesToFeet,
-  type Point
+  createArcSegment,
+  sampleArcPoints,
+  type Point,
+  type ArcSegment
 } from "@shared/utils/geometry";
 
 type Tool = 
@@ -38,6 +41,7 @@ type Tool =
   | "zoom" 
   | "calibrate" 
   | "linear" 
+  | "arc"
   | "area" 
   | "volume" 
   | "count" 
@@ -56,6 +60,7 @@ const TOOL_CONFIG = [
   { id: "zoom", icon: ZoomIn, label: "Zoom", color: "default" },
   { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary" },
   { id: "linear", icon: Ruler, label: "Linear", color: "primary" },
+  { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary" },
   { id: "area", icon: Square, label: "Area", color: "primary" },
   { id: "volume", icon: Box, label: "Volume", color: "primary" },
   { id: "count", icon: MapPin, label: "Count", color: "primary" },
@@ -99,6 +104,7 @@ const COMMON_SCALES = {
 
 export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWorkspaceProps) {
   const [activeTool, setActiveTool] = useState<Tool>("select");
+  const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null); // PHASE 2.3a: Track tool that initiated drawing
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState<"idle" | "first-point" | "second-point">("idle");
@@ -561,6 +567,91 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           description: `${lengthFt.toFixed(2)} LF` 
         });
       }
+    } else if (activeTool === "arc") {
+      // PHASE 2.3a: Arc tool - 3-point arc (start, middle, end)
+      console.log(`[Arc Tool] Click detected. isDrawing=${isDrawing}, drawingPoints.length=${drawingPoints.length}`);
+      
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!currentSheet?.scalePxPerFoot) {
+        toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" });
+        return;
+      }
+      
+      if (!isDrawing) {
+        // Start arc - first point (start)
+        console.log("[Arc Tool] Point 1 (start)");
+        setIsDrawing(true);
+        setCurrentDrawingTool("arc"); // PHASE 2.3a: Lock tool for multi-point workflow
+        setDrawingPoints([point]);
+        toast({ 
+          title: "Arc Tool", 
+          description: "Click second point (middle) to define curvature" 
+        });
+      } else if (drawingPoints.length === 1) {
+        // Second point (middle/control point)
+        console.log("[Arc Tool] Point 2 (middle)");
+        setDrawingPoints([...drawingPoints, point]);
+        toast({ 
+          title: "Arc Tool", 
+          description: "Click third point (end) to complete arc" 
+        });
+      } else if (drawingPoints.length === 2) {
+        // Third point (end) - create arc
+        console.log("[Arc Tool] Point 3 (end) - creating arc");
+        const [startPoint, middlePoint] = drawingPoints;
+        const endPoint = point;
+        
+        // Create arc segment
+        const arcSegment = createArcSegment(
+          startPoint,
+          endPoint,
+          middlePoint,
+          currentSheet.scalePxPerFoot
+        );
+        
+        if (!arcSegment) {
+          toast({ 
+            title: "Error", 
+            description: "Points are collinear - cannot form arc. Try different points.", 
+            variant: "destructive" 
+          });
+          setIsDrawing(false);
+          setCurrentDrawingTool(null); // PHASE 2.3a: Clear drawing tool lock
+          setDrawingPoints([]);
+          return;
+        }
+        
+        // Save as ARC measurement with all 3 points
+        // Count existing arcs (LINEAR measurements with 3 points)
+        const existingArcs = measurements.filter(m => {
+          if (m.type !== "LINEAR") return false;
+          const pts = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+          return pts.length === 3;
+        });
+        
+        const arcData = {
+          sheetId: selectedSheet,
+          type: "LINEAR" as const, // Store as LINEAR for now since schema doesn't have ARC type yet
+          points: [startPoint, middlePoint, endPoint], // 3 points for arc
+          label: `Arc ${existingArcs.length + 1}`,
+          categoryId: selectedCategoryId,
+        };
+        console.log("[Arc Tool] Creating measurement with data:", arcData);
+        
+        createMeasurementMutation.mutate(arcData);
+        
+        setIsDrawing(false);
+        setCurrentDrawingTool(null); // PHASE 2.3a: Clear drawing tool lock
+        setDrawingPoints([]);
+        toast({ 
+          title: "Arc Created", 
+          description: `${arcSegment.arcLength.toFixed(2)} LF` 
+        });
+      }
     } else if (activeTool === "area" || activeTool === "volume") {
       if (!selectedSheet) {
         toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
@@ -939,6 +1030,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       // Prevent default spacebar behavior (page scroll)
       event.preventDefault();
       
+      // PHASE 2.3a: Don't allow tool changes while drawing multi-point measurements
+      if (isDrawing && currentDrawingTool) {
+        return;
+      }
+      
       // Only switch to pan if not already in spacebar pan mode
       if (!isSpacebarHeld && activeTool !== "pan") {
         setToolBeforeSpacebar(activeTool);
@@ -950,6 +1046,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     const handleKeyUp = (event: KeyboardEvent) => {
       // Only trigger for spacebar
       if (event.key !== " " && event.code !== "Space") {
+        return;
+      }
+      
+      // PHASE 2.3a: Don't allow tool changes while drawing multi-point measurements
+      if (isDrawing && currentDrawingTool) {
         return;
       }
       
@@ -968,7 +1069,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [activeTool, isSpacebarHeld, toolBeforeSpacebar]);
+  }, [activeTool, isSpacebarHeld, toolBeforeSpacebar, isDrawing, currentDrawingTool]); // PHASE 2.3a: Added drawing states
 
   // Update Stage dimensions when container size changes
   useLayoutEffect(() => {
@@ -1134,6 +1235,36 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   };
                   
                   if (m.type === "LINEAR" && points.length >= 2) {
+                    // PHASE 2.3a: Check if this is an arc (3 points) or straight line (2 points)
+                    if (points.length === 3 && currentSheet?.scalePxPerFoot) {
+                      // Render as arc
+                      const [startPoint, middlePoint, endPoint] = points;
+                      const arcSegment = createArcSegment(
+                        startPoint,
+                        endPoint,
+                        middlePoint,
+                        currentSheet.scalePxPerFoot
+                      );
+                      
+                      if (arcSegment) {
+                        const arcPoints = sampleArcPoints(arcSegment, 30);
+                        const flatPoints = arcPoints.flatMap(p => [p.x, p.y]);
+                        
+                        return (
+                          <Line
+                            key={m.id}
+                            points={flatPoints}
+                            stroke={baseColor}
+                            strokeWidth={isSelected ? 5 : 3}
+                            opacity={isSelected ? 1 : 0.8}
+                            onClick={handleMeasurementClick}
+                            onTap={handleMeasurementClick}
+                          />
+                        );
+                      }
+                    }
+                    
+                    // Render as straight line (2 points)
                     return (
                       <Line
                         key={m.id}
@@ -1247,6 +1378,20 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         dash={[5, 5]}
                       />
                     )}
+                    
+                    {/* PHASE 2.3a: Arc preview while drawing (show after 2 points) */}
+                    {activeTool === "arc" && drawingPoints.length === 2 && currentSheet?.scalePxPerFoot && (() => {
+                      // This is just a placeholder - full arc requires 3rd point
+                      // Show dashed line from start to middle point
+                      return (
+                        <Line
+                          points={[drawingPoints[0].x, drawingPoints[0].y, drawingPoints[1].x, drawingPoints[1].y]}
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          dash={[5, 5]}
+                        />
+                      );
+                    })()}
                     
                     {/* LAYER 3: Points - drawn on top so they're visible */}
                     {drawingPoints.map((point, i) => (
