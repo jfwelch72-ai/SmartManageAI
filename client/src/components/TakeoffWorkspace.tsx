@@ -993,7 +993,15 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         </div>
 
         {/* Canvas Area */}
-        <div ref={containerRef} className="flex-1 overflow-hidden relative">
+        <div 
+          ref={containerRef} 
+          className="flex-1 overflow-hidden relative"
+          style={{
+            cursor: activeTool === "pan" ? "grab" : 
+                   activeTool === "select" ? "default" : 
+                   "crosshair"
+          }}
+        >
           {selectedSheet ? (
             <Stage
               ref={stageRef}
