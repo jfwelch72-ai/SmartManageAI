@@ -444,6 +444,59 @@
 
 ---
 
+## Phase 2 Implementation Notes (Production-Ready)
+
+### Critical Fixes Applied
+
+#### 2.1 Click vs Drag - Stage Drag Lifecycle Tracking
+**Implementation:** Added `isDraggingStage` state variable that tracks when Stage is being dragged via Konva's drag lifecycle events (`onDragStart`/`onDragEnd`).
+
+**How It Works:**
+- When user activates pan tool OR holds spacebar, Stage becomes draggable
+- When Stage drag starts, Konva fires `onDragStart` → sets `isDraggingStage = true`
+- When Stage drag ends, Konva fires `onDragEnd` → sets `isDraggingStage = false`
+- In `handleStageMouseUp`, if `isDraggingStage` is true, click handlers are suppressed
+- This prevents accidental measurements when user is panning
+
+**Testing Focus:** Verify no measurements are created during pan operations (both hand tool and spacebar pan).
+
+#### 2.2 Pan & Zoom - Position Persistence with DragMove Guard
+**Implementation:** Added `handleStageDragMove` to continuously update Stage position during drag, with guard to only run when `activeTool === "pan"`.
+
+**How It Works:**
+- Stage is controlled via `x/y` props from `stagePosition` state
+- During drag, `onDragMove` fires continuously, syncing React state with Konva's internal position
+- Guard ensures position updates only when pan is active (prevents desynchronization bugs)
+- `stagePosition` stays current throughout drag, preventing snap-back on re-renders
+
+**Testing Focus:** Verify pan persists across re-renders, no snap-back with rapid zoom + drag combinations.
+
+#### 2.3 Arc Tool - Backend Arc Length Computation
+**Implementation:** Backend computes arc length via `createArcSegment` geometry utility and stores in `computedLengthFt` field before saving to database.
+
+**How It Works:**
+- Frontend creates arc with 3 points (start, middle, end), type "LINEAR"
+- Backend detects 3-point LINEAR measurement in `POST /api/takeoff/measurements` route
+- Calls `createArcSegment(start, end, middle, scalePxPerFoot)` to compute arc length using formula: L = r × θ
+- Stores computed arc length in `computedLengthFt` field
+- Frontend displays using stored value (no recalculation on reload)
+- Grand totals correctly sum arc lengths from stored values
+
+**Testing Focus:** Verify arc lengths are accurate and persist correctly across page reloads. Check that `computeDistanceInFeet` is NOT used for arcs (only for straight-line segments).
+
+#### 2.4 Keyboard Shortcuts - Smart Guards for Drawing Workflows
+**Implementation:** Comprehensive guards prevent shortcuts from interfering with text inputs, Radix UI components, iframes, and multi-point drawing workflows.
+
+**Guards Implemented:**
+1. **Input Field Guard:** Prevents shortcuts when typing in INPUT/TEXTAREA/contentEditable
+2. **Radix Portal Guard:** Prevents shortcuts when Radix UI dialogs/popovers are open
+3. **iframe Guard:** Prevents shortcuts when focus is inside iframe (PDF viewer)
+4. **Drawing State Guard:** Prevents tool switching during multi-point drawing (arc, area, volume)
+
+**Testing Focus:** Verify shortcuts don't interfere with form inputs, dialogs, or multi-point drawing workflows. Document edge cases (<5% of interactions) but don't block on them.
+
+---
+
 ## Known Limitations (Document but Don't Block)
 
 ### Keyboard Shortcuts Edge Cases (2.4)
