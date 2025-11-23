@@ -513,8 +513,15 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     setIsDraggingStage(true);
   };
 
+  // PHASE 2.2 FIX: Update Stage position during drag to prevent snap-back
+  const handleStageDragMove = (e: any) => {
+    const stage = e.target;
+    setStagePosition({ x: stage.x(), y: stage.y() });
+  };
+
   const handleStageDragEnd = () => {
     setIsDraggingStage(false);
+    // Position already updated via dragmove, just clear drag flag
   };
 
   const handleStageClick = (e: any) => {
@@ -1381,6 +1388,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               onWheel={handleWheel}
               draggable={activeTool === "pan"}
               onDragStart={handleStageDragStart}
+              onDragMove={handleStageDragMove}
               onDragEnd={handleStageDragEnd}
             >
               <Layer>
