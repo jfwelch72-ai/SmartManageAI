@@ -1,0 +1,109 @@
+You are a strict code-indexing agent. 
+Your ONLY task is to locate and extract FULL, EXACT source code files.
+
+IMPORTANT RULES (DO NOT BREAK THESE):
+===================================================
+1. DO NOT summarize anything.
+2. DO NOT paraphrase anything.
+3. DO NOT describe code.
+4. DO NOT generate placeholder code.
+5. DO NOT skip any files.
+6. DO NOT output truncated files.
+7. DO NOT output partial files.
+8. DO NOT output “...” anywhere.
+9. OUTPUT ONLY REAL FILE CONTENTS AS THEY EXIST.
+
+Your output MUST be FULL SOURCE CODE, not explanation.
+
+===================================================
+YOUR OBJECTIVE
+===================================================
+Create one or multiple dump files containing the COMPLETE source code for the TFR Takeoff + Estimating Engine feature.
+
+You MUST search the ENTIRE REPO and extract any file related to:
+
+- Takeoff engine
+- Canvas drawing tools
+- Geometry / polygon / area / arc / volume calculation
+- Measurement creation, edit, delete
+- Calibration logic
+- PDF plan upload
+- PDF sheet rendering
+- AI takeoff (auto-sheet, auto-region)
+- AI spec parsing
+- AI detail parsing
+- Spec ingestion
+- Detail linking
+- Scope summary
+- Estimating engine (frontend + backend)
+- Production rates
+- Cost settings
+- Crew builder
+- Vendor quotes
+- Any file importing or exporting any of the above
+- Any file containing the keywords:
+  “takeoff”, “measurement”, “canvas”, “calibration”, “estimate”, “estimating”, 
+  “scope”, “spec”, “detail”, “pdf”, “plan”, “ai”, “auto-sheet”, “auto-region”,
+  “area”, “volume”, “polygon”, “curve”, “quantity”, “scope-summary”.
+
+===================================================
+SEARCH PATHS (SEARCH ALL OF THESE)
+===================================================
+Search ALL directories including but not limited to:
+
+/src  
+/client  
+/client/src  
+/app  
+/server  
+/backend  
+/api  
+/components  
+/hooks  
+/utils  
+/context  
+/models  
+/migrations  
+/routes  
+/controllers  
+/services  
+/lib  
+/helpers  
+ANY other directory that exists.
+
+===================================================
+OUTPUT FORMAT (MANDATORY)
+===================================================
+For EVERY file you extract, write it EXACTLY in this format:
+
+---- FILE START: <full relative path> ----
+<ENTIRE EXACT FILE CONTENTS WITH NO MODIFICATION>
+---- FILE END: <full relative path> ----
+
+Repeat this for ALL relevant files.
+
+===================================================
+FINAL OUTPUT
+===================================================
+Save your extracted output into a file in the Replit workspace named:
+
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP.md
+
+If the file would exceed output limits, SPLIT IT into:
+
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART1.md  
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART2.md  
+COMPLETE_TFR_TAKEOFF_ESTIMATING_SOURCE_DUMP_PART3.md  
+...etc.
+
+Each part must follow the same FILE START / FILE END format.
+
+===================================================
+FINAL ACTION
+===================================================
+After completing extraction:
+1. WRITE all dump files into the Replit workspace.
+2. RETURN them to me as downloadable file artifacts.
+3. DO NOT attempt to explain or modify anything. ONLY extract.
+
+BEGIN NOW.
