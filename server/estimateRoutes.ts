@@ -98,11 +98,13 @@ export function registerEstimateRoutes(app: Express) {
   // Create new estimate
   app.post("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
+      console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
       const { projectId } = req.params;
       const userId = req.user!.id;
 
       // Check if user has management access
       if (!hasManagementAccess(req.user!.role)) {
+        console.log("[Estimate] Permission denied:", req.user!.role);
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -126,6 +128,7 @@ export function registerEstimateRoutes(app: Express) {
         : 1;
 
       // Create estimate
+      console.log("[Estimate] Creating estimate with version:", versionNumber);
       const [newEstimate] = await db.insert(estimates).values({
         projectId,
         versionNumber,
@@ -133,9 +136,10 @@ export function registerEstimateRoutes(app: Express) {
         createdById: userId,
       }).returning();
 
+      console.log("[Estimate] Created estimate:", newEstimate.id);
       res.json(newEstimate);
     } catch (error) {
-      console.error("Error creating estimate:", error);
+      console.error("[Estimate] Error creating estimate:", error);
       res.status(500).json({ error: "Failed to create estimate" });
     }
   });

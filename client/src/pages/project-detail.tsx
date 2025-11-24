@@ -13,6 +13,7 @@ import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import ProjectLaborHours from "@/components/ProjectLaborHours";
+import ProjectEstimate from "@/components/ProjectEstimate";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -1294,48 +1295,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="estimate">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
-                <CardTitle>Estimates</CardTitle>
-                <Button size="sm" data-testid="button-new-estimate">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Estimate
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {estimatesLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading estimates...</div>
-                ) : estimates.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No estimates yet</div>
-                ) : (
-                  <div className="space-y-4">
-                    {estimates.map(estimate => (
-                      <div key={estimate.id} className="flex items-center justify-between p-4 border rounded-md hover-elevate" data-testid={`estimate-${estimate.id}`}>
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium">Version {estimate.versionNumber}</span>
-                            <Badge variant={estimate.status === "WON" ? "default" : "secondary"}>
-                              {estimate.status}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {format(new Date(estimate.createdAt), "MMM d, yyyy")}
-                          </p>
-                          {estimate.notes && (
-                            <p className="text-xs text-muted-foreground mt-1">{estimate.notes}</p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-bold font-mono">
-                            {estimate.baseBidAmount ? `$${parseFloat(estimate.baseBidAmount).toLocaleString()}` : "TBD"}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ProjectEstimate />
           </TabsContent>
 
           <TabsContent value="procurement">

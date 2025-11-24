@@ -1,0 +1,831 @@
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRoute } from "wouter";
+import { useState } from "react";
+import { useProject } from "@/hooks/use-data";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
+import type { 
+  Estimate, 
+  EstimateLineItem, 
+  QuantityCategory 
+} from "@shared/schema";
+
+// Form schema for manual line item
+const lineItemSchema = z.object({
+  description: z.string().min(1, "Description is required"),
+  category: z.string().min(1, "Category is required"),
+  unit: z.string().min(1, "Unit is required"),
+  quantity: z.coerce.number().min(0, "Quantity must be positive"),
+  materialCost: z.coerce.number().min(0).default(0),
+  laborCost: z.coerce.number().min(0).default(0),
+  laborHours: z.coerce.number().min(0).default(0),
+  equipmentCost: z.coerce.number().min(0).default(0),
+  consumablesCost: z.coerce.number().min(0).default(0),
+  subcontractCost: z.coerce.number().min(0).default(0),
+  overheadAllocation: z.coerce.number().min(0).default(0),
+  profitAllocation: z.coerce.number().min(0).default(0),
+  notes: z.string().optional(),
+});
+
+type LineItemFormValues = z.infer<typeof lineItemSchema>;
+
+export default function ProjectEstimate() {
+  const [, params] = useRoute("/projects/:code");
+  const projectCode = params?.code || "";
+  const { data: project } = useProject(projectCode);
+  const projectId = project?.id;
+  
+  const { toast } = useToast();
+  const [addLineItemOpen, setAddLineItemOpen] = useState(false);
+  const [importTakeoffOpen, setImportTakeoffOpen] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  // Fetch estimate data
+  const { data: estimateData, isLoading: estimateLoading } = useQuery<{
+    estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
+  }>({
+    queryKey: ["/api/projects", projectId, "/estimate"],
+    enabled: !!projectId,
+  });
+
+  // Fetch takeoff categories for import
+  const { data: categoriesData } = useQuery<{ categories: QuantityCategory[] }>({
+    queryKey: ["/api/projects", projectId, "/takeoff-categories"],
+    enabled: !!projectId,
+  });
+
+  // Create estimate mutation
+  const createEstimateMutation = useMutation({
+    mutationFn: () => {
+      if (!projectId) {
+        throw new Error("Project ID is required");
+      }
+      return apiRequest("POST", `/api/projects/${projectId}/estimate`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      toast({ title: "Estimate created successfully" });
+    },
+    onError: (error) => {
+      console.error("Create estimate error:", error);
+      toast({ title: "Failed to create estimate", variant: "destructive" });
+    },
+  });
+
+  // Import takeoff mutation
+  const importTakeoffMutation = useMutation({
+    mutationFn: (data: { estimateId: string, categoryIds: string[] }) => 
+      apiRequest("POST", `/api/projects/${projectId}/estimate/import-takeoff`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      setImportTakeoffOpen(false);
+      setSelectedCategories([]);
+      toast({ title: "Takeoff quantities imported successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to import takeoff", variant: "destructive" });
+    },
+  });
+
+  // Add line item mutation
+  const addLineItemMutation = useMutation({
+    mutationFn: (data: LineItemFormValues & { estimateId: string }) => 
+      apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      setAddLineItemOpen(false);
+      form.reset();
+      toast({ title: "Line item added successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add line item", variant: "destructive" });
+    },
+  });
+
+  // Approve estimate mutation
+  const approveEstimateMutation = useMutation({
+    mutationFn: (estimateId: string) => 
+      apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      toast({ title: "Estimate approved and synced to project budget" });
+    },
+    onError: () => {
+      toast({ title: "Failed to approve estimate", variant: "destructive" });
+    },
+  });
+
+  // Delete line item mutation
+  const deleteLineItemMutation = useMutation({
+    mutationFn: ({ estimateId, lineItemId }: { estimateId: string, lineItemId: string }) => 
+      apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      toast({ title: "Line item deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete line item", variant: "destructive" });
+    },
+  });
+
+  // Form for adding line items
+  const form = useForm<LineItemFormValues>({
+    resolver: zodResolver(lineItemSchema),
+    defaultValues: {
+      description: "",
+      category: "",
+      unit: "",
+      quantity: 0,
+      materialCost: 0,
+      laborCost: 0,
+      laborHours: 0,
+      equipmentCost: 0,
+      consumablesCost: 0,
+      subcontractCost: 0,
+      overheadAllocation: 0,
+      profitAllocation: 0,
+      notes: "",
+    },
+  });
+
+  const onSubmit = (values: LineItemFormValues) => {
+    if (!estimateData?.estimate) return;
+
+    addLineItemMutation.mutate({
+      ...values,
+      estimateId: estimateData.estimate.id,
+      source: "MANUAL",
+    } as any);
+  };
+
+  const handleImportTakeoff = () => {
+    if (!estimateData?.estimate || selectedCategories.length === 0) return;
+    importTakeoffMutation.mutate({
+      estimateId: estimateData.estimate.id,
+      categoryIds: selectedCategories,
+    });
+  };
+
+  const estimate = estimateData?.estimate;
+  const categories = categoriesData?.categories || [];
+
+  if (!projectId || estimateLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Loading estimate...</div>
+      </div>
+    );
+  }
+
+  if (!estimate) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Estimate</CardTitle>
+            <CardDescription>
+              Create a comprehensive cost estimate for this project
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              No estimate exists for this project yet. Create one to start estimating costs.
+            </p>
+            <Button 
+              onClick={() => {
+                console.log("Creating estimate with projectId:", projectId);
+                createEstimateMutation.mutate();
+              }} 
+              disabled={createEstimateMutation.isPending || !projectId}
+              data-testid="button-create-estimate"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create Estimate
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const totals = estimate.totals || {
+    materialCost: 0,
+    laborCost: 0,
+    laborHours: 0,
+    equipmentCost: 0,
+    consumablesCost: 0,
+    subcontractCost: 0,
+    overheadAllocation: 0,
+    profitAllocation: 0,
+    totalCost: 0,
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "DRAFT":
+        return <Badge variant="secondary" data-testid="badge-estimate-draft"><Clock className="h-3 w-3 mr-1" />Draft</Badge>;
+      case "PENDING_APPROVAL":
+        return <Badge variant="outline" data-testid="badge-estimate-pending"><AlertTriangle className="h-3 w-3 mr-1" />Pending Approval</Badge>;
+      case "APPROVED":
+        return <Badge className="bg-green-600 hover:bg-green-700" data-testid="badge-estimate-approved"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="container-project-estimate">
+      {/* Header with Status and Actions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">Project Estimate</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage cost estimates and project budget
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {getStatusBadge(estimate.status)}
+          {estimate.status === "DRAFT" && (
+            <Button
+              size="sm"
+              onClick={() => approveEstimateMutation.mutate(estimate.id)}
+              disabled={approveEstimateMutation.isPending || estimate.lineItems.length === 0}
+              data-testid="button-approve-estimate"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Approve & Sync to Budget
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Summary KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Total Estimate</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-total-estimate">
+              ${totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {estimate.lineItems.length} line items
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Material Cost</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-material-cost">
+              ${totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {totals.totalCost > 0 
+                ? `${((totals.materialCost / totals.totalCost) * 100).toFixed(1)}% of total`
+                : "0% of total"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Labor Cost</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-labor-cost">
+              ${totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours estimated
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Profit Margin</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-profit-margin">
+              ${totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {totals.totalCost > 0 
+                ? `${((totals.profitAllocation / totals.totalCost) * 100).toFixed(1)}% of total`
+                : "0% of total"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Action Buttons */}
+      {estimate.status === "DRAFT" && (
+        <div className="flex gap-3">
+          <Dialog open={importTakeoffOpen} onOpenChange={setImportTakeoffOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-open-import-takeoff">
+                <FileText className="h-4 w-4 mr-2" />
+                Import from Takeoff
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Import Takeoff Quantities</DialogTitle>
+                <DialogDescription>
+                  Select quantity categories from takeoff to generate estimate line items
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                  {categories.map((category) => (
+                    <div 
+                      key={category.id}
+                      className="flex items-center space-x-3 p-3 border rounded-md hover-elevate"
+                    >
+                      <Checkbox
+                        id={`category-${category.id}`}
+                        checked={selectedCategories.includes(category.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedCategories([...selectedCategories, category.id]);
+                          } else {
+                            setSelectedCategories(selectedCategories.filter(id => id !== category.id));
+                          }
+                        }}
+                        data-testid={`checkbox-category-${category.id}`}
+                      />
+                      <label
+                        htmlFor={`category-${category.id}`}
+                        className="flex-1 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        {category.name}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setImportTakeoffOpen(false);
+                      setSelectedCategories([]);
+                    }}
+                    data-testid="button-cancel-import"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleImportTakeoff}
+                    disabled={selectedCategories.length === 0 || importTakeoffMutation.isPending}
+                    data-testid="button-confirm-import"
+                  >
+                    Import {selectedCategories.length} {selectedCategories.length === 1 ? 'Category' : 'Categories'}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={addLineItemOpen} onOpenChange={setAddLineItemOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-open-add-line-item">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Line Item
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Manual Line Item</DialogTitle>
+                <DialogDescription>
+                  Create a custom estimate line item with detailed cost breakdown
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem className="col-span-2">
+                          <FormLabel>Description</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., Foundation excavation" 
+                              {...field}
+                              data-testid="input-description"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Category</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., Site Work" 
+                              {...field}
+                              data-testid="input-category"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="unit"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Unit</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="e.g., CY, SF, LF" 
+                              {...field}
+                              data-testid="input-unit"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="quantity"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Quantity</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="0" 
+                              {...field}
+                              data-testid="input-quantity"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-sm">Cost Breakdown</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="materialCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Material Cost</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-material-cost"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="laborCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Labor Cost</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-labor-cost"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="laborHours"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Labor Hours</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.1" 
+                                placeholder="0" 
+                                {...field}
+                                data-testid="input-labor-hours"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="equipmentCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Equipment Cost</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-equipment-cost"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="consumablesCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Consumables Cost</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-consumables-cost"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="subcontractCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Subcontract Cost</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-subcontract-cost"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="overheadAllocation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Overhead Allocation</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-overhead-allocation"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="profitAllocation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Profit Allocation</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field}
+                                data-testid="input-profit-allocation"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="Additional notes or details..." 
+                            {...field}
+                            data-testid="input-notes"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setAddLineItemOpen(false)}
+                      data-testid="button-cancel-line-item"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={addLineItemMutation.isPending}
+                      data-testid="button-submit-line-item"
+                    >
+                      Add Line Item
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {/* Line Items Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Estimate Line Items</CardTitle>
+          <CardDescription>
+            Detailed breakdown of all cost items in this estimate
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {estimate.lineItems.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No line items yet</p>
+              <p className="text-sm mt-2">Import from takeoff or add manual line items to get started</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead className="text-right">Material</TableHead>
+                    <TableHead className="text-right">Labor</TableHead>
+                    <TableHead className="text-right">Hours</TableHead>
+                    <TableHead className="text-right">Equipment</TableHead>
+                    <TableHead className="text-right">Subcontract</TableHead>
+                    <TableHead className="text-right">Overhead</TableHead>
+                    <TableHead className="text-right">Profit</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    {estimate.status === "DRAFT" && <TableHead></TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {estimate.lineItems.map((item) => (
+                    <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
+                      <TableCell className="font-medium">{item.description}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {item.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{item.quantity.toLocaleString()}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{item.unit}</TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.materialCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.laborCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {Number(item.laborHours).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.equipmentCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.overheadAllocation).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${Number(item.profitAllocation).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        ${Number(item.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      {estimate.status === "DRAFT" && (
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteLineItemMutation.mutate({ 
+                              estimateId: estimate.id, 
+                              lineItemId: item.id 
+                            })}
+                            disabled={deleteLineItemMutation.isPending}
+                            data-testid={`button-delete-${item.id}`}
+                          >
+                            Delete
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
