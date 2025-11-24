@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertBidSubcontractorQuoteSchema } from "@shared/schema";
+import { insertBidSubcontractorQuoteSchema, insertBidSchema } from "@shared/schema";
 import type { BidSubcontractorQuote, InsertBidSubcontractorQuote, Estimate, EstimateLineItem } from "@shared/schema";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -29,12 +29,29 @@ const quoteFormSchema = insertBidSubcontractorQuoteSchema.omit({ bidId: true }).
 });
 type QuoteFormValues = z.infer<typeof quoteFormSchema>;
 
+// Form schema accepts strings from HTML inputs
+const bidEditFormSchema = z.object({
+  name: z.string(),
+  clientName: z.string(),
+  clientContactName: z.string().optional(),
+  clientContactEmail: z.string().email().optional().or(z.literal("")),
+  clientContactPhone: z.string().optional(),
+  bidAmount: z.string().optional(),
+  dueDate: z.string().optional(),
+  locationAddress: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  description: z.string().optional(),
+}).partial();
+type BidEditFormValues = z.infer<typeof bidEditFormSchema>;
+
 export default function BidDetailPage() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/bids/:code");
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
+  const [showEditBidDialog, setShowEditBidDialog] = useState(false);
   const [editingQuote, setEditingQuote] = useState<BidSubcontractorQuote | null>(null);
   const [uploadedFileData, setUploadedFileData] = useState<{
     fileUrl: string;
@@ -73,6 +90,24 @@ export default function BidDetailPage() {
       contactEmail: "",
       contactPhone: "",
       notes: "",
+    },
+  });
+
+  // Bid edit form
+  const bidEditForm = useForm<BidEditFormValues>({
+    resolver: zodResolver(bidEditFormSchema),
+    defaultValues: {
+      name: "",
+      clientName: "",
+      clientContactName: "",
+      clientContactEmail: "",
+      clientContactPhone: "",
+      bidAmount: "",
+      dueDate: undefined,
+      locationAddress: "",
+      city: "",
+      state: "",
+      description: "",
     },
   });
 
@@ -157,6 +192,60 @@ export default function BidDetailPage() {
       });
     },
   });
+
+  // Update bid mutation
+  const updateBidMutation = useMutation({
+    mutationFn: async (data: BidEditFormValues) => {
+      // Transform form strings to backend-compatible types
+      const payload: any = {};
+      
+      // Only include non-empty values
+      if (data.name) payload.name = data.name;
+      if (data.clientName) payload.clientName = data.clientName;
+      if (data.clientContactName) payload.clientContactName = data.clientContactName;
+      if (data.clientContactEmail) payload.clientContactEmail = data.clientContactEmail;
+      if (data.clientContactPhone) payload.clientContactPhone = data.clientContactPhone;
+      if (data.bidAmount) payload.bidAmount = data.bidAmount; // Send as string (decimal)
+      if (data.dueDate) payload.dueDate = new Date(data.dueDate).toISOString(); // Convert to ISO string
+      if (data.locationAddress) payload.locationAddress = data.locationAddress;
+      if (data.city) payload.city = data.city;
+      if (data.state) payload.state = data.state;
+      if (data.description) payload.description = data.description;
+      
+      return apiRequest("PATCH", `/api/bids/${bidCode}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      toast({ title: "Success", description: "Bid updated successfully" });
+      setShowEditBidDialog(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update bid",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditBid = () => {
+    if (!bid) return;
+    bidEditForm.reset({
+      name: bid.name,
+      clientName: bid.clientName,
+      clientContactName: bid.clientContactName || "",
+      clientContactEmail: bid.clientContactEmail || "",
+      clientContactPhone: bid.clientContactPhone || "",
+      bidAmount: bid.bidAmount || "",
+      dueDate: bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : "",
+      locationAddress: bid.locationAddress || "",
+      city: bid.city || "",
+      state: bid.state || "",
+      description: bid.description || "",
+    });
+    setShowEditBidDialog(true);
+  };
 
   const handleAddQuote = () => {
     setEditingQuote(null);
@@ -366,8 +455,18 @@ export default function BidDetailPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                 <CardTitle>Bid Information</CardTitle>
+                {(user?.role === "ADMIN" || user?.role === "MANAGER") && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={handleEditBid}
+                    data-testid="button-edit-bid"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-start gap-3">
@@ -837,6 +936,183 @@ export default function BidDetailPage() {
                 </Button>
                 <Button type="submit" disabled={createQuote.isPending || updateQuote.isPending} data-testid="button-submit-quote">
                   {createQuote.isPending || updateQuote.isPending ? "Saving..." : editingQuote ? "Update Quote" : "Add Quote"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Bid Dialog */}
+      <Dialog open={showEditBidDialog} onOpenChange={setShowEditBidDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Bid Information</DialogTitle>
+            <DialogDescription>Update the bid details and project information</DialogDescription>
+          </DialogHeader>
+          <Form {...bidEditForm}>
+            <form onSubmit={bidEditForm.handleSubmit((data) => updateBidMutation.mutate(data))} className="space-y-4">
+              <FormField
+                control={bidEditForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Bid Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Project name or description" data-testid="input-bid-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={bidEditForm.control}
+                  name="bidAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bid Amount</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} type="number" step="0.01" placeholder="0.00" data-testid="input-bid-amount" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="dueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Due Date</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} type="date" data-testid="input-due-date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={bidEditForm.control}
+                name="clientName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Client Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Client company or individual" data-testid="input-client-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={bidEditForm.control}
+                  name="clientContactName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-client-contact-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="clientContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} type="email" placeholder="john@example.com" data-testid="input-client-contact-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="clientContactPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="(555) 123-4567" data-testid="input-client-contact-phone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={bidEditForm.control}
+                  name="locationAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="123 Main St" data-testid="input-location-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={bidEditForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Project details and requirements..." rows={4} data-testid="input-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowEditBidDialog(false)} data-testid="button-cancel-edit">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateBidMutation.isPending} data-testid="button-save-bid">
+                  {updateBidMutation.isPending ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>
             </form>

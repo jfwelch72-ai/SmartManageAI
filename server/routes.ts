@@ -808,6 +808,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update bid (Admin/Manager only)
   app.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // Get existing bid for audit logging
+      const [existingBid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      
+      if (!existingBid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
@@ -823,6 +831,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // BUSINESS VALIDATION: Validate monetary amounts
+      if (validationResult.data.bidAmount !== undefined) {
+        const amountCheck = validateMonetaryAmount(validationResult.data.bidAmount, "Bid amount");
+        if (!amountCheck.valid) {
+          res.status(400).json({ error: amountCheck.error });
+          return;
+        }
+      }
+
       const updateData: any = { ...validationResult.data, updatedAt: new Date() };
       
       const [updatedBid] = await db
@@ -836,10 +853,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Audit log (pass raw objects, not JSON.stringify)
+      await logUpdate(req.user!.id, "BID", updatedBid.id, existingBid, updateData, req);
+
       res.json(updatedBid);
     } catch (error: any) {
       console.error("Update bid error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      if (error.code === '23505') {
+        res.status(409).json({ error: "Bid code already exists" });
+      } else {
+        res.status(500).json({ error: "Internal server error" });
+      }
     }
   });
 
