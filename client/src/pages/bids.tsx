@@ -9,6 +9,16 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import type { Bid } from "@shared/schema";
+
+// Extended bid type with estimate summary
+type BidWithEstimate = Bid & {
+  estimateSummary: {
+    totalCost: number;
+    lineItemCount: number;
+    status: string;
+  } | null;
+};
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,8 +38,11 @@ export default function BidsPage() {
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
   
-  const { data: bids = [], isLoading } = useBids();
+  const { data: bidsData = [], isLoading } = useBids();
   const convertBid = useConvertBidToProject();
+  
+  // Cast to extended type with estimate summary
+  const bids = bidsData as BidWithEstimate[];
 
   const filteredBids = useMemo(() => {
     return bids.filter(bid => 
@@ -127,6 +140,7 @@ export default function BidsPage() {
                 estimator={bid.estimatorId || ""}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={() => handleConvertToProject(bid.code)}
+                estimateData={bid.estimateSummary}
               />
             ))}
           </div>

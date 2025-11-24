@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, DollarSign, Calendar } from "lucide-react";
+import { Building2, MapPin, DollarSign, Calendar, FileText, CheckCircle } from "lucide-react";
 
 interface BidCardProps {
   code: string;
@@ -13,6 +13,11 @@ interface BidCardProps {
   estimator: string;
   onClick?: () => void;
   onConvertToProject?: () => void;
+  estimateData?: {
+    totalCost: number;
+    lineItemCount: number;
+    status: string;
+  } | null;
 }
 
 export default function BidCard({
@@ -25,6 +30,7 @@ export default function BidCard({
   estimator,
   onClick,
   onConvertToProject,
+  estimateData,
 }: BidCardProps) {
   return (
     <Card
@@ -80,6 +86,42 @@ export default function BidCard({
             <p className="text-xs text-muted-foreground">Estimator: {estimator}</p>
           </div>
         </div>
+
+        {estimateData && (
+          <div className="p-3 bg-primary/5 rounded-md border border-primary/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium">Estimate</span>
+              </div>
+              {estimateData.status === "APPROVED" && (
+                <Badge variant="default" className="text-xs gap-1">
+                  <CheckCircle className="w-3 h-3" />
+                  Approved
+                </Badge>
+              )}
+              {estimateData.status === "DRAFT" && (
+                <Badge variant="secondary" className="text-xs">
+                  Draft
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <p className="text-muted-foreground">Total Cost</p>
+                <p className="font-mono font-semibold text-foreground" data-testid={`text-estimate-cost-${code}`}>
+                  ${estimateData.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Line Items</p>
+                <p className="font-semibold text-foreground" data-testid={`text-estimate-items-${code}`}>
+                  {estimateData.lineItemCount}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {onConvertToProject && (
           <Button

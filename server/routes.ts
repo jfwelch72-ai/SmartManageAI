@@ -639,11 +639,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { bids, insertBidSchema, projects } = await import("@shared/schema");
 
-  // Get all bids
+  // Get all bids with estimate summaries
   app.get("/api/bids", requireAuth, async (req: AuthRequest, res) => {
     try {
       const allBids = await db.select().from(bids).orderBy(bids.createdAt);
-      res.json(allBids);
+      
+      // Short-circuit if no bids exist
+      if (allBids.length === 0) {
+        res.json([]);
+        return;
+      }
+
+      // Fetch estimate summaries for all bids
+      // NOTE: We use DISTINCT ON to get only one estimate per bid (the most recent one based on created_at)
+      // This prevents duplicate summaries when a bid has multiple historical estimates
+      const bidIds = allBids.map(bid => bid.id);
+      
+      // Get the most recent estimate per bid using a subquery
+      const latestEstimates = await db
+        .select({
+          bidId: estimates.bidId,
+          estimateId: sql<string>`(
+            SELECT id 
+            FROM ${estimates} e2 
+            WHERE e2.bid_id = ${estimates.bidId} 
+              AND e2.project_id IS NULL 
+            ORDER BY e2.created_at DESC 
+            LIMIT 1
+          )`.as('estimate_id'),
+        })
+        .from(estimates)
+        .where(
+          and(
+            inArray(estimates.bidId, bidIds),
+            isNull(estimates.projectId)
+          )
+        )
+        .groupBy(estimates.bidId);
+
+      // Fetch detailed summaries for those latest estimates
+      const estimateIds = latestEstimates.map(e => e.estimateId).filter((id): id is string => id !== null);
+      
+      let estimateData: Array<{
+        id: string;
+        bidId: string | null;
+        status: string;
+        totalCost: number;
+        lineItemCount: number;
+      }> = [];
+
+      if (estimateIds.length > 0) {
+        estimateData = await db
+          .select({
+            id: estimates.id,
+            bidId: estimates.bidId,
+            status: estimates.status,
+            totalCost: sql<number>`
+              COALESCE((
+                SELECT SUM(
+                  COALESCE(CAST(${estimateLineItems.materialCost} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.laborCost} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.equipmentCost} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.consumablesCost} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.subcontractCost} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.overheadAllocation} AS NUMERIC), 0) +
+                  COALESCE(CAST(${estimateLineItems.profitAllocation} AS NUMERIC), 0)
+                )
+                FROM ${estimateLineItems}
+                WHERE ${estimateLineItems.estimateId} = ${estimates.id}
+              ), 0)
+            `,
+            lineItemCount: sql<number>`
+              COALESCE((
+                SELECT COUNT(*)
+                FROM ${estimateLineItems}
+                WHERE ${estimateLineItems.estimateId} = ${estimates.id}
+              ), 0)
+            `,
+          })
+          .from(estimates)
+          .where(inArray(estimates.id, estimateIds));
+      }
+
+      // Create map of bidId to estimate summary
+      const estimateMap = new Map(
+        estimateData.map(e => [
+          e.bidId!,
+          {
+            totalCost: Number(e.totalCost),
+            lineItemCount: Number(e.lineItemCount),
+            status: e.status,
+          }
+        ])
+      );
+
+      // Enrich bids with estimate summaries
+      const bidsWithEstimates = allBids.map(bid => ({
+        ...bid,
+        estimateSummary: estimateMap.get(bid.id) || null,
+      }));
+
+      res.json(bidsWithEstimates);
     } catch (error) {
       console.error("Get bids error:", error);
       res.status(500).json({ error: "Internal server error" });
