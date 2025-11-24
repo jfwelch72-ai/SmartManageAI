@@ -69,7 +69,7 @@ type LineItemFormValues = z.infer<typeof lineItemSchema>;
 export default function ProjectEstimate() {
   const [, params] = useRoute("/projects/:code");
   const projectCode = params?.code || "";
-  const { data: project } = useProject(projectCode);
+  const { data: project, isLoading: projectLoading } = useProject(projectCode);
   const projectId = project?.id;
   
   const { toast } = useToast();
@@ -99,8 +99,9 @@ export default function ProjectEstimate() {
       }
       return apiRequest("POST", `/api/projects/${projectId}/estimate`, {});
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
       toast({ title: "Estimate created successfully" });
     },
     onError: (error) => {
@@ -143,8 +144,9 @@ export default function ProjectEstimate() {
   const approveEstimateMutation = useMutation({
     mutationFn: (estimateId: string) => 
       apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
       toast({ title: "Estimate approved and synced to project budget" });
     },
     onError: () => {
@@ -188,11 +190,26 @@ export default function ProjectEstimate() {
   const onSubmit = (values: LineItemFormValues) => {
     if (!estimateData?.estimate) return;
 
-    addLineItemMutation.mutate({
-      ...values,
+    // Convert numbers to strings for decimal database fields
+    const payload = {
       estimateId: estimateData.estimate.id,
+      category: values.category,
+      description: values.description,
+      unit: values.unit,
+      quantity: String(values.quantity),
+      materialCost: String(values.materialCost),
+      laborCost: String(values.laborCost),
+      laborHours: String(values.laborHours),
+      equipmentCost: String(values.equipmentCost),
+      consumablesCost: String(values.consumablesCost || 0),
+      subcontractCost: String(values.subcontractCost || 0),
+      overheadAllocation: String(values.overheadAllocation),
+      profitAllocation: String(values.profitAllocation),
       source: "MANUAL",
-    } as any);
+      notes: values.notes || undefined,
+    };
+
+    addLineItemMutation.mutate(payload as any);
   };
 
   const handleImportTakeoff = () => {
@@ -206,10 +223,18 @@ export default function ProjectEstimate() {
   const estimate = estimateData?.estimate;
   const categories = categoriesData?.categories || [];
 
-  if (!projectId || estimateLoading) {
+  if (projectLoading || (estimateLoading && projectId)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Loading estimate...</div>
+      </div>
+    );
+  }
+
+  if (!projectId) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Project not found</div>
       </div>
     );
   }
@@ -233,7 +258,7 @@ export default function ProjectEstimate() {
                 console.log("Creating estimate with projectId:", projectId);
                 createEstimateMutation.mutate();
               }} 
-              disabled={createEstimateMutation.isPending || !projectId}
+              disabled={createEstimateMutation.isPending}
               data-testid="button-create-estimate"
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -472,13 +497,23 @@ export default function ProjectEstimate() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Category</FormLabel>
-                          <FormControl>
-                            <Input 
-                              placeholder="e.g., Site Work" 
-                              {...field}
-                              data-testid="input-category"
-                            />
-                          </FormControl>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-category">
+                                <SelectValue placeholder="Select a category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="CONCRETE">Concrete</SelectItem>
+                              <SelectItem value="EXCAVATION">Excavation</SelectItem>
+                              <SelectItem value="PAVERS">Pavers</SelectItem>
+                              <SelectItem value="BOLLARDS">Bollards</SelectItem>
+                              <SelectItem value="GC">General Conditions</SelectItem>
+                              <SelectItem value="OVERHEAD">Overhead</SelectItem>
+                              <SelectItem value="PROFIT">Profit</SelectItem>
+                              <SelectItem value="GENERAL">General</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}

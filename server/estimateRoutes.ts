@@ -16,7 +16,12 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Helper to check if user has management access (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
+// Helper to check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
+function hasEstimateAccess(role: string): boolean {
+  return ["ADMIN", "MANAGER", "ESTIMATOR"].includes(role);
+}
+
+// Helper to check if user has general management access (includes SUPERINTENDENT for read-only)
 function hasManagementAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
 }
@@ -27,6 +32,11 @@ export function registerEstimateRoutes(app: Express) {
   app.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
+
+      // Check if user has management access (includes SUPERINTENDENT for read-only)
+      if (!hasManagementAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
 
       // Check project access
       const project = await db.query.projects.findFirst({
@@ -47,7 +57,7 @@ export function registerEstimateRoutes(app: Express) {
       });
 
       if (!estimate) {
-        return res.json(null);
+        return res.json({ estimate: null });
       }
 
       // Get line items for this estimate
@@ -88,7 +98,7 @@ export function registerEstimateRoutes(app: Express) {
         totalCost: 0,
       });
 
-      res.json({ ...estimate, lineItems, totals });
+      res.json({ estimate: { ...estimate, lineItems, totals } });
     } catch (error) {
       console.error("Error fetching estimate:", error);
       res.status(500).json({ error: "Failed to fetch estimate" });
@@ -102,8 +112,8 @@ export function registerEstimateRoutes(app: Express) {
       const { projectId } = req.params;
       const userId = req.user!.id;
 
-      // Check if user has management access
-      if (!hasManagementAccess(req.user!.role)) {
+      // Check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
+      if (!hasEstimateAccess(req.user!.role)) {
         console.log("[Estimate] Permission denied:", req.user!.role);
         return res.status(403).json({ error: "Insufficient permissions" });
       }
@@ -137,7 +147,7 @@ export function registerEstimateRoutes(app: Express) {
       }).returning();
 
       console.log("[Estimate] Created estimate:", newEstimate.id);
-      res.json(newEstimate);
+      res.status(201).json(newEstimate);
     } catch (error) {
       console.error("[Estimate] Error creating estimate:", error);
       res.status(500).json({ error: "Failed to create estimate" });
@@ -150,7 +160,7 @@ export function registerEstimateRoutes(app: Express) {
       const { projectId } = req.params;
       const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
 
-      if (!hasManagementAccess(req.user!.role)) {
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -308,7 +318,7 @@ export function registerEstimateRoutes(app: Express) {
       const { estimateId } = req.params;
       const lineItem = req.body;
 
-      if (!hasManagementAccess(req.user!.role)) {
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -325,16 +335,28 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(400).json({ error: "Can only edit draft estimates" });
       }
 
+      // Calculate totalCost from component costs
+      const totalCost = (
+        Number(lineItem.materialCost || 0) +
+        Number(lineItem.laborCost || 0) +
+        Number(lineItem.equipmentCost || 0) +
+        Number(lineItem.consumablesCost || 0) +
+        Number(lineItem.subcontractCost || 0) +
+        Number(lineItem.overheadAllocation || 0) +
+        Number(lineItem.profitAllocation || 0)
+      ).toString();
+
       // Validate and create line item
       const validatedData = insertEstimateLineItemSchema.parse({
         ...lineItem,
         estimateId,
         source: "MANUAL",
+        totalCost,
       });
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
 
-      res.json(newLineItem);
+      res.status(201).json(newLineItem);
     } catch (error) {
       console.error("Error creating line item:", error);
       res.status(500).json({ error: "Failed to create line item" });
@@ -347,7 +369,7 @@ export function registerEstimateRoutes(app: Express) {
       const { estimateId, lineItemId } = req.params;
       const updates = req.body;
 
-      if (!hasManagementAccess(req.user!.role)) {
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -385,7 +407,7 @@ export function registerEstimateRoutes(app: Express) {
     try {
       const { estimateId, lineItemId } = req.params;
 
-      if (!hasManagementAccess(req.user!.role)) {
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -417,8 +439,8 @@ export function registerEstimateRoutes(app: Express) {
       const { estimateId } = req.params;
       const userId = req.user!.id;
 
-      // Only admins and managers can approve
-      if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
+      // Check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -472,7 +494,7 @@ export function registerEstimateRoutes(app: Express) {
     try {
       const { estimateId } = req.params;
 
-      if (!hasManagementAccess(req.user!.role)) {
+      if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
