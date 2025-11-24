@@ -997,10 +997,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Bid Conversion] Transferring ${subQuotes.length} subcontractor quotes`);
 
       for (const quote of subQuotes) {
-        // Find or create subcontractor record
-        let subcontractor = await db.query.subcontractors.findFirst({
-          where: eq(subcontractors.companyName, quote.subcontractorName),
-        });
+        // Find or create subcontractor record with improved matching
+        // Match by company name AND (email OR phone) to avoid duplicates
+        let subcontractor;
+        if (quote.contactEmail || quote.contactPhone) {
+          // Try to find by name + contact info
+          const { or, and } = await import("drizzle-orm");
+          const contactConditions = [];
+          if (quote.contactEmail) {
+            contactConditions.push(eq(subcontractors.email, quote.contactEmail));
+          }
+          if (quote.contactPhone) {
+            contactConditions.push(eq(subcontractors.phone, quote.contactPhone));
+          }
+          
+          subcontractor = await db.query.subcontractors.findFirst({
+            where: and(
+              eq(subcontractors.companyName, quote.subcontractorName),
+              or(...contactConditions)
+            ),
+          });
+        }
+        
+        if (!subcontractor) {
+          // Fallback: try matching by name only
+          subcontractor = await db.query.subcontractors.findFirst({
+            where: eq(subcontractors.companyName, quote.subcontractorName),
+          });
+        }
 
         if (!subcontractor) {
           // Create new subcontractor record
@@ -1014,8 +1038,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }).returning();
         }
 
-        // Create subcontractor contract from quote
+        // Create subcontractor contract from quote with validated field lengths
         const contractNumber = `SC-${newProject.code}-${String(subQuotes.indexOf(quote) + 1).padStart(3, '0')}`;
+        const paymentTerms = quote.leadTime ? `Lead Time: ${quote.leadTime}`.substring(0, 500) : null;
+        const notes = quote.estimatedCompletionTime 
+          ? `Estimated Completion: ${quote.estimatedCompletionTime}${quote.notes ? '\n' + quote.notes : ''}`.substring(0, 1000)
+          : (quote.notes || null);
+        
         await db.insert(subcontractorContracts).values({
           subcontractorId: subcontractor.id,
           projectId: newProject.id,
@@ -1023,10 +1052,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           scopeOfWork: quote.scopeOfWork,
           contractAmount: quote.quoteAmount,
           status: "PENDING",
-          paymentTerms: quote.leadTime ? `Lead Time: ${quote.leadTime}` : null,
-          notes: quote.estimatedCompletionTime 
-            ? `Estimated Completion: ${quote.estimatedCompletionTime}${quote.notes ? '\n' + quote.notes : ''}`
-            : quote.notes || null,
+          paymentTerms,
+          notes,
           createdById: req.user!.id,
         });
       }
@@ -1727,7 +1754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Transform the response to include sourceEstimate only when present
       const enrichedItems = items.map(item => ({
         ...item,
-        sourceEstimate: item.sourceEstimate.id ? item.sourceEstimate : null,
+        sourceEstimate: item.sourceEstimate && item.sourceEstimate.id ? item.sourceEstimate : null,
       }));
 
       res.json(enrichedItems);

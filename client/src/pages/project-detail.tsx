@@ -428,7 +428,7 @@ export default function ProjectDetailPage() {
 
   // Filter payables for this project and aggregate by contract
   const payablesByContract = useMemo(() => {
-    const filtered = allPayables.filter(p => p.project.code === projectCode);
+    const filtered = allPayables.filter(p => p.project && p.project.code === projectCode);
     const grouped = new Map<string, { totalPaid: number; remainingBalance: number }>();
     
     filtered.forEach(payable => {

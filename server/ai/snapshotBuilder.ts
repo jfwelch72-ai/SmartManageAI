@@ -53,6 +53,7 @@ export interface DataSnapshot {
       description: string;
       needed_by: string | null;
       estimated_cost: number;
+      vendor: string | null;
     }[];
   };
   change_orders: {
@@ -130,6 +131,12 @@ export interface DataSnapshot {
       project_code: string;
       contract_count: number;
       total_value: number;
+    }[];
+    contracts_with_lead_times: {
+      project_code: string | null;
+      scope_of_work: string;
+      payment_terms: string | null;
+      status: string;
     }[];
   };
   data_quality: {
@@ -229,6 +236,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       description: item.description,
       needed_by: item.neededByDate?.toISOString().split('T')[0] || null,
       estimated_cost: Number(item.unitCost || 0) * Number(item.quantity || 0),
+      vendor: item.vendor,
     }));
 
   // Change orders - comprehensive analysis
@@ -505,6 +513,15 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       total_active_contracts: allSubcontractorContracts.length,
       total_contract_value: Math.round(allSubcontractorContracts.reduce((sum, c) => sum + Number(c.contractAmount || 0), 0) * 100) / 100,
       active_contracts_by_project: activeContractsByProject,
+      contracts_with_lead_times: allSubcontractorContracts
+        .filter(c => c.paymentTerms && c.paymentTerms.includes('Lead Time'))
+        .slice(0, 20)
+        .map(c => ({
+          project_code: projectIdToCode.get(c.projectId) || c.projectId,
+          scope_of_work: c.scopeOfWork,
+          payment_terms: c.paymentTerms,
+          status: c.status,
+        })),
     },
     data_quality: {
       avg_overall_score: avgQualityScore,
