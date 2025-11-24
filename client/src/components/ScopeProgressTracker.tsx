@@ -112,23 +112,28 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const uniqueUnits = Array.from(new Set(scopeItems.map(item => item.unit))).sort();
   const uniqueStatuses = ["NOT_READY", "READY_TO_BILL", "BILLED"];
 
-  // Calculate summary totals grouped by unit (filtering and aggregating same units makes sense!)
-  const summaryByUnit = filteredScopeItems.reduce((acc, item) => {
-    const unit = item.unit;
-    if (!acc[unit]) {
-      acc[unit] = { total: 0, completed: 0, billed: 0, remaining: 0 };
-    }
+  // Calculate summary for each individual SOW item
+  const summaryByItem = filteredScopeItems.map(item => {
     const total = parseFloat(item.totalQuantity);
     const completed = parseFloat(item.completedQuantity || "0");
     const billed = parseFloat(item.billedQuantity || "0");
     const remaining = total - completed;
+    const completionPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const billingPercent = total > 0 ? Math.round((billed / total) * 100) : 0;
     
-    acc[unit].total += total;
-    acc[unit].completed += completed;
-    acc[unit].billed += billed;
-    acc[unit].remaining += remaining;
-    return acc;
-  }, {} as Record<string, { total: number; completed: number; billed: number; remaining: number }>);
+    return {
+      id: item.id,
+      description: item.description,
+      unit: item.unit,
+      total,
+      completed,
+      billed,
+      remaining,
+      completionPercent,
+      billingPercent,
+      billingStatus: item.billingStatus,
+    };
+  });
 
   // Create daily progress mutation
   const createProgressMutation = useMutation({
@@ -284,34 +289,79 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards Grouped by Unit */}
-      {Object.keys(summaryByUnit).length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {Object.entries(summaryByUnit).map(([unit, totals]) => (
-            <Card key={unit}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {unit} Quantities
+      {/* Summary Cards by Individual SOW Items */}
+      {summaryByItem.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {summaryByItem.map((item) => (
+            <Card key={item.id} data-testid={`card-sow-item-${item.id}`}>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+                <CardTitle className="text-sm font-medium line-clamp-2">
+                  {item.description}
                 </CardTitle>
-                <Badge variant="outline">{unit}</Badge>
+                <Badge variant="outline" className="shrink-0">{item.unit}</Badge>
               </CardHeader>
               <CardContent>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total:</span>
-                    <span className="font-mono font-medium">{totals.total.toLocaleString()}</span>
+                <div className="space-y-2">
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total:</span>
+                      <span className="font-mono font-medium">{item.total.toLocaleString()} {item.unit}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Completed:</span>
+                      <span className="font-mono font-medium text-green-600 dark:text-green-400">
+                        {item.completed.toLocaleString()} {item.unit}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Billed:</span>
+                      <span className="font-mono font-medium text-blue-600 dark:text-blue-400">
+                        {item.billed.toLocaleString()} {item.unit}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Remaining:</span>
+                      <span className="font-mono font-medium text-orange-600 dark:text-orange-400">
+                        {item.remaining.toLocaleString()} {item.unit}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Completed:</span>
-                    <span className="font-mono font-medium text-green-600 dark:text-green-400">{totals.completed.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Billed:</span>
-                    <span className="font-mono font-medium text-blue-600 dark:text-blue-400">{totals.billed.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Remaining:</span>
-                    <span className="font-mono font-medium text-orange-600 dark:text-orange-400">{totals.remaining.toLocaleString()}</span>
+                  
+                  <div className="pt-2 border-t space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Completion:</span>
+                      <span className="font-medium">{item.completionPercent}%</span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-1.5">
+                      <div 
+                        className="bg-green-600 dark:bg-green-400 h-1.5 rounded-full transition-all" 
+                        style={{ width: `${item.completionPercent}%` }}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Billing:</span>
+                      <span className="font-medium">{item.billingPercent}%</span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-1.5">
+                      <div 
+                        className="bg-blue-600 dark:bg-blue-400 h-1.5 rounded-full transition-all" 
+                        style={{ width: `${item.billingPercent}%` }}
+                      />
+                    </div>
+                    
+                    <div className="pt-1">
+                      <Badge 
+                        variant={
+                          item.billingStatus === "BILLED" ? "default" : 
+                          item.billingStatus === "READY_TO_BILL" ? "secondary" : 
+                          "outline"
+                        }
+                        className="text-xs w-full justify-center"
+                      >
+                        {item.billingStatus.replace("_", " ")}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               </CardContent>
