@@ -548,6 +548,113 @@ export default function BidDetailPage() {
             </Card>
           )}
 
+          <Card data-testid="card-bid-estimate">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5" />
+                  Bid Estimate
+                </CardTitle>
+                <CardDescription>Cost breakdown and profit analysis for this bid</CardDescription>
+              </div>
+              {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                <Button 
+                  onClick={() => createEstimateMutation.mutate()} 
+                  disabled={createEstimateMutation.isPending}
+                  size="sm" 
+                  data-testid="button-create-estimate"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Estimate
+                </Button>
+              )}
+              {estimate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
+                  data-testid="button-view-estimate"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  View Details
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {estimateLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
+              ) : !estimate ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No estimate created yet</p>
+                  <p className="text-sm mt-2">Create an estimate to track costs and profit margins</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <DollarSign className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Total Estimate</p>
+                      </div>
+                      <p className="text-xl font-bold font-mono" data-testid="text-estimate-total">
+                        ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.lineItems.length} line items
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Labor Cost</p>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FileText className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Material Cost</p>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.totals.totalCost > 0 
+                          ? `${((estimate.totals.materialCost / estimate.totals.totalCost) * 100).toFixed(1)}% of total`
+                          : "0% of total"}
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
+                          {estimate.status}
+                        </Badge>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Profit margin
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-md border border-primary/20">
+                    <span className="text-sm font-medium">Base Bid Amount:</span>
+                    <span className="text-lg font-bold font-mono">
+                      ${(estimate.baseBidAmount || estimate.totals.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card data-testid="card-subcontractor-quotes">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
               <div>
@@ -658,113 +765,6 @@ export default function BidDetailPage() {
                         )}
                       </div>
                     ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-bid-estimate">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Calculator className="w-5 h-5" />
-                  Bid Estimate
-                </CardTitle>
-                <CardDescription>Cost breakdown and profit analysis for this bid</CardDescription>
-              </div>
-              {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                <Button 
-                  onClick={() => createEstimateMutation.mutate()} 
-                  disabled={createEstimateMutation.isPending}
-                  size="sm" 
-                  data-testid="button-create-estimate"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Estimate
-                </Button>
-              )}
-              {estimate && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
-                  data-testid="button-view-estimate"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  View Details
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {estimateLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
-              ) : !estimate ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No estimate created yet</p>
-                  <p className="text-sm mt-2">Create an estimate to track costs and profit margins</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <DollarSign className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Total Estimate</p>
-                      </div>
-                      <p className="text-xl font-bold font-mono" data-testid="text-estimate-total">
-                        ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.lineItems.length} line items
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Labor Cost</p>
-                      </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <FileText className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Material Cost</p>
-                      </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.totals.totalCost > 0 
-                          ? `${((estimate.totals.materialCost / estimate.totals.totalCost) * 100).toFixed(1)}% of total`
-                          : "0% of total"}
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
-                          {estimate.status}
-                        </Badge>
-                      </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Profit margin
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-md border border-primary/20">
-                    <span className="text-sm font-medium">Base Bid Amount:</span>
-                    <span className="text-lg font-bold font-mono">
-                      ${(estimate.baseBidAmount || estimate.totals.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
                   </div>
                 </div>
               )}
