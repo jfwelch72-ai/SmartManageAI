@@ -179,32 +179,50 @@ export default function BidEstimate() {
   const onSubmit = (values: LineItemFormValues) => {
     if (!estimateData?.estimate) return;
 
-    const payload = {
-      estimateId: estimateData.estimate.id,
-      category: values.category,
-      description: values.description,
-      unit: values.unit,
-      quantity: String(values.quantity),
-      materialCost: String(values.materialCost),
-      laborCost: String(values.laborCost),
-      laborHours: String(values.laborHours),
-      equipmentCost: String(values.equipmentCost),
-      consumablesCost: String(values.consumablesCost || 0),
-      subcontractCost: String(values.subcontractCost || 0),
-      overheadAllocation: String(values.overheadAllocation),
-      profitAllocation: String(values.profitAllocation),
-      source: "MANUAL",
-      notes: values.notes || undefined,
-    };
-
     if (editingLineItem) {
+      // For edit: send numeric values, omit estimateId and source
+      const editPayload = {
+        category: values.category,
+        description: values.description,
+        unit: values.unit,
+        quantity: values.quantity,
+        materialCost: values.materialCost,
+        laborCost: values.laborCost,
+        laborHours: values.laborHours,
+        equipmentCost: values.equipmentCost,
+        consumablesCost: values.consumablesCost || 0,
+        subcontractCost: values.subcontractCost || 0,
+        overheadAllocation: values.overheadAllocation,
+        profitAllocation: values.profitAllocation,
+        notes: values.notes || undefined,
+      };
+      
       editLineItemMutation.mutate({
         estimateId: estimateData.estimate.id,
         lineItemId: editingLineItem.id,
-        data: payload,
+        data: editPayload,
       });
     } else {
-      addLineItemMutation.mutate(payload as any);
+      // For add: send string values with estimateId and source
+      const addPayload = {
+        estimateId: estimateData.estimate.id,
+        category: values.category,
+        description: values.description,
+        unit: values.unit,
+        quantity: String(values.quantity),
+        materialCost: String(values.materialCost),
+        laborCost: String(values.laborCost),
+        laborHours: String(values.laborHours),
+        equipmentCost: String(values.equipmentCost),
+        consumablesCost: String(values.consumablesCost || 0),
+        subcontractCost: String(values.subcontractCost || 0),
+        overheadAllocation: String(values.overheadAllocation),
+        profitAllocation: String(values.profitAllocation),
+        source: "MANUAL",
+        notes: values.notes || undefined,
+      };
+      
+      addLineItemMutation.mutate(addPayload as any);
     }
   };
 
