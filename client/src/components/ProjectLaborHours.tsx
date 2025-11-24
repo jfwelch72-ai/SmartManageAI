@@ -59,53 +59,56 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
+    // Helper to format date as YYYY-MM-DD in local timezone
+    const formatDate = (date: Date) => format(date, 'yyyy-MM-dd');
+    
     switch (period) {
       case "today":
-        setStartDate(today.toISOString().split('T')[0]);
-        setEndDate(today.toISOString().split('T')[0]);
+        setStartDate(formatDate(today));
+        setEndDate(formatDate(today));
         break;
       case "yesterday":
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        setStartDate(yesterday.toISOString().split('T')[0]);
-        setEndDate(yesterday.toISOString().split('T')[0]);
+        setStartDate(formatDate(yesterday));
+        setEndDate(formatDate(yesterday));
         break;
       case "this-week":
         const startOfWeek = new Date(today);
         startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
-        setStartDate(startOfWeek.toISOString().split('T')[0]);
-        setEndDate(today.toISOString().split('T')[0]);
+        setStartDate(formatDate(startOfWeek));
+        setEndDate(formatDate(today));
         break;
       case "last-week":
         const lastWeekEnd = new Date(today);
         lastWeekEnd.setDate(today.getDate() - today.getDay() - 1); // Last Saturday
         const lastWeekStart = new Date(lastWeekEnd);
         lastWeekStart.setDate(lastWeekEnd.getDate() - 6); // Last Sunday
-        setStartDate(lastWeekStart.toISOString().split('T')[0]);
-        setEndDate(lastWeekEnd.toISOString().split('T')[0]);
+        setStartDate(formatDate(lastWeekStart));
+        setEndDate(formatDate(lastWeekEnd));
         break;
       case "this-month":
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        setStartDate(startOfMonth.toISOString().split('T')[0]);
-        setEndDate(today.toISOString().split('T')[0]);
+        setStartDate(formatDate(startOfMonth));
+        setEndDate(formatDate(today));
         break;
       case "last-month":
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-        setStartDate(lastMonthStart.toISOString().split('T')[0]);
-        setEndDate(lastMonthEnd.toISOString().split('T')[0]);
+        setStartDate(formatDate(lastMonthStart));
+        setEndDate(formatDate(lastMonthEnd));
         break;
       case "last-7-days":
-        const sevenDaysAgo = new Date(today);
-        sevenDaysAgo.setDate(today.getDate() - 7);
-        setStartDate(sevenDaysAgo.toISOString().split('T')[0]);
-        setEndDate(today.toISOString().split('T')[0]);
+        const sixDaysAgo = new Date(today);
+        sixDaysAgo.setDate(today.getDate() - 6); // 6 days ago + today = 7 days total
+        setStartDate(formatDate(sixDaysAgo));
+        setEndDate(formatDate(today));
         break;
       case "last-30-days":
-        const thirtyDaysAgo = new Date(today);
-        thirtyDaysAgo.setDate(today.getDate() - 30);
-        setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
-        setEndDate(today.toISOString().split('T')[0]);
+        const twentyNineDaysAgo = new Date(today);
+        twentyNineDaysAgo.setDate(today.getDate() - 29); // 29 days ago + today = 30 days total
+        setStartDate(formatDate(twentyNineDaysAgo));
+        setEndDate(formatDate(today));
         break;
       case "all":
       default:
