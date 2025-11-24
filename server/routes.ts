@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { db } from "./db";
 import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts } from "@shared/schema";
 import { 
-  projects, bids, estimates, procurementItems, planDocuments,
+  projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
   changeOrders, calendarEvents, notifications, filePermissions,
   insertProjectSchema, insertBidSchema, insertEstimateSchema,
@@ -813,7 +813,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         budget: bid.bidAmount,
       }).returning();
 
-      // Delete the bid after converting
+      // Transfer bid estimates to project (retaining bidId for traceability)
+      const bidEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bid.id));
+
+      console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
+
+      for (const estimate of bidEstimates) {
+        // Update estimate to reference project (keep bidId for traceability)
+        await db
+          .update(estimates)
+          .set({ projectId: newProject.id })
+          .where(eq(estimates.id, estimate.id));
+
+        // Get estimate line items for scope of work sync
+        const lineItems = await db
+          .select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimate.id));
+
+        console.log(`[Bid Conversion] Syncing ${lineItems.length} line items to scope of work`);
+
+        // Create scope items from estimate line items
+        for (const lineItem of lineItems) {
+          // Check if scope item already exists for this line item
+          const existingScopeItem = await db.query.scopeItems.findFirst({
+            where: eq(scopeItems.estimateLineItemId, lineItem.id),
+          });
+
+          if (!existingScopeItem) {
+            // Create new scope item linked to estimate line item
+            await db.insert(scopeItems).values({
+              projectId: newProject.id,
+              estimateLineItemId: lineItem.id,
+              description: lineItem.description,
+              unit: lineItem.unit,
+              totalQuantity: lineItem.quantity,
+              unitPrice: lineItem.totalCost ? 
+                (Number(lineItem.totalCost) / Number(lineItem.quantity)).toFixed(2) : 
+                null,
+            });
+          }
+        }
+      }
+
+      // Delete the bid after converting (SET NULL on estimates.bidId preserves traceability)
       await db.delete(bids).where(eq(bids.code, req.params.code));
 
       // Log audit (best effort)
@@ -822,7 +868,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "CREATE",
         entityType: "project",
         entityId: newProject.id,
-        newValue: `Converted bid ${bid.code} to project`,
+        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates`,
       }, req);
 
       res.status(201).json(newProject);

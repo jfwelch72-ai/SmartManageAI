@@ -4,13 +4,14 @@ import {
   estimates, 
   estimateLineItems, 
   projects,
+  bids,
   quantityCategories,
   takeoffMeasurements,
   insertEstimateSchema,
   insertEstimateLineItemSchema,
   type EstimateLineItem,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import OpenAI from "openai";
 
@@ -105,7 +106,7 @@ export function registerEstimateRoutes(app: Express) {
     }
   });
 
-  // Create new estimate
+  // Create new estimate for project
   app.post("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
@@ -150,6 +151,131 @@ export function registerEstimateRoutes(app: Express) {
       res.status(201).json(newEstimate);
     } catch (error) {
       console.error("[Estimate] Error creating estimate:", error);
+      res.status(500).json({ error: "Failed to create estimate" });
+    }
+  });
+
+  // Get active estimate for a bid
+  app.get("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { bidId } = req.params;
+
+      if (!hasManagementAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Check bid exists
+      const bid = await db.query.bids.findFirst({
+        where: eq(bids.id, bidId),
+      });
+
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+
+      // Get the most recent active estimate
+      const estimate = await db.query.estimates.findFirst({
+        where: and(
+          eq(estimates.bidId, bidId),
+          sql`${estimates.status} IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED')`
+        ),
+        orderBy: [desc(estimates.createdAt)],
+      });
+
+      if (!estimate) {
+        return res.json({ estimate: null });
+      }
+
+      // Get line items
+      const lineItems = await db.query.estimateLineItems.findMany({
+        where: eq(estimateLineItems.estimateId, estimate.id),
+      });
+
+      // Calculate totals
+      const totals = lineItems.reduce((acc: {
+        materialCost: number;
+        laborCost: number;
+        laborHours: number;
+        equipmentCost: number;
+        consumablesCost: number;
+        subcontractCost: number;
+        overheadAllocation: number;
+        profitAllocation: number;
+        totalCost: number;
+      }, item: EstimateLineItem) => ({
+        materialCost: acc.materialCost + Number(item.materialCost),
+        laborCost: acc.laborCost + Number(item.laborCost),
+        laborHours: acc.laborHours + Number(item.laborHours),
+        equipmentCost: acc.equipmentCost + Number(item.equipmentCost),
+        consumablesCost: acc.consumablesCost + Number(item.consumablesCost),
+        subcontractCost: acc.subcontractCost + Number(item.subcontractCost),
+        overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation),
+        profitAllocation: acc.profitAllocation + Number(item.profitAllocation),
+        totalCost: acc.totalCost + Number(item.totalCost),
+      }), {
+        materialCost: 0,
+        laborCost: 0,
+        laborHours: 0,
+        equipmentCost: 0,
+        consumablesCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 0,
+      });
+
+      res.json({ estimate: { ...estimate, lineItems, totals } });
+    } catch (error) {
+      console.error("Error fetching bid estimate:", error);
+      res.status(500).json({ error: "Failed to fetch estimate" });
+    }
+  });
+
+  // Create new estimate for bid
+  app.post("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      console.log("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
+      const { bidId } = req.params;
+      const userId = req.user!.id;
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        console.log("[Estimate] Permission denied:", req.user!.role);
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Check bid exists
+      const bid = await db.query.bids.findFirst({
+        where: eq(bids.id, bidId),
+      });
+
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+
+      // Get version number
+      const existingEstimates = await db.query.estimates.findMany({
+        where: eq(estimates.bidId, bidId),
+        orderBy: [desc(estimates.versionNumber)],
+      });
+
+      const versionNumber = existingEstimates.length > 0 
+        ? existingEstimates[0].versionNumber + 1 
+        : 1;
+
+      // Create estimate
+      console.log("[Estimate] Creating bid estimate with version:", versionNumber);
+      const [newEstimate] = await db.insert(estimates).values({
+        bidId,
+        projectId: null,
+        versionNumber,
+        status: "DRAFT",
+        createdById: userId,
+      }).returning();
+
+      console.log("[Estimate] Created bid estimate:", newEstimate.id);
+      res.status(201).json(newEstimate);
+    } catch (error) {
+      console.error("[Estimate] Error creating bid estimate:", error);
       res.status(500).json({ error: "Failed to create estimate" });
     }
   });
@@ -474,13 +600,15 @@ export function registerEstimateRoutes(app: Express) {
         })
         .where(eq(estimates.id, estimateId));
 
-      // Update project budget
-      await db.update(projects)
-        .set({ 
-          budget: total.toString(),
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.id, estimate.projectId));
+      // Update project budget (only if estimate is linked to a project)
+      if (estimate.projectId) {
+        await db.update(projects)
+          .set({ 
+            budget: total.toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(projects.id, estimate.projectId));
+      }
 
       res.json({ success: true, total, estimateId, projectId: estimate.projectId });
     } catch (error) {
@@ -507,12 +635,16 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      const project = await db.query.projects.findFirst({
-        where: eq(projects.id, estimate.projectId),
-      });
+      // Get project data (only for project estimates, not bid estimates)
+      let project = null;
+      if (estimate.projectId) {
+        project = await db.query.projects.findFirst({
+          where: eq(projects.id, estimate.projectId),
+        });
 
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
+        if (!project) {
+          return res.status(404).json({ error: "Project not found" });
+        }
       }
 
       // Get line items
@@ -520,17 +652,19 @@ export function registerEstimateRoutes(app: Express) {
         where: eq(estimateLineItems.estimateId, estimateId),
       });
 
-      // Get actual labor costs for comparison (if project is active)
-      const actualLaborQuery = await db.execute(sql`
-        SELECT 
-          COALESCE(SUM(CAST(hours_worked AS NUMERIC)), 0) as total_hours,
-          COALESCE(SUM(CAST(labor_cost AS NUMERIC)), 0) as total_labor_cost
-        FROM time_clock_entries
-        WHERE project_id = ${project.id}
-          AND approval_status = 'APPROVED'
-      `);
-
-      const actualLabor = actualLaborQuery.rows[0] as { total_hours: string, total_labor_cost: string };
+      // Get actual labor costs for comparison (only for project estimates, not bid estimates)
+      let actualLabor = { total_hours: '0', total_labor_cost: '0' };
+      if (project) {
+        const actualLaborQuery = await db.execute(sql`
+          SELECT 
+            COALESCE(SUM(CAST(hours_worked AS NUMERIC)), 0) as total_hours,
+            COALESCE(SUM(CAST(labor_cost AS NUMERIC)), 0) as total_labor_cost
+          FROM time_clock_entries
+          WHERE project_id = ${project.id}
+            AND approval_status = 'APPROVED'
+        `);
+        actualLabor = actualLaborQuery.rows[0] as { total_hours: string, total_labor_cost: string };
+      }
 
       // Prepare data for AI analysis
       const estimateSummary = lineItems.reduce((acc: {
@@ -593,8 +727,9 @@ Format as JSON with keys: riskLevel, insights (array), costAnalysis (string), pr
             role: "user",
             content: `Analyze this estimate:
 
-Project: ${project.name} (${project.status})
-Contract Amount: $${project.contractAmount || 'Not set'}
+${project ? `Project: ${project.name} (${project.status})
+Contract Amount: $${project.contractAmount || 'Not set'}` : 'Bid Estimate (not yet converted to project)'}
+
 
 ESTIMATE SUMMARY:
 - Total Estimated Cost: $${estimateSummary.totalCost.toFixed(2)}
