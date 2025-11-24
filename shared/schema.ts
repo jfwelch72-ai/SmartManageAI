@@ -103,6 +103,8 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   subcontractorName: text("subcontractor_name").notNull(),
   scopeOfWork: text("scope_of_work").notNull(),
   quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
+  leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
+  estimatedCompletionTime: text("estimated_completion_time"), // e.g., "3 months", "45 days"
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
