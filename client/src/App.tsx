@@ -12,6 +12,7 @@ import DashboardPage from "@/pages/dashboard";
 import UsersPage from "@/pages/users";
 import BidsPage from "@/pages/bids";
 import BidDetailPage from "@/pages/bid-detail";
+import BidEstimate from "@/pages/bid-estimate";
 import ProjectsPage from "@/pages/projects";
 import ProjectDetailPage from "@/pages/project-detail";
 import TimeEntryPage from "@/pages/time-entry";
@@ -99,6 +100,7 @@ function Router() {
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} />} />
       <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} />} />

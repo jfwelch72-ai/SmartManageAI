@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -18,7 +18,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertBidSubcontractorQuoteSchema } from "@shared/schema";
-import type { BidSubcontractorQuote, InsertBidSubcontractorQuote } from "@shared/schema";
+import type { BidSubcontractorQuote, InsertBidSubcontractorQuote, Estimate, EstimateLineItem } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -49,9 +49,17 @@ export default function BidDetailPage() {
   const convertBid = useConvertBidToProject();
 
   // Fetch bid quotes
-  const { data: quotes = [], isLoading: quotesLoading } = useQuery<BidSubcontractorQuote[]>({
+  const { data: quotes = [], isLoading: quotesLoading} = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidCode, "quotes"],
     enabled: !!bidCode,
+  });
+
+  // Fetch bid estimate
+  const { data: estimateData, isLoading: estimateLoading } = useQuery<{
+    estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
+  }>({
+    queryKey: ["/api/bids", bid?.id, "/estimate"],
+    enabled: !!bid?.id,
   });
 
   // Quote form
@@ -244,6 +252,28 @@ export default function BidDetailPage() {
   };
 
   const totalQuotes = quotes.reduce((sum, q) => sum + Number(q.quoteAmount || 0), 0);
+  const estimate = estimateData?.estimate || null;
+
+  // Create estimate mutation
+  const createEstimateMutation = useMutation({
+    mutationFn: () => {
+      if (!bid?.id) throw new Error("Bid ID is required");
+      return apiRequest("POST", `/api/bids/${bid.id}/estimate`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bid?.id, "/estimate"] });
+      toast({ title: "Success", description: "Estimate created successfully" });
+      // Navigate to estimate view
+      setLocation(`/bids/${bidCode}/estimate`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create estimate",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleMarkAsAwarded = async () => {
     if (!bid) return;
@@ -528,6 +558,113 @@ export default function BidDetailPage() {
                         )}
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-bid-estimate">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="w-5 h-5" />
+                  Bid Estimate
+                </CardTitle>
+                <CardDescription>Cost breakdown and profit analysis for this bid</CardDescription>
+              </div>
+              {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                <Button 
+                  onClick={() => createEstimateMutation.mutate()} 
+                  disabled={createEstimateMutation.isPending}
+                  size="sm" 
+                  data-testid="button-create-estimate"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Estimate
+                </Button>
+              )}
+              {estimate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
+                  data-testid="button-view-estimate"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  View Details
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {estimateLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
+              ) : !estimate ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No estimate created yet</p>
+                  <p className="text-sm mt-2">Create an estimate to track costs and profit margins</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <DollarSign className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Total Estimate</p>
+                      </div>
+                      <p className="text-xl font-bold font-mono" data-testid="text-estimate-total">
+                        ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.lineItems.length} line items
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Labor Cost</p>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FileText className="w-4 h-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Material Cost</p>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {estimate.totals.totalCost > 0 
+                          ? `${((estimate.totals.materialCost / estimate.totals.totalCost) * 100).toFixed(1)}% of total`
+                          : "0% of total"}
+                      </p>
+                    </div>
+                    <div className="p-4 bg-muted rounded-md">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
+                          {estimate.status}
+                        </Badge>
+                      </div>
+                      <p className="text-lg font-bold font-mono">
+                        ${estimate.totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Profit margin
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-md border border-primary/20">
+                    <span className="text-sm font-medium">Base Bid Amount:</span>
+                    <span className="text-lg font-bold font-mono">
+                      ${(estimate.baseBidAmount || estimate.totals.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
               )}
