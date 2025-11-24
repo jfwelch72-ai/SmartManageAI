@@ -6,7 +6,8 @@ import { z } from "zod";
 // Enums
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE"]);
 export const projectStatusEnum = pgEnum("project_status", ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"]);
-export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST"]);
+export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
+export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["MANUAL", "TAKEOFF", "GENERATED"]);
 export const procurementStatusEnum = pgEnum("procurement_status", ["PLANNED", "QUOTED", "APPROVED", "ORDERED", "DELIVERED"]);
 export const documentTypeEnum = pgEnum("document_type", ["PLANS", "SPECS", "TAKEOFF", "OTHER"]);
 export const noteTypeEnum = pgEnum("note_type", ["GENERAL", "FIELD_NOTE", "SAFETY", "CLIENT_MEETING"]);
@@ -679,6 +680,9 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
   unit: text("unit").notNull(),
+  source: estimateLineItemSourceEnum("source").notNull().default("MANUAL"),
+  sourceTakeoffCategoryId: varchar("source_takeoff_category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
+  computedQuantity: decimal("computed_quantity", { precision: 12, scale: 2 }),
   materialCost: decimal("material_cost", { precision: 12, scale: 2 }).notNull().default('0'),
   laborHours: decimal("labor_hours", { precision: 10, scale: 2 }).notNull().default('0'),
   laborCost: decimal("labor_cost", { precision: 12, scale: 2 }).notNull().default('0'),
@@ -696,6 +700,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
 }, (table) => ({
   estimateIdx: index("estimate_line_items_estimate_idx").on(table.estimateId),
   categoryIdx: index("estimate_line_items_category_idx").on(table.category),
+  sourceIdx: index("estimate_line_items_source_idx").on(table.source),
 }));
 
 // Estimate Versions table (snapshots of estimates)
