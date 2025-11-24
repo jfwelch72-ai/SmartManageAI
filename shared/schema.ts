@@ -110,6 +110,7 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   notes: text("notes"),
+  isSelected: boolean("is_selected").notNull().default(false), // Selected quote transfers on award
   fileUrl: text("file_url"),
   fileName: text("file_name"),
   fileSize: integer("file_size"),
@@ -129,6 +130,7 @@ export const bidMaterialQuotes = pgTable("bid_material_quotes", {
   leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
   supplierName: text("supplier_name"),
   supplierContact: text("supplier_contact"),
+  isSelected: boolean("is_selected").notNull().default(false), // Selected quote transfers on award
   fileUrl: text("file_url"),
   fileName: text("file_name"),
   fileSize: integer("file_size"),
