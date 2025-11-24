@@ -1422,7 +1422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Scope of Work Routes
   // ====================
 
-  // Get scope items for a project
+  // Get scope items for a project with estimate traceability
   app.get("/api/projects/:code/scope", requireAuth, async (req: AuthRequest, res) => {
     try {
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
@@ -1432,8 +1432,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      const items = await db.select().from(scopeItems).where(eq(scopeItems.projectId, project.id));
-      res.json(items);
+      // Join with estimate line items to show source estimate info
+      const items = await db
+        .select({
+          id: scopeItems.id,
+          projectId: scopeItems.projectId,
+          estimateLineItemId: scopeItems.estimateLineItemId,
+          description: scopeItems.description,
+          unit: scopeItems.unit,
+          totalQuantity: scopeItems.totalQuantity,
+          completedQuantity: scopeItems.completedQuantity,
+          billedQuantity: scopeItems.billedQuantity,
+          unitPrice: scopeItems.unitPrice,
+          billingStatus: scopeItems.billingStatus,
+          lastBilledDate: scopeItems.lastBilledDate,
+          createdAt: scopeItems.createdAt,
+          updatedAt: scopeItems.updatedAt,
+          // Estimate traceability fields
+          sourceEstimate: {
+            id: estimates.id,
+            name: estimates.name,
+            status: estimates.status,
+          },
+        })
+        .from(scopeItems)
+        .leftJoin(estimateLineItems, eq(scopeItems.estimateLineItemId, estimateLineItems.id))
+        .leftJoin(estimates, eq(estimateLineItems.estimateId, estimates.id))
+        .where(eq(scopeItems.projectId, project.id));
+
+      // Transform the response to include sourceEstimate only when present
+      const enrichedItems = items.map(item => ({
+        ...item,
+        sourceEstimate: item.sourceEstimate.id ? item.sourceEstimate : null,
+      }));
+
+      res.json(enrichedItems);
     } catch (error) {
       console.error("Get scope items error:", error);
       res.status(500).json({ error: "Internal server error" });
