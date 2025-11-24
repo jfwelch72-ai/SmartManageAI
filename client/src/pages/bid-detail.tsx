@@ -19,7 +19,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertBidSubcontractorQuoteSchema } from "@shared/schema";
 import type { BidSubcontractorQuote, InsertBidSubcontractorQuote, Estimate, EstimateLineItem } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
 import type { UploadResult } from "@uppy/core";
@@ -58,7 +58,7 @@ export default function BidDetailPage() {
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
     estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
   }>({
-    queryKey: ["/api/bids", bid?.id, "/estimate"],
+    queryKey: bidEstimateKey(bid?.id),
     enabled: !!bid?.id,
   });
 
@@ -261,7 +261,8 @@ export default function BidDetailPage() {
       return apiRequest("POST", `/api/bids/${bid.id}/estimate`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bids", bid?.id, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bid?.id) });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] }); // Refresh bid list with estimate summary
       toast({ title: "Success", description: "Estimate created successfully" });
       // Navigate to estimate view
       setLocation(`/bids/${bidCode}/estimate`);

@@ -41,6 +41,11 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+// Cache key helpers to prevent malformed URLs
+// NOTE: Avoid leading/trailing slashes in segments - the queryFn joins with '/'
+export const bidEstimateKey = (bidId?: string) => 
+  bidId ? ["/api/bids", bidId, "estimate"] : ["/api/bids"];
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

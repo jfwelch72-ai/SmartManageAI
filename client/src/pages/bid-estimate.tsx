@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import { 
   Dialog, 
   DialogContent, 
@@ -80,7 +80,7 @@ export default function BidEstimate() {
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
     estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
   }>({
-    queryKey: ["/api/bids", bidId, "/estimate"],
+    queryKey: bidEstimateKey(bidId),
     enabled: !!bidId,
   });
 
@@ -103,7 +103,7 @@ export default function BidEstimate() {
     mutationFn: (data: LineItemFormValues & { estimateId: string }) => 
       apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
       toast({ title: "Line item added successfully" });
@@ -118,8 +118,8 @@ export default function BidEstimate() {
     mutationFn: (estimateId: string) => 
       apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "/estimate"] });
-      await queryClient.refetchQueries({ queryKey: ["/api/bids", bidId, "/estimate"] });
+      await queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      await queryClient.refetchQueries({ queryKey: bidEstimateKey(bidId) });
       toast({ title: "Estimate approved" });
     },
     onError: () => {
@@ -132,7 +132,7 @@ export default function BidEstimate() {
     mutationFn: ({ estimateId, lineItemId }: { estimateId: string, lineItemId: string }) => 
       apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "/estimate"] });
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       toast({ title: "Line item deleted successfully" });
     },
     onError: () => {
