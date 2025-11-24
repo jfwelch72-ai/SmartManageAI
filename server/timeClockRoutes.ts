@@ -836,16 +836,16 @@ export function registerTimeClockRoutes(app: Express): void {
           orderByClause = timeClockShifts.clockIn;
           break;
         case "hours-desc":
-          orderByClause = desc(sql`CAST(${timeClockShifts.totalHours} AS NUMERIC)`);
+          orderByClause = desc(sql`COALESCE(CAST(${timeClockShifts.totalHours} AS NUMERIC), 0)`);
           break;
         case "hours-asc":
-          orderByClause = sql`CAST(${timeClockShifts.totalHours} AS NUMERIC)`;
+          orderByClause = sql`COALESCE(CAST(${timeClockShifts.totalHours} AS NUMERIC), 0)`;
           break;
         case "cost-desc":
-          orderByClause = desc(sql`CAST(${timeClockShifts.totalHours} AS NUMERIC) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`);
+          orderByClause = desc(sql`COALESCE(CAST(${timeClockShifts.totalHours} AS NUMERIC), 0) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`);
           break;
         case "cost-asc":
-          orderByClause = sql`CAST(${timeClockShifts.totalHours} AS NUMERIC) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`;
+          orderByClause = sql`COALESCE(CAST(${timeClockShifts.totalHours} AS NUMERIC), 0) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`;
           break;
         case "employee-asc":
           orderByClause = users.firstName;
