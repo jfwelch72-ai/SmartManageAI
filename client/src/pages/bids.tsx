@@ -129,7 +129,21 @@ export default function BidsPage() {
 
   const handleCreateBid = async (data: CreateBidInput) => {
     try {
-      const newBid = await createBid.mutateAsync(data);
+      // Clean up empty string values to undefined for optional fields
+      const cleanedData = {
+        ...data,
+        clientContactName: data.clientContactName || undefined,
+        clientContactEmail: data.clientContactEmail || undefined,
+        clientContactPhone: data.clientContactPhone || undefined,
+        bidAmount: data.bidAmount || undefined,
+        locationAddress: data.locationAddress || undefined,
+        city: data.city || undefined,
+        state: data.state || undefined,
+        description: data.description || undefined,
+        estimatorId: data.estimatorId || undefined,
+      };
+
+      const newBid = await createBid.mutateAsync(cleanedData);
       toast({
         title: "Success",
         description: `Bid ${data.code} has been created successfully!`,
