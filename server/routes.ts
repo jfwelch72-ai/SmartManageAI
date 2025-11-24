@@ -985,6 +985,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Transfer subcontractor quotes to project as subcontractor contracts
+      const { bidSubcontractorQuotes: subQuotesTable } = await import("@shared/schema");
+      const { subcontractors, subcontractorContracts } = await import("@shared/schema");
+      
+      const subQuotes = await db
+        .select()
+        .from(subQuotesTable)
+        .where(eq(subQuotesTable.bidId, bid.id));
+
+      console.log(`[Bid Conversion] Transferring ${subQuotes.length} subcontractor quotes`);
+
+      for (const quote of subQuotes) {
+        // Find or create subcontractor record
+        let subcontractor = await db.query.subcontractors.findFirst({
+          where: eq(subcontractors.companyName, quote.subcontractorName),
+        });
+
+        if (!subcontractor) {
+          // Create new subcontractor record
+          [subcontractor] = await db.insert(subcontractors).values({
+            companyName: quote.subcontractorName,
+            contactName: quote.contactName || null,
+            email: quote.contactEmail || null,
+            phone: quote.contactPhone || null,
+            notes: quote.notes || null,
+            isActive: true,
+          }).returning();
+        }
+
+        // Create subcontractor contract from quote
+        const contractNumber = `SC-${newProject.code}-${String(subQuotes.indexOf(quote) + 1).padStart(3, '0')}`;
+        await db.insert(subcontractorContracts).values({
+          subcontractorId: subcontractor.id,
+          projectId: newProject.id,
+          contractNumber,
+          scopeOfWork: quote.scopeOfWork,
+          contractAmount: quote.quoteAmount,
+          status: "PENDING",
+          paymentTerms: quote.leadTime ? `Lead Time: ${quote.leadTime}` : null,
+          notes: quote.estimatedCompletionTime 
+            ? `Estimated Completion: ${quote.estimatedCompletionTime}${quote.notes ? '\n' + quote.notes : ''}`
+            : quote.notes || null,
+          createdById: req.user!.id,
+        });
+      }
+
+      // Transfer material quotes to project as procurement items
+      const { bidMaterialQuotes: matQuotesTable } = await import("@shared/schema");
+      const { procurementItems } = await import("@shared/schema");
+      
+      const matQuotes = await db
+        .select()
+        .from(matQuotesTable)
+        .where(eq(matQuotesTable.bidId, bid.id));
+
+      console.log(`[Bid Conversion] Transferring ${matQuotes.length} material quotes`);
+
+      for (const quote of matQuotes) {
+        // Create procurement item from material quote
+        await db.insert(procurementItems).values({
+          projectId: newProject.id,
+          description: `${quote.materialName}${quote.specs ? ` - ${quote.specs}` : ''}${quote.description ? '\n' + quote.description : ''}`,
+          vendor: quote.supplierName || null,
+          quantity: "1", // Material quotes typically represent a full order
+          unit: "LOT",
+          unitCost: quote.cost,
+          status: "PLANNED",
+          neededByDate: quote.leadTime ? null : null, // Could parse lead time to date
+        });
+      }
+
       // Delete the bid after converting (SET NULL on estimates.bidId preserves traceability)
       await db.delete(bids).where(eq(bids.code, req.params.code));
 
@@ -994,7 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "CREATE",
         entityType: "project",
         entityId: newProject.id,
-        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates`,
+        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} subcontractor quotes, and ${matQuotes.length} material quotes`,
       }, req);
 
       res.status(201).json(newProject);
