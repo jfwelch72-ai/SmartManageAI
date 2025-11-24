@@ -50,6 +50,70 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
   const [approvalStatus, setApprovalStatus] = useState("ALL");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("date-desc");
+  const [timePeriod, setTimePeriod] = useState("all");
+
+  // Handle time period selection
+  const handleTimePeriodChange = (period: string) => {
+    setTimePeriod(period);
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    switch (period) {
+      case "today":
+        setStartDate(today.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+        break;
+      case "yesterday":
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(yesterday.toISOString().split('T')[0]);
+        break;
+      case "this-week":
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+        setStartDate(startOfWeek.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+        break;
+      case "last-week":
+        const lastWeekEnd = new Date(today);
+        lastWeekEnd.setDate(today.getDate() - today.getDay() - 1); // Last Saturday
+        const lastWeekStart = new Date(lastWeekEnd);
+        lastWeekStart.setDate(lastWeekEnd.getDate() - 6); // Last Sunday
+        setStartDate(lastWeekStart.toISOString().split('T')[0]);
+        setEndDate(lastWeekEnd.toISOString().split('T')[0]);
+        break;
+      case "this-month":
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        setStartDate(startOfMonth.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+        break;
+      case "last-month":
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        setStartDate(lastMonthStart.toISOString().split('T')[0]);
+        setEndDate(lastMonthEnd.toISOString().split('T')[0]);
+        break;
+      case "last-7-days":
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(today.getDate() - 7);
+        setStartDate(sevenDaysAgo.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+        break;
+      case "last-30-days":
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(today.getDate() - 30);
+        setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
+        setEndDate(today.toISOString().split('T')[0]);
+        break;
+      case "all":
+      default:
+        setStartDate("");
+        setEndDate("");
+        break;
+    }
+  };
 
   // Build query params
   const queryParams = new URLSearchParams();
@@ -158,16 +222,25 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
           <CardTitle>Filters & Sorting</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="filter-search">Employee Name</Label>
-              <Input
-                id="filter-search"
-                data-testid="input-filter-search"
-                placeholder="Search employee..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+              <Label htmlFor="filter-time-period">Time Period</Label>
+              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                <SelectTrigger id="filter-time-period" data-testid="select-filter-time-period">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="yesterday">Yesterday</SelectItem>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="last-week">Last Week</SelectItem>
+                  <SelectItem value="last-7-days">Last 7 Days</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="last-month">Last Month</SelectItem>
+                  <SelectItem value="last-30-days">Last 30 Days</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -177,7 +250,10 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
                 data-testid="input-filter-start-date"
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setTimePeriod("all"); // Reset period when manually changing dates
+                }}
               />
             </div>
 
@@ -188,7 +264,21 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
                 data-testid="input-filter-end-date"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setTimePeriod("all"); // Reset period when manually changing dates
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="filter-search">Employee Name</Label>
+              <Input
+                id="filter-search"
+                data-testid="input-filter-search"
+                placeholder="Search employee..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
