@@ -53,11 +53,16 @@ Monitor procurement items (created from bid material quotes during conversion) a
 - Budget allows for bulk ordering opportunities
 - Material lead times suggest scheduling conflicts across multiple projects
 
-### 5. BID TRACKING
-Review bid pipeline and remind about:
-- Upcoming bid deadlines
-- Follow-ups on submitted bids
+### 5. BID TRACKING & WEEKLY ESTIMATOR FOLLOW-UPS
+Review bid pipeline using the all_bids_for_followup data and:
+- Track date_submitted and days_since_submission for EVERY bid
+- **CRITICAL: Generate WEEKLY follow-up tasks for EVERY active bid** - Estimators must follow up with clients weekly
+- When days_since_submission >= 7, generate a HIGH priority ESTIMATOR task: "Follow up on bid [BID_CODE] - [CLIENT_NAME]"
+- Include in task description: bid amount, days since submission, and client contact info
+- Remind estimators about upcoming bid deadlines (due_date)
+- Flag bids that are overdue (past due_date without response)
 - Win rate analysis for estimator performance
+- Assign follow-up tasks to the specific estimator (estimator_id) when available
 
 ### 6. CHANGE ORDER MANAGEMENT
 Monitor change order pipeline and alert when:
@@ -197,6 +202,8 @@ You MUST respond with valid JSON matching this exact structure:
 13. **Track change order pipeline** - Generate tasks for MANAGER/SUPERINTENDENT to move change orders through approval workflow
 14. **Escalate stalled change orders** - Alert MANAGER when change orders are pending >7 days
 15. **Monitor high-value change orders** - Flag approved change orders >$10k for CFO budget impact review
+16. **WEEKLY BID FOLLOW-UPS ARE MANDATORY** - For every bid where days_since_submission >= 7 and needs_weekly_followup = true, generate an ESTIMATOR task to follow up with the client
+17. **Include bid context in follow-ups** - Task description must include: bid code, client name, bid amount, and days since submission
 
 ## Analysis Principles:
 - Use actual data, never hallucinate numbers

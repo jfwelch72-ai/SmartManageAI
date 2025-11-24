@@ -112,6 +112,17 @@ export interface DataSnapshot {
       bid_deadline: string | null;
       status: string;
     }[];
+    all_bids_for_followup: {
+      code: string;
+      name: string;
+      client_name: string;
+      bid_amount: number;
+      date_submitted: string;
+      days_since_submission: number;
+      due_date: string | null;
+      estimator_id: string | null;
+      needs_weekly_followup: boolean;
+    }[];
   };
   crew: {
     total_employees: number;
@@ -362,6 +373,26 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       status: 'ACTIVE',
     }));
 
+  // Build bid follow-up tracking data for estimator reminders
+  const allBidsForFollowup = activeBids.map(bid => {
+    const submissionDate = new Date(bid.createdAt);
+    const daysSinceSubmission = Math.floor((now.getTime() - submissionDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Needs weekly follow-up if submitted more than 7 days ago
+    const needsWeeklyFollowup = daysSinceSubmission >= 7;
+    
+    return {
+      code: bid.code,
+      name: bid.name,
+      client_name: bid.clientName,
+      bid_amount: Number(bid.bidAmount || 0),
+      date_submitted: submissionDate.toISOString().split('T')[0],
+      days_since_submission: daysSinceSubmission,
+      due_date: bid.dueDate?.toISOString().split('T')[0] || null,
+      estimator_id: bid.estimatorId,
+      needs_weekly_followup: needsWeeklyFollowup,
+    };
+  });
+
   // Crew statistics
   const allUsers = await db.select().from(users).limit(500);
   const superintendents = allUsers.filter(u => u.role === 'SUPERINTENDENT').length;
@@ -497,6 +528,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       active_count: activeBids.length,
       total_value: activeBids.reduce((sum, bid) => sum + Number(bid.bidAmount || 0), 0),
       upcoming_deadlines: upcomingBidDeadlines,
+      all_bids_for_followup: allBidsForFollowup,
     },
     crew: {
       total_employees: allUsers.length,
