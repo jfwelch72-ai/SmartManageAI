@@ -763,6 +763,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create bid schema with date preprocessing
+  const createBidSchema = insertBidSchema.extend({
+    dueDate: z.preprocess(
+      (val) => {
+        if (!val) return undefined;
+        return typeof val === "string" ? new Date(val) : val;
+      },
+      z.date().nullish()
+    ),
+  });
+
   // Create bid (Admin/Manager only)
   app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
@@ -778,7 +789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("[Create Bid] Sanitized body:", JSON.stringify(sanitizedBody, null, 2));
 
-      const validationResult = insertBidSchema.safeParse(sanitizedBody);
+      const validationResult = createBidSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         console.log("[Create Bid] Validation failed:", JSON.stringify(validationResult.error.errors, null, 2));
