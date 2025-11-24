@@ -6,10 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Search, Plus, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useBids, useConvertBidToProject } from "@/hooks/use-data";
+import { useBids, useConvertBidToProject, useCreateBid } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { Bid } from "@shared/schema";
+import { insertBidSchema } from "@shared/schema";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import type { z } from "zod";
 
 // Extended bid type with estimate summary
 type BidWithEstimate = Bid & {
@@ -29,6 +33,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+
+type CreateBidInput = z.infer<typeof insertBidSchema>;
 
 export default function BidsPage() {
   const [, setLocation] = useLocation();
@@ -37,12 +60,33 @@ export default function BidsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   
   const { data: bidsData = [], isLoading } = useBids();
   const convertBid = useConvertBidToProject();
+  const createBid = useCreateBid();
   
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
+
+  const form = useForm<CreateBidInput>({
+    resolver: zodResolver(insertBidSchema),
+    defaultValues: {
+      name: "",
+      code: "",
+      clientName: "",
+      clientContactName: "",
+      clientContactEmail: "",
+      clientContactPhone: "",
+      bidAmount: "",
+      dueDate: undefined,
+      locationAddress: "",
+      city: "",
+      state: "",
+      description: "",
+      estimatorId: user?.id || undefined,
+    },
+  });
 
   const filteredBids = useMemo(() => {
     return bids.filter(bid => 
@@ -83,6 +127,26 @@ export default function BidsPage() {
     }
   };
 
+  const handleCreateBid = async (data: CreateBidInput) => {
+    try {
+      const newBid = await createBid.mutateAsync(data);
+      toast({
+        title: "Success",
+        description: `Bid ${data.code} has been created successfully!`,
+      });
+      setShowCreateDialog(false);
+      form.reset();
+      // Navigate to the new bid detail page
+      setLocation(`/bids/${data.code}`);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create bid",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
@@ -99,7 +163,7 @@ export default function BidsPage() {
               Track opportunities and bids in progress
             </p>
           </div>
-          <Button data-testid="button-new-bid">
+          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-bid">
             <Plus className="w-4 h-4 mr-2" />
             New Bid
           </Button>
@@ -190,6 +254,212 @@ export default function BidsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Bid Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-bid">
+          <DialogHeader>
+            <DialogTitle>Create New Bid</DialogTitle>
+            <DialogDescription>
+              Enter the basic information for the new bid opportunity.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleCreateBid)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Bid Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Downtown Office Renovation" {...field} data-testid="input-bid-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bid Code *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., BID-2025-001" {...field} data-testid="input-bid-code" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="dueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Due Date</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          {...field}
+                          value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ""}
+                          onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
+                          data-testid="input-bid-due-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="clientName"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Client Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., ABC Corporation" {...field} data-testid="input-client-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="clientContactName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., John Smith" {...field} value={field.value || ""} data-testid="input-contact-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="clientContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="john@example.com" {...field} value={field.value || ""} data-testid="input-contact-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="clientContactPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl>
+                        <Input placeholder="(555) 123-4567" {...field} value={field.value || ""} data-testid="input-contact-phone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="bidAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bid Amount</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} value={field.value || ""} data-testid="input-bid-amount" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="locationAddress"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Location Address</FormLabel>
+                      <FormControl>
+                        <Input placeholder="123 Main St" {...field} value={field.value || ""} data-testid="input-location-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Seattle" {...field} value={field.value || ""} data-testid="input-city" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., WA" {...field} value={field.value || ""} data-testid="input-state" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Brief description of the project scope..."
+                          className="min-h-[100px]"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-description"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)} data-testid="button-cancel-create">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createBid.isPending} data-testid="button-submit-create">
+                  {createBid.isPending ? "Creating..." : "Create Bid"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
