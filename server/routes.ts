@@ -766,6 +766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create bid (Admin/Manager only)
   app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      console.log("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
@@ -774,9 +776,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: sanitizeText(req.body.description),
       };
 
+      console.log("[Create Bid] Sanitized body:", JSON.stringify(sanitizedBody, null, 2));
+
       const validationResult = insertBidSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
+        console.log("[Create Bid] Validation failed:", JSON.stringify(validationResult.error.errors, null, 2));
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
       }
