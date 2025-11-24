@@ -1001,16 +1001,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Transfer subcontractor quotes to project as subcontractor contracts
+      // Transfer ONLY SELECTED subcontractor quotes to project as subcontractor contracts
       const { bidSubcontractorQuotes: subQuotesTable } = await import("@shared/schema");
       const { subcontractors, subcontractorContracts } = await import("@shared/schema");
+      const { and } = await import("drizzle-orm");
       
+      // Get selected quotes only
       const subQuotes = await db
         .select()
         .from(subQuotesTable)
-        .where(eq(subQuotesTable.bidId, bid.id));
+        .where(and(
+          eq(subQuotesTable.bidId, bid.id),
+          eq(subQuotesTable.isSelected, true)
+        ));
+      
+      // Delete non-selected quotes
+      const deletedSubQuotes = await db
+        .delete(subQuotesTable)
+        .where(and(
+          eq(subQuotesTable.bidId, bid.id),
+          eq(subQuotesTable.isSelected, false)
+        ))
+        .returning();
 
-      console.log(`[Bid Conversion] Transferring ${subQuotes.length} subcontractor quotes`);
+      console.log(`[Bid Conversion] Transferring ${subQuotes.length} selected subcontractor quotes (deleted ${deletedSubQuotes.length} non-selected)`);
 
       for (const quote of subQuotes) {
         // Find or create subcontractor record with improved matching
@@ -1074,16 +1088,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Transfer material quotes to project as procurement items
+      // Transfer ONLY SELECTED material quotes to project as procurement items
       const { bidMaterialQuotes: matQuotesTable } = await import("@shared/schema");
       const { procurementItems } = await import("@shared/schema");
       
+      // Get selected material quotes only
       const matQuotes = await db
         .select()
         .from(matQuotesTable)
-        .where(eq(matQuotesTable.bidId, bid.id));
+        .where(and(
+          eq(matQuotesTable.bidId, bid.id),
+          eq(matQuotesTable.isSelected, true)
+        ));
+      
+      // Delete non-selected material quotes
+      const deletedMatQuotes = await db
+        .delete(matQuotesTable)
+        .where(and(
+          eq(matQuotesTable.bidId, bid.id),
+          eq(matQuotesTable.isSelected, false)
+        ))
+        .returning();
 
-      console.log(`[Bid Conversion] Transferring ${matQuotes.length} material quotes`);
+      console.log(`[Bid Conversion] Transferring ${matQuotes.length} selected material quotes (deleted ${deletedMatQuotes.length} non-selected)`);
 
       for (const quote of matQuotes) {
         // Create procurement item from material quote
@@ -1108,7 +1135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "CREATE",
         entityType: "project",
         entityId: newProject.id,
-        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} subcontractor quotes, and ${matQuotes.length} material quotes`,
+        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, and ${matQuotes.length} selected material quotes`,
       }, req);
 
       res.status(201).json(newProject);
