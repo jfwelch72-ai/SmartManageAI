@@ -74,6 +74,8 @@ export default function BidEstimate() {
   
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
+  const [editLineItemOpen, setEditLineItemOpen] = useState(false);
+  const [editingLineItem, setEditingLineItem] = useState<EstimateLineItem | null>(null);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
 
   // Fetch estimate data
@@ -140,6 +142,21 @@ export default function BidEstimate() {
     },
   });
 
+  // Edit line item mutation
+  const editLineItemMutation = useMutation({
+    mutationFn: ({ estimateId, lineItemId, data }: { estimateId: string, lineItemId: string, data: any }) => 
+      apiRequest("PUT", `/api/estimates/${estimateId}/line-items/${lineItemId}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      setEditLineItemOpen(false);
+      setEditingLineItem(null);
+      toast({ title: "Line item updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update line item", variant: "destructive" });
+    },
+  });
+
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
     defaultValues: {
@@ -180,7 +197,15 @@ export default function BidEstimate() {
       notes: values.notes || undefined,
     };
 
-    addLineItemMutation.mutate(payload as any);
+    if (editingLineItem) {
+      editLineItemMutation.mutate({
+        estimateId: estimateData.estimate.id,
+        lineItemId: editingLineItem.id,
+        data: payload,
+      });
+    } else {
+      addLineItemMutation.mutate(payload as any);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -651,6 +676,228 @@ export default function BidEstimate() {
                 </Form>
               </DialogContent>
             </Dialog>
+
+            <Dialog open={editLineItemOpen} onOpenChange={(open) => {
+              setEditLineItemOpen(open);
+              if (!open) {
+                setEditingLineItem(null);
+                form.reset();
+              }
+            }}>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Line Item</DialogTitle>
+                  <DialogDescription>
+                    Update the estimate line item details
+                  </DialogDescription>
+                </DialogHeader>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem className="col-span-2">
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="e.g., Foundation excavation" 
+                                {...field}
+                                data-testid="input-edit-description"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="category"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Category</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-edit-category">
+                                  <SelectValue placeholder="Select a category" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="CONCRETE">Concrete</SelectItem>
+                                <SelectItem value="EXCAVATION">Excavation</SelectItem>
+                                <SelectItem value="PAVERS">Pavers</SelectItem>
+                                <SelectItem value="BOLLARDS">Bollards</SelectItem>
+                                <SelectItem value="STRIPING">Striping</SelectItem>
+                                <SelectItem value="SIGNAGE">Signage</SelectItem>
+                                <SelectItem value="LANDSCAPING">Landscaping</SelectItem>
+                                <SelectItem value="ELECTRICAL">Electrical</SelectItem>
+                                <SelectItem value="OTHER">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="unit"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Unit</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., CY, SF, LF" data-testid="input-edit-unit" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="quantity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Quantity</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0" data-testid="input-edit-quantity" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="materialCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Material Cost ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-material-cost" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="laborCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Labor Cost ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-labor-cost" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="laborHours"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Labor Hours</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.1" {...field} placeholder="0.0" data-testid="input-edit-labor-hours" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="equipmentCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Equipment Cost ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-equipment-cost" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="subcontractCost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Subcontract Cost ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-subcontract-cost" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="overheadAllocation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Overhead ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-overhead" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="profitAllocation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Profit ($)</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-profit" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="notes"
+                        render={({ field }) => (
+                          <FormItem className="col-span-2">
+                            <FormLabel>Notes (Optional)</FormLabel>
+                            <FormControl>
+                              <Textarea {...field} value={field.value || ""} placeholder="Additional details..." data-testid="input-edit-notes" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-3">
+                      <Button type="button" variant="outline" onClick={() => {
+                        setEditLineItemOpen(false);
+                        setEditingLineItem(null);
+                        form.reset();
+                      }} data-testid="button-cancel-edit">
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={editLineItemMutation.isPending} data-testid="button-submit-edit-line-item">
+                        {editLineItemMutation.isPending ? "Updating..." : "Update Line Item"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
 
@@ -725,18 +972,46 @@ export default function BidEstimate() {
                         </TableCell>
                         {estimate.status === "DRAFT" && (
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                if (confirm("Delete this line item?")) {
-                                  deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId: item.id });
-                                }
-                              }}
-                              data-testid={`button-delete-line-item-${item.id}`}
-                            >
-                              Delete
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingLineItem(item);
+                                  form.reset({
+                                    description: item.description,
+                                    category: item.category,
+                                    unit: item.unit,
+                                    quantity: Number(item.quantity),
+                                    materialCost: Number(item.materialCost),
+                                    laborCost: Number(item.laborCost),
+                                    laborHours: Number(item.laborHours),
+                                    equipmentCost: Number(item.equipmentCost),
+                                    consumablesCost: Number(item.consumablesCost || 0),
+                                    subcontractCost: Number(item.subcontractCost || 0),
+                                    overheadAllocation: Number(item.overheadAllocation),
+                                    profitAllocation: Number(item.profitAllocation),
+                                    notes: item.notes || "",
+                                  });
+                                  setEditLineItemOpen(true);
+                                }}
+                                data-testid={`button-edit-line-item-${item.id}`}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (confirm("Delete this line item?")) {
+                                    deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId: item.id });
+                                  }
+                                }}
+                                data-testid={`button-delete-line-item-${item.id}`}
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         )}
                       </TableRow>
