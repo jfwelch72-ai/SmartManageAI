@@ -206,7 +206,7 @@ export default function BidDetailPage() {
       if (data.clientContactEmail) payload.clientContactEmail = data.clientContactEmail;
       if (data.clientContactPhone) payload.clientContactPhone = data.clientContactPhone;
       if (data.bidAmount) payload.bidAmount = data.bidAmount; // Send as string (decimal)
-      if (data.dueDate) payload.dueDate = new Date(data.dueDate).toISOString(); // Convert to ISO string
+      if (data.dueDate) payload.dueDate = new Date(data.dueDate); // Convert to Date object
       if (data.locationAddress) payload.locationAddress = data.locationAddress;
       if (data.city) payload.city = data.city;
       if (data.state) payload.state = data.state;

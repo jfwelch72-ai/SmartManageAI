@@ -802,8 +802,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update bid schema
-  const updateBidSchema = insertBidSchema.partial();
+  // Update bid schema with date preprocessing to handle JSON-serialized dates
+  const updateBidSchema = insertBidSchema.extend({
+    // Preprocess dueDate to accept ISO strings from JSON and convert to Date
+    dueDate: z.preprocess(
+      (val) => typeof val === "string" ? new Date(val) : val,
+      z.date().nullish()
+    ),
+  }).partial();
 
   // Update bid (Admin/Manager only)
   app.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
