@@ -1,12 +1,13 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProject } from "@/hooks/use-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
@@ -76,6 +77,7 @@ export default function ProjectEstimate() {
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [importTakeoffOpen, setImportTakeoffOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -90,6 +92,44 @@ export default function ProjectEstimate() {
     queryKey: ["/api/projects", projectId, "/takeoff-categories"],
     enabled: !!projectId,
   });
+
+  const estimate = estimateData?.estimate || null;
+  const categories = categoriesData?.categories || [];
+  
+  const totals = estimate?.totals || {
+    materialCost: 0,
+    laborCost: 0,
+    laborHours: 0,
+    equipmentCost: 0,
+    consumablesCost: 0,
+    subcontractCost: 0,
+    overheadAllocation: 0,
+    profitAllocation: 0,
+    totalCost: 0,
+  };
+
+  // Initialize and sync profit margin calculator from actual estimate data
+  // MUST be before any conditional returns to follow Rules of Hooks
+  useEffect(() => {
+    if (estimate && estimate.lineItems.length > 0) {
+      // Calculate cost base
+      const costBase = 
+        totals.materialCost +
+        totals.laborCost +
+        totals.equipmentCost +
+        totals.consumablesCost +
+        totals.subcontractCost +
+        totals.overheadAllocation;
+
+      // Calculate actual current profit percentage from totals
+      const actualMargin = costBase > 0 
+        ? (totals.profitAllocation / costBase) * 100 
+        : 15; // Default to 15% if no cost base
+
+      // Update state to match actual estimate
+      setProfitMarginPercent(Number(actualMargin.toFixed(1)));
+    }
+  }, [estimate?.id, totals.profitAllocation, totals.totalCost]); // Re-sync when estimate changes
 
   // Create estimate mutation
   const createEstimateMutation = useMutation({
@@ -220,9 +260,6 @@ export default function ProjectEstimate() {
     });
   };
 
-  const estimate = estimateData?.estimate;
-  const categories = categoriesData?.categories || [];
-
   if (projectLoading || (estimateLoading && projectId)) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -269,18 +306,6 @@ export default function ProjectEstimate() {
       </div>
     );
   }
-
-  const totals = estimate.totals || {
-    materialCost: 0,
-    laborCost: 0,
-    laborHours: 0,
-    equipmentCost: 0,
-    consumablesCost: 0,
-    subcontractCost: 0,
-    overheadAllocation: 0,
-    profitAllocation: 0,
-    totalCost: 0,
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -387,6 +412,166 @@ export default function ProjectEstimate() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Profit Margin Calculator */}
+      {estimate.status === "DRAFT" && estimate.lineItems.length > 0 && (
+        <Card className="border-primary/20 bg-primary/5" data-testid="card-profit-calculator">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calculator className="h-5 w-5" />
+                  Profit Margin Calculator
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Adjust profit percentage to see impact on job total and profitability
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {/* Profit Margin Slider */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Profit Margin</label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="50"
+                      step="0.5"
+                      value={profitMarginPercent}
+                      onChange={(e) => {
+                        const value = Math.min(50, Math.max(0, Number(e.target.value)));
+                        setProfitMarginPercent(value);
+                      }}
+                      className="w-20 h-8 text-right"
+                      data-testid="input-profit-margin-percent"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <Slider
+                  value={[profitMarginPercent]}
+                  onValueChange={(value) => setProfitMarginPercent(value[0])}
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  className="w-full"
+                  data-testid="slider-profit-margin"
+                />
+              </div>
+
+              {/* Calculations Display */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {(() => {
+                  // Calculate cost base (everything except profit)
+                  const costBase = 
+                    totals.materialCost +
+                    totals.laborCost +
+                    totals.equipmentCost +
+                    totals.consumablesCost +
+                    totals.subcontractCost +
+                    totals.overheadAllocation;
+
+                  // Calculate current profit percentage from actual totals
+                  const actualCurrentProfitPercent = costBase > 0 
+                    ? (totals.profitAllocation / costBase) * 100 
+                    : 0;
+
+                  // Calculate new profit based on adjusted percentage
+                  const newProfit = costBase * (profitMarginPercent / 100);
+                  const newTotal = costBase + newProfit;
+
+                  // Calculate differences
+                  const profitDifference = newProfit - totals.profitAllocation;
+                  const totalDifference = newTotal - totals.totalCost;
+
+                  return (
+                    <>
+                      {/* Current Values */}
+                      <div className="space-y-1 p-3 rounded-lg border bg-card">
+                        <p className="text-xs text-muted-foreground">Current Status</p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Cost Base:</span>
+                            <span className="text-sm font-medium">${costBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Profit ({actualCurrentProfitPercent.toFixed(1)}%):</span>
+                            <span className="text-sm font-medium">${totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <Separator className="my-1" />
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs font-semibold">Total:</span>
+                            <span className="text-base font-bold">${totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Projected Values */}
+                      <div className="space-y-1 p-3 rounded-lg border bg-primary/10 border-primary/20">
+                        <p className="text-xs text-muted-foreground">Projected with {profitMarginPercent}%</p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Cost Base:</span>
+                            <span className="text-sm font-medium">${costBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Profit ({profitMarginPercent}%):</span>
+                            <span className="text-sm font-medium text-primary" data-testid="text-projected-profit">${newProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                          <Separator className="my-1" />
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs font-semibold">Total:</span>
+                            <span className="text-base font-bold text-primary" data-testid="text-projected-total">${newTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Difference */}
+                      <div className="space-y-1 p-3 rounded-lg border bg-card">
+                        <p className="text-xs text-muted-foreground">Impact</p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Profit Change:</span>
+                            <span className={`text-sm font-medium ${profitDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {profitDifference >= 0 ? '+' : ''}${profitDifference.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs">Margin Change:</span>
+                            <span className={`text-sm font-medium ${profitDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {profitDifference >= 0 ? '+' : ''}{(profitMarginPercent - actualCurrentProfitPercent).toFixed(1)}%
+                            </span>
+                          </div>
+                          <Separator className="my-1" />
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-xs font-semibold">Total Change:</span>
+                            <span className={`text-base font-bold ${totalDifference >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid="text-total-change">
+                              {totalDifference >= 0 ? '+' : ''}${totalDifference.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Helper Text */}
+              <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                <p className="font-medium mb-1">How this works:</p>
+                <p>• Cost Base = Materials + Labor + Equipment + Consumables + Subcontractors + Overhead</p>
+                <p>• Profit = Cost Base × Profit Margin %</p>
+                <p>• Total Bid = Cost Base + Profit</p>
+                <p className="mt-2">Adjust the slider to see how different profit margins affect your total bid amount and profitability.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Action Buttons */}
       {estimate.status === "DRAFT" && (
