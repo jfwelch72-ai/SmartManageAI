@@ -268,6 +268,8 @@ export default function BidDetailPage() {
       subcontractorName: quote.subcontractorName,
       scopeOfWork: quote.scopeOfWork,
       quoteAmount: quote.quoteAmount,
+      leadTime: quote.leadTime || "",
+      estimatedCompletionTime: quote.estimatedCompletionTime || "",
       contactName: quote.contactName || "",
       contactEmail: quote.contactEmail || "",
       contactPhone: quote.contactPhone || "",
@@ -701,6 +703,22 @@ export default function BidDetailPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">{quote.scopeOfWork}</p>
+                          {(quote.leadTime || quote.estimatedCompletionTime) && (
+                            <div className="flex gap-4 mb-2">
+                              {quote.leadTime && (
+                                <div className="text-xs">
+                                  <span className="font-medium">Lead Time:</span>{' '}
+                                  <span className="text-muted-foreground">{quote.leadTime}</span>
+                                </div>
+                              )}
+                              {quote.estimatedCompletionTime && (
+                                <div className="text-xs">
+                                  <span className="font-medium">Est. Completion:</span>{' '}
+                                  <span className="text-muted-foreground">{quote.estimatedCompletionTime}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {(quote.contactName || quote.contactEmail || quote.contactPhone) && (
                             <div className="text-xs text-muted-foreground space-y-1">
                               {quote.contactName && <p>Contact: {quote.contactName}</p>}
@@ -817,6 +835,34 @@ export default function BidDetailPage() {
                       <FormLabel>Quote Amount</FormLabel>
                       <FormControl>
                         <Input {...field} type="number" step="0.01" placeholder="25000.00" data-testid="input-quote-amount" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="leadTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Lead Time (Optional)</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="e.g., 2 weeks, 30 days" data-testid="input-lead-time" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="estimatedCompletionTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estimated Completion Time (Optional)</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="e.g., 3 months, 45 days" data-testid="input-estimated-completion" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
