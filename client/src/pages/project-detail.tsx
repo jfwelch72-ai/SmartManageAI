@@ -12,6 +12,7 @@ import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
+import ProjectLaborHours from "@/components/ProjectLaborHours";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -739,6 +740,9 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="plans" data-testid="tab-plans">Plans & Takeoff</TabsTrigger>
             {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
               <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
+            )}
+            {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
+              <TabsTrigger value="labor-hours" data-testid="tab-labor-hours">Labor Hours</TabsTrigger>
             )}
             {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
               <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
@@ -1663,6 +1667,10 @@ export default function ProjectDetailPage() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="labor-hours">
+            {project && <ProjectLaborHours projectId={project.id} projectCode={project.code} />}
           </TabsContent>
 
           <TabsContent value="receipts">

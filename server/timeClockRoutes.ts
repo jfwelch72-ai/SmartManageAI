@@ -806,4 +806,111 @@ export function registerTimeClockRoutes(app: Express): void {
       res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // Get project labor hours (managers, superintendents, and admins only)
+  app.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const { startDate, endDate, approvalStatus, userId, sortBy } = req.query;
+
+      // Build conditions array
+      const conditions = [eq(timeClockShifts.projectId, projectId)];
+      
+      if (startDate) {
+        conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
+      }
+      if (approvalStatus && approvalStatus !== 'ALL') {
+        conditions.push(eq(timeClockShifts.approvalStatus, approvalStatus as any));
+      }
+      if (userId) {
+        conditions.push(eq(timeClockShifts.userId, userId as string));
+      }
+
+      // Determine order by clause based on sortBy parameter
+      let orderByClause;
+      switch (sortBy) {
+        case "date-asc":
+          orderByClause = timeClockShifts.clockIn;
+          break;
+        case "hours-desc":
+          orderByClause = desc(sql`CAST(${timeClockShifts.totalHours} AS NUMERIC)`);
+          break;
+        case "hours-asc":
+          orderByClause = sql`CAST(${timeClockShifts.totalHours} AS NUMERIC)`;
+          break;
+        case "cost-desc":
+          orderByClause = desc(sql`CAST(${timeClockShifts.totalHours} AS NUMERIC) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`);
+          break;
+        case "cost-asc":
+          orderByClause = sql`CAST(${timeClockShifts.totalHours} AS NUMERIC) * COALESCE(CAST(${users.costRateRegular} AS NUMERIC), 0)`;
+          break;
+        case "employee-asc":
+          orderByClause = users.firstName;
+          break;
+        case "employee-desc":
+          orderByClause = desc(users.firstName);
+          break;
+        case "date-desc":
+        default:
+          orderByClause = desc(timeClockShifts.clockIn);
+          break;
+      }
+
+      // Get shifts with employee details
+      const shiftsData = await db
+        .select({
+          shift: timeClockShifts,
+          user: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            role: users.role,
+            costRateRegular: users.costRateRegular,
+            costRateOvertime: users.costRateOvertime,
+          },
+        })
+        .from(timeClockShifts)
+        .leftJoin(users, eq(timeClockShifts.userId, users.id))
+        .where(and(...conditions))
+        .orderBy(orderByClause);
+
+      // Calculate labor costs for each shift
+      const shiftsWithCosts = shiftsData.map(({ shift, user }) => {
+        const totalHours = shift.totalHours ? parseFloat(shift.totalHours) : 0;
+        const hourlyRate = user?.costRateRegular ? parseFloat(user.costRateRegular) : 0;
+        const laborCost = totalHours * hourlyRate;
+
+        return {
+          ...shift,
+          userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
+          userEmail: user?.email,
+          userRole: user?.role,
+          hourlyRate: hourlyRate,
+          laborCost: laborCost,
+        };
+      });
+
+      // Calculate aggregate metrics
+      const totalHours = shiftsWithCosts.reduce((sum, shift) => sum + (shift.totalHours ? parseFloat(shift.totalHours) : 0), 0);
+      const totalLaborCost = shiftsWithCosts.reduce((sum, shift) => sum + shift.laborCost, 0);
+      const averageHourlyRate = totalHours > 0 ? totalLaborCost / totalHours : 0;
+
+      res.json({
+        shifts: shiftsWithCosts,
+        summary: {
+          totalShifts: shiftsWithCosts.length,
+          totalHours: totalHours,
+          totalLaborCost: totalLaborCost,
+          averageHourlyRate: averageHourlyRate,
+        },
+      });
+    } catch (error) {
+      console.error("Get project labor hours error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 }
