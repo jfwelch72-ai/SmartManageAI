@@ -1207,17 +1207,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // SECURITY: Sanitize text inputs for data integrity
-      const sanitizedBody = {
-        ...req.body,
+      const sanitizedBody: any = {
         subcontractorName: req.body.subcontractorName ? sanitizeShortText(req.body.subcontractorName) : undefined,
         scopeOfWork: req.body.scopeOfWork ? sanitizeText(req.body.scopeOfWork) : undefined,
         notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
         contactName: req.body.contactName ? sanitizeShortText(req.body.contactName) : undefined,
         contactEmail: req.body.contactEmail ? sanitizeEmail(req.body.contactEmail) : undefined,
         contactPhone: req.body.contactPhone ? sanitizePhone(req.body.contactPhone) : undefined,
+        leadTime: req.body.leadTime !== undefined ? req.body.leadTime : undefined,
+        estimatedCompletionTime: req.body.estimatedCompletionTime !== undefined ? req.body.estimatedCompletionTime : undefined,
+        quoteAmount: req.body.quoteAmount !== undefined ? req.body.quoteAmount : undefined,
+        fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
+        fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
       };
+      
+      // Handle isSelected field directly (boolean, doesn't need sanitization)
+      if (typeof req.body.isSelected === 'boolean') {
+        sanitizedBody.isSelected = req.body.isSelected;
+      }
+      
+      // Remove undefined keys
+      Object.keys(sanitizedBody).forEach(key => {
+        if (sanitizedBody[key] === undefined) {
+          delete sanitizedBody[key];
+        }
+      });
 
-      const validated = insertBidSubcontractorQuoteSchema.partial().parse(sanitizedBody);
+      const validated = sanitizedBody;
 
       const [updated] = await db
         .update(bidSubcontractorQuotes)
@@ -1370,17 +1386,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // SECURITY: Sanitize text inputs for data integrity
-      const sanitizedBody = {
-        ...req.body,
+      const sanitizedBody: any = {
         materialName: req.body.materialName ? sanitizeShortText(req.body.materialName) : undefined,
         description: req.body.description ? sanitizeText(req.body.description) : undefined,
         specs: req.body.specs ? sanitizeText(req.body.specs) : undefined,
         leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
         supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
         supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
+        cost: req.body.cost !== undefined ? req.body.cost : undefined,
+        fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
+        fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
       };
+      
+      // Handle isSelected field directly (boolean, doesn't need sanitization)
+      if (typeof req.body.isSelected === 'boolean') {
+        sanitizedBody.isSelected = req.body.isSelected;
+      }
+      
+      // Remove undefined keys
+      Object.keys(sanitizedBody).forEach(key => {
+        if (sanitizedBody[key] === undefined) {
+          delete sanitizedBody[key];
+        }
+      });
 
-      const validated = insertBidMaterialQuoteSchema.partial().parse(sanitizedBody);
+      const validated = sanitizedBody;
 
       const [updated] = await db
         .update(bidMaterialQuotes)

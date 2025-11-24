@@ -3,13 +3,14 @@ import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2 } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -305,6 +306,54 @@ export default function BidDetailPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete material quote",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Toggle subcontractor quote selection
+  const toggleQuoteSelection = useMutation({
+    mutationFn: async ({ quoteId, isSelected }: { quoteId: string; isSelected: boolean }) => {
+      const response = await fetch(`/api/bids/${bidCode}/quotes/${quoteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isSelected }),
+      });
+      if (!response.ok) throw new Error("Failed to update quote selection");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "quotes"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update selection",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Toggle material quote selection
+  const toggleMaterialQuoteSelection = useMutation({
+    mutationFn: async ({ quoteId, isSelected }: { quoteId: string; isSelected: boolean }) => {
+      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isSelected }),
+      });
+      if (!response.ok) throw new Error("Failed to update material quote selection");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update selection",
         variant: "destructive",
       });
     },
@@ -899,78 +948,107 @@ export default function BidDetailPage() {
                   </div>
                   <div className="space-y-3">
                     {quotes.map((quote) => (
-                      <div key={quote.id} className="flex items-start justify-between p-4 border rounded-md" data-testid={`quote-${quote.id}`}>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h4 className="font-medium">{quote.subcontractorName}</h4>
-                            <Badge variant="outline" className="font-mono">
-                              ${Number(quote.quoteAmount).toLocaleString()}
-                            </Badge>
-                            {quote.fileUrl && (
-                              <Badge variant="secondary" className="gap-1">
-                                <FileText className="w-3 h-3" />
-                                Document
+                      <div 
+                        key={quote.id} 
+                        className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                          (quote as any).isSelected 
+                            ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
+                            : ''
+                        }`} 
+                        data-testid={`quote-${quote.id}`}
+                      >
+                        <div className="flex gap-3 flex-1">
+                          <div className="pt-1">
+                            <Checkbox
+                              checked={(quote as any).isSelected || false}
+                              onCheckedChange={(checked) => {
+                                toggleQuoteSelection.mutate({ 
+                                  quoteId: quote.id, 
+                                  isSelected: !!checked 
+                                });
+                              }}
+                              disabled={toggleQuoteSelection.isPending}
+                              data-testid={`checkbox-quote-${quote.id}`}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h4 className="font-medium">{quote.subcontractorName}</h4>
+                              <Badge variant="outline" className="font-mono">
+                                ${Number(quote.quoteAmount).toLocaleString()}
                               </Badge>
+                              {(quote as any).isSelected && (
+                                <Badge variant="default" className="gap-1 bg-green-600">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Selected
+                                </Badge>
+                              )}
+                              {quote.fileUrl && (
+                                <Badge variant="secondary" className="gap-1">
+                                  <FileText className="w-3 h-3" />
+                                  Document
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">{quote.scopeOfWork}</p>
+                            {(quote.leadTime || quote.estimatedCompletionTime) && (
+                              <div className="flex gap-4 mb-2">
+                                {quote.leadTime && (
+                                  <div className="text-xs">
+                                    <span className="font-medium">Lead Time:</span>{' '}
+                                    <span className="text-muted-foreground">{quote.leadTime}</span>
+                                  </div>
+                                )}
+                                {quote.estimatedCompletionTime && (
+                                  <div className="text-xs">
+                                    <span className="font-medium">Est. Completion:</span>{' '}
+                                    <span className="text-muted-foreground">{quote.estimatedCompletionTime}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {(quote.contactName || quote.contactEmail || quote.contactPhone) && (
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                {quote.contactName && <p>Contact: {quote.contactName}</p>}
+                                {quote.contactEmail && <p>Email: {quote.contactEmail}</p>}
+                                {quote.contactPhone && <p>Phone: {quote.contactPhone}</p>}
+                              </div>
+                            )}
+                            {quote.notes && (
+                              <p className="text-xs text-muted-foreground mt-2 italic">{quote.notes}</p>
+                            )}
+                            {quote.fileUrl && (
+                              <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                                <FileText className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground flex-1 truncate">
+                                  {quote.fileName || "Quote document"}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    try {
+                                      const response = await apiRequest("POST", "/api/objects/download", {
+                                        fileUrl: quote.fileUrl,
+                                      });
+                                      const data = await response.json();
+                                      window.open(data.downloadURL, '_blank');
+                                    } catch (error) {
+                                      toast({ 
+                                        title: "Error", 
+                                        description: "Failed to download document", 
+                                        variant: "destructive" 
+                                      });
+                                    }
+                                  }}
+                                  data-testid={`button-download-quote-${quote.id}`}
+                                >
+                                  <Download className="w-3 h-3 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">{quote.scopeOfWork}</p>
-                          {(quote.leadTime || quote.estimatedCompletionTime) && (
-                            <div className="flex gap-4 mb-2">
-                              {quote.leadTime && (
-                                <div className="text-xs">
-                                  <span className="font-medium">Lead Time:</span>{' '}
-                                  <span className="text-muted-foreground">{quote.leadTime}</span>
-                                </div>
-                              )}
-                              {quote.estimatedCompletionTime && (
-                                <div className="text-xs">
-                                  <span className="font-medium">Est. Completion:</span>{' '}
-                                  <span className="text-muted-foreground">{quote.estimatedCompletionTime}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {(quote.contactName || quote.contactEmail || quote.contactPhone) && (
-                            <div className="text-xs text-muted-foreground space-y-1">
-                              {quote.contactName && <p>Contact: {quote.contactName}</p>}
-                              {quote.contactEmail && <p>Email: {quote.contactEmail}</p>}
-                              {quote.contactPhone && <p>Phone: {quote.contactPhone}</p>}
-                            </div>
-                          )}
-                          {quote.notes && (
-                            <p className="text-xs text-muted-foreground mt-2 italic">{quote.notes}</p>
-                          )}
-                          {quote.fileUrl && (
-                            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                              <FileText className="w-4 h-4 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground flex-1 truncate">
-                                {quote.fileName || "Quote document"}
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={async () => {
-                                  try {
-                                    const response = await apiRequest("POST", "/api/objects/download", {
-                                      fileUrl: quote.fileUrl,
-                                    });
-                                    const data = await response.json();
-                                    window.open(data.downloadURL, '_blank');
-                                  } catch (error) {
-                                    toast({ 
-                                      title: "Error", 
-                                      description: "Failed to download document", 
-                                      variant: "destructive" 
-                                    });
-                                  }
-                                }}
-                                data-testid={`button-download-quote-${quote.id}`}
-                              >
-                                <Download className="w-3 h-3 mr-1" />
-                                Download
-                              </Button>
-                            </div>
-                          )}
                         </div>
                         {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                           <div className="flex gap-2 ml-4">
@@ -1031,76 +1109,105 @@ export default function BidDetailPage() {
                   </div>
                   <div className="space-y-3">
                     {materialQuotes.map((quote) => (
-                      <div key={quote.id} className="flex items-start justify-between p-4 border rounded-md" data-testid={`material-quote-${quote.id}`}>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h4 className="font-medium">{quote.materialName}</h4>
-                            <Badge variant="outline" className="font-mono">
-                              ${Number(quote.cost).toLocaleString()}
-                            </Badge>
-                            {quote.fileUrl && (
-                              <Badge variant="secondary" className="gap-1">
-                                <FileText className="w-3 h-3" />
-                                Document
+                      <div 
+                        key={quote.id} 
+                        className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                          (quote as any).isSelected 
+                            ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
+                            : ''
+                        }`}
+                        data-testid={`material-quote-${quote.id}`}
+                      >
+                        <div className="flex gap-3 flex-1">
+                          <div className="pt-1">
+                            <Checkbox
+                              checked={(quote as any).isSelected || false}
+                              onCheckedChange={(checked) => {
+                                toggleMaterialQuoteSelection.mutate({ 
+                                  quoteId: quote.id, 
+                                  isSelected: !!checked 
+                                });
+                              }}
+                              disabled={toggleMaterialQuoteSelection.isPending}
+                              data-testid={`checkbox-material-quote-${quote.id}`}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h4 className="font-medium">{quote.materialName}</h4>
+                              <Badge variant="outline" className="font-mono">
+                                ${Number(quote.cost).toLocaleString()}
                               </Badge>
+                              {(quote as any).isSelected && (
+                                <Badge variant="default" className="gap-1 bg-green-600">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Selected
+                                </Badge>
+                              )}
+                              {quote.fileUrl && (
+                                <Badge variant="secondary" className="gap-1">
+                                  <FileText className="w-3 h-3" />
+                                  Document
+                                </Badge>
+                              )}
+                            </div>
+                            {quote.description && (
+                              <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
+                            )}
+                            {(quote.specs || quote.leadTime) && (
+                              <div className="flex gap-4 mb-2">
+                                {quote.specs && (
+                                  <div className="text-xs">
+                                    <span className="font-medium">Specs:</span>{' '}
+                                    <span className="text-muted-foreground">{quote.specs}</span>
+                                  </div>
+                                )}
+                                {quote.leadTime && (
+                                  <div className="text-xs">
+                                    <span className="font-medium">Lead Time:</span>{' '}
+                                    <span className="text-muted-foreground">{quote.leadTime}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {(quote.supplierName || quote.supplierContact) && (
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                {quote.supplierName && <p>Supplier: {quote.supplierName}</p>}
+                                {quote.supplierContact && <p>Contact: {quote.supplierContact}</p>}
+                              </div>
+                            )}
+                            {quote.fileUrl && (
+                              <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                                <FileText className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground flex-1 truncate">
+                                  {quote.fileName || "Material quote document"}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    try {
+                                      const response = await apiRequest("POST", "/api/objects/download", {
+                                        fileUrl: quote.fileUrl,
+                                      });
+                                      const data = await response.json();
+                                      window.open(data.downloadURL, '_blank');
+                                    } catch (error) {
+                                      toast({ 
+                                        title: "Error", 
+                                        description: "Failed to download document", 
+                                        variant: "destructive" 
+                                      });
+                                    }
+                                  }}
+                                  data-testid={`button-download-material-quote-${quote.id}`}
+                                >
+                                  <Download className="w-3 h-3 mr-1" />
+                                  Download
+                                </Button>
+                              </div>
                             )}
                           </div>
-                          {quote.description && (
-                            <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
-                          )}
-                          {(quote.specs || quote.leadTime) && (
-                            <div className="flex gap-4 mb-2">
-                              {quote.specs && (
-                                <div className="text-xs">
-                                  <span className="font-medium">Specs:</span>{' '}
-                                  <span className="text-muted-foreground">{quote.specs}</span>
-                                </div>
-                              )}
-                              {quote.leadTime && (
-                                <div className="text-xs">
-                                  <span className="font-medium">Lead Time:</span>{' '}
-                                  <span className="text-muted-foreground">{quote.leadTime}</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {(quote.supplierName || quote.supplierContact) && (
-                            <div className="text-xs text-muted-foreground space-y-1">
-                              {quote.supplierName && <p>Supplier: {quote.supplierName}</p>}
-                              {quote.supplierContact && <p>Contact: {quote.supplierContact}</p>}
-                            </div>
-                          )}
-                          {quote.fileUrl && (
-                            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                              <FileText className="w-4 h-4 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground flex-1 truncate">
-                                {quote.fileName || "Material quote document"}
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={async () => {
-                                  try {
-                                    const response = await apiRequest("POST", "/api/objects/download", {
-                                      fileUrl: quote.fileUrl,
-                                    });
-                                    const data = await response.json();
-                                    window.open(data.downloadURL, '_blank');
-                                  } catch (error) {
-                                    toast({ 
-                                      title: "Error", 
-                                      description: "Failed to download document", 
-                                      variant: "destructive" 
-                                    });
-                                  }
-                                }}
-                                data-testid={`button-download-material-quote-${quote.id}`}
-                              >
-                                <Download className="w-3 h-3 mr-1" />
-                                Download
-                              </Button>
-                            </div>
-                          )}
                         </div>
                         {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                           <div className="flex gap-2 ml-4">

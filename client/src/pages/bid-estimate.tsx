@@ -76,6 +76,7 @@ export default function BidEstimate() {
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
   const [editingLineItem, setEditingLineItem] = useState<EstimateLineItem | null>(null);
+  const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
 
   // Fetch estimate data
@@ -381,89 +382,160 @@ export default function BidEstimate() {
         </div>
 
         {estimate.status === "DRAFT" && estimate.lineItems.length > 0 && (
-          <Card className="border-primary/20 bg-primary/5" data-testid="card-profit-calculator">
+          <Card className="border-primary/20 bg-primary/5" data-testid="card-markup-calculator">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Calculator className="h-5 w-5" />
-                    Profit Margin Calculator
+                    Markup Calculator
                   </CardTitle>
                   <CardDescription className="mt-1">
-                    Adjust profit percentage to see impact on total bid amount
+                    Adjust overhead and profit percentages to see impact on total bid amount
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Profit Margin</label>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        type="number"
-                        min="0"
-                        max="50"
-                        step="0.5"
-                        value={profitMarginPercent}
-                        onChange={(e) => {
-                          const value = Math.min(50, Math.max(0, Number(e.target.value)));
-                          setProfitMarginPercent(value);
-                        }}
-                        className="w-20 h-8 text-right"
-                        data-testid="input-profit-margin-percent"
-                      />
-                      <span className="text-sm text-muted-foreground">%</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Overhead</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="30"
+                          step="0.5"
+                          value={overheadPercent}
+                          onChange={(e) => {
+                            const value = Math.min(30, Math.max(0, Number(e.target.value)));
+                            setOverheadPercent(value);
+                          }}
+                          className="w-16 h-8 text-right"
+                          data-testid="input-overhead-percent"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <Slider
+                      value={[overheadPercent]}
+                      onValueChange={(value) => setOverheadPercent(value[0])}
+                      min={0}
+                      max={30}
+                      step={0.5}
+                      className="w-full"
+                      data-testid="slider-overhead"
+                    />
+                    <div className="flex gap-1">
+                      {[5, 10, 15].map((preset) => (
+                        <Button
+                          key={preset}
+                          type="button"
+                          variant={overheadPercent === preset ? "default" : "outline"}
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setOverheadPercent(preset)}
+                          data-testid={`button-overhead-preset-${preset}`}
+                        >
+                          {preset}%
+                        </Button>
+                      ))}
                     </div>
                   </div>
-                  <Slider
-                    value={[profitMarginPercent]}
-                    onValueChange={(value) => setProfitMarginPercent(value[0])}
-                    min={0}
-                    max={50}
-                    step={0.5}
-                    className="w-full"
-                    data-testid="slider-profit-margin"
-                  />
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Profit</label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="0.5"
+                          value={profitMarginPercent}
+                          onChange={(e) => {
+                            const value = Math.min(50, Math.max(0, Number(e.target.value)));
+                            setProfitMarginPercent(value);
+                          }}
+                          className="w-16 h-8 text-right"
+                          data-testid="input-profit-margin-percent"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <Slider
+                      value={[profitMarginPercent]}
+                      onValueChange={(value) => setProfitMarginPercent(value[0])}
+                      min={0}
+                      max={50}
+                      step={0.5}
+                      className="w-full"
+                      data-testid="slider-profit-margin"
+                    />
+                    <div className="flex gap-1">
+                      {[10, 15, 20].map((preset) => (
+                        <Button
+                          key={preset}
+                          type="button"
+                          variant={profitMarginPercent === preset ? "default" : "outline"}
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setProfitMarginPercent(preset)}
+                          data-testid={`button-profit-preset-${preset}`}
+                        >
+                          {preset}%
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {(() => {
-                    const costBase = 
+                    const directCosts = 
                       totals.materialCost +
                       totals.laborCost +
                       totals.equipmentCost +
                       totals.consumablesCost +
-                      totals.subcontractCost +
-                      totals.overheadAllocation;
+                      totals.subcontractCost;
                     
-                    const projectedProfit = costBase * (profitMarginPercent / 100);
-                    const projectedTotal = costBase + projectedProfit;
-                    const currentMargin = totals.totalCost > 0 ? (totals.profitAllocation / totals.totalCost) * 100 : 0;
+                    const projectedOverhead = directCosts * (overheadPercent / 100);
+                    const costPlusOverhead = directCosts + projectedOverhead;
+                    const projectedProfit = costPlusOverhead * (profitMarginPercent / 100);
+                    const projectedTotal = costPlusOverhead + projectedProfit;
+                    const combinedMarkup = overheadPercent + profitMarginPercent + (overheadPercent * profitMarginPercent / 100);
 
                     return (
                       <>
                         <div className="p-4 bg-background rounded-md border">
-                          <p className="text-sm text-muted-foreground mb-1">Cost Base</p>
-                          <p className="text-xl font-bold">${costBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="text-sm text-muted-foreground mb-1">Direct Costs</p>
+                          <p className="text-xl font-bold">${directCosts.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         </div>
                         <div className="p-4 bg-background rounded-md border">
-                          <p className="text-sm text-muted-foreground mb-1">Projected Profit</p>
+                          <p className="text-sm text-muted-foreground mb-1">+ Overhead</p>
+                          <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                            ${projectedOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {overheadPercent}%
+                          </p>
+                        </div>
+                        <div className="p-4 bg-background rounded-md border">
+                          <p className="text-sm text-muted-foreground mb-1">+ Profit</p>
                           <p className="text-xl font-bold text-green-600 dark:text-green-400">
                             ${projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {profitMarginPercent}% margin
+                            {profitMarginPercent}%
                           </p>
                         </div>
                         <div className="p-4 bg-primary/10 rounded-md border border-primary/20">
                           <p className="text-sm text-muted-foreground mb-1">Total Bid</p>
                           <p className="text-xl font-bold">${projectedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {Math.abs(profitMarginPercent - currentMargin) < 0.1 
-                              ? "Current bid amount"
-                              : `${profitMarginPercent > currentMargin ? '+' : ''}${((projectedTotal - totals.totalCost) / totals.totalCost * 100).toFixed(1)}% change`}
+                            {combinedMarkup.toFixed(1)}% markup
                           </p>
                         </div>
                       </>
@@ -1009,7 +1081,7 @@ export default function BidEstimate() {
                                     subcontractCost: Number(item.subcontractCost || 0),
                                     overheadAllocation: Number(item.overheadAllocation),
                                     profitAllocation: Number(item.profitAllocation),
-                                    notes: item.notes || "",
+                                    notes: (item as any).metadata || "",
                                   });
                                   setEditLineItemOpen(true);
                                 }}
