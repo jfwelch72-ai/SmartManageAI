@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -115,10 +115,12 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Estimates table
+// Estimates table - can attach to either a bid OR project
+// During conversion: bidId retained for traceability, projectId added
 export const estimates = pgTable("estimates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   versionNumber: integer("version_number").notNull().default(1),
   status: estimateStatusEnum("status").notNull().default("DRAFT"),
   baseBidAmount: decimal("base_bid_amount", { precision: 12, scale: 2 }),
@@ -128,7 +130,10 @@ export const estimates = pgTable("estimates", {
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Ensure at least one of bidId or projectId is set (allows both after conversion)
+  checkEitherBidOrProject: sql`CHECK ((bid_id IS NULL AND project_id IS NOT NULL) OR (bid_id IS NOT NULL))`,
+}));
 
 // Procurement Items table
 export const procurementItems = pgTable("procurement_items", {
@@ -314,6 +319,7 @@ export type InsertTask = z.infer<typeof insertTaskSchema>;
 export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
   description: text("description").notNull(),
   unit: text("unit").notNull(),
   totalQuantity: decimal("total_quantity", { precision: 12, scale: 2 }).notNull(),
@@ -324,7 +330,10 @@ export const scopeItems = pgTable("scope_items", {
   lastBilledDate: timestamp("last_billed_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Enforce one-to-one mapping: one scope item per estimate line item
+  uniqueEstimateLineItem: unique("scope_items_estimate_line_item_unique").on(table.estimateLineItemId),
+}));
 
 // Daily Scope Progress table - tracks daily quantities completed for each scope item
 export const dailyScopeProgress = pgTable("daily_scope_progress", {

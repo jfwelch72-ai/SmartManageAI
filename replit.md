@@ -11,7 +11,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
 
 -   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
 -   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
--   **Database**: PostgreSQL on Neon, managed with Drizzle ORM, supporting various modules including audit logs, billing, time clock, AI operations, and project management.
+-   **Database**: PostgreSQL on Neon, managed with Drizzle ORM, supporting various modules including audit logs, billing, time clock, AI operations, and project management. **Bid-Estimate-Project Integration**: Estimates can attach to bids or projects via nullable bidId/projectId columns with CHECK constraint enforcing at least one reference. During bid-to-project conversion, bidId retained for traceability while projectId added. Scope items linked to estimate line items via one-to-one UNIQUE constraint for automated quantity sync.
 -   **Authentication**: JWT-based authentication using httpOnly cookies, bcrypt for password hashing, and token versioning, featuring Role-Based Access Control (RBAC) across six user roles and self-service registration.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS with a focus on intuitive project management workflows.
