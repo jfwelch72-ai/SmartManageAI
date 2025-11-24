@@ -20,7 +20,8 @@ export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]
 export const auditActionEnum = pgEnum("audit_action", [
   "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
   "CLOCK_IN", "CLOCK_OUT", "ADJUST",
-  "REVOKE_TOKENS", "CREATE_BID_QUOTE", "UPDATE_BID_QUOTE", "DELETE_BID_QUOTE"
+  "REVOKE_TOKENS", "CREATE_BID_QUOTE", "UPDATE_BID_QUOTE", "DELETE_BID_QUOTE",
+  "CREATE_BID_MATERIAL_QUOTE", "UPDATE_BID_MATERIAL_QUOTE", "DELETE_BID_MATERIAL_QUOTE"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
@@ -109,6 +110,25 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   notes: text("notes"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Bid Material Quotes table
+export const bidMaterialQuotes = pgTable("bid_material_quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  materialName: text("material_name").notNull(),
+  description: text("description").notNull(),
+  specs: text("specs"),
+  cost: decimal("cost", { precision: 12, scale: 2 }).notNull(),
+  leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
+  supplierName: text("supplier_name"),
+  supplierContact: text("supplier_contact"),
   fileUrl: text("file_url"),
   fileName: text("file_name"),
   fileSize: integer("file_size"),
@@ -784,6 +804,17 @@ export const insertBidSubcontractorQuoteSchema = createInsertSchema(bidSubcontra
   mimeType: z.string().optional(),
 });
 
+export const insertBidMaterialQuoteSchema = createInsertSchema(bidMaterialQuotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  fileUrl: z.string().optional(),
+  fileName: z.string().optional(),
+  fileSize: z.number().optional(),
+  mimeType: z.string().optional(),
+});
+
 export const insertEstimateSchema = createInsertSchema(estimates).omit({
   id: true,
   createdAt: true,
@@ -871,6 +902,9 @@ export type Bid = typeof bids.$inferSelect;
 
 export type InsertBidSubcontractorQuote = z.infer<typeof insertBidSubcontractorQuoteSchema>;
 export type BidSubcontractorQuote = typeof bidSubcontractorQuotes.$inferSelect;
+
+export type InsertBidMaterialQuote = z.infer<typeof insertBidMaterialQuoteSchema>;
+export type BidMaterialQuote = typeof bidMaterialQuotes.$inferSelect;
 
 export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
 export type Estimate = typeof estimates.$inferSelect;

@@ -1172,6 +1172,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Bid Material Quotes Routes
+  // ====================
+
+  const { bidMaterialQuotes, insertBidMaterialQuoteSchema } = await import("@shared/schema");
+
+  // Get all material quotes for a bid
+  app.get("/api/bids/:code/material-quotes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const materialQuotes = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.bidId, bid.id))
+        .orderBy(desc(bidMaterialQuotes.createdAt));
+
+      res.json(materialQuotes);
+    } catch (error) {
+      console.error("Get bid material quotes error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create a new material quote for a bid
+  app.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        materialName: sanitizeShortText(req.body.materialName),
+        description: sanitizeText(req.body.description),
+        specs: req.body.specs ? sanitizeText(req.body.specs) : undefined,
+        leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
+        supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
+        supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
+      };
+
+      const validated = insertBidMaterialQuoteSchema.parse({
+        ...sanitizedBody,
+        bidId: bid.id,
+      });
+
+      const [newMaterialQuote] = await db.insert(bidMaterialQuotes).values(validated).returning();
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE_BID_MATERIAL_QUOTE",
+        entityType: "bid_material_quote",
+        entityId: newMaterialQuote.id,
+        newValue: `Created material quote for ${validated.materialName} for bid ${bid.code}`,
+      }, req);
+
+      res.status(201).json(newMaterialQuote);
+    } catch (error: any) {
+      console.error("Create bid material quote error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid material quote data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  });
+
+  // Update a bid material quote
+  app.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // SECURITY: Sanitize text inputs for data integrity
+      const sanitizedBody = {
+        ...req.body,
+        materialName: req.body.materialName ? sanitizeShortText(req.body.materialName) : undefined,
+        description: req.body.description ? sanitizeText(req.body.description) : undefined,
+        specs: req.body.specs ? sanitizeText(req.body.specs) : undefined,
+        leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
+        supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
+        supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
+      };
+
+      const validated = insertBidMaterialQuoteSchema.partial().parse(sanitizedBody);
+
+      const [updated] = await db
+        .update(bidMaterialQuotes)
+        .set({ ...validated, updatedAt: new Date() })
+        .where(eq(bidMaterialQuotes.id, req.params.quoteId))
+        .returning();
+
+      if (!updated) {
+        res.status(404).json({ error: "Material quote not found" });
+        return;
+      }
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "UPDATE_BID_MATERIAL_QUOTE",
+        entityType: "bid_material_quote",
+        entityId: updated.id,
+        newValue: `Updated material quote for ${updated.materialName} for bid ${bid.code}`,
+      }, req);
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update bid material quote error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid material quote data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  });
+
+  // Delete a bid material quote
+  app.delete("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const [deleted] = await db
+        .delete(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.id, req.params.quoteId))
+        .returning();
+
+      if (!deleted) {
+        res.status(404).json({ error: "Material quote not found" });
+        return;
+      }
+
+      // Log audit
+      await logAudit({
+        userId: req.user!.id,
+        action: "DELETE_BID_MATERIAL_QUOTE",
+        entityType: "bid_material_quote",
+        entityId: deleted.id,
+        oldValue: `Deleted material quote for ${deleted.materialName} for bid ${bid.code}`,
+      }, req);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete bid material quote error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Project Routes
   // ====================
 

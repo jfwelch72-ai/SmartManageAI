@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -17,8 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertBidSubcontractorQuoteSchema, insertBidSchema } from "@shared/schema";
-import type { BidSubcontractorQuote, InsertBidSubcontractorQuote, Estimate, EstimateLineItem } from "@shared/schema";
+import { insertBidSubcontractorQuoteSchema, insertBidMaterialQuoteSchema, insertBidSchema } from "@shared/schema";
+import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem } from "@shared/schema";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -28,6 +28,11 @@ const quoteFormSchema = insertBidSubcontractorQuoteSchema.omit({ bidId: true }).
   quoteAmount: z.string().min(1, "Quote amount is required"),
 });
 type QuoteFormValues = z.infer<typeof quoteFormSchema>;
+
+const materialQuoteFormSchema = insertBidMaterialQuoteSchema.omit({ bidId: true }).extend({
+  cost: z.string().min(1, "Cost is required"),
+});
+type MaterialQuoteFormValues = z.infer<typeof materialQuoteFormSchema>;
 
 // Form schema accepts strings from HTML inputs
 const bidEditFormSchema = z.object({
@@ -60,6 +65,16 @@ export default function BidDetailPage() {
     mimeType: string;
   } | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
+
+  const [showMaterialQuoteDialog, setShowMaterialQuoteDialog] = useState(false);
+  const [editingMaterialQuote, setEditingMaterialQuote] = useState<BidMaterialQuote | null>(null);
+  const [uploadedMaterialFileData, setUploadedMaterialFileData] = useState<{
+    fileUrl: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+  } | null>(null);
+  const [isUploadingMaterialFile, setIsUploadingMaterialFile] = useState(false);
   
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
@@ -68,6 +83,12 @@ export default function BidDetailPage() {
   // Fetch bid quotes
   const { data: quotes = [], isLoading: quotesLoading} = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidCode, "quotes"],
+    enabled: !!bidCode,
+  });
+
+  // Fetch bid material quotes
+  const { data: materialQuotes = [], isLoading: materialQuotesLoading} = useQuery<BidMaterialQuote[]>({
+    queryKey: ["/api/bids", bidCode, "material-quotes"],
     enabled: !!bidCode,
   });
 
@@ -108,6 +129,20 @@ export default function BidDetailPage() {
       city: "",
       state: "",
       description: "",
+    },
+  });
+
+  // Material quote form
+  const materialForm = useForm<MaterialQuoteFormValues>({
+    resolver: zodResolver(materialQuoteFormSchema),
+    defaultValues: {
+      materialName: "",
+      description: "",
+      cost: "",
+      specs: "",
+      leadTime: "",
+      supplierName: "",
+      supplierContact: "",
     },
   });
 
@@ -188,6 +223,88 @@ export default function BidDetailPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete quote",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create material quote mutation
+  const createMaterialQuote = useMutation({
+    mutationFn: async (data: MaterialQuoteFormValues) => {
+      const payload = {
+        ...data,
+        cost: data.cost,
+      };
+      const response = await fetch(`/api/bids/${bidCode}/material-quotes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error("Failed to create material quote");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
+      toast({ title: "Success", description: "Material quote added" });
+      setShowMaterialQuoteDialog(false);
+      materialForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add material quote",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update material quote mutation
+  const updateMaterialQuote = useMutation({
+    mutationFn: async ({ quoteId, data }: { quoteId: string; data: Partial<MaterialQuoteFormValues> }) => {
+      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update material quote");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
+      toast({ title: "Success", description: "Material quote updated" });
+      setShowMaterialQuoteDialog(false);
+      setEditingMaterialQuote(null);
+      materialForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update material quote",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete material quote mutation
+  const deleteMaterialQuote = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete material quote");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
+      toast({ title: "Success", description: "Material quote deleted" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete material quote",
         variant: "destructive",
       });
     },
@@ -284,6 +401,41 @@ export default function BidDetailPage() {
     }
   };
 
+  const handleAddMaterialQuote = () => {
+    setEditingMaterialQuote(null);
+    setUploadedMaterialFileData(null);
+    materialForm.reset();
+    setShowMaterialQuoteDialog(true);
+  };
+
+  const handleEditMaterialQuote = (quote: BidMaterialQuote) => {
+    setEditingMaterialQuote(quote);
+    setUploadedMaterialFileData(
+      quote.fileUrl && quote.fileName ? {
+        fileUrl: quote.fileUrl,
+        fileName: quote.fileName,
+        fileSize: quote.fileSize || 0,
+        mimeType: quote.mimeType || "",
+      } : null
+    );
+    materialForm.reset({
+      materialName: quote.materialName,
+      description: quote.description || "",
+      cost: quote.cost,
+      specs: quote.specs || "",
+      leadTime: quote.leadTime || "",
+      supplierName: quote.supplierName || "",
+      supplierContact: quote.supplierContact || "",
+    });
+    setShowMaterialQuoteDialog(true);
+  };
+
+  const handleDeleteMaterialQuote = async (quoteId: string) => {
+    if (confirm("Are you sure you want to delete this material quote?")) {
+      await deleteMaterialQuote.mutateAsync(quoteId);
+    }
+  };
+
   const getUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
@@ -324,6 +476,46 @@ export default function BidDetailPage() {
     }
   };
 
+  const getUploadParametersMaterial = async () => {
+    try {
+      const response = await apiRequest("POST", "/api/objects/upload");
+      const data = await response.json();
+      return {
+        method: "PUT" as const,
+        url: data.uploadURL,
+      };
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
+      throw error;
+    }
+  };
+
+  const handleMaterialFileUploadComplete = async (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
+    try {
+      if (!result.successful || result.successful.length === 0) {
+        throw new Error("No file uploaded");
+      }
+
+      const uploadedFile = result.successful[0];
+      const file = uploadedFile.data as File;
+      const uploadUrl = uploadedFile.uploadURL;
+      const filePath = uploadUrl?.split('?')[0] || '';
+
+      setUploadedMaterialFileData({
+        fileUrl: filePath,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+      });
+
+      toast({ title: "Success", description: "Material quote document uploaded" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to process uploaded file", variant: "destructive" });
+    } finally {
+      setIsUploadingMaterialFile(false);
+    }
+  };
+
   const onSubmitQuote = async (data: QuoteFormValues) => {
     const payload = {
       ...data,
@@ -342,7 +534,26 @@ export default function BidDetailPage() {
     }
   };
 
+  const onSubmitMaterialQuote = async (data: MaterialQuoteFormValues) => {
+    const payload = {
+      ...data,
+      ...(uploadedMaterialFileData && {
+        fileUrl: uploadedMaterialFileData.fileUrl,
+        fileName: uploadedMaterialFileData.fileName,
+        fileSize: uploadedMaterialFileData.fileSize,
+        mimeType: uploadedMaterialFileData.mimeType,
+      }),
+    };
+
+    if (editingMaterialQuote) {
+      await updateMaterialQuote.mutateAsync({ quoteId: editingMaterialQuote.id, data: payload });
+    } else {
+      await createMaterialQuote.mutateAsync(payload as MaterialQuoteFormValues);
+    }
+  };
+
   const totalQuotes = quotes.reduce((sum, q) => sum + Number(q.quoteAmount || 0), 0);
+  const totalMaterialQuotes = materialQuotes.reduce((sum, q) => sum + Number(q.cost || 0), 0);
   const estimate = estimateData?.estimate || null;
 
   // Create estimate mutation
@@ -789,6 +1000,136 @@ export default function BidDetailPage() {
             </CardContent>
           </Card>
 
+          <Card data-testid="card-material-quotes">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="w-5 h-5" />
+                  Material Quotes
+                </CardTitle>
+                <CardDescription>Track material quotes and supplier information</CardDescription>
+              </div>
+              {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                <Button onClick={handleAddMaterialQuote} size="sm" data-testid="button-add-material-quote">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Quote
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {materialQuotesLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading material quotes...</div>
+              ) : materialQuotes.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No material quotes added yet
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-muted rounded-md">
+                    <span className="text-sm font-medium">Total from Material Quotes:</span>
+                    <span className="text-lg font-bold font-mono">${totalMaterialQuotes.toLocaleString()}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {materialQuotes.map((quote) => (
+                      <div key={quote.id} className="flex items-start justify-between p-4 border rounded-md" data-testid={`material-quote-${quote.id}`}>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="font-medium">{quote.materialName}</h4>
+                            <Badge variant="outline" className="font-mono">
+                              ${Number(quote.cost).toLocaleString()}
+                            </Badge>
+                            {quote.fileUrl && (
+                              <Badge variant="secondary" className="gap-1">
+                                <FileText className="w-3 h-3" />
+                                Document
+                              </Badge>
+                            )}
+                          </div>
+                          {quote.description && (
+                            <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
+                          )}
+                          {(quote.specs || quote.leadTime) && (
+                            <div className="flex gap-4 mb-2">
+                              {quote.specs && (
+                                <div className="text-xs">
+                                  <span className="font-medium">Specs:</span>{' '}
+                                  <span className="text-muted-foreground">{quote.specs}</span>
+                                </div>
+                              )}
+                              {quote.leadTime && (
+                                <div className="text-xs">
+                                  <span className="font-medium">Lead Time:</span>{' '}
+                                  <span className="text-muted-foreground">{quote.leadTime}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {(quote.supplierName || quote.supplierContact) && (
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              {quote.supplierName && <p>Supplier: {quote.supplierName}</p>}
+                              {quote.supplierContact && <p>Contact: {quote.supplierContact}</p>}
+                            </div>
+                          )}
+                          {quote.fileUrl && (
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                              <FileText className="w-4 h-4 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground flex-1 truncate">
+                                {quote.fileName || "Material quote document"}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    const response = await apiRequest("POST", "/api/objects/download", {
+                                      fileUrl: quote.fileUrl,
+                                    });
+                                    const data = await response.json();
+                                    window.open(data.downloadURL, '_blank');
+                                  } catch (error) {
+                                    toast({ 
+                                      title: "Error", 
+                                      description: "Failed to download document", 
+                                      variant: "destructive" 
+                                    });
+                                  }
+                                }}
+                                data-testid={`button-download-material-quote-${quote.id}`}
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                Download
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                          <div className="flex gap-2 ml-4">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditMaterialQuote(quote)}
+                              data-testid={`button-edit-material-quote-${quote.id}`}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeleteMaterialQuote(quote.id)}
+                              data-testid={`button-delete-material-quote-${quote.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Bid Documents</CardTitle>
@@ -982,6 +1323,164 @@ export default function BidDetailPage() {
                 </Button>
                 <Button type="submit" disabled={createQuote.isPending || updateQuote.isPending} data-testid="button-submit-quote">
                   {createQuote.isPending || updateQuote.isPending ? "Saving..." : editingQuote ? "Update Quote" : "Add Quote"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMaterialQuoteDialog} onOpenChange={setShowMaterialQuoteDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingMaterialQuote ? "Edit Material Quote" : "Add Material Quote"}</DialogTitle>
+            <DialogDescription>
+              {editingMaterialQuote ? "Update the material quote details" : "Add a new quote for materials and supplies"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...materialForm}>
+            <form onSubmit={materialForm.handleSubmit(onSubmitMaterialQuote)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={materialForm.control}
+                  name="materialName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Material Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Concrete, Rebar, etc." data-testid="input-material-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={materialForm.control}
+                  name="cost"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" step="0.01" placeholder="5000.00" data-testid="input-material-cost" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={materialForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Describe the material specifications and usage..." data-testid="input-material-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={materialForm.control}
+                name="specs"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Specs (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Technical specifications, grade, dimensions, etc." data-testid="input-material-specs" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={materialForm.control}
+                name="leadTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Lead Time (Optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} placeholder="e.g., 2 weeks, 30 days" data-testid="input-material-lead-time" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={materialForm.control}
+                  name="supplierName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supplier Name (Optional)</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="ABC Suppliers" data-testid="input-supplier-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={materialForm.control}
+                  name="supplierContact"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supplier Contact (Optional)</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="Phone or Email" data-testid="input-supplier-contact" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <FormLabel>Material Quote Document (Optional)</FormLabel>
+                <div className="flex items-center gap-3">
+                  {uploadedMaterialFileData ? (
+                    <div className="flex items-center gap-2 p-3 bg-muted rounded-md flex-1">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium flex-1 truncate">{uploadedMaterialFileData.fileName}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setUploadedMaterialFileData(null)}
+                        data-testid="button-remove-material-file"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <ObjectUploader
+                      maxNumberOfFiles={1}
+                      maxFileSize={104857600}
+                      allowedFileTypes={["application/pdf", "image/*", ".doc", ".docx", ".xls", ".xlsx"]}
+                      onGetUploadParameters={getUploadParametersMaterial}
+                      onComplete={(result) => {
+                        setIsUploadingMaterialFile(true);
+                        handleMaterialFileUploadComplete(result);
+                      }}
+                      buttonVariant="outline"
+                      testId="button-upload-material-document"
+                    >
+                      {isUploadingMaterialFile ? "Uploading..." : "Upload Document"}
+                    </ObjectUploader>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  PDF, images, or Office documents (max 100MB)
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowMaterialQuoteDialog(false)} data-testid="button-cancel">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMaterialQuote.isPending || updateMaterialQuote.isPending} data-testid="button-submit-material-quote">
+                  {createMaterialQuote.isPending || updateMaterialQuote.isPending ? "Saving..." : editingMaterialQuote ? "Update Quote" : "Add Quote"}
                 </Button>
               </DialogFooter>
             </form>
