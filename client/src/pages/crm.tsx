@@ -87,6 +87,7 @@ export default function CRMPage() {
   
   const [createContactOpen, setCreateContactOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
+  const [viewContactOpen, setViewContactOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null);
   
   const [newOrg, setNewOrg] = useState({
@@ -865,7 +866,15 @@ export default function CRMPage() {
               ) : (
                 <div className="space-y-2">
                   {orgDetail.contacts.map((contact) => (
-                    <Card key={contact.id} data-testid={`card-contact-${contact.id}`}>
+                    <Card 
+                      key={contact.id} 
+                      className="cursor-pointer hover-elevate"
+                      onClick={() => {
+                        setSelectedContact(contact);
+                        setViewContactOpen(true);
+                      }}
+                      data-testid={`card-contact-${contact.id}`}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3">
@@ -873,7 +882,7 @@ export default function CRMPage() {
                               <User className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium">
                                   {contact.firstName} {contact.lastName}
                                 </span>
@@ -887,27 +896,16 @@ export default function CRMPage() {
                               {contact.title && (
                                 <p className="text-sm text-muted-foreground">{contact.title}</p>
                               )}
-                              <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                                {contact.email && (
-                                  <a href={`mailto:${contact.email}`} className="flex items-center gap-1 hover:text-foreground">
-                                    <Mail className="w-3 h-3" />
-                                    {contact.email}
-                                  </a>
-                                )}
-                                {contact.phone && (
-                                  <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
-                                    <Phone className="w-3 h-3" />
-                                    {contact.phone}
-                                  </a>
-                                )}
-                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openEditContact(contact)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditContact(contact);
+                              }}
                               data-testid={`button-edit-contact-${contact.id}`}
                             >
                               <Edit className="w-4 h-4" />
@@ -915,12 +913,16 @@ export default function CRMPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => deleteContactMutation.mutate(contact.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteContactMutation.mutate(contact.id);
+                              }}
                               disabled={deleteContactMutation.isPending}
                               data-testid={`button-delete-contact-${contact.id}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
                           </div>
                         </div>
                       </CardContent>
@@ -1180,6 +1182,121 @@ export default function CRMPage() {
               data-testid="button-update-contact"
             >
               {updateContactMutation.isPending ? "Updating..." : "Update Contact"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={viewContactOpen} onOpenChange={setViewContactOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <DialogTitle className="text-xl">
+                  {selectedContact?.firstName} {selectedContact?.lastName}
+                </DialogTitle>
+                <div className="flex items-center gap-2 mt-2">
+                  {selectedContact?.isPrimary && (
+                    <Badge variant="secondary">Primary Contact</Badge>
+                  )}
+                  <Badge variant="outline">
+                    {ROLE_LABELS[(selectedContact?.role || "OTHER") as ContactRole]}
+                  </Badge>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (selectedContact) {
+                    openEditContact(selectedContact);
+                    setViewContactOpen(false);
+                  }
+                }}
+                data-testid="button-edit-from-view"
+              >
+                <Edit className="w-4 h-4 mr-1" />
+                Edit
+              </Button>
+            </div>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {selectedContact?.title && (
+              <div className="flex items-start gap-3">
+                <User className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Title</p>
+                  <p className="text-sm text-muted-foreground">{selectedContact.title}</p>
+                </div>
+              </div>
+            )}
+            
+            {selectedContact?.email && (
+              <div className="flex items-start gap-3">
+                <Mail className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Email</p>
+                  <a 
+                    href={`mailto:${selectedContact.email}`} 
+                    className="text-sm text-primary hover:underline"
+                  >
+                    {selectedContact.email}
+                  </a>
+                </div>
+              </div>
+            )}
+            
+            {selectedContact?.phone && (
+              <div className="flex items-start gap-3">
+                <Phone className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Phone</p>
+                  <a 
+                    href={`tel:${selectedContact.phone}`} 
+                    className="text-sm text-primary hover:underline"
+                  >
+                    {selectedContact.phone}
+                  </a>
+                </div>
+              </div>
+            )}
+            
+            {selectedContact?.mobile && (
+              <div className="flex items-start gap-3">
+                <Phone className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Mobile</p>
+                  <a 
+                    href={`tel:${selectedContact.mobile}`} 
+                    className="text-sm text-primary hover:underline"
+                  >
+                    {selectedContact.mobile}
+                  </a>
+                </div>
+              </div>
+            )}
+            
+            {selectedContact?.notes && (
+              <div className="flex items-start gap-3">
+                <FileText className="w-5 h-5 mt-0.5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Notes</p>
+                  <p className="text-sm text-muted-foreground">{selectedContact.notes}</p>
+                </div>
+              </div>
+            )}
+            
+            {!selectedContact?.title && !selectedContact?.email && !selectedContact?.phone && !selectedContact?.mobile && !selectedContact?.notes && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No additional contact information available.
+              </p>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewContactOpen(false)} data-testid="button-close-view-contact">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
