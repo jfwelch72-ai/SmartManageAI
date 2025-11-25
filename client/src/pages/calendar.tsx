@@ -269,6 +269,68 @@ export default function CalendarPage() {
           </Dialog>
         </div>
 
+        {/* Show pending time-off requests list when filter is active */}
+        {viewFilter === "TIME_OFF_REQUEST" && pendingTimeOffRequests.length > 0 && (
+          <Card className="mb-6" data-testid="card-pending-requests-list">
+            <CardHeader>
+              <CardTitle className="text-lg">Pending Requests Awaiting Approval</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {pendingTimeOffRequests.map(request => (
+                  <div 
+                    key={request.id}
+                    className="flex items-center justify-between p-3 bg-muted rounded-md"
+                    data-testid={`pending-request-${request.id}`}
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium">{request.title}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {format(new Date(request.startDate), "MMM d, yyyy")}
+                        {request.endDate && ` - ${format(new Date(request.endDate), "MMM d, yyyy")}`}
+                      </div>
+                      {request.description && (
+                        <div className="text-sm text-muted-foreground mt-1">{request.description}</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentDate(new Date(request.startDate))}
+                        data-testid={`button-goto-date-${request.id}`}
+                      >
+                        View on Calendar
+                      </Button>
+                      {canApprove && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleApprove(request.id)}
+                          disabled={approveTimeOff.isPending}
+                          data-testid={`button-approve-${request.id}`}
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Approve
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {viewFilter === "TIME_OFF_REQUEST" && pendingTimeOffRequests.length === 0 && (
+          <Card className="mb-6">
+            <CardContent className="py-8 text-center">
+              <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-3" />
+              <h3 className="text-lg font-medium mb-1">All Caught Up!</h3>
+              <p className="text-muted-foreground">There are no pending time-off requests to review.</p>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <Card>
