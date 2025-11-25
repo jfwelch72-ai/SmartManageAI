@@ -754,6 +754,64 @@ export default function BidEstimate() {
                       />
                     </div>
 
+                    {/* Cost Per Unit Preview */}
+                    {(() => {
+                      const watchedValues = form.watch();
+                      const quantity = Number(watchedValues.quantity) || 0;
+                      const unit = watchedValues.unit || "UNIT";
+                      const directCost = (Number(watchedValues.materialCost) || 0) + 
+                                        (Number(watchedValues.laborCost) || 0) + 
+                                        (Number(watchedValues.equipmentCost) || 0) + 
+                                        (Number(watchedValues.subcontractCost) || 0);
+                      
+                      const baseCostPerUnit = quantity > 0 ? directCost / quantity : 0;
+                      const overheadMultiplier = 1 + (overheadPercent / 100);
+                      const profitMultiplier = 1 + (profitMarginPercent / 100);
+                      const adjustedCostPerUnit = baseCostPerUnit * overheadMultiplier * profitMultiplier;
+                      
+                      return quantity > 0 ? (
+                        <Card className="border-primary/20 bg-primary/5">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <Calculator className="h-4 w-4" />
+                              Cost Per Unit Preview
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              Auto-calculated based on quantity and What-If Calculator settings
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="p-3 bg-background rounded-md border">
+                                <p className="text-xs text-muted-foreground mb-1">Base Cost</p>
+                                <p className="text-lg font-semibold" data-testid="text-base-cost-per-unit">
+                                  ${baseCostPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                              <div className="p-3 bg-background rounded-md border">
+                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({(overheadPercent + profitMarginPercent)}%)</p>
+                                <p className="text-lg font-semibold text-amber-600 dark:text-amber-400" data-testid="text-markup-per-unit">
+                                  +${(adjustedCostPerUnit - baseCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                              <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
+                                <p className="text-xs text-muted-foreground mb-1">Bid Price</p>
+                                <p className="text-lg font-bold text-primary" data-testid="text-bid-price-per-unit">
+                                  ${adjustedCostPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-3 text-center">
+                              {quantity.toLocaleString()} {unit} x ${adjustedCostPerUnit.toFixed(2)} = ${(quantity * adjustedCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : null;
+                    })()}
+
                     <div className="flex justify-end gap-3">
                       <Button type="button" variant="outline" onClick={() => setAddLineItemOpen(false)} data-testid="button-cancel">
                         Cancel
@@ -971,6 +1029,64 @@ export default function BidEstimate() {
                         )}
                       />
                     </div>
+
+                    {/* Cost Per Unit Preview */}
+                    {(() => {
+                      const watchedValues = form.watch();
+                      const quantity = Number(watchedValues.quantity) || 0;
+                      const unit = watchedValues.unit || "UNIT";
+                      const directCost = (Number(watchedValues.materialCost) || 0) + 
+                                        (Number(watchedValues.laborCost) || 0) + 
+                                        (Number(watchedValues.equipmentCost) || 0) + 
+                                        (Number(watchedValues.subcontractCost) || 0);
+                      
+                      const baseCostPerUnit = quantity > 0 ? directCost / quantity : 0;
+                      const overheadMultiplier = 1 + (overheadPercent / 100);
+                      const profitMultiplier = 1 + (profitMarginPercent / 100);
+                      const adjustedCostPerUnit = baseCostPerUnit * overheadMultiplier * profitMultiplier;
+                      
+                      return quantity > 0 ? (
+                        <Card className="border-primary/20 bg-primary/5">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2">
+                              <Calculator className="h-4 w-4" />
+                              Cost Per Unit Preview
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              Auto-calculated based on quantity and What-If Calculator settings
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="grid grid-cols-3 gap-4">
+                              <div className="p-3 bg-background rounded-md border">
+                                <p className="text-xs text-muted-foreground mb-1">Base Cost</p>
+                                <p className="text-lg font-semibold" data-testid="text-edit-base-cost-per-unit">
+                                  ${baseCostPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                              <div className="p-3 bg-background rounded-md border">
+                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({(overheadPercent + profitMarginPercent)}%)</p>
+                                <p className="text-lg font-semibold text-amber-600 dark:text-amber-400" data-testid="text-edit-markup-per-unit">
+                                  +${(adjustedCostPerUnit - baseCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                              <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
+                                <p className="text-xs text-muted-foreground mb-1">Bid Price</p>
+                                <p className="text-lg font-bold text-primary" data-testid="text-edit-bid-price-per-unit">
+                                  ${adjustedCostPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-3 text-center">
+                              {quantity.toLocaleString()} {unit} x ${adjustedCostPerUnit.toFixed(2)} = ${(quantity * adjustedCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ) : null;
+                    })()}
 
                     <div className="flex justify-end gap-3">
                       <Button type="button" variant="outline" onClick={() => {
