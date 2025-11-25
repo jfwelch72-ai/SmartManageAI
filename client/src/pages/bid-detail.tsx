@@ -1281,7 +1281,7 @@ export default function BidDetailPage() {
       </main>
 
       <Dialog open={showQuoteDialog} onOpenChange={setShowQuoteDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingQuote ? "Edit Quote" : "Add Subcontractor Quote"}</DialogTitle>
             <DialogDescription>
@@ -1503,7 +1503,7 @@ export default function BidDetailPage() {
       </Dialog>
 
       <Dialog open={showMaterialQuoteDialog} onOpenChange={setShowMaterialQuoteDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingMaterialQuote ? "Edit Material Quote" : "Add Material Quote"}</DialogTitle>
             <DialogDescription>
