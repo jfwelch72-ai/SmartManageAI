@@ -10,13 +10,13 @@ import { sanitizeText } from "./sanitization";
 const router = Router();
 
 // Valid state transitions for change orders
-// Enforces strict workflow: DRAFT → PENDING_APPROVAL → SUBMITTED → APPROVED/REJECTED
+// Simplified workflow: DRAFT → SUBMITTED → APPROVED/REJECTED
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  DRAFT: ["PENDING_APPROVAL"],  // Must request approval first
-  PENDING_APPROVAL: ["DRAFT", "SUBMITTED"],  // Can return to draft or submit to client
+  DRAFT: ["SUBMITTED"],  // Submit directly to client
   SUBMITTED: ["DRAFT", "APPROVED", "REJECTED"],  // Client approves/rejects or return for revision
   APPROVED: [],  // Terminal state - no further transitions
   REJECTED: ["DRAFT"],  // Can be revised and resubmitted
+  PENDING_APPROVAL: ["SUBMITTED", "DRAFT"],  // Legacy support: allow transition from old status
 };
 
 /**
@@ -65,8 +65,8 @@ async function notifyStatusChange(
     });
   }
 
-  // Notify admins and managers for pending approvals
-  if (newStatus === "PENDING_APPROVAL") {
+  // Notify admins and managers when a change order is submitted
+  if (newStatus === "SUBMITTED") {
     const adminsAndManagers = await dbClient
       .select()
       .from(users)
@@ -76,8 +76,8 @@ async function notifyStatusChange(
       notificationsToCreate.push({
         userId: user.id,
         type: "CHANGE_ORDER_PENDING" as const,
-        title: "Change Order Pending Approval",
-        message: `Change order ${order.changeOrderNumber} requires approval`,
+        title: "Change Order Submitted",
+        message: `Change order ${order.changeOrderNumber} has been submitted to client`,
         relatedEntityId: order.id,
         relatedEntityType: "changeOrder",
       });
@@ -94,10 +94,11 @@ async function notifyStatusChange(
 // ====================
 
 /**
- * Request approval for a change order
- * DRAFT -> PENDING_APPROVAL
+ * @deprecated Legacy endpoint - use /submit instead
+ * For backward compatibility, this now redirects to SUBMITTED status directly
+ * Also handles migrating any existing PENDING_APPROVAL records to SUBMITTED
  */
-router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const order = await getChangeOrderById(req.params.id);
 
@@ -106,53 +107,46 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    // Only requester, admins, or managers can request approval
-    if (req.user!.id !== order.requestedById && 
-        req.user!.role !== "ADMIN" && 
-        req.user!.role !== "MANAGER") {
-      res.status(403).json({ error: "You don't have permission to modify this change order" });
-      return;
-    }
-
-    if (!isValidTransition(order.status, "PENDING_APPROVAL")) {
+    // For simplified workflow: treat as submit to client
+    // Handles both DRAFT and legacy PENDING_APPROVAL statuses
+    if (order.status !== "DRAFT" && order.status !== "PENDING_APPROVAL") {
       res.status(400).json({ 
-        error: `Cannot transition from ${order.status} to PENDING_APPROVAL` 
+        error: `Cannot submit from ${order.status} status. Change order must be in DRAFT status.` 
       });
       return;
     }
 
-    // Update change order status (sequential operations - Neon HTTP driver doesn't support transactions)
+    // Submit directly to client (simplified workflow)
+    const now = new Date();
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: "PENDING_APPROVAL",
-        updatedAt: new Date(),
+        status: "SUBMITTED",
+        submittedAt: now,
+        updatedAt: now,
       })
       .where(eq(changeOrders.id, req.params.id))
       .returning();
 
-    // Guard: Check if update actually found a row (concurrent deletion protection)
     if (!updatedOrder) {
       res.status(404).json({ error: "Change order not found" });
       return;
     }
 
-    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "SUBMIT",
       entityType: "changeOrder",
       entityId: order.id,
       oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "PENDING_APPROVAL" }),
+      newValue: JSON.stringify({ status: "SUBMITTED" }),
     }, req);
 
-    // Notify relevant users
     await notifyStatusChange(
       updatedOrder,
-      "PENDING_APPROVAL",
-      `Change order ${updatedOrder.changeOrderNumber} is now pending approval`,
-      false  // Don't notify requester as they initiated it
+      "SUBMITTED",
+      `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
+      true
     );
 
     res.json(updatedOrder);
@@ -164,7 +158,7 @@ router.post("/:id/request-approval", requireAuth, async (req: AuthRequest, res: 
 
 /**
  * Submit a change order to client
- * PENDING_APPROVAL -> SUBMITTED or DRAFT -> SUBMITTED
+ * DRAFT -> SUBMITTED (simplified workflow)
  */
 router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
@@ -182,12 +176,14 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Update change order status (sequential operations - Neon HTTP driver doesn't support transactions)
+    // Update change order status with submittedAt timestamp
+    const now = new Date();
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
         status: "SUBMITTED",
-        updatedAt: new Date(),
+        submittedAt: now,
+        updatedAt: now,
       })
       .where(eq(changeOrders.id, req.params.id))
       .returning();
@@ -225,7 +221,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
 
 /**
  * Approve a change order
- * SUBMITTED -> APPROVED or PENDING_APPROVAL -> APPROVED
+ * SUBMITTED -> APPROVED (simplified workflow)
  */
 router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
@@ -385,11 +381,12 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
-    // Return to draft (sequential operations - Neon HTTP driver doesn't support transactions)
+    // Return to draft - clear submittedAt so weekly alerts use fresh date on re-submission
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
         status: "DRAFT",
+        submittedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(changeOrders.id, req.params.id))

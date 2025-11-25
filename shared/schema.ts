@@ -423,6 +423,7 @@ export const media = pgTable("media", {
 });
 
 // Change Orders table
+// Simplified workflow: DRAFT → SUBMITTED → APPROVED/REJECTED
 export const changeOrders = pgTable("change_orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -431,6 +432,7 @@ export const changeOrders = pgTable("change_orders", {
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   status: changeOrderStatusEnum("status").notNull().default("DRAFT"),
   requestedById: varchar("requested_by_id").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),

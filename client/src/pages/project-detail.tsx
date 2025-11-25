@@ -222,8 +222,8 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                             variant={
                               co.status === "APPROVED" ? "default" :
                               co.status === "REJECTED" ? "destructive" :
-                              co.status === "PENDING_APPROVAL" ? "destructive" :
-                              "secondary"
+                              co.status === "SUBMITTED" ? "secondary" :
+                              "outline"
                             }
                           >
                             {co.status?.replace("_", " ")}
@@ -261,21 +261,7 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                         <p className="text-xs text-muted-foreground">
                           {parseFloat(co.amount) >= 0 ? 'Addition' : 'Deduction'}
                         </p>
-                        {co.status === "DRAFT" && (
-                          <div className="flex gap-2 mt-2">
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => handleRequestApproval(co.id)}
-                              disabled={requestApprovalMutation.isPending}
-                              data-testid={`button-request-approval-${co.id}`}
-                            >
-                              <Clock className="w-4 h-4 mr-1" />
-                              Request Approval
-                            </Button>
-                          </div>
-                        )}
-                        {canManage && co.status === "PENDING_APPROVAL" && (
+                        {canManage && co.status === "DRAFT" && (
                           <div className="flex gap-2 mt-2">
                             <Button
                               size="sm"
@@ -286,16 +272,6 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                             >
                               <CheckCircle className="w-4 h-4 mr-1" />
                               Submit to Client
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleReturnToDraft(co.id)}
-                              disabled={returnToDraftMutation.isPending}
-                              data-testid={`button-return-draft-${co.id}`}
-                            >
-                              <Edit className="w-4 h-4 mr-1" />
-                              Return to Draft
                             </Button>
                           </div>
                         )}
@@ -945,9 +921,9 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="scope" data-testid="tab-scope">Scope & Progress</TabsTrigger>
             <TabsTrigger value="change-orders" data-testid="tab-change-orders">
               Change Orders
-              {changeOrders.filter(co => co.status === "PENDING_APPROVAL").length > 0 && (
-                <Badge className="ml-2" variant="destructive">
-                  {changeOrders.filter(co => co.status === "PENDING_APPROVAL").length}
+              {changeOrders.filter(co => co.status === "SUBMITTED").length > 0 && (
+                <Badge className="ml-2" variant="secondary">
+                  {changeOrders.filter(co => co.status === "SUBMITTED").length}
                 </Badge>
               )}
             </TabsTrigger>

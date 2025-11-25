@@ -281,20 +281,25 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .orderBy(desc(changeOrders.approvedAt))
     .limit(10);
 
-  // Change orders needing attention (pending >7 days)
+  // Change orders needing attention (submitted >7 days without response)
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const changeOrdersNeedingAttention = allChangeOrders
-    .filter(co => 
-      (co.status === 'PENDING_APPROVAL' || co.status === 'SUBMITTED') &&
-      new Date(co.createdAt) < sevenDaysAgo
-    )
-    .map(co => ({
-      project_code: projectIdToCode.get(co.projectId) || co.projectId,
-      description: co.description,
-      amount: Number(co.amount || 0),
-      status: co.status,
-      days_pending: Math.floor((now.getTime() - new Date(co.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-    }));
+    .filter(co => {
+      if (co.status !== 'SUBMITTED') return false;
+      // Use submittedAt if available, otherwise fall back to createdAt
+      const checkDate = co.submittedAt ? new Date(co.submittedAt) : new Date(co.createdAt);
+      return checkDate < sevenDaysAgo;
+    })
+    .map(co => {
+      const checkDate = co.submittedAt ? new Date(co.submittedAt) : new Date(co.createdAt);
+      return {
+        project_code: projectIdToCode.get(co.projectId) || co.projectId,
+        description: co.description,
+        amount: Number(co.amount || 0),
+        status: co.status,
+        days_pending: Math.floor((now.getTime() - checkDate.getTime()) / (1000 * 60 * 60 * 24))
+      };
+    });
 
   // Calculate change order totals by status
   const coByStatus = {

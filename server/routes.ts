@@ -246,11 +246,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(projects.status, "ACTIVE"));
       const activeProjectsCount = activeProjectsResult[0]?.count || 0;
 
-      // Count pending change orders
+      // Count submitted change orders awaiting client response
       const pendingChangeOrdersResult = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(changeOrders)
-        .where(eq(changeOrders.status, "PENDING_APPROVAL"));
+        .where(eq(changeOrders.status, "SUBMITTED"));
       const pendingChangeOrdersCount = pendingChangeOrdersResult[0]?.count || 0;
 
       // Count pending time-off requests
