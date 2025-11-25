@@ -508,9 +508,20 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot edit this estimate" });
       }
 
-      // Update line item
+      // Recalculate totalCost from component costs
+      const totalCost = (
+        Number(updates.materialCost || 0) +
+        Number(updates.laborCost || 0) +
+        Number(updates.equipmentCost || 0) +
+        Number(updates.consumablesCost || 0) +
+        Number(updates.subcontractCost || 0) +
+        Number(updates.overheadAllocation || 0) +
+        Number(updates.profitAllocation || 0)
+      ).toString();
+
+      // Update line item with recalculated total
       const [updatedLineItem] = await db.update(estimateLineItems)
-        .set({ ...updates, userAdjusted: true, updatedAt: new Date() })
+        .set({ ...updates, totalCost, userAdjusted: true, updatedAt: new Date() })
         .where(and(
           eq(estimateLineItems.id, lineItemId),
           eq(estimateLineItems.estimateId, estimateId)

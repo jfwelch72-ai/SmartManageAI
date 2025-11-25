@@ -713,34 +713,6 @@ export default function BidEstimate() {
 
                       <FormField
                         control={form.control}
-                        name="overheadAllocation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Overhead ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-overhead" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="profitAllocation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Profit ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-profit" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
                         name="notes"
                         render={({ field }) => (
                           <FormItem className="col-span-2">
@@ -1003,34 +975,6 @@ export default function BidEstimate() {
 
                       <FormField
                         control={form.control}
-                        name="overheadAllocation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Overhead ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-overhead" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="profitAllocation"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Profit ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-profit" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
                         name="notes"
                         render={({ field }) => (
                           <FormItem className="col-span-2">
@@ -1163,8 +1107,6 @@ export default function BidEstimate() {
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">Equipment</TableHead>
                       <TableHead className="text-right">Subcontract</TableHead>
-                      <TableHead className="text-right">Overhead</TableHead>
-                      <TableHead className="text-right">Profit</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       {estimate.status === "DRAFT" && <TableHead></TableHead>}
                     </TableRow>
@@ -1195,12 +1137,6 @@ export default function BidEstimate() {
                         <TableCell className="text-right">
                           ${Number(item.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.overheadAllocation).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.profitAllocation).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
                         <TableCell className="text-right font-bold">
                           ${Number(item.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
@@ -1223,8 +1159,8 @@ export default function BidEstimate() {
                                     equipmentCost: Number(item.equipmentCost),
                                     consumablesCost: Number(item.consumablesCost || 0),
                                     subcontractCost: Number(item.subcontractCost || 0),
-                                    overheadAllocation: Number(item.overheadAllocation),
-                                    profitAllocation: Number(item.profitAllocation),
+                                    overheadAllocation: 0,
+                                    profitAllocation: 0,
                                     notes: (item as any).metadata || "",
                                   });
                                   setEditLineItemOpen(true);
