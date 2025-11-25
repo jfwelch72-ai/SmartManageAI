@@ -60,6 +60,7 @@ export const RoutePermissions = {
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+  CRM: (role?: string) => hasManagementAccess(role),
 
   // Everyone has access
   DASHBOARD: () => true,
@@ -148,6 +149,12 @@ export const NavigationConfig = {
       label: "Projects",
       testId: "nav-projects",
       visible: () => true,
+    },
+    {
+      href: "/crm",
+      label: "CRM",
+      testId: "nav-crm",
+      visible: (role?: string) => hasManagementAccess(role),
     },
     {
       href: "/calendar",

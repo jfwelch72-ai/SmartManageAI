@@ -3565,6 +3565,397 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // CRM Routes
+  // ====================
+
+  const { 
+    crmOrganisations, crmContacts, 
+    insertCrmOrganisationSchema, insertCrmContactSchema 
+  } = await import("@shared/schema");
+
+  // List all CRM organisations with optional filters
+  app.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { type, search, active } = req.query;
+      
+      let query = db
+        .select({
+          id: crmOrganisations.id,
+          type: crmOrganisations.type,
+          name: crmOrganisations.name,
+          address: crmOrganisations.address,
+          city: crmOrganisations.city,
+          state: crmOrganisations.state,
+          zipCode: crmOrganisations.zipCode,
+          website: crmOrganisations.website,
+          specialties: crmOrganisations.specialties,
+          insuranceExpiration: crmOrganisations.insuranceExpiration,
+          wcInsuranceExpiration: crmOrganisations.wcInsuranceExpiration,
+          licenseExpiration: crmOrganisations.licenseExpiration,
+          paymentTerms: crmOrganisations.paymentTerms,
+          notes: crmOrganisations.notes,
+          isActive: crmOrganisations.isActive,
+          createdAt: crmOrganisations.createdAt,
+          updatedAt: crmOrganisations.updatedAt,
+        })
+        .from(crmOrganisations);
+      
+      const conditions: any[] = [];
+      
+      if (type) {
+        conditions.push(sql`${crmOrganisations.type} = ${type}`);
+      }
+      if (active !== undefined) {
+        conditions.push(eq(crmOrganisations.isActive, active === 'true'));
+      }
+      if (search) {
+        conditions.push(
+          sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + search + '%'})`
+        );
+      }
+      
+      let results;
+      if (conditions.length > 0) {
+        results = await query.where(and(...conditions)).orderBy(crmOrganisations.name);
+      } else {
+        results = await query.orderBy(crmOrganisations.name);
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Get CRM organisations error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get single organisation with contacts
+  app.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [organisation] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, req.params.id))
+        .limit(1);
+      
+      if (!organisation) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+      
+      const contacts = await db
+        .select()
+        .from(crmContacts)
+        .where(eq(crmContacts.organisationId, req.params.id))
+        .orderBy(desc(crmContacts.isPrimary), crmContacts.lastName, crmContacts.firstName);
+      
+      res.json({ ...organisation, contacts });
+    } catch (error) {
+      console.error("Get CRM organisation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create organisation (ADMIN, MANAGER only)
+  app.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertCrmOrganisationSchema.safeParse({
+        ...req.body,
+        createdById: req.user!.id,
+      });
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+      
+      const [newOrg] = await db
+        .insert(crmOrganisations)
+        .values(validationResult.data)
+        .returning();
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "crm_organisations",
+        entityId: newOrg.id,
+        newValue: JSON.stringify({ name: newOrg.name, type: newOrg.type }),
+      });
+      
+      res.status(201).json(newOrg);
+    } catch (error) {
+      console.error("Create CRM organisation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update organisation (ADMIN, MANAGER only)
+  app.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, req.params.id))
+        .limit(1);
+      
+      if (!existing) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+      
+      const validationResult = insertCrmOrganisationSchema.partial().safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+      
+      const [updated] = await db
+        .update(crmOrganisations)
+        .set({
+          ...validationResult.data,
+          updatedAt: new Date(),
+        })
+        .where(eq(crmOrganisations.id, req.params.id))
+        .returning();
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "crm_organisations",
+        entityId: updated.id,
+        oldValue: JSON.stringify({ name: existing.name, type: existing.type }),
+        newValue: JSON.stringify({ name: updated.name, type: updated.type }),
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update CRM organisation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete organisation (ADMIN only)
+  app.delete("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, req.params.id))
+        .limit(1);
+      
+      if (!existing) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+      
+      await db.delete(crmOrganisations).where(eq(crmOrganisations.id, req.params.id));
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "DELETE",
+        entityType: "crm_organisations",
+        entityId: existing.id,
+        oldValue: JSON.stringify({ name: existing.name, type: existing.type }),
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete CRM organisation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get contacts for an organisation
+  app.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const contacts = await db
+        .select()
+        .from(crmContacts)
+        .where(eq(crmContacts.organisationId, req.params.id))
+        .orderBy(desc(crmContacts.isPrimary), crmContacts.lastName, crmContacts.firstName);
+      
+      res.json(contacts);
+    } catch (error) {
+      console.error("Get CRM contacts error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create contact (ADMIN, MANAGER only)
+  app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertCrmContactSchema.safeParse({
+        ...req.body,
+        createdById: req.user!.id,
+      });
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+      
+      // If this is set as primary, unset other primaries for this org
+      if (validationResult.data.isPrimary) {
+        await db
+          .update(crmContacts)
+          .set({ isPrimary: false })
+          .where(eq(crmContacts.organisationId, validationResult.data.organisationId));
+      }
+      
+      const [newContact] = await db
+        .insert(crmContacts)
+        .values(validationResult.data)
+        .returning();
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "crm_contacts",
+        entityId: newContact.id,
+        newValue: JSON.stringify({ firstName: newContact.firstName, lastName: newContact.lastName }),
+      });
+      
+      res.status(201).json(newContact);
+    } catch (error) {
+      console.error("Create CRM contact error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update contact (ADMIN, MANAGER only)
+  app.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(crmContacts)
+        .where(eq(crmContacts.id, req.params.id))
+        .limit(1);
+      
+      if (!existing) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      
+      const validationResult = insertCrmContactSchema.partial().safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+      
+      // If this is set as primary, unset other primaries for this org
+      if (validationResult.data.isPrimary) {
+        await db
+          .update(crmContacts)
+          .set({ isPrimary: false })
+          .where(and(
+            eq(crmContacts.organisationId, existing.organisationId),
+            sql`${crmContacts.id} != ${req.params.id}`
+          ));
+      }
+      
+      const [updated] = await db
+        .update(crmContacts)
+        .set({
+          ...validationResult.data,
+          updatedAt: new Date(),
+        })
+        .where(eq(crmContacts.id, req.params.id))
+        .returning();
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "crm_contacts",
+        entityId: updated.id,
+        oldValue: JSON.stringify({ firstName: existing.firstName, lastName: existing.lastName }),
+        newValue: JSON.stringify({ firstName: updated.firstName, lastName: updated.lastName }),
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update CRM contact error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete contact (ADMIN, MANAGER only)
+  app.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(crmContacts)
+        .where(eq(crmContacts.id, req.params.id))
+        .limit(1);
+      
+      if (!existing) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      
+      await db.delete(crmContacts).where(eq(crmContacts.id, req.params.id));
+      
+      // Log to audit
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "DELETE",
+        entityType: "crm_contacts",
+        entityId: existing.id,
+        oldValue: JSON.stringify({ firstName: existing.firstName, lastName: existing.lastName }),
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete CRM contact error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Search CRM for form auto-populate (simplified endpoint)
+  app.get("/api/crm/search", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { type, query } = req.query;
+      
+      if (!query || (query as string).length < 2) {
+        res.json({ organisations: [], contacts: [] });
+        return;
+      }
+      
+      const conditions: any[] = [
+        eq(crmOrganisations.isActive, true),
+        sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + query + '%'})`,
+      ];
+      
+      if (type) {
+        conditions.push(sql`${crmOrganisations.type} = ${type}`);
+      }
+      
+      const organisations = await db
+        .select({
+          id: crmOrganisations.id,
+          type: crmOrganisations.type,
+          name: crmOrganisations.name,
+          city: crmOrganisations.city,
+          state: crmOrganisations.state,
+        })
+        .from(crmOrganisations)
+        .where(and(...conditions))
+        .orderBy(crmOrganisations.name)
+        .limit(20);
+      
+      res.json({ organisations });
+    } catch (error) {
+      console.error("CRM search error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Project Notes Routes
   // ====================
 
