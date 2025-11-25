@@ -374,6 +374,32 @@ export default function ProjectDetailPage() {
   const { data: tmSheets = [], isLoading: tmSheetsLoading } = useProjectTMSheets(projectCode);
   const { data: receipts = [], isLoading: receiptsLoading } = useProjectReceipts(projectCode);
 
+  // Project financials query (for detailed profit tracking)
+  interface ProjectFinancials {
+    budget: number;
+    originalContract: number;
+    adjustedContract: number;
+    approvedChangeOrdersTotal: number;
+    approvedChangeOrdersCount: number;
+    projectedProfit: number;
+    actualProfit: number;
+    actualCosts: {
+      labor: number;
+      laborHours: number;
+      materials: number;
+      subcontractors: number;
+      otherExpenses: number;
+      total: number;
+    };
+    profitVariance: number;
+    profitVariancePercent: number;
+  }
+  
+  const { data: financials, isLoading: financialsLoading } = useQuery<ProjectFinancials>({
+    queryKey: ["/api/projects", projectCode, "financials"],
+    enabled: !!projectCode && FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role),
+  });
+
   // Subcontractor contracts query
   const { data: subcontractors = [], isLoading: subcontractorsLoading } = useQuery<Array<{
     id: string;
@@ -844,57 +870,149 @@ export default function ProjectDetailPage() {
                     </Button>
                   )}
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Project Budget</p>
-                      <p className="text-2xl font-bold font-mono">
-                        ${parseFloat(project.budget || "0").toLocaleString()}
-                      </p>
-                      {(!project.budget || parseFloat(project.budget) === 0) && (
-                        <p className="text-xs text-destructive mt-1">⚠ Missing budget data</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Original Contract Amount</p>
-                      <p className="text-2xl font-bold font-mono">
-                        ${parseFloat(project.contractAmount || "0").toLocaleString()}
-                      </p>
-                      {(!project.contractAmount || parseFloat(project.contractAmount) === 0) && (
-                        <p className="text-xs text-destructive mt-1">⚠ Missing contract data</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <DollarSign className="w-5 h-5 text-primary mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Adjusted Contract Amount</p>
-                      <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
-                        ${(() => {
-                          const originalAmount = parseFloat(project.contractAmount || "0");
-                          const approvedChangeOrders = changeOrders?.filter(co => co.status === "APPROVED") || [];
-                          const changeOrderTotal = approvedChangeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0);
-                          return (originalAmount + changeOrderTotal).toLocaleString();
-                        })()}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {(() => {
-                          const approvedChangeOrders = changeOrders?.filter(co => co.status === "APPROVED") || [];
-                          const changeOrderTotal = approvedChangeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0);
-                          const additions = approvedChangeOrders.filter(co => parseFloat(co.amount) > 0).length;
-                          const deductions = approvedChangeOrders.filter(co => parseFloat(co.amount) < 0).length;
-                          if (approvedChangeOrders.length === 0) {
-                            return "No approved change orders";
+                <CardContent>
+                  {financialsLoading ? (
+                    <div className="text-center py-4 text-muted-foreground">Loading financial data...</div>
+                  ) : financials ? (
+                    <div className="space-y-6">
+                      {/* Primary Financial Metrics */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Budget - Cost to do the job */}
+                        <div className="p-4 rounded-lg border bg-card">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-muted-foreground" />
+                            <p className="text-sm font-medium text-muted-foreground">Budget</p>
+                          </div>
+                          <p className="text-2xl font-bold font-mono" data-testid="text-budget">
+                            ${financials.budget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Direct cost to complete the work</p>
+                        </div>
+                        
+                        {/* Contract Amount - What client pays */}
+                        <div className="p-4 rounded-lg border bg-card">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-muted-foreground" />
+                            <p className="text-sm font-medium text-muted-foreground">Contract Amount</p>
+                          </div>
+                          <p className="text-2xl font-bold font-mono" data-testid="text-contract-amount">
+                            ${financials.originalContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Budget + overhead + profit</p>
+                        </div>
+                      </div>
+
+                      {/* Adjusted Contract */}
+                      <div className="p-4 rounded-lg border bg-primary/5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <DollarSign className="w-4 h-4 text-primary" />
+                          <p className="text-sm font-medium text-primary">Adjusted Contract</p>
+                        </div>
+                        <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
+                          ${financials.adjustedContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {financials.approvedChangeOrdersCount === 0 
+                            ? "No approved change orders or T&M tickets"
+                            : `Includes ${financials.approvedChangeOrdersCount} approved change order${financials.approvedChangeOrdersCount > 1 ? 's' : ''} (${financials.approvedChangeOrdersTotal >= 0 ? '+' : ''}$${financials.approvedChangeOrdersTotal.toLocaleString()})`
                           }
-                          return `Includes ${approvedChangeOrders.length} approved change order${approvedChangeOrders.length > 1 ? 's' : ''} (${additions > 0 ? `${additions} addition${additions > 1 ? 's' : ''}` : ''}${additions > 0 && deductions > 0 ? ', ' : ''}${deductions > 0 ? `${deductions} deduction${deductions > 1 ? 's' : ''}` : ''}) totaling ${changeOrderTotal >= 0 ? '+' : ''}$${changeOrderTotal.toLocaleString()}`;
-                        })()}
-                      </p>
+                        </p>
+                      </div>
+
+                      {/* Profit Section */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Projected Profit */}
+                        <div className="p-4 rounded-lg border bg-green-50 dark:bg-green-950/30">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            <p className="text-sm font-medium text-green-600 dark:text-green-400">Projected Profit</p>
+                          </div>
+                          <p className="text-2xl font-bold font-mono text-green-600 dark:text-green-400" data-testid="text-projected-profit">
+                            ${financials.projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Expected profit (contract - budget)</p>
+                        </div>
+                        
+                        {/* Actual Profit */}
+                        <div className={`p-4 rounded-lg border ${financials.actualProfit >= 0 ? 'bg-green-50 dark:bg-green-950/30' : 'bg-red-50 dark:bg-red-950/30'}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className={`w-4 h-4 ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                            <p className={`text-sm font-medium ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>Actual Profit</p>
+                          </div>
+                          <p className={`text-2xl font-bold font-mono ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} data-testid="text-actual-profit">
+                            ${financials.actualProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Real-time (adjusted contract - actual costs)</p>
+                        </div>
+                      </div>
+
+                      {/* Actual Costs Breakdown */}
+                      <div className="p-4 rounded-lg border bg-muted/30">
+                        <p className="text-sm font-medium mb-3">Actual Costs Incurred</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Labor</p>
+                            <p className="font-mono font-medium">${financials.actualCosts.labor.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className="text-xs text-muted-foreground">{financials.actualCosts.laborHours.toFixed(1)} hrs</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Materials</p>
+                            <p className="font-mono font-medium">${financials.actualCosts.materials.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Subcontractors</p>
+                            <p className="font-mono font-medium">${financials.actualCosts.subcontractors.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Other Expenses</p>
+                            <p className="font-mono font-medium">${financials.actualCosts.otherExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                          <p className="font-medium">Total Actual Costs</p>
+                          <p className="font-mono font-bold text-lg">${financials.actualCosts.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                      </div>
+
+                      {/* Profit Variance */}
+                      {financials.profitVariance !== 0 && (
+                        <div className={`p-3 rounded-lg ${financials.profitVariance >= 0 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`}>
+                          <p className="text-sm font-medium">
+                            Profit Variance: {financials.profitVariance >= 0 ? '+' : ''}${financials.profitVariance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                            ({financials.profitVariancePercent >= 0 ? '+' : ''}{financials.profitVariancePercent.toFixed(1)}%)
+                          </p>
+                          <p className="text-xs mt-1">
+                            {financials.profitVariance >= 0 
+                              ? "Currently tracking above projected profit" 
+                              : "Currently tracking below projected profit"
+                            }
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    /* Fallback to basic display if financials API fails */
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Project Budget</p>
+                          <p className="text-2xl font-bold font-mono">
+                            ${parseFloat(project.budget || "0").toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">Contract Amount</p>
+                          <p className="text-2xl font-bold font-mono">
+                            ${parseFloat(project.contractAmount || "0").toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

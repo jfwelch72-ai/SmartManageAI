@@ -945,26 +945,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
-      // Calculate budget from approved estimate totals if bid.bidAmount is null
-      let calculatedBudget = bid.bidAmount;
-      if (!calculatedBudget && bidEstimates.length > 0) {
+      // Calculate budget (direct costs) and contract amount (with overhead+profit) from estimate
+      // Default markup percentages
+      const OVERHEAD_PERCENT = 10;
+      const PROFIT_MARGIN_PERCENT = 15;
+      
+      let directCostBudget = "0";
+      let contractAmount = bid.bidAmount || "0";
+      
+      if (bidEstimates.length > 0) {
         // Find approved estimate or most recent one
         const activeEstimate = bidEstimates.find(e => e.status === "APPROVED") || bidEstimates[0];
         
         if (activeEstimate) {
-          // Get line items and calculate total
+          // Get line items and calculate DIRECT COSTS (cost to do the job)
           const lineItems = await db
             .select()
             .from(estimateLineItems)
             .where(eq(estimateLineItems.estimateId, activeEstimate.id));
           
-          const total = lineItems.reduce((sum, item) => {
-            return sum + Number(item.totalCost || 0);
+          // Budget = sum of direct costs (material + labor + equipment + consumables + subcontract)
+          const totalDirectCost = lineItems.reduce((sum, item) => {
+            const materialCost = Number(item.materialCost || 0);
+            const laborCost = Number(item.laborCost || 0);
+            const equipmentCost = Number(item.equipmentCost || 0);
+            const consumablesCost = Number(item.consumablesCost || 0);
+            const subcontractCost = Number(item.subcontractCost || 0);
+            return sum + materialCost + laborCost + equipmentCost + consumablesCost + subcontractCost;
           }, 0);
           
-          if (total > 0) {
-            calculatedBudget = total.toFixed(2);
-            console.log(`[Bid Conversion] Calculated budget from estimate: $${calculatedBudget}`);
+          if (totalDirectCost > 0) {
+            directCostBudget = totalDirectCost.toFixed(2);
+            
+            // Contract Amount = Direct Cost + Overhead + Profit
+            // Overhead = Direct Cost × overhead%
+            // Profit = (Direct Cost + Overhead) × profit%
+            const overhead = totalDirectCost * (OVERHEAD_PERCENT / 100);
+            const profit = (totalDirectCost + overhead) * (PROFIT_MARGIN_PERCENT / 100);
+            const totalContract = totalDirectCost + overhead + profit;
+            
+            // Only override bid.bidAmount if it wasn't set
+            if (!bid.bidAmount) {
+              contractAmount = totalContract.toFixed(2);
+            }
+            
+            console.log(`[Bid Conversion] Budget (direct costs): $${directCostBudget}`);
+            console.log(`[Bid Conversion] Contract amount (with ${OVERHEAD_PERCENT}% overhead + ${PROFIT_MARGIN_PERCENT}% profit): $${contractAmount}`);
           }
         }
       }
@@ -983,8 +1009,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: bid.state,
         description: bid.description,
         estimatorId: bid.estimatorId,
-        contractAmount: calculatedBudget,
-        budget: calculatedBudget,
+        contractAmount: contractAmount,
+        budget: directCostBudget,
       }).returning();
 
       for (const estimate of bidEstimates) {
@@ -1658,6 +1684,144 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ...project, scopeItems: projectScopeItems });
     } catch (error) {
       console.error("Get project error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get project financials with actual costs (Admin/Manager/Superintendent only)
+  app.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, timeEntries } = await import("@shared/schema");
+      const { sum, gte, lte, desc } = await import("drizzle-orm");
+      
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Get change orders for adjusted contract calculation
+      const projectChangeOrders = await db
+        .select({
+          amount: changeOrders.amount,
+          status: changeOrders.status,
+        })
+        .from(changeOrders)
+        .where(eq(changeOrders.projectId, project.id));
+
+      const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
+      const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
+
+      // Calculate labor costs from time clock shifts
+      const laborShifts = await db
+        .select({
+          totalHours: timeClockShifts.totalHours,
+          userId: timeClockShifts.userId,
+          approvalStatus: timeClockShifts.approvalStatus,
+        })
+        .from(timeClockShifts)
+        .where(eq(timeClockShifts.projectId, project.id));
+
+      // Get user cost rates for labor calculation
+      const userIds = Array.from(new Set(laborShifts.map(s => s.userId)));
+      const userCostRates: Record<string, { regular: number; overtime: number }> = {};
+      
+      if (userIds.length > 0) {
+        const usersData = await db
+          .select({
+            id: users.id,
+            costRateRegular: users.costRateRegular,
+            costRateOvertime: users.costRateOvertime,
+          })
+          .from(users)
+          .where(inArray(users.id, userIds));
+        
+        usersData.forEach(u => {
+          userCostRates[u.id] = {
+            regular: Number(u.costRateRegular || 50),
+            overtime: Number(u.costRateOvertime || 75),
+          };
+        });
+      }
+
+      // Calculate labor cost based on approved shifts
+      const approvedShifts = laborShifts.filter(s => s.approvalStatus === 'APPROVED');
+      const totalLaborHours = approvedShifts.reduce((sum, s) => sum + Number(s.totalHours || 0), 0);
+      const totalLaborCost = approvedShifts.reduce((sum, s) => {
+        const rate = userCostRates[s.userId]?.regular || 50;
+        return sum + (Number(s.totalHours || 0) * rate);
+      }, 0);
+
+      // Calculate material costs from procurement items
+      const materials = await db
+        .select({
+          unitCost: procurementItems.unitCost,
+          quantity: procurementItems.quantity,
+          status: procurementItems.status,
+        })
+        .from(procurementItems)
+        .where(eq(procurementItems.projectId, project.id));
+
+      const totalMaterialCost = materials.reduce((sum, item) => {
+        const cost = Number(item.unitCost || 0) * Number(item.quantity || 0);
+        return sum + cost;
+      }, 0);
+
+      // Calculate subcontractor costs from payments
+      const subPayments = await db
+        .select({
+          amount: subcontractorPayments.amount,
+        })
+        .from(subcontractorPayments)
+        .innerJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+        .where(eq(subcontractorContracts.projectId, project.id));
+
+      const totalSubcontractorCost = subPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+      // Calculate other expenses from receipts
+      const expenseReceipts = await db
+        .select({
+          amount: receipts.amount,
+        })
+        .from(receipts)
+        .where(eq(receipts.projectId, project.id));
+
+      const totalOtherExpenses = expenseReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+      // Calculate totals
+      const budget = Number(project.budget || 0); // Direct cost to do the job
+      const originalContract = Number(project.contractAmount || 0); // What client pays (budget + overhead + profit)
+      const adjustedContract = originalContract + approvedCOValue; // With change orders
+      
+      // Total actual costs incurred
+      const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalOtherExpenses;
+      
+      // Profit calculations
+      const projectedProfit = originalContract - budget; // Expected profit (contract - budget)
+      const actualProfit = adjustedContract - totalActualCost; // Real-time profit (adjusted contract - actual costs)
+
+      res.json({
+        budget,
+        originalContract,
+        adjustedContract,
+        approvedChangeOrdersTotal: approvedCOValue,
+        approvedChangeOrdersCount: approvedCOs.length,
+        projectedProfit,
+        actualProfit,
+        actualCosts: {
+          labor: totalLaborCost,
+          laborHours: totalLaborHours,
+          materials: totalMaterialCost,
+          subcontractors: totalSubcontractorCost,
+          otherExpenses: totalOtherExpenses,
+          total: totalActualCost,
+        },
+        profitVariance: actualProfit - projectedProfit,
+        profitVariancePercent: projectedProfit !== 0 ? ((actualProfit - projectedProfit) / projectedProfit) * 100 : 0,
+      });
+    } catch (error) {
+      console.error("Get project financials error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
