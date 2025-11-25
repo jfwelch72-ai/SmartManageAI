@@ -3293,6 +3293,279 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // =============================
+  // Production Rate Tracking Routes
+  // =============================
+  // Aggregates daily scope progress to calculate average production rates by SOW type
+  // Used for bidding and estimating based on historical performance
+
+  // Get production rates for all SOW types (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
+  app.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { startDate, endDate, projectCode, unit } = req.query;
+      
+      // Build base query joining dailyScopeProgress with scopeItems
+      let query = db
+        .select({
+          description: scopeItems.description,
+          unit: scopeItems.unit,
+          projectId: dailyScopeProgress.projectId,
+          projectCode: projects.code,
+          projectName: projects.name,
+          workDate: dailyScopeProgress.workDate,
+          quantityCompleted: dailyScopeProgress.quantityCompleted,
+        })
+        .from(dailyScopeProgress)
+        .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+        .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id));
+      
+      // Apply filters
+      const conditions: any[] = [];
+      
+      if (startDate) {
+        conditions.push(sql`${dailyScopeProgress.workDate} >= ${startDate}`);
+      }
+      if (endDate) {
+        conditions.push(sql`${dailyScopeProgress.workDate} <= ${endDate}`);
+      }
+      if (projectCode) {
+        conditions.push(eq(projects.code, projectCode as string));
+      }
+      if (unit) {
+        conditions.push(eq(scopeItems.unit, unit as string));
+      }
+      
+      let results;
+      if (conditions.length > 0) {
+        results = await query.where(and(...conditions));
+      } else {
+        results = await query;
+      }
+      
+      // Group by description + unit and calculate statistics
+      const ratesBySOW = new Map<string, {
+        description: string;
+        unit: string;
+        totalQuantity: number;
+        workDays: Set<string>;
+        projectDays: Map<string, Set<string>>;
+        dailyQuantities: number[];
+      }>();
+      
+      for (const entry of results) {
+        const key = `${entry.description}|||${entry.unit}`;
+        const qty = parseFloat(entry.quantityCompleted);
+        const dateKey = entry.workDate;
+        
+        if (!ratesBySOW.has(key)) {
+          ratesBySOW.set(key, {
+            description: entry.description,
+            unit: entry.unit,
+            totalQuantity: 0,
+            workDays: new Set(),
+            projectDays: new Map(),
+            dailyQuantities: [],
+          });
+        }
+        
+        const sow = ratesBySOW.get(key)!;
+        sow.totalQuantity += qty;
+        sow.workDays.add(dateKey);
+        
+        // Track per-project days for more granular analysis
+        if (!sow.projectDays.has(entry.projectCode)) {
+          sow.projectDays.set(entry.projectCode, new Set());
+        }
+        sow.projectDays.get(entry.projectCode)!.add(dateKey);
+        
+        sow.dailyQuantities.push(qty);
+      }
+      
+      // Calculate final statistics
+      const productionRates = Array.from(ratesBySOW.values()).map(sow => {
+        const sortedQty = [...sow.dailyQuantities].sort((a, b) => a - b);
+        const totalDays = sow.workDays.size;
+        const avgPerDay = totalDays > 0 ? sow.totalQuantity / totalDays : 0;
+        const minPerDay = sortedQty.length > 0 ? sortedQty[0] : 0;
+        const maxPerDay = sortedQty.length > 0 ? sortedQty[sortedQty.length - 1] : 0;
+        
+        // Calculate median
+        let medianPerDay = 0;
+        if (sortedQty.length > 0) {
+          const mid = Math.floor(sortedQty.length / 2);
+          medianPerDay = sortedQty.length % 2 !== 0 
+            ? sortedQty[mid] 
+            : (sortedQty[mid - 1] + sortedQty[mid]) / 2;
+        }
+        
+        // Calculate standard deviation
+        let stdDev = 0;
+        if (sortedQty.length > 1) {
+          const variance = sortedQty.reduce((sum, q) => sum + Math.pow(q - avgPerDay, 2), 0) / sortedQty.length;
+          stdDev = Math.sqrt(variance);
+        }
+        
+        return {
+          description: sow.description,
+          unit: sow.unit,
+          totalQuantity: Math.round(sow.totalQuantity * 100) / 100,
+          totalDays,
+          totalProjects: sow.projectDays.size,
+          avgPerDay: Math.round(avgPerDay * 100) / 100,
+          minPerDay: Math.round(minPerDay * 100) / 100,
+          maxPerDay: Math.round(maxPerDay * 100) / 100,
+          medianPerDay: Math.round(medianPerDay * 100) / 100,
+          stdDev: Math.round(stdDev * 100) / 100,
+          entryCount: sow.dailyQuantities.length,
+        };
+      });
+      
+      // Sort by total quantity descending (most common work types first)
+      productionRates.sort((a, b) => b.totalQuantity - a.totalQuantity);
+      
+      // Calculate summary stats
+      const summary = {
+        totalSOWTypes: productionRates.length,
+        totalWorkDays: new Set(results.map(r => r.workDate)).size,
+        totalProjects: new Set(results.map(r => r.projectCode)).size,
+        totalEntries: results.length,
+      };
+      
+      // Get distinct units for filtering
+      const availableUnits = [...new Set(productionRates.map(r => r.unit))].sort();
+      
+      res.json({
+        rates: productionRates,
+        summary,
+        availableUnits,
+      });
+    } catch (error) {
+      console.error("Get production rates error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get production rate details for a specific SOW type
+  app.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { description, unit, startDate, endDate } = req.query;
+      
+      if (!description || !unit) {
+        res.status(400).json({ error: "Description and unit are required" });
+        return;
+      }
+      
+      // Get all entries for this SOW type
+      let query = db
+        .select({
+          id: dailyScopeProgress.id,
+          workDate: dailyScopeProgress.workDate,
+          quantityCompleted: dailyScopeProgress.quantityCompleted,
+          notes: dailyScopeProgress.notes,
+          projectCode: projects.code,
+          projectName: projects.name,
+          creatorFirstName: users.firstName,
+          creatorLastName: users.lastName,
+        })
+        .from(dailyScopeProgress)
+        .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+        .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+        .leftJoin(users, eq(dailyScopeProgress.createdById, users.id))
+        .where(and(
+          eq(scopeItems.description, description as string),
+          eq(scopeItems.unit, unit as string)
+        ))
+        .orderBy(desc(dailyScopeProgress.workDate));
+      
+      let results = await query;
+      
+      // Apply date filters if provided
+      if (startDate) {
+        results = results.filter(r => r.workDate >= (startDate as string));
+      }
+      if (endDate) {
+        results = results.filter(r => r.workDate <= (endDate as string));
+      }
+      
+      // Group by date for daily totals
+      const dailyTotals = new Map<string, { total: number; projects: Set<string> }>();
+      for (const entry of results) {
+        const dateKey = entry.workDate;
+        if (!dailyTotals.has(dateKey)) {
+          dailyTotals.set(dateKey, { total: 0, projects: new Set() });
+        }
+        const day = dailyTotals.get(dateKey)!;
+        day.total += parseFloat(entry.quantityCompleted);
+        day.projects.add(entry.projectCode);
+      }
+      
+      // Group by project for project-level stats
+      const projectStats = new Map<string, { 
+        code: string; 
+        name: string; 
+        totalQuantity: number; 
+        days: number; 
+        entries: number 
+      }>();
+      
+      for (const entry of results) {
+        if (!projectStats.has(entry.projectCode)) {
+          projectStats.set(entry.projectCode, {
+            code: entry.projectCode,
+            name: entry.projectName,
+            totalQuantity: 0,
+            days: 0,
+            entries: 0,
+          });
+        }
+        const proj = projectStats.get(entry.projectCode)!;
+        proj.totalQuantity += parseFloat(entry.quantityCompleted);
+        proj.entries += 1;
+      }
+      
+      // Calculate days per project
+      for (const [projectCode, stat] of projectStats) {
+        const projectDates = new Set(
+          results.filter(r => r.projectCode === projectCode).map(r => r.workDate)
+        );
+        stat.days = projectDates.size;
+      }
+      
+      const dailyTotalsArray = Array.from(dailyTotals.entries())
+        .map(([date, data]) => ({
+          date,
+          total: Math.round(data.total * 100) / 100,
+          projectCount: data.projects.size,
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+      
+      res.json({
+        description,
+        unit,
+        entries: results.map(r => ({
+          id: r.id,
+          workDate: r.workDate,
+          quantity: parseFloat(r.quantityCompleted),
+          notes: r.notes,
+          projectCode: r.projectCode,
+          projectName: r.projectName,
+          createdBy: r.creatorFirstName && r.creatorLastName 
+            ? `${r.creatorFirstName} ${r.creatorLastName}` 
+            : 'Unknown',
+        })),
+        dailyTotals: dailyTotalsArray,
+        projectStats: Array.from(projectStats.values()).map(p => ({
+          ...p,
+          totalQuantity: Math.round(p.totalQuantity * 100) / 100,
+          avgPerDay: p.days > 0 ? Math.round((p.totalQuantity / p.days) * 100) / 100 : 0,
+        })),
+      });
+    } catch (error) {
+      console.error("Get production rate detail error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // Project Notes Routes
   // ====================
