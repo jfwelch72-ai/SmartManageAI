@@ -19,6 +19,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Form,
   FormControl,
   FormField,
@@ -27,11 +37,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, X } from "lucide-react";
+import { Search, Plus, X, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useProjects, useCreateProject } from "@/hooks/use-data";
+import { useProjects, useCreateProject, useDeleteProject } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { FeaturePermissions, getAllowedProjectStatuses, canViewProjectStatus } from "@/lib/rbac";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +61,14 @@ export default function ProjectsPage() {
   const [specialFilter, setSpecialFilter] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const createProject = useCreateProject();
+  const deleteProject = useDeleteProject();
+  
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<{ code: string; name: string } | null>(null);
+  
+  // Check if user can delete projects (ADMIN or MANAGER only)
+  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   // Check URL for query parameters
   useEffect(() => {
@@ -130,6 +148,31 @@ export default function ProjectsPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to create project",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteProject = (code: string, name: string) => {
+    setProjectToDelete({ code, name });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    
+    try {
+      await deleteProject.mutateAsync(projectToDelete.code);
+      toast({
+        title: "Success",
+        description: `Project ${projectToDelete.code} has been deleted.`,
+      });
+      setShowDeleteConfirm(false);
+      setProjectToDelete(null);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete project",
         variant: "destructive",
       });
     }
@@ -264,6 +307,8 @@ export default function ProjectsPage() {
           <ProjectsTable
             projects={filteredProjects}
             onRowClick={(project) => setLocation(`/projects/${project.code}`)}
+            canDelete={canDelete}
+            onDelete={handleDeleteProject}
           />
         )}
       </main>
@@ -453,6 +498,38 @@ export default function ProjectsPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent data-testid="dialog-delete-project">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-destructive" />
+              Delete Project
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete project <strong>{projectToDelete?.code}</strong> ({projectToDelete?.name})?
+              <br /><br />
+              This action cannot be undone. All associated data including estimates, change orders, time entries, procurement items, and documents will also be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => setProjectToDelete(null)}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteProject.isPending ? "Deleting..." : "Delete Project"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

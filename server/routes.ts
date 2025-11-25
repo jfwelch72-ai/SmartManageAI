@@ -15,7 +15,9 @@ import {
   insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema,
   subcontractors, subcontractorContracts, subcontractorPayments,
   projectLaborRates, projectEmployeeRates,
-  insertProjectLaborRateSchema, insertProjectEmployeeRateSchema
+  insertProjectLaborRateSchema, insertProjectEmployeeRateSchema,
+  aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, 
+  quantityCategories, tasks, dailyScopeProgress
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -944,20 +946,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete bid (Admin only)
-  app.delete("/api/bids/:code", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  // Delete bid (Admin/Manager only) - with dependency checks
+  app.delete("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // First, find the bid
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // Check if bid has been converted to a project
+      const [existingProject] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, bid.code))
+        .limit(1);
+      
+      if (existingProject) {
+        res.status(409).json({ 
+          error: "Cannot delete converted bid",
+          details: `This bid has been converted to project ${bid.code}. Delete the project first if needed.`
+        });
+        return;
+      }
+
+      // Delete related records first (cascade manually for proper cleanup)
+      // Delete handoff packets
+      await db.delete(handoffPackets).where(eq(handoffPackets.bidId, bid.id));
+      
+      // Delete subcontractor quotes
+      await db.delete(bidSubcontractorQuotes).where(eq(bidSubcontractorQuotes.bidId, bid.id));
+      
+      // Delete material quotes
+      await db.delete(bidMaterialQuotes).where(eq(bidMaterialQuotes.bidId, bid.id));
+      
+      // Delete estimate line items first, then estimates
+      const bidEstimates = await db.select().from(estimates).where(eq(estimates.bidId, bid.id));
+      for (const estimate of bidEstimates) {
+        await db.delete(estimateLineItems).where(eq(estimateLineItems.estimateId, estimate.id));
+      }
+      await db.delete(estimates).where(eq(estimates.bidId, bid.id));
+
+      // Now delete the bid
       const [deletedBid] = await db
         .delete(bids)
         .where(eq(bids.code, req.params.code))
         .returning();
 
-      if (!deletedBid) {
-        res.status(404).json({ error: "Bid not found" });
-        return;
-      }
+      // Audit log
+      await logDelete(req.user!.id, "bids", bid.id, { code: bid.code, name: bid.name }, req);
 
-      res.json({ success: true });
+      res.json({ success: true, message: `Bid ${bid.code} deleted successfully` });
     } catch (error) {
       console.error("Delete bid error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -2628,6 +2669,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedProject);
     } catch (error: any) {
       console.error("Update project error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete project (Admin/Manager only) - with cascade deletion of related data
+  app.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      // First, find the project
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // Delete related records in dependency order (most dependent first)
+      // Note: Most tables have ON DELETE CASCADE, but we explicitly delete for audit clarity
+      
+      // Delete AI-related data
+      await db.delete(aiNoteInsights).where(eq(aiNoteInsights.projectId, project.id));
+      await db.delete(aiTasks).where(eq(aiTasks.projectId, project.id));
+      
+      // Delete time clock and labor data
+      await db.delete(timeClockShifts).where(eq(timeClockShifts.projectId, project.id));
+      await db.delete(projectEmployeeRates).where(eq(projectEmployeeRates.projectId, project.id));
+      await db.delete(projectLaborRates).where(eq(projectLaborRates.projectId, project.id));
+      
+      // Delete scope and progress data
+      await db.delete(dailyScopeProgress).where(eq(dailyScopeProgress.projectId, project.id));
+      await db.delete(scopeItems).where(eq(scopeItems.projectId, project.id));
+      
+      // Delete financial data
+      await db.delete(changeOrders).where(eq(changeOrders.projectId, project.id));
+      await db.delete(receipts).where(eq(receipts.projectId, project.id));
+      await db.delete(procurementItems).where(eq(procurementItems.projectId, project.id));
+      
+      // Delete takeoff and plans data
+      const plansToDelete = await db.select().from(projectPlans).where(eq(projectPlans.projectId, project.id));
+      for (const plan of plansToDelete) {
+        await db.delete(takeoffMeasurements).where(eq(takeoffMeasurements.sheetId, plan.id));
+      }
+      await db.delete(projectPlans).where(eq(projectPlans.projectId, project.id));
+      await db.delete(takeoffSheets).where(eq(takeoffSheets.projectId, project.id));
+      await db.delete(quantityCategories).where(eq(quantityCategories.projectId, project.id));
+      await db.delete(planDocuments).where(eq(planDocuments.projectId, project.id));
+      
+      // Delete notes and communications
+      await db.delete(projectNotes).where(eq(projectNotes.projectId, project.id));
+      
+      // Delete calendar and events
+      await db.delete(calendarEvents).where(eq(calendarEvents.projectId, project.id));
+      
+      // Delete media
+      await db.delete(media).where(eq(media.projectId, project.id));
+      
+      // Delete tasks
+      await db.delete(tasks).where(eq(tasks.projectId, project.id));
+      
+      // Delete handoff packets
+      await db.delete(handoffPackets).where(eq(handoffPackets.projectId, project.id));
+      
+      // Delete estimates and line items
+      const projectEstimates = await db.select().from(estimates).where(eq(estimates.projectId, project.id));
+      for (const estimate of projectEstimates) {
+        await db.delete(estimateLineItems).where(eq(estimateLineItems.estimateId, estimate.id));
+      }
+      await db.delete(estimates).where(eq(estimates.projectId, project.id));
+      
+      // Delete T&M daily sheets
+      await db.delete(tmDailySheets).where(eq(tmDailySheets.projectId, project.id));
+      
+      // Delete time entries
+      await db.delete(timeEntries).where(eq(timeEntries.projectId, project.id));
+
+      // Finally, delete the project
+      const [deletedProject] = await db
+        .delete(projects)
+        .where(eq(projects.code, req.params.code))
+        .returning();
+
+      // Audit log
+      await logDelete(req.user!.id, "projects", project.id, { code: project.code, name: project.name }, req);
+
+      res.json({ success: true, message: `Project ${project.code} deleted successfully` });
+    } catch (error) {
+      console.error("Delete project error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

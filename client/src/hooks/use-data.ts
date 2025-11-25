@@ -535,8 +535,10 @@ export function useDeleteBid() {
       const response = await apiRequest("DELETE", `/api/bids/${code}`);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, code) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", code] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     },
   });
 }
@@ -576,6 +578,21 @@ export function useUpdateProject() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.code] });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const response = await apiRequest("DELETE", `/api/projects/${code}`);
+      return response.json();
+    },
+    onSuccess: (_data, code) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", code] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/shifts"] });
     },
   });
 }

@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, DollarSign, Calendar, FileText, CheckCircle } from "lucide-react";
+import { Building2, MapPin, DollarSign, Calendar, FileText, CheckCircle, Trash2 } from "lucide-react";
 
 interface BidCardProps {
   code: string;
@@ -13,6 +13,7 @@ interface BidCardProps {
   estimator: string;
   onClick?: () => void;
   onConvertToProject?: () => void;
+  onDelete?: () => void;
   estimateData?: {
     totalCost: number;
     lineItemCount: number;
@@ -30,6 +31,7 @@ export default function BidCard({
   estimator,
   onClick,
   onConvertToProject,
+  onDelete,
   estimateData,
 }: BidCardProps) {
   return (
@@ -123,19 +125,34 @@ export default function BidCard({
           </div>
         )}
 
-        {onConvertToProject && (
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={(e) => {
-              e.stopPropagation();
-              onConvertToProject();
-            }}
-            data-testid={`button-convert-${code}`}
-          >
-            Mark as Awarded
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {onConvertToProject && (
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConvertToProject();
+              }}
+              data-testid={`button-convert-${code}`}
+            >
+              Mark as Awarded
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              data-testid={`button-delete-bid-${code}`}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );

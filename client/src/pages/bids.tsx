@@ -3,10 +3,10 @@ import AppHeader from "@/components/AppHeader";
 import BidCard from "@/components/BidCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, AlertTriangle } from "lucide-react";
+import { Search, Plus, AlertTriangle, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useBids, useConvertBidToProject, useCreateBid } from "@/hooks/use-data";
+import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { Bid } from "@shared/schema";
@@ -63,6 +63,11 @@ export default function BidsPage() {
   const { data: bidsData = [], isLoading } = useBids();
   const convertBid = useConvertBidToProject();
   const createBid = useCreateBid();
+  const deleteBid = useDeleteBid();
+  
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [bidToDelete, setBidToDelete] = useState<{ code: string; name: string } | null>(null);
   
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
@@ -162,6 +167,34 @@ export default function BidsPage() {
     }
   };
 
+  const handleDeleteBid = async (code: string, name: string) => {
+    setBidToDelete({ code, name });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteBid = async () => {
+    if (!bidToDelete) return;
+    
+    try {
+      await deleteBid.mutateAsync(bidToDelete.code);
+      toast({
+        title: "Success",
+        description: `Bid ${bidToDelete.code} has been deleted.`,
+      });
+      setShowDeleteConfirm(false);
+      setBidToDelete(null);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete bid",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Check if user can delete bids (ADMIN or MANAGER only)
+  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER";
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
@@ -219,6 +252,7 @@ export default function BidsPage() {
                 estimator={bid.estimatorId || ""}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={() => handleConvertToProject(bid.code)}
+                onDelete={canDelete ? () => handleDeleteBid(bid.code, bid.name) : undefined}
                 estimateData={bid.estimateSummary}
               />
             ))}
@@ -461,6 +495,38 @@ export default function BidsPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent data-testid="dialog-delete-bid">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-destructive" />
+              Delete Bid
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete bid <strong>{bidToDelete?.code}</strong> ({bidToDelete?.name})?
+              <br /><br />
+              This action cannot be undone. All associated estimates, quotes, and documents will also be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => setBidToDelete(null)}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteBid}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteBid.isPending ? "Deleting..." : "Delete Bid"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
