@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
 import BidCard from "@/components/BidCard";
+import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Plus, AlertTriangle, Trash2 } from "lucide-react";
@@ -9,11 +10,12 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import type { Bid } from "@shared/schema";
+import type { Bid, CrmOrganisation, CrmContact } from "@shared/schema";
 import { insertBidSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
+import { Label } from "@/components/ui/label";
 
 // Extended bid type with estimate summary
 type BidWithEstimate = Bid & {
@@ -68,6 +70,9 @@ export default function BidsPage() {
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [bidToDelete, setBidToDelete] = useState<{ code: string; name: string } | null>(null);
+  
+  // CRM integration state
+  const [selectedContactId, setSelectedContactId] = useState<string | undefined>(undefined);
   
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
@@ -156,6 +161,7 @@ export default function BidsPage() {
       });
       setShowCreateDialog(false);
       form.reset();
+      setSelectedContactId(undefined);
       // Navigate to the new bid detail page using the auto-generated code
       setLocation(`/bids/${newBid.code}`);
     } catch (error: any) {
@@ -350,6 +356,43 @@ export default function BidsPage() {
                   )}
                 />
 
+                <div className="col-span-2 space-y-2">
+                  <Label>Client / General Contractor *</Label>
+                  <CrmOrganizationSelector
+                    value={form.watch("clientName")}
+                    filterTypes={["CONTRACTOR"]}
+                    placeholder="Select or search for a contractor..."
+                    selectedContactId={selectedContactId}
+                    onSelect={(org) => {
+                      if (org) {
+                        form.setValue("clientName", org.name);
+                      } else {
+                        form.setValue("clientName", "");
+                        form.setValue("clientContactName", "");
+                        form.setValue("clientContactEmail", "");
+                        form.setValue("clientContactPhone", "");
+                        setSelectedContactId(undefined);
+                      }
+                    }}
+                    onContactSelect={(contact) => {
+                      if (contact) {
+                        setSelectedContactId(contact.id);
+                        form.setValue("clientContactName", `${contact.firstName} ${contact.lastName}`);
+                        form.setValue("clientContactEmail", contact.email || "");
+                        form.setValue("clientContactPhone", contact.phone || contact.mobile || "");
+                      } else {
+                        setSelectedContactId(undefined);
+                        form.setValue("clientContactName", "");
+                        form.setValue("clientContactEmail", "");
+                        form.setValue("clientContactPhone", "");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Select from CRM or type a new name below
+                  </p>
+                </div>
+
                 <FormField
                   control={form.control}
                   name="clientName"
@@ -484,7 +527,7 @@ export default function BidsPage() {
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)} data-testid="button-cancel-create">
+                <Button type="button" variant="outline" onClick={() => { setShowCreateDialog(false); setSelectedContactId(undefined); }} data-testid="button-cancel-create">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createBid.isPending} data-testid="button-submit-create">
