@@ -765,8 +765,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create bid schema with date preprocessing
-  const createBidSchema = insertBidSchema.extend({
+  // Create bid schema with date preprocessing - code is now optional (auto-generated)
+  const createBidSchema = insertBidSchema.omit({ code: true }).extend({
     dueDate: z.preprocess(
       (val) => {
         if (!val) return undefined;
@@ -776,7 +776,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ),
   });
 
-  // Create bid (Admin/Manager only)
+  // Helper function to generate next bid/project code starting at 260001
+  // Uses SQL aggregation for efficiency - O(1) instead of O(n) table scans
+  const BID_CODE_START = 260001;
+  async function getNextBidCode(): Promise<string> {
+    // Use SQL to find max numeric codes efficiently using GREATEST and regex filtering
+    // This query casts codes to integers only if they are purely numeric, avoiding errors
+    const result = await db.execute(sql`
+      SELECT GREATEST(
+        COALESCE((
+          SELECT MAX(CAST(code AS INTEGER))
+          FROM bids 
+          WHERE code ~ '^[0-9]+$' 
+          AND CAST(code AS INTEGER) >= ${BID_CODE_START}
+        ), ${BID_CODE_START - 1}),
+        COALESCE((
+          SELECT MAX(CAST(code AS INTEGER))
+          FROM projects 
+          WHERE code ~ '^[0-9]+$' 
+          AND CAST(code AS INTEGER) >= ${BID_CODE_START}
+        ), ${BID_CODE_START - 1})
+      ) as max_code
+    `);
+    
+    const maxCode = Number(result.rows[0]?.max_code) || BID_CODE_START - 1;
+    return String(maxCode + 1);
+  }
+
+  // Create bid (Admin/Manager only) - code is auto-generated with retry logic
   app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       console.log("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
@@ -808,12 +835,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const [newBid] = await db.insert(bids).values(validationResult.data).returning();
-      res.status(201).json(newBid);
+      // Auto-generate the next bid code with retry logic for concurrent creates
+      const MAX_RETRIES = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          const nextCode = await getNextBidCode();
+          console.log(`[Create Bid] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
+
+          const [newBid] = await db.insert(bids).values({
+            ...validationResult.data,
+            code: nextCode,
+          }).returning();
+          res.status(201).json(newBid);
+          return;
+        } catch (insertError: any) {
+          if (insertError.code === '23505' && attempt < MAX_RETRIES - 1) {
+            // Unique constraint violation - retry with a new code
+            console.log(`[Create Bid] Code conflict, retrying... (attempt ${attempt + 1})`);
+            lastError = insertError;
+            continue;
+          }
+          throw insertError;
+        }
+      }
+      
+      // If we get here, all retries failed
+      throw lastError;
     } catch (error: any) {
       console.error("Create bid error:", error);
       if (error.code === '23505') {
-        res.status(409).json({ error: "Bid code already exists" });
+        res.status(409).json({ error: "Unable to generate unique bid code - please try again" });
       } else {
         res.status(500).json({ error: "Internal server error" });
       }
@@ -2453,32 +2506,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create project (Admin/Manager only)
+  // Create project schema without code - code is auto-generated
+  const createProjectSchema = insertProjectSchema.omit({ code: true });
+
+  // Create project (Admin/Manager only) - code is auto-generated with retry logic
   app.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
         name: sanitizeShortText(req.body.name),
-        projectCode: sanitizeShortText(req.body.projectCode),
         description: sanitizeText(req.body.description),
         clientName: sanitizeShortText(req.body.clientName),
         location: sanitizeText(req.body.location),
       };
 
-      const validationResult = insertProjectSchema.safeParse(sanitizedBody);
+      const validationResult = createProjectSchema.safeParse(sanitizedBody);
       
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
       }
 
-      const [newProject] = await db.insert(projects).values(validationResult.data).returning();
-      res.status(201).json(newProject);
+      // Auto-generate the next project code with retry logic for concurrent creates
+      const MAX_RETRIES = 3;
+      let lastError: any = null;
+      
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          const nextCode = await getNextBidCode();
+          console.log(`[Create Project] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
+
+          const [newProject] = await db.insert(projects).values({
+            ...validationResult.data,
+            code: nextCode,
+          }).returning();
+          res.status(201).json(newProject);
+          return;
+        } catch (insertError: any) {
+          if (insertError.code === '23505' && attempt < MAX_RETRIES - 1) {
+            // Unique constraint violation - retry with a new code
+            console.log(`[Create Project] Code conflict, retrying... (attempt ${attempt + 1})`);
+            lastError = insertError;
+            continue;
+          }
+          throw insertError;
+        }
+      }
+      
+      // If we get here, all retries failed
+      throw lastError;
     } catch (error: any) {
       console.error("Create project error:", error);
       if (error.code === '23505') {
-        res.status(409).json({ error: "Project code already exists" });
+        res.status(409).json({ error: "Unable to generate unique project code - please try again" });
       } else {
         res.status(500).json({ error: "Internal server error" });
       }

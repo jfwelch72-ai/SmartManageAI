@@ -38,9 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProjectSchema } from "@shared/schema";
-import type { z } from "zod";
-
-type CreateProjectInput = z.infer<typeof insertProjectSchema>;
+import { z } from "zod";
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
@@ -77,11 +75,14 @@ export default function ProjectsPage() {
     }
   }, [searchParams, setLocation]);
 
-  const form = useForm<CreateProjectInput>({
-    resolver: zodResolver(insertProjectSchema),
+  // Create schema without code - code is auto-generated on the backend
+  const createProjectFormSchema = insertProjectSchema.omit({ code: true });
+  type CreateProjectFormInput = z.infer<typeof createProjectFormSchema>;
+
+  const form = useForm<CreateProjectFormInput>({
+    resolver: zodResolver(createProjectFormSchema),
     defaultValues: {
       name: "",
-      code: "",
       clientName: "",
       clientContactName: "",
       clientContactEmail: "",
@@ -96,7 +97,7 @@ export default function ProjectsPage() {
     },
   });
 
-  const onSubmit = async (data: CreateProjectInput) => {
+  const onSubmit = async (data: CreateProjectFormInput) => {
     try {
       // Transform empty strings to undefined for optional fields
       const submitData = {
@@ -122,7 +123,7 @@ export default function ProjectsPage() {
         });
         setShowCreateDialog(false);
         form.reset();
-        // Navigate to the new project
+        // Navigate to the new project using the auto-generated code
         setLocation(`/projects/${result.code}`);
       }
     } catch (error: any) {
@@ -277,34 +278,19 @@ export default function ProjectsPage() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Project Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Downtown Office Renovation" {...field} data-testid="input-project-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Project Code *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="PROJ-2025-001" {...field} data-testid="input-project-code" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project Name *</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Downtown Office Renovation" {...field} data-testid="input-project-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField

@@ -51,8 +51,6 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 
-type CreateBidInput = z.infer<typeof insertBidSchema>;
-
 export default function BidsPage() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
@@ -69,11 +67,14 @@ export default function BidsPage() {
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
 
-  const form = useForm<CreateBidInput>({
-    resolver: zodResolver(insertBidSchema),
+  // Create schema without code - code is auto-generated on the backend
+  const createBidFormSchema = insertBidSchema.omit({ code: true });
+  type CreateBidFormInput = z.infer<typeof createBidFormSchema>;
+
+  const form = useForm<CreateBidFormInput>({
+    resolver: zodResolver(createBidFormSchema),
     defaultValues: {
       name: "",
-      code: "",
       clientName: "",
       clientContactName: "",
       clientContactEmail: "",
@@ -127,7 +128,7 @@ export default function BidsPage() {
     }
   };
 
-  const handleCreateBid = async (data: CreateBidInput) => {
+  const handleCreateBid = async (data: CreateBidFormInput) => {
     try {
       // Clean up empty string values to undefined for optional fields
       const cleanedData = {
@@ -146,12 +147,12 @@ export default function BidsPage() {
       const newBid = await createBid.mutateAsync(cleanedData);
       toast({
         title: "Success",
-        description: `Bid ${data.code} has been created successfully!`,
+        description: `Bid ${newBid.code} has been created successfully!`,
       });
       setShowCreateDialog(false);
       form.reset();
-      // Navigate to the new bid detail page
-      setLocation(`/bids/${data.code}`);
+      // Navigate to the new bid detail page using the auto-generated code
+      setLocation(`/bids/${newBid.code}`);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -289,20 +290,6 @@ export default function BidsPage() {
                       <FormLabel>Bid Name *</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., Downtown Office Renovation" {...field} data-testid="input-bid-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bid Code *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., BID-2025-001" {...field} data-testid="input-bid-code" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
