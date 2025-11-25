@@ -937,6 +937,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // NOTE: Neon HTTP driver doesn't support transactions in serverless environments
       // Sequential operations with error handling (not atomic)
       
+      // Get bid estimates FIRST to calculate budget if needed
+      const bidEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bid.id));
+
+      console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
+
+      // Calculate budget from approved estimate totals if bid.bidAmount is null
+      let calculatedBudget = bid.bidAmount;
+      if (!calculatedBudget && bidEstimates.length > 0) {
+        // Find approved estimate or most recent one
+        const activeEstimate = bidEstimates.find(e => e.status === "APPROVED") || bidEstimates[0];
+        
+        if (activeEstimate) {
+          // Get line items and calculate total
+          const lineItems = await db
+            .select()
+            .from(estimateLineItems)
+            .where(eq(estimateLineItems.estimateId, activeEstimate.id));
+          
+          const total = lineItems.reduce((sum, item) => {
+            return sum + Number(item.totalCost || 0);
+          }, 0);
+          
+          if (total > 0) {
+            calculatedBudget = total.toFixed(2);
+            console.log(`[Bid Conversion] Calculated budget from estimate: $${calculatedBudget}`);
+          }
+        }
+      }
+      
       // Create project from bid data
       const [newProject] = await db.insert(projects).values({
         name: bid.name,
@@ -951,17 +983,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: bid.state,
         description: bid.description,
         estimatorId: bid.estimatorId,
-        contractAmount: bid.bidAmount,
-        budget: bid.bidAmount,
+        contractAmount: calculatedBudget,
+        budget: calculatedBudget,
       }).returning();
-
-      // Transfer bid estimates to project (retaining bidId for traceability)
-      const bidEstimates = await db
-        .select()
-        .from(estimates)
-        .where(eq(estimates.bidId, bid.id));
-
-      console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
       for (const estimate of bidEstimates) {
         // Update estimate to reference project (keep bidId for traceability)
