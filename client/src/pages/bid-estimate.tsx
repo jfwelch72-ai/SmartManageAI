@@ -72,6 +72,9 @@ export default function BidEstimate() {
   const bidId = bid?.id;
   const { user, logout } = useAuth();
   
+  // Check if user has estimate editing access (Admin, Manager, Estimator only)
+  const hasEstimateAccess = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR";
+  
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
@@ -381,7 +384,7 @@ export default function BidEstimate() {
           </Card>
         </div>
 
-        {estimate.status === "DRAFT" && estimate.lineItems.length > 0 && (
+        {estimate.lineItems.length > 0 && (
           <Card className="border-primary/20 bg-primary/5" data-testid="card-markup-calculator">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -547,7 +550,7 @@ export default function BidEstimate() {
           </Card>
         )}
 
-        {estimate.status === "DRAFT" && (
+        {hasEstimateAccess && (
           <div className="flex gap-3">
             <Dialog open={addLineItemOpen} onOpenChange={setAddLineItemOpen}>
               <DialogTrigger asChild>
@@ -1163,7 +1166,7 @@ export default function BidEstimate() {
                       <TableHead className="text-right text-orange-600 dark:text-orange-400">Overhead ({overheadPercent}%)</TableHead>
                       <TableHead className="text-right text-green-600 dark:text-green-400">Profit ({profitMarginPercent}%)</TableHead>
                       <TableHead className="text-right">Bid Total</TableHead>
-                      {estimate.status === "DRAFT" && <TableHead></TableHead>}
+                      {hasEstimateAccess && <TableHead></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1210,7 +1213,7 @@ export default function BidEstimate() {
                         <TableCell className="text-right font-bold">
                           ${bidTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        {estimate.status === "DRAFT" && (
+                        {hasEstimateAccess && (
                           <TableCell>
                             <div className="flex gap-2">
                               <Button
