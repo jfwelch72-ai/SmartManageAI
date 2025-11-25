@@ -898,12 +898,28 @@ export default function BidDetailPage() {
                           {estimate.status}
                         </Badge>
                       </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Profit margin
-                      </p>
+                      {(() => {
+                        // Calculate profit based on formula: directCost -> overhead -> profit
+                        const directCost = estimate.totals.materialCost + 
+                                          estimate.totals.laborCost + 
+                                          estimate.totals.equipmentCost + 
+                                          estimate.totals.consumablesCost + 
+                                          estimate.totals.subcontractCost;
+                        const overheadPercent = 10; // Default overhead percentage
+                        const profitMarginPercent = 15; // Default profit margin percentage
+                        const totalOverhead = directCost * (overheadPercent / 100);
+                        const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
+                        return (
+                          <>
+                            <p className="text-lg font-bold font-mono text-green-600 dark:text-green-400" data-testid="text-profit-margin">
+                              ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Profit margin ({profitMarginPercent}%)
+                            </p>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-primary/10 rounded-md border border-primary/20">

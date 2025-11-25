@@ -302,10 +302,6 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      if (estimate.status !== "DRAFT") {
-        return res.status(400).json({ error: "Can only import into draft estimates" });
-      }
-
       // Get selected categories
       const categories = await db.query.quantityCategories.findMany({
         where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
@@ -457,10 +453,6 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      if (estimate.status !== "DRAFT") {
-        return res.status(400).json({ error: "Can only edit draft estimates" });
-      }
-
       // Calculate totalCost from component costs
       const totalCost = (
         Number(lineItem.materialCost || 0) +
@@ -499,13 +491,13 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Verify estimate is editable
+      // Verify estimate exists
       const estimate = await db.query.estimates.findFirst({
         where: eq(estimates.id, estimateId),
       });
 
-      if (!estimate || estimate.status !== "DRAFT") {
-        return res.status(400).json({ error: "Cannot edit this estimate" });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
       }
 
       // Recalculate totalCost from component costs
@@ -548,13 +540,13 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Verify estimate is editable
+      // Verify estimate exists
       const estimate = await db.query.estimates.findFirst({
         where: eq(estimates.id, estimateId),
       });
 
-      if (!estimate || estimate.status !== "DRAFT") {
-        return res.status(400).json({ error: "Cannot edit this estimate" });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
       }
 
       await db.delete(estimateLineItems)
