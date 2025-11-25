@@ -19,7 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { FeaturePermissions } from "@/lib/rbac";
-import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts } from "@/hooks/use-data";
+import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts, useCreateProcurementItem, useCreateSubcontractorPayment } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -516,6 +516,91 @@ export default function ProjectDetailPage() {
   const [editTexturaDrawDate, setEditTexturaDrawDate] = useState("");
   const [editDrawDayOfMonth, setEditDrawDayOfMonth] = useState<number | "">("");
   const [plansSubTab, setPlansSubTab] = useState<"takeoff" | "documents">("documents");
+
+  // Procurement item state
+  const [showProcurementDialog, setShowProcurementDialog] = useState(false);
+  const [procurementDescription, setProcurementDescription] = useState("");
+  const [procurementVendor, setProcurementVendor] = useState("");
+  const [procurementQuantity, setProcurementQuantity] = useState("");
+  const [procurementUnit, setProcurementUnit] = useState("");
+  const [procurementUnitCost, setProcurementUnitCost] = useState("");
+  const [procurementStatus, setProcurementStatus] = useState<"PLANNED" | "ORDERED" | "DELIVERED">("PLANNED");
+  const [procurementPoNumber, setProcurementPoNumber] = useState("");
+
+  // Subcontractor payment state
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDescription, setPaymentDescription] = useState("");
+  const [paymentInvoiceNumber, setPaymentInvoiceNumber] = useState("");
+  const [paymentDate, setPaymentDate] = useState(format(new Date(), "yyyy-MM-dd"));
+
+  // Mutations
+  const createProcurementMutation = useCreateProcurementItem();
+  const createPaymentMutation = useCreateSubcontractorPayment();
+
+  // Handlers for procurement
+  const handleCreateProcurement = async () => {
+    if (!procurementDescription) {
+      toast({ title: "Error", description: "Description is required", variant: "destructive" });
+      return;
+    }
+    if (!project) return;
+
+    try {
+      await createProcurementMutation.mutateAsync({
+        projectId: project.id,
+        projectCode,
+        description: procurementDescription,
+        vendor: procurementVendor || undefined,
+        quantity: procurementQuantity || undefined,
+        unit: procurementUnit || undefined,
+        unitCost: procurementUnitCost || undefined,
+        status: procurementStatus,
+        poNumber: procurementPoNumber || undefined,
+      });
+      toast({ title: "Success", description: "Procurement item created" });
+      setShowProcurementDialog(false);
+      setProcurementDescription("");
+      setProcurementVendor("");
+      setProcurementQuantity("");
+      setProcurementUnit("");
+      setProcurementUnitCost("");
+      setProcurementStatus("PLANNED");
+      setProcurementPoNumber("");
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "financials"] });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create procurement item", variant: "destructive" });
+    }
+  };
+
+  // Handlers for subcontractor payments
+  const handleCreatePayment = async () => {
+    if (!selectedContractId || !paymentAmount) {
+      toast({ title: "Error", description: "Amount is required", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await createPaymentMutation.mutateAsync({
+        contractId: selectedContractId,
+        projectCode,
+        amount: paymentAmount,
+        description: paymentDescription || undefined,
+        invoiceNumber: paymentInvoiceNumber || undefined,
+        paymentDate: paymentDate ? new Date(paymentDate).toISOString() : undefined,
+      });
+      toast({ title: "Success", description: "Payment recorded" });
+      setShowPaymentDialog(false);
+      setSelectedContractId(null);
+      setPaymentAmount("");
+      setPaymentDescription("");
+      setPaymentInvoiceNumber("");
+      setPaymentDate(format(new Date(), "yyyy-MM-dd"));
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to record payment", variant: "destructive" });
+    }
+  };
 
   // Upload handlers
   const handleMediaUploadComplete = async (result: any) => {
@@ -1420,10 +1505,123 @@ export default function ProjectDetailPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <CardTitle>Procurement Items</CardTitle>
-                <Button size="sm" data-testid="button-new-procurement">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Item
-                </Button>
+                <Dialog open={showProcurementDialog} onOpenChange={setShowProcurementDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" data-testid="button-new-procurement">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Item
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent data-testid="dialog-create-procurement">
+                    <DialogHeader>
+                      <DialogTitle>Add Procurement Item</DialogTitle>
+                      <DialogDescription>
+                        Enter material or equipment details. Costs entered here flow to the project financials.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                      <div>
+                        <Label htmlFor="procurement-description">Description *</Label>
+                        <Input
+                          id="procurement-description"
+                          value={procurementDescription}
+                          onChange={(e) => setProcurementDescription(e.target.value)}
+                          placeholder="Material or equipment description..."
+                          data-testid="input-procurement-description"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="procurement-vendor">Vendor/Supplier</Label>
+                        <Input
+                          id="procurement-vendor"
+                          value={procurementVendor}
+                          onChange={(e) => setProcurementVendor(e.target.value)}
+                          placeholder="Vendor name..."
+                          data-testid="input-procurement-vendor"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="procurement-quantity">Quantity</Label>
+                          <Input
+                            id="procurement-quantity"
+                            type="number"
+                            step="0.01"
+                            value={procurementQuantity}
+                            onChange={(e) => setProcurementQuantity(e.target.value)}
+                            placeholder="0"
+                            data-testid="input-procurement-quantity"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="procurement-unit">Unit</Label>
+                          <Input
+                            id="procurement-unit"
+                            value={procurementUnit}
+                            onChange={(e) => setProcurementUnit(e.target.value)}
+                            placeholder="ea, lf, sf, cy..."
+                            data-testid="input-procurement-unit"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="procurement-unit-cost">Unit Cost ($)</Label>
+                        <Input
+                          id="procurement-unit-cost"
+                          type="number"
+                          step="0.01"
+                          value={procurementUnitCost}
+                          onChange={(e) => setProcurementUnitCost(e.target.value)}
+                          placeholder="0.00"
+                          data-testid="input-procurement-unit-cost"
+                        />
+                        {procurementQuantity && procurementUnitCost && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Total: ${(parseFloat(procurementQuantity) * parseFloat(procurementUnitCost)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor="procurement-status">Status</Label>
+                        <Select
+                          value={procurementStatus}
+                          onValueChange={(value: "PLANNED" | "ORDERED" | "DELIVERED") => setProcurementStatus(value)}
+                        >
+                          <SelectTrigger id="procurement-status" data-testid="select-procurement-status">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PLANNED">Planned</SelectItem>
+                            <SelectItem value="ORDERED">Ordered</SelectItem>
+                            <SelectItem value="DELIVERED">Delivered</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="procurement-po">PO Number (Optional)</Label>
+                        <Input
+                          id="procurement-po"
+                          value={procurementPoNumber}
+                          onChange={(e) => setProcurementPoNumber(e.target.value)}
+                          placeholder="PO-001..."
+                          data-testid="input-procurement-po"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowProcurementDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleCreateProcurement}
+                        disabled={createProcurementMutation.isPending}
+                        data-testid="button-submit-procurement"
+                      >
+                        {createProcurementMutation.isPending ? "Adding..." : "Add Item"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardHeader>
               <CardContent>
                 {procurementLoading ? (
@@ -1443,6 +1641,11 @@ export default function ProjectDetailPage() {
                             <p className="font-mono text-sm">
                               {item.quantity} {item.unit}
                             </p>
+                            {item.unitCost && item.quantity && (
+                              <p className="text-xs text-muted-foreground">
+                                ${(parseFloat(item.quantity) * parseFloat(item.unitCost)).toLocaleString()} total
+                              </p>
+                            )}
                           </div>
                           <Badge
                             variant={
@@ -1975,6 +2178,20 @@ export default function ProjectDetailPage() {
                               <p className="text-sm text-muted-foreground">{contract.notes}</p>
                             </div>
                           )}
+                          
+                          <div className="pt-2 border-t">
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedContractId(contract.id);
+                                setShowPaymentDialog(true);
+                              }}
+                              data-testid={`button-record-payment-${contract.id}`}
+                            >
+                              <DollarSign className="w-4 h-4 mr-2" />
+                              Record Payment
+                            </Button>
+                          </div>
                         </CardContent>
                       </Card>
                     ))}
@@ -1982,6 +2199,79 @@ export default function ProjectDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            <Dialog open={showPaymentDialog} onOpenChange={(open) => {
+              setShowPaymentDialog(open);
+              if (!open) setSelectedContractId(null);
+            }}>
+              <DialogContent data-testid="dialog-record-payment">
+                <DialogHeader>
+                  <DialogTitle>Record Subcontractor Payment</DialogTitle>
+                  <DialogDescription>
+                    Enter payment details. Payments entered here flow to the project financials.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="payment-amount">Amount ($) *</Label>
+                    <Input
+                      id="payment-amount"
+                      type="number"
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder="0.00"
+                      data-testid="input-payment-amount"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="payment-description">Description</Label>
+                    <Input
+                      id="payment-description"
+                      value={paymentDescription}
+                      onChange={(e) => setPaymentDescription(e.target.value)}
+                      placeholder="Progress payment, final payment, etc..."
+                      data-testid="input-payment-description"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="payment-invoice">Invoice Number</Label>
+                    <Input
+                      id="payment-invoice"
+                      value={paymentInvoiceNumber}
+                      onChange={(e) => setPaymentInvoiceNumber(e.target.value)}
+                      placeholder="INV-001..."
+                      data-testid="input-payment-invoice"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="payment-date">Payment Date</Label>
+                    <Input
+                      id="payment-date"
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      data-testid="input-payment-date"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => {
+                    setShowPaymentDialog(false);
+                    setSelectedContractId(null);
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreatePayment}
+                    disabled={createPaymentMutation.isPending}
+                    data-testid="button-submit-payment"
+                  >
+                    {createPaymentMutation.isPending ? "Recording..." : "Record Payment"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
         </Tabs>
 

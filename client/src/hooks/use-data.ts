@@ -443,6 +443,53 @@ export function useCreateReceipt() {
   });
 }
 
+// Subcontractor Payments
+export interface SubcontractorPayment {
+  id: string;
+  contractId: string;
+  paymentNumber: number;
+  amount: string;
+  retentionHeld: string | null;
+  paymentDate: string | null;
+  description: string | null;
+  invoiceNumber: string | null;
+  status: string;
+  approvedById: string | null;
+  approvedAt: string | null;
+  paidById: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export function useContractPayments(contractId: string) {
+  return useQuery<SubcontractorPayment[]>({
+    queryKey: ["/api/subcontractor-contracts", contractId, "payments"],
+    enabled: !!contractId,
+  });
+}
+
+export function useCreateSubcontractorPayment() {
+  return useMutation({
+    mutationFn: async (data: { 
+      contractId: string; 
+      projectCode: string;
+      amount: string; 
+      description?: string;
+      invoiceNumber?: string;
+      paymentDate?: string;
+    }) => {
+      const { contractId, projectCode, ...paymentData } = data;
+      const response = await apiRequest("POST", `/api/subcontractor-contracts/${contractId}/payments`, paymentData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-contracts", variables.contractId, "payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-payables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "financials"] });
+    },
+  });
+}
+
 // Bids
 export function useBids() {
   return useQuery<Bid[]>({

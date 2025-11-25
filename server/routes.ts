@@ -4894,6 +4894,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create payment for a contract (Admin/Manager only)
+  app.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { contractId } = req.params;
+      const { insertSubcontractorPaymentSchema } = await import("@shared/schema");
+
+      // Verify contract exists
+      const [contract] = await db
+        .select()
+        .from(subcontractorContracts)
+        .where(eq(subcontractorContracts.id, contractId))
+        .limit(1);
+
+      if (!contract) {
+        res.status(404).json({ error: "Contract not found" });
+        return;
+      }
+
+      // Get next payment number
+      const existingPayments = await db
+        .select({ paymentNumber: subcontractorPayments.paymentNumber })
+        .from(subcontractorPayments)
+        .where(eq(subcontractorPayments.contractId, contractId))
+        .orderBy(desc(subcontractorPayments.paymentNumber))
+        .limit(1);
+
+      const nextPaymentNumber = existingPayments.length > 0 ? existingPayments[0].paymentNumber + 1 : 1;
+
+      // Validate input
+      const validationResult = insertSubcontractorPaymentSchema.safeParse({
+        ...req.body,
+        contractId,
+        paymentNumber: nextPaymentNumber,
+      });
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Insert payment
+      const [newPayment] = await db.insert(subcontractorPayments).values(validationResult.data).returning();
+
+      // Audit log
+      await logCreate(req.user!.id, "SUBCONTRACTOR_PAYMENT", newPayment.id, {
+        contractId,
+        amount: req.body.amount,
+        paymentNumber: nextPaymentNumber,
+      });
+
+      res.status(201).json(newPayment);
+    } catch (error: any) {
+      console.error("Create subcontractor payment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // Subcontractor Payables Routes
   // ====================
