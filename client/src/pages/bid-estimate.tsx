@@ -734,6 +734,7 @@ export default function BidEstimate() {
                       const directCost = (Number(watchedValues.materialCost) || 0) + 
                                         (Number(watchedValues.laborCost) || 0) + 
                                         (Number(watchedValues.equipmentCost) || 0) + 
+                                        (Number(watchedValues.consumablesCost) || 0) +
                                         (Number(watchedValues.subcontractCost) || 0);
                       
                       const costPerUnit = quantity > 0 ? directCost / quantity : 0;
@@ -741,7 +742,9 @@ export default function BidEstimate() {
                       const costWithOverhead = costPerUnit + overheadPerUnit;
                       const profitPerUnit = costWithOverhead * (profitMarginPercent / 100);
                       const bidPricePerUnit = costWithOverhead + profitPerUnit;
-                      const totalMarkupPercent = ((bidPricePerUnit / costPerUnit) - 1) * 100;
+                      const totalMarkupPercent = costPerUnit > 0 ? ((bidPricePerUnit / costPerUnit) - 1) * 100 : 0;
+                      const totalOverhead = directCost * (overheadPercent / 100);
+                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
                       
                       return quantity > 0 ? (
                         <Card className="border-primary/20 bg-primary/5">
@@ -783,6 +786,29 @@ export default function BidEstimate() {
                                   ${bidPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                            </div>
+                            {/* Line Item Totals */}
+                            <div className="mt-3 pt-3 border-t">
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-md border border-orange-200 dark:border-orange-800">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Overhead</p>
+                                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400" data-testid="text-total-overhead">
+                                    ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Profit</p>
+                                  <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-total-profit">
+                                    ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Bid Price</p>
+                                  <p className="text-xl font-bold text-primary" data-testid="text-total-bid-price">
+                                    ${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center text-xs text-muted-foreground">
@@ -996,6 +1022,7 @@ export default function BidEstimate() {
                       const directCost = (Number(watchedValues.materialCost) || 0) + 
                                         (Number(watchedValues.laborCost) || 0) + 
                                         (Number(watchedValues.equipmentCost) || 0) + 
+                                        (Number(watchedValues.consumablesCost) || 0) +
                                         (Number(watchedValues.subcontractCost) || 0);
                       
                       const costPerUnit = quantity > 0 ? directCost / quantity : 0;
@@ -1003,7 +1030,9 @@ export default function BidEstimate() {
                       const costWithOverhead = costPerUnit + overheadPerUnit;
                       const profitPerUnit = costWithOverhead * (profitMarginPercent / 100);
                       const bidPricePerUnit = costWithOverhead + profitPerUnit;
-                      const totalMarkupPercent = ((bidPricePerUnit / costPerUnit) - 1) * 100;
+                      const totalMarkupPercent = costPerUnit > 0 ? ((bidPricePerUnit / costPerUnit) - 1) * 100 : 0;
+                      const totalOverhead = directCost * (overheadPercent / 100);
+                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
                       
                       return quantity > 0 ? (
                         <Card className="border-primary/20 bg-primary/5">
@@ -1045,6 +1074,29 @@ export default function BidEstimate() {
                                   ${bidPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                                 <p className="text-xs text-muted-foreground">per {unit}</p>
+                              </div>
+                            </div>
+                            {/* Line Item Totals */}
+                            <div className="mt-3 pt-3 border-t">
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-md border border-orange-200 dark:border-orange-800">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Overhead</p>
+                                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400" data-testid="text-edit-total-overhead">
+                                    ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Profit</p>
+                                  <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-edit-total-profit">
+                                    ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
+                                  <p className="text-xs text-muted-foreground mb-1">Total Bid Price</p>
+                                  <p className="text-xl font-bold text-primary" data-testid="text-edit-total-bid-price">
+                                    ${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
                               </div>
                             </div>
                             <div className="mt-3 pt-3 border-t flex justify-between items-center text-xs text-muted-foreground">
@@ -1107,12 +1159,21 @@ export default function BidEstimate() {
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">Equipment</TableHead>
                       <TableHead className="text-right">Subcontract</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Direct Cost</TableHead>
+                      <TableHead className="text-right text-orange-600 dark:text-orange-400">Overhead ({overheadPercent}%)</TableHead>
+                      <TableHead className="text-right text-green-600 dark:text-green-400">Profit ({profitMarginPercent}%)</TableHead>
+                      <TableHead className="text-right">Bid Total</TableHead>
                       {estimate.status === "DRAFT" && <TableHead></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {estimate.lineItems.map((item) => (
+                    {estimate.lineItems.map((item) => {
+                      const directCost = Number(item.materialCost) + Number(item.laborCost) + Number(item.equipmentCost) + Number(item.consumablesCost || 0) + Number(item.subcontractCost || 0);
+                      const totalOverhead = directCost * (overheadPercent / 100);
+                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
+                      const bidTotal = directCost + totalOverhead + totalProfit;
+                      
+                      return (
                       <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
                         <TableCell className="font-medium">{item.description}</TableCell>
                         <TableCell>
@@ -1137,8 +1198,17 @@ export default function BidEstimate() {
                         <TableCell className="text-right">
                           ${Number(item.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
+                        <TableCell className="text-right">
+                          ${directCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right text-orange-600 dark:text-orange-400">
+                          ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-right text-green-600 dark:text-green-400">
+                          ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
                         <TableCell className="text-right font-bold">
-                          ${Number(item.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ${bidTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         {estimate.status === "DRAFT" && (
                           <TableCell>
@@ -1185,7 +1255,8 @@ export default function BidEstimate() {
                           </TableCell>
                         )}
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
