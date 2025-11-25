@@ -61,7 +61,7 @@ export default function DashboardPage() {
             </p>
           </div>
           {FeaturePermissions.CREATE_PROJECT(user?.role) && (
-            <Button data-testid="button-new-project">
+            <Button onClick={() => setLocation('/projects?new=true')} data-testid="button-new-project">
               <Plus className="w-4 h-4 mr-2" />
               New Project
             </Button>

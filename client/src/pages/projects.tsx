@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
 import ProjectsTable from "@/components/ProjectsTable";
 import { Input } from "@/components/ui/input";
@@ -10,18 +10,112 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
 import { Search, Plus } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useProjects } from "@/hooks/use-data";
+import { useProjects, useCreateProject } from "@/hooks/use-data";
 import { FeaturePermissions, getAllowedProjectStatuses, canViewProjectStatus } from "@/lib/rbac";
+import { useToast } from "@/hooks/use-toast";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { insertProjectSchema } from "@shared/schema";
+import type { z } from "zod";
+
+type CreateProjectInput = z.infer<typeof insertProjectSchema>;
 
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const allowedStatuses = getAllowedProjectStatuses(user?.role);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const createProject = useCreateProject();
+
+  // Check URL for ?new=true to auto-open dialog
+  useEffect(() => {
+    if (searchParams.includes("new=true")) {
+      setShowCreateDialog(true);
+      // Clear the URL parameter by navigating to clean URL
+      setLocation("/projects", { replace: true });
+    }
+  }, [searchParams, setLocation]);
+
+  const form = useForm<CreateProjectInput>({
+    resolver: zodResolver(insertProjectSchema),
+    defaultValues: {
+      name: "",
+      code: "",
+      clientName: "",
+      clientContactName: "",
+      clientContactEmail: "",
+      clientContactPhone: "",
+      status: "PLANNING",
+      budget: "",
+      contractAmount: "",
+      locationAddress: "",
+      city: "",
+      state: "",
+      description: "",
+    },
+  });
+
+  const onSubmit = async (data: CreateProjectInput) => {
+    try {
+      // Transform empty strings to undefined for optional fields
+      const submitData = {
+        ...data,
+        clientName: data.clientName || undefined,
+        clientContactName: data.clientContactName || undefined,
+        clientContactEmail: data.clientContactEmail || undefined,
+        clientContactPhone: data.clientContactPhone || undefined,
+        budget: data.budget || undefined,
+        contractAmount: data.contractAmount || undefined,
+        locationAddress: data.locationAddress || undefined,
+        city: data.city || undefined,
+        state: data.state || undefined,
+        description: data.description || undefined,
+      };
+      
+      const result = await createProject.mutateAsync(submitData);
+      
+      if (result && result.code) {
+        toast({
+          title: "Success",
+          description: `Project ${result.code} created successfully!`,
+        });
+        setShowCreateDialog(false);
+        form.reset();
+        // Navigate to the new project
+        setLocation(`/projects/${result.code}`);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create project",
+        variant: "destructive",
+      });
+    }
+  };
 
   const { data: projects = [], isLoading } = useProjects();
 
@@ -60,7 +154,7 @@ export default function ProjectsPage() {
               <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
                 View Bids
               </Button>
-              <Button data-testid="button-new-project">
+              <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-project">
                 <Plus className="w-4 h-4 mr-2" />
                 New Project
               </Button>
@@ -106,6 +200,207 @@ export default function ProjectsPage() {
           />
         )}
       </main>
+
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-project">
+          <DialogHeader>
+            <DialogTitle>Create New Project</DialogTitle>
+            <DialogDescription>
+              Create a new project directly. For projects from won bids, use the Bid Board to convert.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Name *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Downtown Office Renovation" {...field} data-testid="input-project-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Code *</FormLabel>
+                      <FormControl>
+                        <Input placeholder="PROJ-2025-001" {...field} data-testid="input-project-code" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="clientName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Client Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Acme Corporation" {...field} value={field.value || ""} data-testid="input-client-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="clientContactName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="John Smith" {...field} value={field.value || ""} data-testid="input-contact-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="clientContactEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="john@acme.com" {...field} value={field.value || ""} data-testid="input-contact-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="clientContactPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl>
+                        <Input placeholder="(555) 123-4567" {...field} value={field.value || ""} data-testid="input-contact-phone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="budget"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Budget</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="250000.00" {...field} value={field.value || ""} data-testid="input-budget" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="contractAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contract Amount</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.01" placeholder="275000.00" {...field} value={field.value || ""} data-testid="input-contract-amount" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="locationAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Input placeholder="123 Main St" {...field} value={field.value || ""} data-testid="input-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Austin" {...field} value={field.value || ""} data-testid="input-city" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input placeholder="TX" {...field} value={field.value || ""} data-testid="input-state" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Brief description of the project scope..."
+                        className="min-h-[80px]"
+                        {...field}
+                        value={field.value || ""}
+                        data-testid="input-description"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)} data-testid="button-cancel">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createProject.isPending} data-testid="button-create-project">
+                  {createProject.isPending ? "Creating..." : "Create Project"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
