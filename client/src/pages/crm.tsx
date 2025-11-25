@@ -35,23 +35,23 @@ import {
   AlertCircle,
   X
 } from "lucide-react";
-import type { CrmOrganisation, CrmContact } from "@shared/schema";
+import type { CrmOrganisation as CrmOrganization, CrmContact } from "@shared/schema";
 
-type OrganisationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR";
+type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR";
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
 
-interface OrganisationWithContacts extends CrmOrganisation {
+interface OrganizationWithContacts extends CrmOrganization {
   contacts: CrmContact[];
 }
 
-const TYPE_LABELS: Record<OrganisationType, string> = {
+const TYPE_LABELS: Record<OrganizationType, string> = {
   CONTRACTOR: "Contractor",
   SUBCONTRACTOR: "Subcontractor",
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
 };
 
-const TYPE_COLORS: Record<OrganisationType, string> = {
+const TYPE_COLORS: Record<OrganizationType, string> = {
   CONTRACTOR: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   SUBCONTRACTOR: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   SUPPLIER: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
@@ -78,19 +78,19 @@ export default function CRMPage() {
   
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState<"organisations" | "contacts">("organisations");
+  const [activeTab, setActiveTab] = useState<"organizations" | "contacts">("organizations");
   
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [editOrgOpen, setEditOrgOpen] = useState(false);
   const [detailOrgOpen, setDetailOrgOpen] = useState(false);
-  const [selectedOrg, setSelectedOrg] = useState<OrganisationWithContacts | null>(null);
+  const [selectedOrg, setSelectedOrg] = useState<OrganizationWithContacts | null>(null);
   
   const [createContactOpen, setCreateContactOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null);
   
   const [newOrg, setNewOrg] = useState({
-    type: "SUBCONTRACTOR" as OrganisationType,
+    type: "SUBCONTRACTOR" as OrganizationType,
     name: "",
     address: "",
     city: "",
@@ -114,66 +114,66 @@ export default function CRMPage() {
     notes: "",
   });
   
-  const { data: organisations, isLoading: orgsLoading } = useQuery<CrmOrganisation[]>({
-    queryKey: ["/api/crm/organisations"],
+  const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
+    queryKey: ["/api/crm/organizations"],
   });
   
-  const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganisationWithContacts>({
-    queryKey: ["/api/crm/organisations", selectedOrg?.id],
+  const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganizationWithContacts>({
+    queryKey: ["/api/crm/organizations", selectedOrg?.id],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
 
   const createOrgMutation = useMutation({
     mutationFn: async (data: typeof newOrg) => {
-      return apiRequest("POST", "/api/crm/organisations", data);
+      return apiRequest("POST", "/api/crm/organizations", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
-      toast({ title: "Organisation created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      toast({ title: "Organization created successfully" });
       setCreateOrgOpen(false);
       resetNewOrg();
     },
     onError: (err: any) => {
-      toast({ title: "Failed to create organisation", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to create organization", description: err.message, variant: "destructive" });
     },
   });
   
   const updateOrgMutation = useMutation({
     mutationFn: async (data: Partial<typeof newOrg> & { id: string }) => {
       const { id, ...rest } = data;
-      return apiRequest("PUT", `/api/crm/organisations/${id}`, rest);
+      return apiRequest("PUT", `/api/crm/organizations/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
-      toast({ title: "Organisation updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      toast({ title: "Organization updated successfully" });
       setEditOrgOpen(false);
     },
     onError: (err: any) => {
-      toast({ title: "Failed to update organisation", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to update organization", description: err.message, variant: "destructive" });
     },
   });
   
   const deleteOrgMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/crm/organisations/${id}`);
+      return apiRequest("DELETE", `/api/crm/organizations/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
-      toast({ title: "Organisation deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      toast({ title: "Organization deleted successfully" });
       setDetailOrgOpen(false);
       setSelectedOrg(null);
     },
     onError: (err: any) => {
-      toast({ title: "Failed to delete organisation", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to delete organization", description: err.message, variant: "destructive" });
     },
   });
   
   const createContactMutation = useMutation({
-    mutationFn: async (data: typeof newContact & { organisationId: string }) => {
+    mutationFn: async (data: typeof newContact & { organizationId: string }) => {
       return apiRequest("POST", "/api/crm/contacts", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
       toast({ title: "Contact created successfully" });
       setCreateContactOpen(false);
       resetNewContact();
@@ -189,7 +189,7 @@ export default function CRMPage() {
       return apiRequest("PUT", `/api/crm/contacts/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
       toast({ title: "Contact updated successfully" });
       setEditContactOpen(false);
     },
@@ -203,7 +203,7 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
       toast({ title: "Contact deleted successfully" });
     },
     onError: (err: any) => {
@@ -240,7 +240,7 @@ export default function CRMPage() {
     });
   };
   
-  const filteredOrganisations = organisations?.filter((org) => {
+  const filteredOrganizations = organizations?.filter((org) => {
     const matchesSearch = org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       org.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       org.state?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -249,21 +249,21 @@ export default function CRMPage() {
   }) || [];
   
   const orgCounts = {
-    total: organisations?.filter(o => o.isActive).length || 0,
-    contractors: organisations?.filter(o => o.type === "CONTRACTOR" && o.isActive).length || 0,
-    subcontractors: organisations?.filter(o => o.type === "SUBCONTRACTOR" && o.isActive).length || 0,
-    suppliers: organisations?.filter(o => o.type === "SUPPLIER" && o.isActive).length || 0,
-    vendors: organisations?.filter(o => o.type === "VENDOR" && o.isActive).length || 0,
+    total: organizations?.filter(o => o.isActive).length || 0,
+    contractors: organizations?.filter(o => o.type === "CONTRACTOR" && o.isActive).length || 0,
+    subcontractors: organizations?.filter(o => o.type === "SUBCONTRACTOR" && o.isActive).length || 0,
+    suppliers: organizations?.filter(o => o.type === "SUPPLIER" && o.isActive).length || 0,
+    vendors: organizations?.filter(o => o.type === "VENDOR" && o.isActive).length || 0,
   };
 
-  const openOrgDetail = (org: CrmOrganisation) => {
-    setSelectedOrg(org as OrganisationWithContacts);
+  const openOrgDetail = (org: CrmOrganization) => {
+    setSelectedOrg(org as OrganizationWithContacts);
     setDetailOrgOpen(true);
   };
   
-  const openEditOrg = (org: CrmOrganisation) => {
+  const openEditOrg = (org: CrmOrganization) => {
     setNewOrg({
-      type: org.type as OrganisationType,
+      type: org.type as OrganizationType,
       name: org.name,
       address: org.address || "",
       city: org.city || "",
@@ -274,7 +274,7 @@ export default function CRMPage() {
       paymentTerms: org.paymentTerms || "",
       notes: org.notes || "",
     });
-    setSelectedOrg(org as OrganisationWithContacts);
+    setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
   };
   
@@ -311,9 +311,9 @@ export default function CRMPage() {
                 Manage contractors, subcontractors, suppliers, and vendors
               </p>
             </div>
-            <Button onClick={() => setCreateOrgOpen(true)} data-testid="button-add-organisation">
+            <Button onClick={() => setCreateOrgOpen(true)} data-testid="button-add-organization">
               <Plus className="w-4 h-4 mr-2" />
-              Add Organisation
+              Add Organization
             </Button>
           </div>
           
@@ -388,12 +388,12 @@ export default function CRMPage() {
           <Card>
             <CardHeader className="pb-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <CardTitle>Organisations</CardTitle>
+                <CardTitle>Organizations</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search organisations..."
+                      placeholder="Search organizations..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
@@ -422,10 +422,10 @@ export default function CRMPage() {
                     <Skeleton key={i} className="h-16 w-full" />
                   ))}
                 </div>
-              ) : filteredOrganisations.length === 0 ? (
+              ) : filteredOrganizations.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No organisations found</p>
+                  <p>No organizations found</p>
                   <p className="text-sm">Try adjusting your search or filters</p>
                 </div>
               ) : (
@@ -441,7 +441,7 @@ export default function CRMPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredOrganisations.map((org) => (
+                      {filteredOrganizations.map((org) => (
                         <TableRow 
                           key={org.id} 
                           className="cursor-pointer hover-elevate"
@@ -450,8 +450,8 @@ export default function CRMPage() {
                         >
                           <TableCell className="font-medium">{org.name}</TableCell>
                           <TableCell>
-                            <Badge className={TYPE_COLORS[org.type as OrganisationType]}>
-                              {TYPE_LABELS[org.type as OrganisationType]}
+                            <Badge className={TYPE_COLORS[org.type as OrganizationType]}>
+                              {TYPE_LABELS[org.type as OrganizationType]}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
@@ -497,7 +497,7 @@ export default function CRMPage() {
       <Dialog open={createOrgOpen} onOpenChange={setCreateOrgOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Organisation</DialogTitle>
+            <DialogTitle>Add New Organization</DialogTitle>
             <DialogDescription>
               Add a new contractor, subcontractor, supplier, or vendor to your CRM.
             </DialogDescription>
@@ -506,7 +506,7 @@ export default function CRMPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Type *</Label>
-                <Select value={newOrg.type} onValueChange={(v) => setNewOrg({ ...newOrg, type: v as OrganisationType })}>
+                <Select value={newOrg.type} onValueChange={(v) => setNewOrg({ ...newOrg, type: v as OrganizationType })}>
                   <SelectTrigger data-testid="select-org-type">
                     <SelectValue />
                   </SelectTrigger>
@@ -614,7 +614,7 @@ export default function CRMPage() {
               disabled={!newOrg.name || createOrgMutation.isPending}
               data-testid="button-save-org"
             >
-              {createOrgMutation.isPending ? "Creating..." : "Create Organisation"}
+              {createOrgMutation.isPending ? "Creating..." : "Create Organization"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -623,16 +623,16 @@ export default function CRMPage() {
       <Dialog open={editOrgOpen} onOpenChange={setEditOrgOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Organisation</DialogTitle>
+            <DialogTitle>Edit Organization</DialogTitle>
             <DialogDescription>
-              Update organisation details.
+              Update organization details.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Type *</Label>
-                <Select value={newOrg.type} onValueChange={(v) => setNewOrg({ ...newOrg, type: v as OrganisationType })}>
+                <Select value={newOrg.type} onValueChange={(v) => setNewOrg({ ...newOrg, type: v as OrganizationType })}>
                   <SelectTrigger data-testid="select-edit-org-type">
                     <SelectValue />
                   </SelectTrigger>
@@ -740,7 +740,7 @@ export default function CRMPage() {
               disabled={!newOrg.name || updateOrgMutation.isPending}
               data-testid="button-update-org"
             >
-              {updateOrgMutation.isPending ? "Updating..." : "Update Organisation"}
+              {updateOrgMutation.isPending ? "Updating..." : "Update Organization"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -753,8 +753,8 @@ export default function CRMPage() {
               <div>
                 <DialogTitle className="text-xl">{selectedOrg?.name}</DialogTitle>
                 <DialogDescription className="mt-1">
-                  <Badge className={TYPE_COLORS[(selectedOrg?.type || "SUBCONTRACTOR") as OrganisationType]}>
-                    {TYPE_LABELS[(selectedOrg?.type || "SUBCONTRACTOR") as OrganisationType]}
+                  <Badge className={TYPE_COLORS[(selectedOrg?.type || "SUBCONTRACTOR") as OrganizationType]}>
+                    {TYPE_LABELS[(selectedOrg?.type || "SUBCONTRACTOR") as OrganizationType]}
                   </Badge>
                 </DialogDescription>
               </div>
@@ -779,7 +779,7 @@ export default function CRMPage() {
           
           <Tabs defaultValue="info" className="mt-4">
             <TabsList>
-              <TabsTrigger value="info">Organisation Info</TabsTrigger>
+              <TabsTrigger value="info">Organization Info</TabsTrigger>
               <TabsTrigger value="contacts">
                 Contacts ({orgDetail?.contacts?.length || 0})
               </TabsTrigger>
@@ -844,7 +844,7 @@ export default function CRMPage() {
             <TabsContent value="contacts" className="mt-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-muted-foreground">
-                  Manage contacts for this organisation
+                  Manage contacts for this organization
                 </p>
                 <Button size="sm" onClick={() => setCreateContactOpen(true)} data-testid="button-add-contact">
                   <Plus className="w-4 h-4 mr-1" />
@@ -1049,7 +1049,7 @@ export default function CRMPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => selectedOrg && createContactMutation.mutate({ ...newContact, organisationId: selectedOrg.id })}
+              onClick={() => selectedOrg && createContactMutation.mutate({ ...newContact, organizationId: selectedOrg.id })}
               disabled={!newContact.firstName || !newContact.lastName || createContactMutation.isPending}
               data-testid="button-save-contact"
             >
