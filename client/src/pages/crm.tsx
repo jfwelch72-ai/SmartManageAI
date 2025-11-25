@@ -115,20 +115,20 @@ export default function CRMPage() {
   });
   
   const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
-    queryKey: ["/api/crm/organizations"],
+    queryKey: ["/api/crm/organisations"],
   });
   
   const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganizationWithContacts>({
-    queryKey: ["/api/crm/organizations", selectedOrg?.id],
+    queryKey: ["/api/crm/organisations", selectedOrg?.id],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
 
   const createOrgMutation = useMutation({
     mutationFn: async (data: typeof newOrg) => {
-      return apiRequest("POST", "/api/crm/organizations", data);
+      return apiRequest("POST", "/api/crm/organisations", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
       toast({ title: "Organization created successfully" });
       setCreateOrgOpen(false);
       resetNewOrg();
@@ -141,10 +141,10 @@ export default function CRMPage() {
   const updateOrgMutation = useMutation({
     mutationFn: async (data: Partial<typeof newOrg> & { id: string }) => {
       const { id, ...rest } = data;
-      return apiRequest("PUT", `/api/crm/organizations/${id}`, rest);
+      return apiRequest("PUT", `/api/crm/organisations/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
       toast({ title: "Organization updated successfully" });
       setEditOrgOpen(false);
     },
@@ -155,10 +155,10 @@ export default function CRMPage() {
   
   const deleteOrgMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/crm/organizations/${id}`);
+      return apiRequest("DELETE", `/api/crm/organisations/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
       toast({ title: "Organization deleted successfully" });
       setDetailOrgOpen(false);
       setSelectedOrg(null);
@@ -173,7 +173,7 @@ export default function CRMPage() {
       return apiRequest("POST", "/api/crm/contacts", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
       toast({ title: "Contact created successfully" });
       setCreateContactOpen(false);
       resetNewContact();
@@ -189,7 +189,7 @@ export default function CRMPage() {
       return apiRequest("PUT", `/api/crm/contacts/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
       toast({ title: "Contact updated successfully" });
       setEditContactOpen(false);
     },
@@ -203,7 +203,7 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organizations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
       toast({ title: "Contact deleted successfully" });
     },
     onError: (err: any) => {
