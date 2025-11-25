@@ -13,7 +13,9 @@ import {
   insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema,
   crews, crewMembers, skills, userSkills, equipment,
   insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema,
-  subcontractors, subcontractorContracts, subcontractorPayments
+  subcontractors, subcontractorContracts, subcontractorPayments,
+  projectLaborRates, projectEmployeeRates,
+  insertProjectLaborRateSchema, insertProjectEmployeeRateSchema
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -1688,6 +1690,249 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ====================
+  // Project Labor Rates Routes
+  // ====================
+
+  // Get project labor rates (default rates + burden multiplier)
+  app.get("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const [laborRates] = await db
+        .select()
+        .from(projectLaborRates)
+        .where(eq(projectLaborRates.projectId, project.id))
+        .limit(1);
+
+      res.json(laborRates || null);
+    } catch (error) {
+      console.error("Get project labor rates error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create or update project labor rates
+  app.post("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const laborRateSchema = z.object({
+        defaultRegularRate: z.string().or(z.number()).transform(v => String(v)),
+        defaultOvertimeRate: z.string().or(z.number()).transform(v => String(v)),
+        burdenMultiplier: z.string().or(z.number()).transform(v => String(v)),
+        notes: z.string().optional(),
+      });
+
+      const validationResult = laborRateSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Check if labor rates already exist for this project
+      const [existing] = await db
+        .select()
+        .from(projectLaborRates)
+        .where(eq(projectLaborRates.projectId, project.id))
+        .limit(1);
+
+      let result;
+      if (existing) {
+        // Update existing
+        [result] = await db
+          .update(projectLaborRates)
+          .set({
+            ...validationResult.data,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectLaborRates.id, existing.id))
+          .returning();
+      } else {
+        // Create new
+        [result] = await db
+          .insert(projectLaborRates)
+          .values({
+            projectId: project.id,
+            ...validationResult.data,
+          })
+          .returning();
+      }
+
+      await logAudit(db, req.user!.id, existing ? "UPDATE" : "CREATE", "projectLaborRates", result.id, 
+        { projectCode: req.params.code, ...validationResult.data });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Create/update project labor rates error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get employee rate overrides for a project
+  app.get("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const employeeRates = await db
+        .select({
+          id: projectEmployeeRates.id,
+          projectId: projectEmployeeRates.projectId,
+          userId: projectEmployeeRates.userId,
+          regularRate: projectEmployeeRates.regularRate,
+          overtimeRate: projectEmployeeRates.overtimeRate,
+          notes: projectEmployeeRates.notes,
+          createdAt: projectEmployeeRates.createdAt,
+          updatedAt: projectEmployeeRates.updatedAt,
+          employee: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            role: users.role,
+          },
+        })
+        .from(projectEmployeeRates)
+        .innerJoin(users, eq(projectEmployeeRates.userId, users.id))
+        .where(eq(projectEmployeeRates.projectId, project.id));
+
+      res.json(employeeRates);
+    } catch (error) {
+      console.error("Get employee rate overrides error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create or update employee rate override for a project
+  app.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const employeeRateSchema = z.object({
+        userId: z.string().min(1, "Employee ID is required"),
+        regularRate: z.string().or(z.number()).transform(v => String(v)),
+        overtimeRate: z.string().or(z.number()).transform(v => String(v)),
+        notes: z.string().optional(),
+      });
+
+      const validationResult = employeeRateSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Verify the user exists
+      const [employee] = await db.select().from(users).where(eq(users.id, validationResult.data.userId)).limit(1);
+      if (!employee) {
+        res.status(404).json({ error: "Employee not found" });
+        return;
+      }
+
+      // Check if rate override already exists for this employee on this project
+      const [existing] = await db
+        .select()
+        .from(projectEmployeeRates)
+        .where(and(
+          eq(projectEmployeeRates.projectId, project.id),
+          eq(projectEmployeeRates.userId, validationResult.data.userId)
+        ))
+        .limit(1);
+
+      let result;
+      if (existing) {
+        // Update existing
+        [result] = await db
+          .update(projectEmployeeRates)
+          .set({
+            regularRate: validationResult.data.regularRate,
+            overtimeRate: validationResult.data.overtimeRate,
+            notes: validationResult.data.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectEmployeeRates.id, existing.id))
+          .returning();
+      } else {
+        // Create new
+        [result] = await db
+          .insert(projectEmployeeRates)
+          .values({
+            projectId: project.id,
+            userId: validationResult.data.userId,
+            regularRate: validationResult.data.regularRate,
+            overtimeRate: validationResult.data.overtimeRate,
+            notes: validationResult.data.notes,
+          })
+          .returning();
+      }
+
+      await logAudit(db, req.user!.id, existing ? "UPDATE" : "CREATE", "projectEmployeeRates", result.id, 
+        { projectCode: req.params.code, employeeId: validationResult.data.userId });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Create/update employee rate override error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete employee rate override
+  app.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const [rateOverride] = await db
+        .select()
+        .from(projectEmployeeRates)
+        .where(and(
+          eq(projectEmployeeRates.id, req.params.rateId),
+          eq(projectEmployeeRates.projectId, project.id)
+        ))
+        .limit(1);
+
+      if (!rateOverride) {
+        res.status(404).json({ error: "Rate override not found" });
+        return;
+      }
+
+      await db.delete(projectEmployeeRates).where(eq(projectEmployeeRates.id, req.params.rateId));
+
+      await logAudit(db, req.user!.id, "DELETE", "projectEmployeeRates", req.params.rateId, 
+        { projectCode: req.params.code });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete employee rate override error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get project financials with actual costs (Admin/Manager/Superintendent only)
   app.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
@@ -1713,6 +1958,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
       const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
+      // Get project labor rates configuration (default rates + burden multiplier)
+      const [projectRates] = await db
+        .select()
+        .from(projectLaborRates)
+        .where(eq(projectLaborRates.projectId, project.id))
+        .limit(1);
+
+      // Get employee-specific rate overrides for this project
+      const employeeRateOverrides = await db
+        .select()
+        .from(projectEmployeeRates)
+        .where(eq(projectEmployeeRates.projectId, project.id));
+
+      const employeeRatesMap: Record<string, { regular: number; overtime: number }> = {};
+      employeeRateOverrides.forEach(r => {
+        employeeRatesMap[r.userId] = {
+          regular: Number(r.regularRate),
+          overtime: Number(r.overtimeRate),
+        };
+      });
+
       // Calculate labor costs from time clock shifts
       const laborShifts = await db
         .select({
@@ -1723,9 +1989,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(timeClockShifts)
         .where(eq(timeClockShifts.projectId, project.id));
 
-      // Get user cost rates for labor calculation
+      // Get user cost rates for labor calculation (fallback if no project rates)
       const userIds = Array.from(new Set(laborShifts.map(s => s.userId)));
-      const userCostRates: Record<string, { regular: number; overtime: number }> = {};
+      const userDefaultRates: Record<string, { regular: number; overtime: number }> = {};
       
       if (userIds.length > 0) {
         const usersData = await db
@@ -1738,20 +2004,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(inArray(users.id, userIds));
         
         usersData.forEach(u => {
-          userCostRates[u.id] = {
+          userDefaultRates[u.id] = {
             regular: Number(u.costRateRegular || 50),
             overtime: Number(u.costRateOvertime || 75),
           };
         });
       }
 
-      // Calculate labor cost based on approved shifts
+      // Rate resolution priority: 1) Employee-specific project rate, 2) Project default, 3) User default, 4) System default ($50)
+      const getEffectiveRate = (userId: string): { regular: number; overtime: number } => {
+        // 1. Employee-specific rate for this project (highest priority)
+        if (employeeRatesMap[userId]) {
+          return employeeRatesMap[userId];
+        }
+        // 2. Project default rate
+        if (projectRates) {
+          return {
+            regular: Number(projectRates.defaultRegularRate),
+            overtime: Number(projectRates.defaultOvertimeRate),
+          };
+        }
+        // 3. User's default rate
+        if (userDefaultRates[userId]) {
+          return userDefaultRates[userId];
+        }
+        // 4. System default
+        return { regular: 50, overtime: 75 };
+      };
+
+      // Get burden multiplier (default to 1.0 if not configured)
+      const burdenMultiplier = projectRates ? Number(projectRates.burdenMultiplier) : 1.0;
+
+      // Calculate labor cost based on approved shifts with burden multiplier
       const approvedShifts = laborShifts.filter(s => s.approvalStatus === 'APPROVED');
       const totalLaborHours = approvedShifts.reduce((sum, s) => sum + Number(s.totalHours || 0), 0);
-      const totalLaborCost = approvedShifts.reduce((sum, s) => {
-        const rate = userCostRates[s.userId]?.regular || 50;
-        return sum + (Number(s.totalHours || 0) * rate);
+      const baseLaborCost = approvedShifts.reduce((sum, s) => {
+        const rate = getEffectiveRate(s.userId);
+        return sum + (Number(s.totalHours || 0) * rate.regular);
       }, 0);
+      // Apply burden multiplier to get true labor cost
+      const totalLaborCost = baseLaborCost * burdenMultiplier;
 
       // Calculate material costs from procurement items
       const materials = await db
@@ -1812,10 +2104,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         actualCosts: {
           labor: totalLaborCost,
           laborHours: totalLaborHours,
+          laborBaseCost: baseLaborCost,
           materials: totalMaterialCost,
           subcontractors: totalSubcontractorCost,
           otherExpenses: totalOtherExpenses,
           total: totalActualCost,
+        },
+        laborRates: {
+          configured: !!projectRates,
+          defaultRegularRate: projectRates ? Number(projectRates.defaultRegularRate) : null,
+          defaultOvertimeRate: projectRates ? Number(projectRates.defaultOvertimeRate) : null,
+          burdenMultiplier: burdenMultiplier,
+          employeeOverrideCount: employeeRateOverrides.length,
         },
         profitVariance: actualProfit - projectedProfit,
         profitVariancePercent: projectedProfit !== 0 ? ((actualProfit - projectedProfit) / projectedProfit) * 100 : 0,
