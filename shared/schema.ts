@@ -31,6 +31,11 @@ export const aiNoteInsightSourceTypeEnum = pgEnum("ai_note_insight_source_type",
 export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
 export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 
+// CRM Enums
+export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR"]);
+export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
+export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1275,6 +1280,73 @@ export const subcontractorBillingSchedule = pgTable("subcontractor_billing_sched
 export const insertSubcontractorBillingScheduleSchema = createInsertSchema(subcontractorBillingSchedule).omit({ id: true, createdAt: true });
 export type InsertSubcontractorBillingSchedule = z.infer<typeof insertSubcontractorBillingScheduleSchema>;
 export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$inferSelect;
+
+// ===================
+// CRM System Tables
+// ===================
+
+// CRM Organisations table - Companies (Contractors, Subcontractors, Suppliers, Vendors)
+export const crmOrganisations = pgTable("crm_organisations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: crmOrganisationTypeEnum("type").notNull(),
+  name: text("name").notNull(),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zipCode: text("zip_code"),
+  website: text("website"),
+  specialties: text("specialties").array(),
+  insuranceCarrier: text("insurance_carrier"),
+  insurancePolicyNumber: text("insurance_policy_number"),
+  insuranceExpiration: timestamp("insurance_expiration"),
+  insuranceCoverageAmount: decimal("insurance_coverage_amount", { precision: 12, scale: 2 }),
+  wcInsuranceCarrier: text("wc_insurance_carrier"),
+  wcInsuranceExpiration: timestamp("wc_insurance_expiration"),
+  licenseNumber: text("license_number"),
+  licenseExpiration: timestamp("license_expiration"),
+  taxId: text("tax_id"),
+  paymentTerms: text("payment_terms"),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  legacySubcontractorId: varchar("legacy_subcontractor_id"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  typeIdx: index("crm_organisations_type_idx").on(table.type),
+  nameIdx: index("crm_organisations_name_idx").on(table.name),
+}));
+
+export const insertCrmOrganisationSchema = createInsertSchema(crmOrganisations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmOrganisation = z.infer<typeof insertCrmOrganisationSchema>;
+export type CrmOrganisation = typeof crmOrganisations.$inferSelect;
+
+// CRM Contacts table - People associated with organisations
+export const crmContacts = pgTable("crm_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  title: text("title"),
+  role: crmContactRoleEnum("role").notNull().default("OTHER"),
+  email: text("email"),
+  phone: text("phone"),
+  mobile: text("mobile"),
+  preferredContact: crmPreferredContactEnum("preferred_contact").default("EMAIL"),
+  preferredContactOther: text("preferred_contact_other"),
+  notes: text("notes"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  organisationIdx: index("crm_contacts_organisation_idx").on(table.organisationId),
+}));
+
+export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmContact = z.infer<typeof insertCrmContactSchema>;
+export type CrmContact = typeof crmContacts.$inferSelect;
 
 // Takeoff + Estimating Insert/Select Schemas
 export const insertProjectPlanSchema = createInsertSchema(projectPlans).omit({ id: true, createdAt: true, updatedAt: true });
