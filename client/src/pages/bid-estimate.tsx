@@ -790,7 +790,7 @@ export default function BidEstimate() {
                                 <p className="text-xs text-muted-foreground">per {unit}</p>
                               </div>
                               <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({(overheadPercent + profitMarginPercent)}%)</p>
+                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({((overheadMultiplier * profitMultiplier - 1) * 100).toFixed(1)}%)</p>
                                 <p className="text-lg font-semibold text-amber-600 dark:text-amber-400" data-testid="text-markup-per-unit">
                                   +${(adjustedCostPerUnit - baseCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
@@ -1066,7 +1066,7 @@ export default function BidEstimate() {
                                 <p className="text-xs text-muted-foreground">per {unit}</p>
                               </div>
                               <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({(overheadPercent + profitMarginPercent)}%)</p>
+                                <p className="text-xs text-muted-foreground mb-1">+ Markup ({((overheadMultiplier * profitMultiplier - 1) * 100).toFixed(1)}%)</p>
                                 <p className="text-lg font-semibold text-amber-600 dark:text-amber-400" data-testid="text-edit-markup-per-unit">
                                   +${(adjustedCostPerUnit - baseCostPerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
