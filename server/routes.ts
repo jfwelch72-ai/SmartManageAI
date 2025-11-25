@@ -1071,9 +1071,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create subcontractor contract from quote with validated field lengths
         const contractNumber = `SC-${newProject.code}-${String(subQuotes.indexOf(quote) + 1).padStart(3, '0')}`;
         const paymentTerms = quote.leadTime ? `Lead Time: ${quote.leadTime}`.substring(0, 500) : null;
-        const notes = quote.estimatedCompletionTime 
-          ? `Estimated Completion: ${quote.estimatedCompletionTime}${quote.notes ? '\n' + quote.notes : ''}`.substring(0, 1000)
-          : (quote.notes || null);
+        
+        // Build comprehensive notes with all quote details
+        const notesParts: string[] = [];
+        if (quote.estimatedCompletionTime) notesParts.push(`Estimated Completion: ${quote.estimatedCompletionTime}`);
+        if (quote.notes) notesParts.push(quote.notes);
+        if (quote.fileUrl) {
+          // Sanitize file name to prevent newline injection
+          const sanitizedFileName = (quote.fileName || 'Document').replace(/[\r\n]/g, ' ').trim();
+          notesParts.push(`[Quote Attachment: ${sanitizedFileName}]`);
+        }
+        
+        const notes = notesParts.length > 0 ? notesParts.join('\n').substring(0, 1000) : null;
         
         await db.insert(subcontractorContracts).values({
           subcontractorId: subcontractor.id,
@@ -1113,16 +1122,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Bid Conversion] Transferring ${matQuotes.length} selected material quotes (deleted ${deletedMatQuotes.length} non-selected)`);
 
       for (const quote of matQuotes) {
+        // Build comprehensive description with all quote details
+        let fullDescription = quote.materialName;
+        if (quote.specs) fullDescription += ` - ${quote.specs}`;
+        if (quote.description) fullDescription += `\n${quote.description}`;
+        
+        // Preserve lead time and supplier contact in description for visibility
+        const additionalInfo: string[] = [];
+        if (quote.leadTime) additionalInfo.push(`Lead Time: ${quote.leadTime}`);
+        if (quote.supplierContact) additionalInfo.push(`Supplier Contact: ${quote.supplierContact}`);
+        
+        if (additionalInfo.length > 0) {
+          fullDescription += `\n\n[Quote Details]\n${additionalInfo.join('\n')}`;
+        }
+        
         // Create procurement item from material quote
         await db.insert(procurementItems).values({
           projectId: newProject.id,
-          description: `${quote.materialName}${quote.specs ? ` - ${quote.specs}` : ''}${quote.description ? '\n' + quote.description : ''}`,
+          description: fullDescription,
           vendor: quote.supplierName || null,
           quantity: "1", // Material quotes typically represent a full order
           unit: "LOT",
           unitCost: quote.cost,
           status: "PLANNED",
-          neededByDate: quote.leadTime ? null : null, // Could parse lead time to date
+          neededByDate: null,
         });
       }
 
@@ -1796,38 +1819,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Join with estimate line items to show source estimate info
+      // Get scope items - simple query without nested objects to avoid Drizzle null handling issues
       const items = await db
-        .select({
-          id: scopeItems.id,
-          projectId: scopeItems.projectId,
-          estimateLineItemId: scopeItems.estimateLineItemId,
-          description: scopeItems.description,
-          unit: scopeItems.unit,
-          totalQuantity: scopeItems.totalQuantity,
-          completedQuantity: scopeItems.completedQuantity,
-          billedQuantity: scopeItems.billedQuantity,
-          unitPrice: scopeItems.unitPrice,
-          billingStatus: scopeItems.billingStatus,
-          lastBilledDate: scopeItems.lastBilledDate,
-          createdAt: scopeItems.createdAt,
-          updatedAt: scopeItems.updatedAt,
-          // Estimate traceability fields
-          sourceEstimate: {
-            id: estimates.id,
-            name: estimates.name,
-            status: estimates.status,
-          },
-        })
+        .select()
         .from(scopeItems)
-        .leftJoin(estimateLineItems, eq(scopeItems.estimateLineItemId, estimateLineItems.id))
-        .leftJoin(estimates, eq(estimateLineItems.estimateId, estimates.id))
         .where(eq(scopeItems.projectId, project.id));
 
-      // Transform the response to include sourceEstimate only when present
-      const enrichedItems = items.map(item => ({
-        ...item,
-        sourceEstimate: item.sourceEstimate && item.sourceEstimate.id ? item.sourceEstimate : null,
+      // Fetch estimate info separately for traceability (if line item linked)
+      const enrichedItems = await Promise.all(items.map(async (item) => {
+        let sourceEstimate = null;
+        
+        if (item.estimateLineItemId) {
+          const [lineItem] = await db
+            .select({ estimateId: estimateLineItems.estimateId })
+            .from(estimateLineItems)
+            .where(eq(estimateLineItems.id, item.estimateLineItemId))
+            .limit(1);
+          
+          if (lineItem?.estimateId) {
+            const [estimate] = await db
+              .select({ id: estimates.id, status: estimates.status, versionNumber: estimates.versionNumber })
+              .from(estimates)
+              .where(eq(estimates.id, lineItem.estimateId))
+              .limit(1);
+            
+            if (estimate) {
+              sourceEstimate = {
+                id: estimate.id,
+                status: estimate.status,
+                versionNumber: estimate.versionNumber,
+              };
+            }
+          }
+        }
+        
+        return {
+          ...item,
+          sourceEstimate,
+        };
       }));
 
       res.json(enrichedItems);
