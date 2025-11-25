@@ -1005,6 +1005,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get estimate for a bid (by bid ID)
+  app.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const bidId = req.params.id;
+      console.log(`[GET /api/bids/:id/estimate] Fetching estimate for bid ID: ${bidId}`);
+      
+      // Verify bid exists
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+      
+      // Find active estimate (APPROVED or latest DRAFT)
+      const bidEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bidId))
+        .orderBy(desc(estimates.versionNumber));
+      
+      if (bidEstimates.length === 0) {
+        res.json({ estimate: null });
+        return;
+      }
+      
+      // Use approved estimate if available, otherwise most recent
+      const activeEstimate = bidEstimates.find(e => e.status === "APPROVED") || bidEstimates[0];
+      
+      // Get line items for the active estimate
+      const lineItems = await db
+        .select()
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, activeEstimate.id));
+      
+      // Calculate totals from line items
+      const totals = lineItems.reduce((acc, item) => ({
+        materialCost: acc.materialCost + Number(item.materialCost || 0),
+        laborCost: acc.laborCost + Number(item.laborCost || 0),
+        laborHours: acc.laborHours + Number(item.laborHours || 0),
+        equipmentCost: acc.equipmentCost + Number(item.equipmentCost || 0),
+        consumablesCost: acc.consumablesCost + Number(item.consumablesCost || 0),
+        subcontractCost: acc.subcontractCost + Number(item.subcontractCost || 0),
+        overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation || 0),
+        profitAllocation: acc.profitAllocation + Number(item.profitAllocation || 0),
+        totalCost: acc.totalCost + Number(item.totalCost || 0),
+      }), {
+        materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+        consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+        profitAllocation: 0, totalCost: 0,
+      });
+      
+      res.json({
+        estimate: {
+          ...activeEstimate,
+          lineItems,
+          totals,
+        }
+      });
+    } catch (error) {
+      console.error("Get bid estimate error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create estimate for a bid (by bid ID)
+  app.post("/api/bids/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const bidId = req.params.id;
+      console.log(`[POST /api/bids/:id/estimate] Creating estimate for bid ID: ${bidId}`);
+      
+      // Verify bid exists
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+      
+      // Check if estimate already exists for this bid
+      const existingEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bidId))
+        .limit(1);
+      
+      if (existingEstimates.length > 0) {
+        // Return existing estimate
+        const estimate = existingEstimates[0];
+        const lineItems = await db
+          .select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimate.id));
+        
+        const totals = lineItems.reduce((acc, item) => ({
+          materialCost: acc.materialCost + Number(item.materialCost || 0),
+          laborCost: acc.laborCost + Number(item.laborCost || 0),
+          laborHours: acc.laborHours + Number(item.laborHours || 0),
+          equipmentCost: acc.equipmentCost + Number(item.equipmentCost || 0),
+          consumablesCost: acc.consumablesCost + Number(item.consumablesCost || 0),
+          subcontractCost: acc.subcontractCost + Number(item.subcontractCost || 0),
+          overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation || 0),
+          profitAllocation: acc.profitAllocation + Number(item.profitAllocation || 0),
+          totalCost: acc.totalCost + Number(item.totalCost || 0),
+        }), {
+          materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+          consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+          profitAllocation: 0, totalCost: 0,
+        });
+        
+        res.json({ estimate: { ...estimate, lineItems, totals } });
+        return;
+      }
+      
+      // Create new estimate with bidId properly set
+      const [newEstimate] = await db.insert(estimates).values({
+        bidId: bidId,  // CRITICAL: Set the bidId so estimate transfers during bid-to-project conversion
+        createdById: req.user!.id,
+        status: "DRAFT",
+        versionNumber: 1,
+      }).returning();
+      
+      console.log(`[Estimate Created] New estimate ${newEstimate.id} created for bid ${bidId}`);
+      
+      res.status(201).json({
+        estimate: {
+          ...newEstimate,
+          lineItems: [],
+          totals: {
+            materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+            consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+            profitAllocation: 0, totalCost: 0,
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Create bid estimate error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Convert bid to project (Admin/Manager only)
   app.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
