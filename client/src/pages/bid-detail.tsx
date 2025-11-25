@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
@@ -20,7 +22,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertBidSubcontractorQuoteSchema, insertBidMaterialQuoteSchema, insertBidSchema } from "@shared/schema";
-import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem } from "@shared/schema";
+import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem, CrmOrganisation, CrmContact } from "@shared/schema";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -77,6 +79,10 @@ export default function BidDetailPage() {
     mimeType: string;
   } | null>(null);
   const [isUploadingMaterialFile, setIsUploadingMaterialFile] = useState(false);
+  
+  // CRM integration state
+  const [subcontractorContactId, setSubcontractorContactId] = useState<string | undefined>(undefined);
+  const [supplierContactId, setSupplierContactId] = useState<string | undefined>(undefined);
   
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
@@ -169,6 +175,7 @@ export default function BidDetailPage() {
       toast({ title: "Success", description: "Subcontractor quote added" });
       setShowQuoteDialog(false);
       form.reset();
+      setSubcontractorContactId(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -197,6 +204,7 @@ export default function BidDetailPage() {
       setShowQuoteDialog(false);
       setEditingQuote(null);
       form.reset();
+      setSubcontractorContactId(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -251,6 +259,7 @@ export default function BidDetailPage() {
       toast({ title: "Success", description: "Material quote added" });
       setShowMaterialQuoteDialog(false);
       materialForm.reset();
+      setSupplierContactId(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -279,6 +288,7 @@ export default function BidDetailPage() {
       setShowMaterialQuoteDialog(false);
       setEditingMaterialQuote(null);
       materialForm.reset();
+      setSupplierContactId(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -1280,6 +1290,42 @@ export default function BidDetailPage() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmitQuote)} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Select from CRM</Label>
+                <CrmOrganizationSelector
+                  value={form.watch("subcontractorName")}
+                  filterTypes={["SUBCONTRACTOR"]}
+                  placeholder="Select or search for a subcontractor..."
+                  selectedContactId={subcontractorContactId}
+                  onSelect={(org) => {
+                    if (org) {
+                      form.setValue("subcontractorName", org.name);
+                    } else {
+                      form.setValue("subcontractorName", "");
+                      form.setValue("contactName", "");
+                      form.setValue("contactEmail", "");
+                      form.setValue("contactPhone", "");
+                      setSubcontractorContactId(undefined);
+                    }
+                  }}
+                  onContactSelect={(contact) => {
+                    if (contact) {
+                      setSubcontractorContactId(contact.id);
+                      form.setValue("contactName", `${contact.firstName} ${contact.lastName}`);
+                      form.setValue("contactEmail", contact.email || "");
+                      form.setValue("contactPhone", contact.phone || contact.mobile || "");
+                    } else {
+                      setSubcontractorContactId(undefined);
+                      form.setValue("contactName", "");
+                      form.setValue("contactEmail", "");
+                      form.setValue("contactPhone", "");
+                    }
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Select from CRM or type manually below
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -1444,7 +1490,7 @@ export default function BidDetailPage() {
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowQuoteDialog(false)} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => { setShowQuoteDialog(false); setSubcontractorContactId(undefined); }} data-testid="button-cancel">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createQuote.isPending || updateQuote.isPending} data-testid="button-submit-quote">
@@ -1533,6 +1579,41 @@ export default function BidDetailPage() {
                   </FormItem>
                 )}
               />
+              <div className="space-y-2">
+                <Label>Select Supplier from CRM (Optional)</Label>
+                <CrmOrganizationSelector
+                  value={materialForm.watch("supplierName") || ""}
+                  filterTypes={["SUPPLIER", "VENDOR"]}
+                  placeholder="Select or search for a supplier..."
+                  selectedContactId={supplierContactId}
+                  onSelect={(org) => {
+                    if (org) {
+                      materialForm.setValue("supplierName", org.name);
+                    } else {
+                      materialForm.setValue("supplierName", "");
+                      materialForm.setValue("supplierContact", "");
+                      setSupplierContactId(undefined);
+                    }
+                  }}
+                  onContactSelect={(contact) => {
+                    if (contact) {
+                      setSupplierContactId(contact.id);
+                      const contactInfo = [
+                        `${contact.firstName} ${contact.lastName}`,
+                        contact.email,
+                        contact.phone || contact.mobile,
+                      ].filter(Boolean).join(" | ");
+                      materialForm.setValue("supplierContact", contactInfo);
+                    } else {
+                      setSupplierContactId(undefined);
+                      materialForm.setValue("supplierContact", "");
+                    }
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Select from CRM or type manually below
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={materialForm.control}
@@ -1602,7 +1683,7 @@ export default function BidDetailPage() {
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowMaterialQuoteDialog(false)} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => { setShowMaterialQuoteDialog(false); setSupplierContactId(undefined); }} data-testid="button-cancel">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createMaterialQuote.isPending || updateMaterialQuote.isPending} data-testid="button-submit-material-quote">
