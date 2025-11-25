@@ -45,6 +45,10 @@ const bidEditFormSchema = z.object({
   clientContactName: z.string().optional(),
   clientContactEmail: z.string().email().optional().or(z.literal("")),
   clientContactPhone: z.string().optional(),
+  gcName: z.string().optional(),
+  gcContactName: z.string().optional(),
+  gcContactEmail: z.string().email().optional().or(z.literal("")),
+  gcContactPhone: z.string().optional(),
   bidAmount: z.string().optional(),
   dueDate: z.string().optional(),
   locationAddress: z.string().optional(),
@@ -131,6 +135,10 @@ export default function BidDetailPage() {
       clientContactName: "",
       clientContactEmail: "",
       clientContactPhone: "",
+      gcName: "",
+      gcContactName: "",
+      gcContactEmail: "",
+      gcContactPhone: "",
       bidAmount: "",
       dueDate: undefined,
       locationAddress: "",
@@ -139,6 +147,10 @@ export default function BidDetailPage() {
       description: "",
     },
   });
+
+  // CRM contact selection state for Edit Bid form
+  const [editBidClientContactId, setEditBidClientContactId] = useState<string | undefined>();
+  const [editBidGcContactId, setEditBidGcContactId] = useState<string | undefined>();
 
   // Material quote form
   const materialForm = useForm<MaterialQuoteFormValues>({
@@ -382,6 +394,10 @@ export default function BidDetailPage() {
       if (data.clientContactName) payload.clientContactName = data.clientContactName;
       if (data.clientContactEmail) payload.clientContactEmail = data.clientContactEmail;
       if (data.clientContactPhone) payload.clientContactPhone = data.clientContactPhone;
+      if (data.gcName) payload.gcName = data.gcName;
+      if (data.gcContactName) payload.gcContactName = data.gcContactName;
+      if (data.gcContactEmail) payload.gcContactEmail = data.gcContactEmail;
+      if (data.gcContactPhone) payload.gcContactPhone = data.gcContactPhone;
       if (data.bidAmount) payload.bidAmount = data.bidAmount; // Send as string (decimal)
       if (data.dueDate) payload.dueDate = new Date(data.dueDate); // Convert to Date object
       if (data.locationAddress) payload.locationAddress = data.locationAddress;
@@ -396,6 +412,8 @@ export default function BidDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       toast({ title: "Success", description: "Bid updated successfully" });
       setShowEditBidDialog(false);
+      setEditBidClientContactId(undefined);
+      setEditBidGcContactId(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -1747,60 +1765,194 @@ export default function BidDetailPage() {
                 />
               </div>
 
-              <FormField
-                control={bidEditForm.control}
-                name="clientName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Client Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Client company or individual" data-testid="input-client-name" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Client/Owner Section */}
+              <div className="space-y-3 p-3 border rounded-md">
+                <h4 className="font-medium text-sm">Client / Owner</h4>
+                <div className="space-y-2">
+                  <Label>Select from CRM</Label>
+                  <CrmOrganizationSelector
+                    value={bidEditForm.watch("clientName") || ""}
+                    filterTypes={["CONTRACTOR"]}
+                    placeholder="Select or search for a client..."
+                    selectedContactId={editBidClientContactId}
+                    onSelect={(org) => {
+                      if (org) {
+                        bidEditForm.setValue("clientName", org.name);
+                      } else {
+                        bidEditForm.setValue("clientName", "");
+                        bidEditForm.setValue("clientContactName", "");
+                        bidEditForm.setValue("clientContactEmail", "");
+                        bidEditForm.setValue("clientContactPhone", "");
+                        setEditBidClientContactId(undefined);
+                      }
+                    }}
+                    onContactSelect={(contact) => {
+                      if (contact) {
+                        setEditBidClientContactId(String(contact.id));
+                        bidEditForm.setValue("clientContactName", `${contact.firstName} ${contact.lastName}`);
+                        bidEditForm.setValue("clientContactEmail", contact.email || "");
+                        bidEditForm.setValue("clientContactPhone", contact.phone || contact.mobile || "");
+                      } else {
+                        setEditBidClientContactId(undefined);
+                        bidEditForm.setValue("clientContactName", "");
+                        bidEditForm.setValue("clientContactEmail", "");
+                        bidEditForm.setValue("clientContactPhone", "");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Select from CRM or type manually below
+                  </p>
+                </div>
+                <FormField
+                  control={bidEditForm.control}
+                  name="clientName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Client Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Client company or individual" data-testid="input-client-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={bidEditForm.control}
+                    name="clientContactName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-client-contact-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={bidEditForm.control}
+                    name="clientContactEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} type="email" placeholder="john@example.com" data-testid="input-client-contact-email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={bidEditForm.control}
+                    name="clientContactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="(555) 123-4567" data-testid="input-client-contact-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              {/* General Contractor Section */}
+              <div className="space-y-3 p-3 border rounded-md">
+                <h4 className="font-medium text-sm">General Contractor (if applicable)</h4>
+                <div className="space-y-2">
+                  <Label>Select from CRM</Label>
+                  <CrmOrganizationSelector
+                    value={bidEditForm.watch("gcName") || ""}
+                    filterTypes={["CONTRACTOR"]}
+                    placeholder="Select or search for a GC..."
+                    selectedContactId={editBidGcContactId}
+                    onSelect={(org) => {
+                      if (org) {
+                        bidEditForm.setValue("gcName", org.name);
+                      } else {
+                        bidEditForm.setValue("gcName", "");
+                        bidEditForm.setValue("gcContactName", "");
+                        bidEditForm.setValue("gcContactEmail", "");
+                        bidEditForm.setValue("gcContactPhone", "");
+                        setEditBidGcContactId(undefined);
+                      }
+                    }}
+                    onContactSelect={(contact) => {
+                      if (contact) {
+                        setEditBidGcContactId(String(contact.id));
+                        bidEditForm.setValue("gcContactName", `${contact.firstName} ${contact.lastName}`);
+                        bidEditForm.setValue("gcContactEmail", contact.email || "");
+                        bidEditForm.setValue("gcContactPhone", contact.phone || contact.mobile || "");
+                      } else {
+                        setEditBidGcContactId(undefined);
+                        bidEditForm.setValue("gcContactName", "");
+                        bidEditForm.setValue("gcContactEmail", "");
+                        bidEditForm.setValue("gcContactPhone", "");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Select from CRM or type manually below
+                  </p>
+                </div>
                 <FormField
                   control={bidEditForm.control}
-                  name="clientContactName"
+                  name="gcName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Name</FormLabel>
+                      <FormLabel>GC Name</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-client-contact-name" />
+                        <Input {...field} value={field.value || ""} placeholder="General Contractor company" data-testid="input-gc-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={bidEditForm.control}
-                  name="clientContactEmail"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} type="email" placeholder="john@example.com" data-testid="input-client-contact-email" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={bidEditForm.control}
-                  name="clientContactPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Contact Phone</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="(555) 123-4567" data-testid="input-client-contact-phone" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={bidEditForm.control}
+                    name="gcContactName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Jane Doe" data-testid="input-gc-contact-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={bidEditForm.control}
+                    name="gcContactEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} type="email" placeholder="jane@gc.com" data-testid="input-gc-contact-email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={bidEditForm.control}
+                    name="gcContactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Contact Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="(555) 987-6543" data-testid="input-gc-contact-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -1860,7 +2012,7 @@ export default function BidDetailPage() {
               />
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowEditBidDialog(false)} data-testid="button-cancel-edit">
+                <Button type="button" variant="outline" onClick={() => { setShowEditBidDialog(false); setEditBidClientContactId(undefined); setEditBidGcContactId(undefined); }} data-testid="button-cancel-edit">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={updateBidMutation.isPending} data-testid="button-save-bid">
