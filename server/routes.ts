@@ -1958,6 +1958,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
       const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
+      // Get T&M daily sheets for billing totals
+      const { tmDailySheets } = await import("@shared/schema");
+      const projectTMSheets = await db
+        .select()
+        .from(tmDailySheets)
+        .where(eq(tmDailySheets.projectId, project.id));
+
+      // Calculate T&M totals from sheets (parse JSON fields)
+      let tmLaborTotal = 0;
+      let tmEquipmentTotal = 0;
+      let tmMaterialsTotal = 0;
+      
+      for (const sheet of projectTMSheets) {
+        // Parse labor summary
+        if (sheet.laborSummaryJson) {
+          try {
+            const laborData = JSON.parse(sheet.laborSummaryJson);
+            if (Array.isArray(laborData)) {
+              laborData.forEach((item: any) => {
+                tmLaborTotal += Number(item.total || item.amount || 0);
+              });
+            } else if (laborData.total) {
+              tmLaborTotal += Number(laborData.total);
+            }
+          } catch (e) { /* ignore invalid JSON */ }
+        }
+        // Parse equipment used
+        if (sheet.equipmentUsedJson) {
+          try {
+            const equipData = JSON.parse(sheet.equipmentUsedJson);
+            if (Array.isArray(equipData)) {
+              equipData.forEach((item: any) => {
+                tmEquipmentTotal += Number(item.total || item.amount || item.cost || 0);
+              });
+            } else if (equipData.total) {
+              tmEquipmentTotal += Number(equipData.total);
+            }
+          } catch (e) { /* ignore invalid JSON */ }
+        }
+        // Parse materials used
+        if (sheet.materialsUsedJson) {
+          try {
+            const matData = JSON.parse(sheet.materialsUsedJson);
+            if (Array.isArray(matData)) {
+              matData.forEach((item: any) => {
+                tmMaterialsTotal += Number(item.total || item.amount || item.cost || 0);
+              });
+            } else if (matData.total) {
+              tmMaterialsTotal += Number(matData.total);
+            }
+          } catch (e) { /* ignore invalid JSON */ }
+        }
+      }
+      
+      const tmChargesTotal = tmLaborTotal + tmEquipmentTotal + tmMaterialsTotal;
+
       // Get project labor rates configuration (default rates + burden multiplier)
       const [projectRates] = await db
         .select()
@@ -2084,7 +2140,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate totals
       const budget = Number(project.budget || 0); // Direct cost to do the job
       const originalContract = Number(project.contractAmount || 0); // What client pays (budget + overhead + profit)
-      const adjustedContract = originalContract + approvedCOValue; // With change orders
+      const contractAdditions = approvedCOValue + tmChargesTotal; // Total additions from COs and T&M
+      const adjustedContract = originalContract + contractAdditions; // With change orders and T&M
       
       // Total actual costs incurred
       const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalOtherExpenses;
@@ -2097,8 +2154,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         budget,
         originalContract,
         adjustedContract,
+        contractAdditions,
         approvedChangeOrdersTotal: approvedCOValue,
         approvedChangeOrdersCount: approvedCOs.length,
+        tmCharges: {
+          labor: tmLaborTotal,
+          equipment: tmEquipmentTotal,
+          materials: tmMaterialsTotal,
+          total: tmChargesTotal,
+          sheetsCount: projectTMSheets.length,
+        },
         projectedProfit,
         actualProfit,
         actualCosts: {

@@ -379,8 +379,16 @@ export default function ProjectDetailPage() {
     budget: number;
     originalContract: number;
     adjustedContract: number;
+    contractAdditions: number;
     approvedChangeOrdersTotal: number;
     approvedChangeOrdersCount: number;
+    tmCharges: {
+      labor: number;
+      equipment: number;
+      materials: number;
+      total: number;
+      sheetsCount: number;
+    };
     projectedProfit: number;
     actualProfit: number;
     actualCosts: {
@@ -1092,21 +1100,42 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
 
-                      {/* Adjusted Contract */}
-                      <div className="p-4 rounded-lg border bg-primary/5">
-                        <div className="flex items-center gap-2 mb-2">
-                          <DollarSign className="w-4 h-4 text-primary" />
-                          <p className="text-sm font-medium text-primary">Adjusted Contract</p>
+                      {/* COs & T&M + Adjusted Contract Row */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Change Orders & T&M Total */}
+                        <div className="p-4 rounded-lg border bg-amber-50 dark:bg-amber-950/30">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                            <p className="text-sm font-medium text-amber-600 dark:text-amber-400">COs & T&M</p>
+                          </div>
+                          <p className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400" data-testid="text-contract-additions">
+                            {(financials.contractAdditions || 0) >= 0 ? '+' : ''}${(financials.contractAdditions || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
+                            <div className="flex justify-between">
+                              <span>Change Orders ({financials.approvedChangeOrdersCount}):</span>
+                              <span className="font-mono">${financials.approvedChangeOrdersTotal.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>T&M Charges ({financials.tmCharges?.sheetsCount || 0}):</span>
+                              <span className="font-mono">${(financials.tmCharges?.total || 0).toLocaleString()}</span>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
-                          ${financials.adjustedContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {financials.approvedChangeOrdersCount === 0 
-                            ? "No approved change orders or T&M tickets"
-                            : `Includes ${financials.approvedChangeOrdersCount} approved change order${financials.approvedChangeOrdersCount > 1 ? 's' : ''} (${financials.approvedChangeOrdersTotal >= 0 ? '+' : ''}$${financials.approvedChangeOrdersTotal.toLocaleString()})`
-                          }
-                        </p>
+
+                        {/* Adjusted Contract */}
+                        <div className="p-4 rounded-lg border bg-primary/5">
+                          <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-4 h-4 text-primary" />
+                            <p className="text-sm font-medium text-primary">Adjusted Contract</p>
+                          </div>
+                          <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
+                            ${financials.adjustedContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Original contract + COs + T&M
+                          </p>
+                        </div>
                       </div>
 
                       {/* Profit Section */}
