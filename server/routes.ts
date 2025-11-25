@@ -4584,7 +4584,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { estimates, insertEstimateSchema, procurementItems, insertProcurementItemSchema, receipts, insertReceiptSchema, planDocuments, insertPlanDocumentSchema } = await import("@shared/schema");
 
-  // Get estimates for a project
+  // Get estimates for a project (by code)
   app.get("/api/projects/:code/estimates", requireAuth, async (req: AuthRequest, res) => {
     try {
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
@@ -4603,6 +4603,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projectEstimates);
     } catch (error) {
       console.error("Get estimates error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get active estimate with line items for a project (by project ID)
+  // Used by ProjectEstimate component - returns the active/approved estimate with line items and computed totals
+  app.get("/api/projects/:id/estimate", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Find active estimate (APPROVED or latest DRAFT)
+      const projectEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.projectId, projectId))
+        .orderBy(desc(estimates.versionNumber));
+      
+      if (projectEstimates.length === 0) {
+        res.json({ estimate: null });
+        return;
+      }
+      
+      // Use approved estimate if available, otherwise most recent
+      const activeEstimate = projectEstimates.find(e => e.status === "APPROVED") || projectEstimates[0];
+      
+      // Get line items for the active estimate
+      const lineItems = await db
+        .select()
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, activeEstimate.id));
+      
+      // Calculate totals from line items
+      const totals = lineItems.reduce((acc, item) => {
+        return {
+          materialCost: acc.materialCost + Number(item.materialCost || 0),
+          laborCost: acc.laborCost + Number(item.laborCost || 0),
+          laborHours: acc.laborHours + Number(item.laborHours || 0),
+          equipmentCost: acc.equipmentCost + Number(item.equipmentCost || 0),
+          consumablesCost: acc.consumablesCost + Number(item.consumablesCost || 0),
+          subcontractCost: acc.subcontractCost + Number(item.subcontractCost || 0),
+          overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation || 0),
+          profitAllocation: acc.profitAllocation + Number(item.profitAllocation || 0),
+          totalCost: acc.totalCost + Number(item.totalCost || 0),
+        };
+      }, {
+        materialCost: 0,
+        laborCost: 0,
+        laborHours: 0,
+        equipmentCost: 0,
+        consumablesCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 0,
+      });
+      
+      res.json({
+        estimate: {
+          ...activeEstimate,
+          lineItems,
+          totals,
+        }
+      });
+    } catch (error) {
+      console.error("Get project estimate error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create estimate for project (by project ID) - used by ProjectEstimate component
+  app.post("/api/projects/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Check if project exists
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      
+      // Check if estimate already exists for this project
+      const existingEstimates = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.projectId, projectId))
+        .limit(1);
+      
+      if (existingEstimates.length > 0) {
+        // Return existing estimate instead of creating new one
+        const estimate = existingEstimates[0];
+        const lineItems = await db
+          .select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimate.id));
+        
+        const totals = lineItems.reduce((acc, item) => ({
+          materialCost: acc.materialCost + Number(item.materialCost || 0),
+          laborCost: acc.laborCost + Number(item.laborCost || 0),
+          laborHours: acc.laborHours + Number(item.laborHours || 0),
+          equipmentCost: acc.equipmentCost + Number(item.equipmentCost || 0),
+          consumablesCost: acc.consumablesCost + Number(item.consumablesCost || 0),
+          subcontractCost: acc.subcontractCost + Number(item.subcontractCost || 0),
+          overheadAllocation: acc.overheadAllocation + Number(item.overheadAllocation || 0),
+          profitAllocation: acc.profitAllocation + Number(item.profitAllocation || 0),
+          totalCost: acc.totalCost + Number(item.totalCost || 0),
+        }), {
+          materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+          consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+          profitAllocation: 0, totalCost: 0,
+        });
+        
+        res.json({ estimate: { ...estimate, lineItems, totals } });
+        return;
+      }
+      
+      // Create new estimate
+      const [newEstimate] = await db.insert(estimates).values({
+        projectId,
+        createdById: req.user!.id,
+        status: "DRAFT",
+        versionNumber: 1,
+      }).returning();
+      
+      res.status(201).json({
+        estimate: {
+          ...newEstimate,
+          lineItems: [],
+          totals: {
+            materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+            consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+            profitAllocation: 0, totalCost: 0,
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Create project estimate error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
