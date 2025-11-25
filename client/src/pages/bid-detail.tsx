@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2 } from "lucide-react";
+import JobInformationForm from "@/components/JobInformationForm";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -1252,6 +1253,8 @@ export default function BidDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <JobInformationForm bidCode={bidCode} />
 
           <Card>
             <CardHeader>

@@ -1201,6 +1201,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Transfer handoff packet to project if it exists
+      const { handoffPackets: handoffTable } = await import("@shared/schema");
+      const [existingPacket] = await db
+        .select()
+        .from(handoffTable)
+        .where(eq(handoffTable.bidId, bid.id))
+        .limit(1);
+      
+      if (existingPacket) {
+        // Update handoff packet to reference project (keep bidId for traceability)
+        await db
+          .update(handoffTable)
+          .set({ 
+            projectId: newProject.id,
+            awardDate: new Date().toISOString().split('T')[0], // Set award date to today
+            updatedAt: new Date()
+          })
+          .where(eq(handoffTable.id, existingPacket.id));
+        
+        console.log(`[Bid Conversion] Transferred handoff packet to project`);
+      }
+
       // Delete the bid after converting (SET NULL on estimates.bidId preserves traceability)
       await db.delete(bids).where(eq(bids.code, req.params.code));
 
@@ -1576,6 +1598,230 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete bid material quote error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Handoff Packet Routes (Job Information for QuickBooks)
+  // ====================
+  const { handoffPackets, insertHandoffPacketSchema } = await import("@shared/schema");
+
+  // Get handoff packet for a bid (restricted to management roles)
+  app.get("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      const [packet] = await db
+        .select()
+        .from(handoffPackets)
+        .where(eq(handoffPackets.bidId, bid.id))
+        .limit(1);
+
+      res.json(packet || null);
+    } catch (error) {
+      console.error("Get handoff packet error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create or update handoff packet for a bid
+  app.put("/api/bids/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // Check if packet already exists
+      const [existing] = await db
+        .select()
+        .from(handoffPackets)
+        .where(eq(handoffPackets.bidId, bid.id))
+        .limit(1);
+
+      const packetData = {
+        bidId: bid.id,
+        gcName: req.body.gcName || null,
+        gcContactName: req.body.gcContactName || null,
+        gcPhone: req.body.gcPhone || null,
+        gcEmail: req.body.gcEmail || null,
+        accessDetails: req.body.accessDetails || null,
+        scopeOfWorkSummary: req.body.scopeOfWorkSummary || null,
+        contractValue: req.body.contractValue || null,
+        bidDate: req.body.bidDate || null,
+        awardDate: req.body.awardDate || null,
+        markupPercent: req.body.markupPercent || null,
+        duration: req.body.duration || null,
+        projectStartDate: req.body.projectStartDate || null,
+        projectCompletionDate: req.body.projectCompletionDate || null,
+        manpower: req.body.manpower || null,
+        alternates: req.body.alternates || null,
+        subcontractExecuted: req.body.subcontractExecuted ?? null,
+        insuranceCerts: req.body.insuranceCerts || null,
+        bondRequired: req.body.bondRequired ?? null,
+        permits: req.body.permits || null,
+        retentionPercent: req.body.retentionPercent || null,
+        paymentTerms: req.body.paymentTerms || null,
+        scheduleOfValuesReady: req.body.scheduleOfValuesReady ?? null,
+        drawSchedule: req.body.drawSchedule || null,
+        prevailingWage: req.body.prevailingWage ?? null,
+        concreteSupplier: req.body.concreteSupplier || null,
+        mixInfo: req.body.mixInfo || null,
+        rebarVendor: req.body.rebarVendor || null,
+        formingMaterialPlan: req.body.formingMaterialPlan || null,
+        curingSpecs: req.body.curingSpecs || null,
+        specialItems: req.body.specialItems || null,
+        leadTimeRisks: req.body.leadTimeRisks || null,
+        submittalStatus: req.body.submittalStatus || null,
+        layoutSurveyBy: req.body.layoutSurveyBy || null,
+        benchmarkInfo: req.body.benchmarkInfo || null,
+        accessZones: req.body.accessZones || null,
+        workHours: req.body.workHours || null,
+        safetyOrientation: req.body.safetyOrientation || null,
+        inspectionNeeds: req.body.inspectionNeeds || null,
+        coordinationIssues: req.body.coordinationIssues || null,
+        weatherRisks: req.body.weatherRisks || null,
+        soilConditions: req.body.soilConditions || null,
+        estimatorNotes: req.body.estimatorNotes || null,
+        gcContactMethod: req.body.gcContactMethod || null,
+        projectManager: req.body.projectManager || null,
+        superintendent: req.body.superintendent || null,
+        officeAdmin: req.body.officeAdmin || null,
+        safetyContact: req.body.safetyContact || null,
+        createdById: req.user!.id,
+        updatedAt: new Date(),
+      };
+
+      let result;
+      if (existing) {
+        [result] = await db
+          .update(handoffPackets)
+          .set(packetData)
+          .where(eq(handoffPackets.id, existing.id))
+          .returning();
+      } else {
+        [result] = await db
+          .insert(handoffPackets)
+          .values(packetData)
+          .returning();
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Save handoff packet error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get handoff packet for a project (restricted to management roles)
+  app.get("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const [packet] = await db
+        .select()
+        .from(handoffPackets)
+        .where(eq(handoffPackets.projectId, project.id))
+        .limit(1);
+
+      res.json(packet || null);
+    } catch (error) {
+      console.error("Get project handoff packet error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update handoff packet for a project
+  app.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(handoffPackets)
+        .where(eq(handoffPackets.projectId, project.id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Handoff packet not found for this project" });
+        return;
+      }
+
+      // Build update data - only allow editable fields (protect id, bidId, projectId, createdById, createdAt)
+      const updateData = {
+        gcName: req.body.gcName ?? existing.gcName,
+        gcContactName: req.body.gcContactName ?? existing.gcContactName,
+        gcPhone: req.body.gcPhone ?? existing.gcPhone,
+        gcEmail: req.body.gcEmail ?? existing.gcEmail,
+        accessDetails: req.body.accessDetails ?? existing.accessDetails,
+        scopeOfWorkSummary: req.body.scopeOfWorkSummary ?? existing.scopeOfWorkSummary,
+        contractValue: req.body.contractValue ?? existing.contractValue,
+        bidDate: req.body.bidDate ?? existing.bidDate,
+        awardDate: req.body.awardDate ?? existing.awardDate,
+        markupPercent: req.body.markupPercent ?? existing.markupPercent,
+        duration: req.body.duration ?? existing.duration,
+        projectStartDate: req.body.projectStartDate ?? existing.projectStartDate,
+        projectCompletionDate: req.body.projectCompletionDate ?? existing.projectCompletionDate,
+        manpower: req.body.manpower ?? existing.manpower,
+        alternates: req.body.alternates ?? existing.alternates,
+        subcontractExecuted: req.body.subcontractExecuted ?? existing.subcontractExecuted,
+        insuranceCerts: req.body.insuranceCerts ?? existing.insuranceCerts,
+        bondRequired: req.body.bondRequired ?? existing.bondRequired,
+        permits: req.body.permits ?? existing.permits,
+        retentionPercent: req.body.retentionPercent ?? existing.retentionPercent,
+        paymentTerms: req.body.paymentTerms ?? existing.paymentTerms,
+        scheduleOfValuesReady: req.body.scheduleOfValuesReady ?? existing.scheduleOfValuesReady,
+        drawSchedule: req.body.drawSchedule ?? existing.drawSchedule,
+        prevailingWage: req.body.prevailingWage ?? existing.prevailingWage,
+        concreteSupplier: req.body.concreteSupplier ?? existing.concreteSupplier,
+        mixInfo: req.body.mixInfo ?? existing.mixInfo,
+        rebarVendor: req.body.rebarVendor ?? existing.rebarVendor,
+        formingMaterialPlan: req.body.formingMaterialPlan ?? existing.formingMaterialPlan,
+        curingSpecs: req.body.curingSpecs ?? existing.curingSpecs,
+        specialItems: req.body.specialItems ?? existing.specialItems,
+        leadTimeRisks: req.body.leadTimeRisks ?? existing.leadTimeRisks,
+        submittalStatus: req.body.submittalStatus ?? existing.submittalStatus,
+        layoutSurveyBy: req.body.layoutSurveyBy ?? existing.layoutSurveyBy,
+        benchmarkInfo: req.body.benchmarkInfo ?? existing.benchmarkInfo,
+        accessZones: req.body.accessZones ?? existing.accessZones,
+        workHours: req.body.workHours ?? existing.workHours,
+        safetyOrientation: req.body.safetyOrientation ?? existing.safetyOrientation,
+        inspectionNeeds: req.body.inspectionNeeds ?? existing.inspectionNeeds,
+        coordinationIssues: req.body.coordinationIssues ?? existing.coordinationIssues,
+        weatherRisks: req.body.weatherRisks ?? existing.weatherRisks,
+        soilConditions: req.body.soilConditions ?? existing.soilConditions,
+        estimatorNotes: req.body.estimatorNotes ?? existing.estimatorNotes,
+        gcContactMethod: req.body.gcContactMethod ?? existing.gcContactMethod,
+        projectManager: req.body.projectManager ?? existing.projectManager,
+        superintendent: req.body.superintendent ?? existing.superintendent,
+        officeAdmin: req.body.officeAdmin ?? existing.officeAdmin,
+        safetyContact: req.body.safetyContact ?? existing.safetyContact,
+        updatedAt: new Date(),
+      };
+
+      const [result] = await db
+        .update(handoffPackets)
+        .set(updateData)
+        .where(eq(handoffPackets.id, existing.id))
+        .returning();
+
+      res.json(result);
+    } catch (error) {
+      console.error("Update project handoff packet error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

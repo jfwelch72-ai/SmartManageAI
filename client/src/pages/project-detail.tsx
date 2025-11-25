@@ -14,6 +14,7 @@ import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
+import JobInformationForm from "@/components/JobInformationForm";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -951,6 +952,7 @@ export default function ProjectDetailPage() {
             {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (
               <TabsTrigger value="labor-rates" data-testid="tab-labor-rates">Labor Rates</TabsTrigger>
             )}
+            <TabsTrigger value="job-info" data-testid="tab-job-info">Job Info</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -2727,6 +2729,10 @@ export default function ProjectDetailPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          </TabsContent>
+
+          <TabsContent value="job-info">
+            <JobInformationForm projectCode={project.code} />
           </TabsContent>
         </Tabs>
 

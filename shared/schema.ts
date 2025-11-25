@@ -1324,3 +1324,80 @@ export type EstimateVendorQuote = typeof estimateVendorQuotes.$inferSelect;
 export const insertEstimateHistorySchema = createInsertSchema(estimateHistory).omit({ id: true, createdAt: true });
 export type InsertEstimateHistory = z.infer<typeof insertEstimateHistorySchema>;
 export type EstimateHistory = typeof estimateHistory.$inferSelect;
+
+// Estimator Handoff Packet table - Job Information for QuickBooks setup
+// Links to either a bid (during bidding) or project (after award)
+export const handoffPackets = pgTable("handoff_packets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  
+  // 1. Job Overview
+  gcName: text("gc_name"),
+  gcContactName: text("gc_contact_name"),
+  gcPhone: text("gc_phone"),
+  gcEmail: text("gc_email"),
+  accessDetails: text("access_details"),
+  scopeOfWorkSummary: text("scope_of_work_summary"),
+  
+  // 2. Estimate Snapshot
+  contractValue: decimal("contract_value", { precision: 12, scale: 2 }),
+  bidDate: date("bid_date"),
+  awardDate: date("award_date"),
+  markupPercent: decimal("markup_percent", { precision: 5, scale: 2 }),
+  duration: text("duration"),
+  projectStartDate: date("project_start_date"),
+  projectCompletionDate: date("project_completion_date"),
+  manpower: text("manpower"),
+  alternates: text("alternates"),
+  
+  // 3. Contract & Documentation
+  subcontractExecuted: boolean("subcontract_executed"),
+  insuranceCerts: text("insurance_certs"),
+  bondRequired: boolean("bond_required"),
+  permits: text("permits"),
+  retentionPercent: decimal("retention_percent", { precision: 5, scale: 2 }),
+  paymentTerms: text("payment_terms"),
+  scheduleOfValuesReady: boolean("schedule_of_values_ready"),
+  drawSchedule: text("draw_schedule"),
+  prevailingWage: boolean("prevailing_wage"),
+  
+  // 4. Materials & Supply Chain Plan
+  concreteSupplier: text("concrete_supplier"),
+  mixInfo: text("mix_info"),
+  rebarVendor: text("rebar_vendor"),
+  formingMaterialPlan: text("forming_material_plan"),
+  curingSpecs: text("curing_specs"),
+  specialItems: text("special_items"),
+  leadTimeRisks: text("lead_time_risks"),
+  submittalStatus: text("submittal_status"),
+  
+  // 5. Field Work Details
+  layoutSurveyBy: text("layout_survey_by"),
+  benchmarkInfo: text("benchmark_info"),
+  accessZones: text("access_zones"),
+  workHours: text("work_hours"),
+  safetyOrientation: text("safety_orientation"),
+  inspectionNeeds: text("inspection_needs"),
+  
+  // 6. Project Notes & Risk Items
+  coordinationIssues: text("coordination_issues"),
+  weatherRisks: text("weather_risks"),
+  soilConditions: text("soil_conditions"),
+  estimatorNotes: text("estimator_notes"),
+  
+  // 7. Communication Protocol
+  gcContactMethod: text("gc_contact_method"),
+  projectManager: text("project_manager"),
+  superintendent: text("superintendent"),
+  officeAdmin: text("office_admin"),
+  safetyContact: text("safety_contact"),
+  
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertHandoffPacketSchema = createInsertSchema(handoffPackets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertHandoffPacket = z.infer<typeof insertHandoffPacketSchema>;
+export type HandoffPacket = typeof handoffPackets.$inferSelect;
