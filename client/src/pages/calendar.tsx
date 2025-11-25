@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,18 +10,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useCalendarEvents, useCreateCalendarEvent, useApproveTimeOff } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Calendar as CalendarIcon, CheckCircle } from "lucide-react";
+import { Plus, Calendar as CalendarIcon, CheckCircle, X } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfDay } from "date-fns";
 
 export default function CalendarPage() {
   const [, setLocation] = useLocation();
+  const searchParams = useSearch();
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showRequestDialog, setShowRequestDialog] = useState(false);
+  const [viewFilter, setViewFilter] = useState<string | null>(null);
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -35,6 +37,16 @@ export default function CalendarPage() {
   const [showEventDetail, setShowEventDetail] = useState(false);
   const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
   const [showDayEventsDialog, setShowDayEventsDialog] = useState(false);
+
+  // Check URL for view parameter
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    if (params.get("view") === "timeoff") {
+      setViewFilter("TIME_OFF_REQUEST");
+    } else {
+      setViewFilter(null);
+    }
+  }, [searchParams]);
 
   const { data: events = [], isLoading } = useCalendarEvents();
   const createEvent = useCreateCalendarEvent();
@@ -87,8 +99,18 @@ export default function CalendarPage() {
 
   const canApprove = ["ADMIN", "MANAGER"].includes(user?.role || "");
 
+  // Filter events based on viewFilter
+  const filteredEvents = viewFilter 
+    ? events.filter(event => event.eventType === viewFilter)
+    : events;
+
+  // Get pending time-off requests for display
+  const pendingTimeOffRequests = events.filter(
+    event => event.eventType === "TIME_OFF_REQUEST" && !event.approvedById
+  );
+
   const getEventsForDay = (date: Date) => {
-    return events.filter(event => {
+    return filteredEvents.filter(event => {
       const eventStart = new Date(event.startDate);
       const eventEnd = event.endDate ? new Date(event.endDate) : eventStart;
       return isWithinInterval(date, { start: eventStart, end: eventEnd }) || isSameDay(date, eventStart);
@@ -106,10 +128,29 @@ export default function CalendarPage() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Calendar & Time-Off</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {viewFilter === "TIME_OFF_REQUEST" ? "Pending Time-Off Requests" : "Calendar & Time-Off"}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Manage time-off requests, networking events, and project milestones
+              {viewFilter === "TIME_OFF_REQUEST" 
+                ? `${pendingTimeOffRequests.length} pending request${pendingTimeOffRequests.length !== 1 ? 's' : ''} awaiting approval`
+                : "Manage time-off requests, networking events, and project milestones"}
             </p>
+            {viewFilter && (
+              <div className="flex items-center gap-2 mt-2">
+                <Badge variant="secondary" className="gap-1">
+                  Showing: Time-Off Requests Only
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => {
+                      setViewFilter(null);
+                      setLocation("/calendar", { replace: true });
+                    }}
+                    data-testid="button-clear-calendar-filter"
+                  />
+                </Badge>
+              </div>
+            )}
           </div>
 
           <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>

@@ -78,18 +78,21 @@ export default function DashboardPage() {
                   title="Active Projects"
                   value={stats?.activeProjectsCount || 0}
                   icon={Briefcase}
+                  onClick={() => setLocation('/projects?status=ACTIVE')}
                   data-testid="kpi-active-projects"
                 />
                 <KPICard
                   title="Pending Change Orders"
                   value={stats?.pendingChangeOrdersCount || 0}
                   icon={AlertCircle}
+                  onClick={() => setLocation('/projects?changeOrders=pending')}
                   data-testid="kpi-pending-change-orders"
                 />
                 <KPICard
                   title="Pending Time-Off Requests"
                   value={stats?.pendingTimeOffCount || 0}
                   icon={CalendarClock}
+                  onClick={() => setLocation('/calendar?view=timeoff')}
                   data-testid="kpi-pending-time-off"
                 />
                 {FeaturePermissions.VIEW_BUDGET_METRICS(user?.role) && (
@@ -97,6 +100,7 @@ export default function DashboardPage() {
                     title="Missing Budget Data"
                     value={projectsMissingBudget.length}
                     icon={DollarSign}
+                    onClick={() => setLocation('/projects?filter=missingBudget')}
                     data-testid="kpi-missing-budget"
                   />
                 )}

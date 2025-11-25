@@ -1667,6 +1667,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get list of project IDs with pending (SUBMITTED) change orders
+  app.get("/api/projects/with-pending-change-orders", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const result = await db
+        .selectDistinct({ projectId: changeOrders.projectId })
+        .from(changeOrders)
+        .where(eq(changeOrders.status, "SUBMITTED"));
+      
+      const projectIds = result.map(r => r.projectId);
+      res.json(projectIds);
+    } catch (error) {
+      console.error("Get projects with pending COs error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get project by code with scope items
   app.get("/api/projects/:code", requireAuth, async (req: AuthRequest, res) => {
     try {

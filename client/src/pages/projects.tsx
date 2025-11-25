@@ -27,10 +27,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useProjects, useCreateProject } from "@/hooks/use-data";
+import { useQuery } from "@tanstack/react-query";
 import { FeaturePermissions, getAllowedProjectStatuses, canViewProjectStatus } from "@/lib/rbac";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -48,15 +50,30 @@ export default function ProjectsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const allowedStatuses = getAllowedProjectStatuses(user?.role);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [specialFilter, setSpecialFilter] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const createProject = useCreateProject();
 
-  // Check URL for ?new=true to auto-open dialog
+  // Check URL for query parameters
   useEffect(() => {
-    if (searchParams.includes("new=true")) {
+    const params = new URLSearchParams(searchParams);
+    
+    if (params.get("new") === "true") {
       setShowCreateDialog(true);
-      // Clear the URL parameter by navigating to clean URL
       setLocation("/projects", { replace: true });
+    }
+    
+    // Handle status filter from URL
+    const statusParam = params.get("status");
+    if (statusParam && ["ACTIVE", "PLANNING", "COMPLETE", "CLOSED"].includes(statusParam)) {
+      setStatusFilter(statusParam);
+    }
+    
+    // Handle special filters from URL
+    if (params.get("changeOrders") === "pending") {
+      setSpecialFilter("pendingChangeOrders");
+    } else if (params.get("filter") === "missingBudget") {
+      setSpecialFilter("missingBudget");
     }
   }, [searchParams, setLocation]);
 
@@ -119,6 +136,12 @@ export default function ProjectsPage() {
 
   const { data: projects = [], isLoading } = useProjects();
 
+  // Fetch projects with pending change orders (only when needed)
+  const { data: projectsWithPendingCOs = [] } = useQuery<string[]>({
+    queryKey: ["/api/projects/with-pending-change-orders"],
+    enabled: specialFilter === "pendingChangeOrders",
+  });
+
   const filteredProjects = projects.filter(project => {
     const matchesSearch = 
       project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -130,7 +153,16 @@ export default function ProjectsPage() {
     // Filter by allowed project statuses based on role
     const isAllowedStatus = canViewProjectStatus(user?.role, project.status);
     
-    return matchesSearch && matchesStatus && isAllowedStatus;
+    // Handle special filters
+    let matchesSpecialFilter = true;
+    if (specialFilter === "pendingChangeOrders") {
+      matchesSpecialFilter = projectsWithPendingCOs.includes(project.id);
+    } else if (specialFilter === "missingBudget") {
+      const budgetNum = Number(project.budget);
+      matchesSpecialFilter = !project.budget || isNaN(budgetNum) || budgetNum <= 0;
+    }
+    
+    return matchesSearch && matchesStatus && isAllowedStatus && matchesSpecialFilter;
   });
 
   return (
@@ -144,10 +176,44 @@ export default function ProjectsPage() {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1">Active Projects</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-1">
+              {specialFilter === "pendingChangeOrders" ? "Projects with Pending Change Orders" :
+               specialFilter === "missingBudget" ? "Projects Missing Budget Data" : 
+               statusFilter !== "ALL" ? `${statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()} Projects` :
+               "All Projects"}
+            </h1>
             <p className="text-sm text-muted-foreground">
-              View and manage all awarded construction projects
+              {specialFilter === "pendingChangeOrders" ? "Projects with change orders awaiting client response" :
+               specialFilter === "missingBudget" ? "Projects that need budget information added" :
+               "View and manage all awarded construction projects"}
             </p>
+            {(specialFilter || statusFilter !== "ALL") && (
+              <div className="flex items-center gap-2 mt-2">
+                {statusFilter !== "ALL" && (
+                  <Badge variant="secondary" className="gap-1">
+                    Status: {statusFilter}
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => setStatusFilter("ALL")}
+                      data-testid="button-clear-status-filter"
+                    />
+                  </Badge>
+                )}
+                {specialFilter && (
+                  <Badge variant="secondary" className="gap-1">
+                    {specialFilter === "pendingChangeOrders" ? "Pending COs" : "Missing Budget"}
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => {
+                        setSpecialFilter(null);
+                        setLocation("/projects", { replace: true });
+                      }}
+                      data-testid="button-clear-special-filter"
+                    />
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
           {FeaturePermissions.CREATE_PROJECT(user?.role) && (
             <div className="flex gap-2">
