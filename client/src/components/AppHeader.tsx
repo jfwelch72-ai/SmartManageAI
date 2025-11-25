@@ -103,6 +103,14 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
               Bids
             </Link>
           </Button>
+          {hasManagementAccess(userRole) && (
+            <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-crm">
+              <Link href="/crm">
+                <UsersIcon className="w-4 h-4" />
+                CRM
+              </Link>
+            </Button>
+          )}
           
           {/* Time Clock Dropdown */}
           <DropdownMenu>
