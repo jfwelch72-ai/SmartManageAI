@@ -210,6 +210,32 @@ export const timeEntries = pgTable("time_entries", {
   dateIdx: index("time_entries_date_idx").on(table.date),
 }));
 
+// Project Labor Rates table - stores default rates and burden multiplier for a project
+export const projectLaborRates = pgTable("project_labor_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(),
+  defaultRegularRate: decimal("default_regular_rate", { precision: 10, scale: 2 }).notNull(),
+  defaultOvertimeRate: decimal("default_overtime_rate", { precision: 10, scale: 2 }).notNull(),
+  burdenMultiplier: decimal("burden_multiplier", { precision: 5, scale: 4 }).notNull().default("1.0000"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Project Employee Rate Overrides - stores employee-specific rates per project
+export const projectEmployeeRates = pgTable("project_employee_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull(),
+  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectUserUnique: unique().on(table.projectId, table.userId),
+}));
+
 // T&M Daily Sheets table
 export const tmDailySheets = pgTable("tm_daily_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -841,6 +867,18 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   approvedAt: true,
 });
 
+export const insertProjectLaborRateSchema = createInsertSchema(projectLaborRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProjectEmployeeRateSchema = createInsertSchema(projectEmployeeRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertTMDailySheetSchema = createInsertSchema(tmDailySheets).omit({
   id: true,
   createdAt: true,
@@ -919,6 +957,12 @@ export type PlanDocument = typeof planDocuments.$inferSelect;
 
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
+
+export type InsertProjectLaborRate = z.infer<typeof insertProjectLaborRateSchema>;
+export type ProjectLaborRate = typeof projectLaborRates.$inferSelect;
+
+export type InsertProjectEmployeeRate = z.infer<typeof insertProjectEmployeeRateSchema>;
+export type ProjectEmployeeRate = typeof projectEmployeeRates.$inferSelect;
 
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
