@@ -3342,14 +3342,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         results = await query;
       }
       
-      // Group by description + unit and calculate statistics
+      // Group by description + unit, then aggregate daily totals for accurate statistics
       const ratesBySOW = new Map<string, {
         description: string;
         unit: string;
         totalQuantity: number;
-        workDays: Set<string>;
-        projectDays: Map<string, Set<string>>;
-        dailyQuantities: number[];
+        projectCodes: Set<string>;
+        dailyTotals: Map<string, number>; // date -> total qty for that day
+        entryCount: number;
       }>();
       
       for (const entry of results) {
@@ -3362,46 +3362,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: entry.description,
             unit: entry.unit,
             totalQuantity: 0,
-            workDays: new Set(),
-            projectDays: new Map(),
-            dailyQuantities: [],
+            projectCodes: new Set(),
+            dailyTotals: new Map(),
+            entryCount: 0,
           });
         }
         
         const sow = ratesBySOW.get(key)!;
         sow.totalQuantity += qty;
-        sow.workDays.add(dateKey);
+        sow.projectCodes.add(entry.projectCode);
+        sow.entryCount += 1;
         
-        // Track per-project days for more granular analysis
-        if (!sow.projectDays.has(entry.projectCode)) {
-          sow.projectDays.set(entry.projectCode, new Set());
-        }
-        sow.projectDays.get(entry.projectCode)!.add(dateKey);
-        
-        sow.dailyQuantities.push(qty);
+        // Aggregate daily totals (sum all entries for the same day)
+        const currentDayTotal = sow.dailyTotals.get(dateKey) || 0;
+        sow.dailyTotals.set(dateKey, currentDayTotal + qty);
       }
       
-      // Calculate final statistics
+      // Calculate final statistics using daily totals (not per-entry)
       const productionRates = Array.from(ratesBySOW.values()).map(sow => {
-        const sortedQty = [...sow.dailyQuantities].sort((a, b) => a - b);
-        const totalDays = sow.workDays.size;
+        // Get array of daily totals for statistics
+        const dailyTotalsArray = Array.from(sow.dailyTotals.values());
+        const sortedDailyTotals = [...dailyTotalsArray].sort((a, b) => a - b);
+        const totalDays = sow.dailyTotals.size;
         const avgPerDay = totalDays > 0 ? sow.totalQuantity / totalDays : 0;
-        const minPerDay = sortedQty.length > 0 ? sortedQty[0] : 0;
-        const maxPerDay = sortedQty.length > 0 ? sortedQty[sortedQty.length - 1] : 0;
+        const minPerDay = sortedDailyTotals.length > 0 ? sortedDailyTotals[0] : 0;
+        const maxPerDay = sortedDailyTotals.length > 0 ? sortedDailyTotals[sortedDailyTotals.length - 1] : 0;
         
-        // Calculate median
+        // Calculate median from daily totals
         let medianPerDay = 0;
-        if (sortedQty.length > 0) {
-          const mid = Math.floor(sortedQty.length / 2);
-          medianPerDay = sortedQty.length % 2 !== 0 
-            ? sortedQty[mid] 
-            : (sortedQty[mid - 1] + sortedQty[mid]) / 2;
+        if (sortedDailyTotals.length > 0) {
+          const mid = Math.floor(sortedDailyTotals.length / 2);
+          medianPerDay = sortedDailyTotals.length % 2 !== 0 
+            ? sortedDailyTotals[mid] 
+            : (sortedDailyTotals[mid - 1] + sortedDailyTotals[mid]) / 2;
         }
         
-        // Calculate standard deviation
+        // Calculate standard deviation from daily totals
         let stdDev = 0;
-        if (sortedQty.length > 1) {
-          const variance = sortedQty.reduce((sum, q) => sum + Math.pow(q - avgPerDay, 2), 0) / sortedQty.length;
+        if (sortedDailyTotals.length > 1) {
+          const variance = sortedDailyTotals.reduce((sum, dayTotal) => sum + Math.pow(dayTotal - avgPerDay, 2), 0) / sortedDailyTotals.length;
           stdDev = Math.sqrt(variance);
         }
         
@@ -3410,13 +3409,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           unit: sow.unit,
           totalQuantity: Math.round(sow.totalQuantity * 100) / 100,
           totalDays,
-          totalProjects: sow.projectDays.size,
+          totalProjects: sow.projectCodes.size,
           avgPerDay: Math.round(avgPerDay * 100) / 100,
           minPerDay: Math.round(minPerDay * 100) / 100,
           maxPerDay: Math.round(maxPerDay * 100) / 100,
           medianPerDay: Math.round(medianPerDay * 100) / 100,
           stdDev: Math.round(stdDev * 100) / 100,
-          entryCount: sow.dailyQuantities.length,
+          entryCount: sow.entryCount,
         };
       });
       
@@ -3432,7 +3431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Get distinct units for filtering
-      const availableUnits = [...new Set(productionRates.map(r => r.unit))].sort();
+      const availableUnits = Array.from(new Set(productionRates.map(r => r.unit))).sort();
       
       res.json({
         rates: productionRates,
@@ -3499,12 +3498,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         day.projects.add(entry.projectCode);
       }
       
-      // Group by project for project-level stats
+      // Group by project for project-level stats - track days during single loop
       const projectStats = new Map<string, { 
         code: string; 
         name: string; 
         totalQuantity: number; 
-        days: number; 
+        workDates: Set<string>;
         entries: number 
       }>();
       
@@ -3514,21 +3513,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             code: entry.projectCode,
             name: entry.projectName,
             totalQuantity: 0,
-            days: 0,
+            workDates: new Set(),
             entries: 0,
           });
         }
         const proj = projectStats.get(entry.projectCode)!;
         proj.totalQuantity += parseFloat(entry.quantityCompleted);
+        proj.workDates.add(entry.workDate);
         proj.entries += 1;
-      }
-      
-      // Calculate days per project
-      for (const [projectCode, stat] of projectStats) {
-        const projectDates = new Set(
-          results.filter(r => r.projectCode === projectCode).map(r => r.workDate)
-        );
-        stat.days = projectDates.size;
       }
       
       const dailyTotalsArray = Array.from(dailyTotals.entries())
@@ -3554,11 +3546,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : 'Unknown',
         })),
         dailyTotals: dailyTotalsArray,
-        projectStats: Array.from(projectStats.values()).map(p => ({
-          ...p,
-          totalQuantity: Math.round(p.totalQuantity * 100) / 100,
-          avgPerDay: p.days > 0 ? Math.round((p.totalQuantity / p.days) * 100) / 100 : 0,
-        })),
+        projectStats: Array.from(projectStats.values()).map(p => {
+          const days = p.workDates.size;
+          return {
+            code: p.code,
+            name: p.name,
+            totalQuantity: Math.round(p.totalQuantity * 100) / 100,
+            days,
+            entries: p.entries,
+            avgPerDay: days > 0 ? Math.round((p.totalQuantity / days) * 100) / 100 : 0,
+          };
+        }),
       });
     } catch (error) {
       console.error("Get production rate detail error:", error);

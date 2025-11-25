@@ -59,6 +59,7 @@ export const RoutePermissions = {
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
+  PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
 
   // Everyone has access
   DASHBOARD: () => true,
@@ -195,6 +196,12 @@ export const NavigationConfig = {
       label: "CFO Dashboard",
       testId: "nav-cfo",
       visible: (role?: string) => isAdminOrManager(role),
+    },
+    {
+      href: "/production-rates",
+      label: "Production Rates",
+      testId: "nav-production-rates",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
     },
     {
       href: "/ai-settings",

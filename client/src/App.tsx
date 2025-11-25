@@ -28,6 +28,7 @@ import CostRatesPage from "@/pages/cost-rates";
 import SubcontractorPayablesPage from "@/pages/subcontractor-payables";
 import CompanyCommunicationsPage from "@/pages/company-communications";
 import TasksPage from "@/pages/tasks";
+import ProductionRatesPage from "@/pages/production-rates";
 
 function ProtectedRoute({ 
   component: Component,
@@ -107,6 +108,7 @@ function Router() {
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} />} />
       <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} />} />
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} />} />
+      <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
       
       <Route component={NotFound} />
     </Switch>
