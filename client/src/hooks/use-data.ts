@@ -727,3 +727,86 @@ export function useAdjustShift() {
     },
   });
 }
+
+// Project Labor Rates
+export interface ProjectLaborRate {
+  id: string;
+  projectId: string;
+  defaultRegularRate: string;
+  defaultOvertimeRate: string;
+  burdenMultiplier: string;
+  notes?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProjectEmployeeRate {
+  id: string;
+  projectId: string;
+  userId: string;
+  regularRate: string;
+  overtimeRate: string;
+  notes?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  employee: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+  };
+}
+
+export function useProjectLaborRates(code: string) {
+  return useQuery<ProjectLaborRate | null>({
+    queryKey: ["/api/projects", code, "labor-rates"],
+    enabled: !!code,
+  });
+}
+
+export function useUpdateProjectLaborRates() {
+  return useMutation({
+    mutationFn: async ({ projectCode, data }: { projectCode: string; data: { defaultRegularRate: string | number; defaultOvertimeRate: string | number; burdenMultiplier: string | number; notes?: string; } }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/labor-rates`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "labor-rates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "financials"] });
+    },
+  });
+}
+
+export function useProjectEmployeeRates(code: string) {
+  return useQuery<ProjectEmployeeRate[]>({
+    queryKey: ["/api/projects", code, "employee-rates"],
+    enabled: !!code,
+  });
+}
+
+export function useUpdateProjectEmployeeRate() {
+  return useMutation({
+    mutationFn: async ({ projectCode, data }: { projectCode: string; data: { userId: string; regularRate: string | number; overtimeRate: string | number; notes?: string; } }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/employee-rates`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "employee-rates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "financials"] });
+    },
+  });
+}
+
+export function useDeleteProjectEmployeeRate() {
+  return useMutation({
+    mutationFn: async ({ projectCode, rateId }: { projectCode: string; rateId: string; }) => {
+      const response = await apiRequest("DELETE", `/api/projects/${projectCode}/employee-rates/${rateId}`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "employee-rates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "financials"] });
+    },
+  });
+}
