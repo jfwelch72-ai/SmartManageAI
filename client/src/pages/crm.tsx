@@ -170,7 +170,7 @@ export default function CRMPage() {
   });
   
   const createContactMutation = useMutation({
-    mutationFn: async (data: typeof newContact & { organizationId: string }) => {
+    mutationFn: async (data: typeof newContact & { organisationId: string }) => {
       return apiRequest("POST", "/api/crm/contacts", data);
     },
     onSuccess: () => {
@@ -847,7 +847,7 @@ export default function CRMPage() {
                 <p className="text-sm text-muted-foreground">
                   Manage contacts for this organization
                 </p>
-                <Button size="sm" onClick={() => setCreateContactOpen(true)} data-testid="button-add-contact">
+                <Button size="sm" onClick={() => { resetNewContact(); setCreateContactOpen(true); }} data-testid="button-add-contact">
                   <Plus className="w-4 h-4 mr-1" />
                   Add Contact
                 </Button>
@@ -1051,7 +1051,7 @@ export default function CRMPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => selectedOrg && createContactMutation.mutate({ ...newContact, organizationId: selectedOrg.id })}
+              onClick={() => selectedOrg && createContactMutation.mutate({ ...newContact, organisationId: selectedOrg.id })}
               disabled={!newContact.firstName || !newContact.lastName || createContactMutation.isPending}
               data-testid="button-save-contact"
             >
