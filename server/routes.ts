@@ -3708,8 +3708,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ====================
 
   const { 
-    crmOrganisations, crmContacts, 
-    insertCrmOrganisationSchema, insertCrmContactSchema 
+    crmOrganisations, crmContacts, crmOrganisationNotes,
+    insertCrmOrganisationSchema, insertCrmContactSchema, insertCrmOrganisationNoteSchema 
   } = await import("@shared/schema");
 
   // List all CRM organisations with optional filters
@@ -4051,6 +4051,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete CRM contact error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // CRM Organisation Notes Routes
+  // ====================
+
+  // Get notes for an organisation (most recent first)
+  app.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const notes = await db
+        .select({
+          id: crmOrganisationNotes.id,
+          organisationId: crmOrganisationNotes.organisationId,
+          contactId: crmOrganisationNotes.contactId,
+          noteType: crmOrganisationNotes.noteType,
+          content: crmOrganisationNotes.content,
+          createdById: crmOrganisationNotes.createdById,
+          createdAt: crmOrganisationNotes.createdAt,
+          createdByFirstName: users.firstName,
+          createdByLastName: users.lastName,
+          contactFirstName: crmContacts.firstName,
+          contactLastName: crmContacts.lastName,
+        })
+        .from(crmOrganisationNotes)
+        .leftJoin(users, eq(users.id, crmOrganisationNotes.createdById))
+        .leftJoin(crmContacts, eq(crmContacts.id, crmOrganisationNotes.contactId))
+        .where(eq(crmOrganisationNotes.organisationId, req.params.id))
+        .orderBy(desc(crmOrganisationNotes.createdAt));
+
+      res.json(notes);
+    } catch (error) {
+      console.error("Get CRM organisation notes error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create a note for an organisation
+  app.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      // Verify organisation exists
+      const [organisation] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, req.params.id))
+        .limit(1);
+
+      if (!organisation) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+
+      const validationResult = insertCrmOrganisationNoteSchema.safeParse({
+        ...req.body,
+        organisationId: req.params.id,
+        createdById: req.user!.id,
+      });
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newNote] = await db
+        .insert(crmOrganisationNotes)
+        .values(validationResult.data)
+        .returning();
+
+      // Fetch the note with creator info
+      const [noteWithDetails] = await db
+        .select({
+          id: crmOrganisationNotes.id,
+          organisationId: crmOrganisationNotes.organisationId,
+          contactId: crmOrganisationNotes.contactId,
+          noteType: crmOrganisationNotes.noteType,
+          content: crmOrganisationNotes.content,
+          createdById: crmOrganisationNotes.createdById,
+          createdAt: crmOrganisationNotes.createdAt,
+          createdByFirstName: users.firstName,
+          createdByLastName: users.lastName,
+          contactFirstName: crmContacts.firstName,
+          contactLastName: crmContacts.lastName,
+        })
+        .from(crmOrganisationNotes)
+        .leftJoin(users, eq(users.id, crmOrganisationNotes.createdById))
+        .leftJoin(crmContacts, eq(crmContacts.id, crmOrganisationNotes.contactId))
+        .where(eq(crmOrganisationNotes.id, newNote.id));
+
+      res.status(201).json(noteWithDetails);
+    } catch (error) {
+      console.error("Create CRM organisation note error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete a note
+  app.delete("/api/crm/organisations/:orgId/notes/:noteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(crmOrganisationNotes)
+        .where(and(
+          eq(crmOrganisationNotes.id, req.params.noteId),
+          eq(crmOrganisationNotes.organisationId, req.params.orgId)
+        ))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Note not found" });
+        return;
+      }
+
+      await db.delete(crmOrganisationNotes).where(eq(crmOrganisationNotes.id, req.params.noteId));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete CRM organisation note error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
