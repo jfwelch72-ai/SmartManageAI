@@ -471,6 +471,45 @@ export default function ProjectDetailPage() {
     return grouped;
   }, [allPayables, projectCode]);
 
+  // Pending quotes query (quotes transferred from bid but not yet selected for contracts/procurement)
+  interface PendingSubQuote {
+    id: string;
+    subcontractorName: string;
+    contactName: string | null;
+    contactEmail: string | null;
+    contactPhone: string | null;
+    scopeOfWork: string;
+    quoteAmount: string;
+    leadTime: string | null;
+    estimatedCompletionTime: string | null;
+    notes: string | null;
+    fileUrl: string | null;
+    fileName: string | null;
+    createdAt: string;
+  }
+  
+  interface PendingMatQuote {
+    id: string;
+    materialName: string;
+    description: string;
+    specs: string | null;
+    cost: string;
+    leadTime: string | null;
+    supplierName: string | null;
+    supplierContact: string | null;
+    fileUrl: string | null;
+    fileName: string | null;
+    createdAt: string;
+  }
+  
+  const { data: pendingQuotes, isLoading: pendingQuotesLoading } = useQuery<{
+    subcontractorQuotes: PendingSubQuote[];
+    materialQuotes: PendingMatQuote[];
+  }>({
+    queryKey: ["/api/projects", projectCode, "pending-quotes"],
+    enabled: !!projectCode,
+  });
+
   // Data quality score query
   const { data: dataQuality, isLoading: dataQualityLoading } = useQuery<{
     overall_score: number;
@@ -550,6 +589,37 @@ export default function ProjectDetailPage() {
   // Mutations
   const createProcurementMutation = useCreateProcurementItem();
   const createPaymentMutation = useCreateSubcontractorPayment();
+
+  // Select pending quote mutations
+  const selectSubQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      return await apiRequest("POST", `/api/projects/${projectCode}/pending-quotes/subcontractor/${quoteId}/select`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "pending-quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "subcontractors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "financials"] });
+      toast({ title: "Success", description: "Subcontractor contract created from quote" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to select quote", variant: "destructive" });
+    },
+  });
+
+  const selectMatQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      return await apiRequest("POST", `/api/projects/${projectCode}/pending-quotes/material/${quoteId}/select`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "pending-quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "procurement"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "financials"] });
+      toast({ title: "Success", description: "Procurement item created from quote" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to select quote", variant: "destructive" });
+    },
+  });
 
   // Handlers for procurement
   const handleCreateProcurement = async () => {
@@ -2311,6 +2381,149 @@ export default function ProjectDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Pending Quotes Section - shows quotes transferred from bid but not yet selected */}
+            {pendingQuotes && (pendingQuotes.subcontractorQuotes.length > 0 || pendingQuotes.materialQuotes.length > 0) && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-muted-foreground" />
+                    Pending Quotes from Bid
+                  </CardTitle>
+                  <CardDescription>
+                    These quotes were collected during the bid phase. Select the ones you want to convert into contracts or procurement items.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Pending Subcontractor Quotes */}
+                  {pendingQuotes.subcontractorQuotes.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-muted-foreground">Subcontractor Quotes</h4>
+                      {pendingQuotes.subcontractorQuotes.map((quote) => (
+                        <Card key={quote.id} className="border-dashed" data-testid={`pending-sub-quote-${quote.id}`}>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium">{quote.subcontractorName}</span>
+                                  <Badge variant="secondary">Pending</Badge>
+                                </div>
+                                {quote.contactName && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Contact: {quote.contactName}
+                                    {quote.contactPhone && ` • ${quote.contactPhone}`}
+                                    {quote.contactEmail && ` • ${quote.contactEmail}`}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold font-mono">
+                                  ${parseFloat(quote.quoteAmount).toLocaleString()}
+                                </p>
+                                {quote.leadTime && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Lead: {quote.leadTime}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-2">
+                            <div>
+                              <p className="text-sm font-medium mb-1">Scope of Work</p>
+                              <p className="text-sm text-muted-foreground">{quote.scopeOfWork}</p>
+                            </div>
+                            {quote.notes && (
+                              <div>
+                                <p className="text-sm font-medium mb-1">Notes</p>
+                                <p className="text-sm text-muted-foreground">{quote.notes}</p>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-2 border-t">
+                              <p className="text-xs text-muted-foreground">
+                                Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
+                              </p>
+                              <Button
+                                size="sm"
+                                onClick={() => selectSubQuoteMutation.mutate(quote.id)}
+                                disabled={selectSubQuoteMutation.isPending}
+                                data-testid={`button-select-sub-quote-${quote.id}`}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                {selectSubQuoteMutation.isPending ? "Creating..." : "Select & Create Contract"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Pending Material Quotes */}
+                  {pendingQuotes.materialQuotes.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-muted-foreground">Material Quotes</h4>
+                      {pendingQuotes.materialQuotes.map((quote) => (
+                        <Card key={quote.id} className="border-dashed" data-testid={`pending-mat-quote-${quote.id}`}>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium">{quote.materialName}</span>
+                                  <Badge variant="secondary">Pending</Badge>
+                                </div>
+                                {quote.supplierName && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Supplier: {quote.supplierName}
+                                    {quote.supplierContact && ` • ${quote.supplierContact}`}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-bold font-mono">
+                                  ${parseFloat(quote.cost).toLocaleString()}
+                                </p>
+                                {quote.leadTime && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Lead: {quote.leadTime}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-2">
+                            <div>
+                              <p className="text-sm font-medium mb-1">Description</p>
+                              <p className="text-sm text-muted-foreground">{quote.description}</p>
+                            </div>
+                            {quote.specs && (
+                              <div>
+                                <p className="text-sm font-medium mb-1">Specifications</p>
+                                <p className="text-sm text-muted-foreground">{quote.specs}</p>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-2 border-t">
+                              <p className="text-xs text-muted-foreground">
+                                Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
+                              </p>
+                              <Button
+                                size="sm"
+                                onClick={() => selectMatQuoteMutation.mutate(quote.id)}
+                                disabled={selectMatQuoteMutation.isPending}
+                                data-testid={`button-select-mat-quote-${quote.id}`}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                {selectMatQuoteMutation.isPending ? "Creating..." : "Select & Create Procurement"}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             <Dialog open={showPaymentDialog} onOpenChange={(open) => {
               setShowPaymentDialog(open);
