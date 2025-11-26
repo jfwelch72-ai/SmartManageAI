@@ -759,6 +759,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   unit: text("unit").notNull(),
   source: estimateLineItemSourceEnum("source").notNull().default("MANUAL"),
   sourceTakeoffCategoryId: varchar("source_takeoff_category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
+  scopeWorkTypeId: varchar("scope_work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
   computedQuantity: decimal("computed_quantity", { precision: 12, scale: 2 }),
   materialCost: decimal("material_cost", { precision: 12, scale: 2 }).notNull().default('0'),
   laborHours: decimal("labor_hours", { precision: 10, scale: 2 }).notNull().default('0'),
@@ -778,6 +779,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   estimateIdx: index("estimate_line_items_estimate_idx").on(table.estimateId),
   categoryIdx: index("estimate_line_items_category_idx").on(table.category),
   sourceIdx: index("estimate_line_items_source_idx").on(table.source),
+  scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
 }));
 
 // Estimate Versions table (snapshots of estimates)

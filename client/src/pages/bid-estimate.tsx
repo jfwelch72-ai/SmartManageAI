@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator } from "lucide-react";
+import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
+import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { 
   Dialog, 
   DialogContent, 
@@ -60,6 +61,7 @@ const lineItemSchema = z.object({
   overheadAllocation: z.coerce.number().min(0).default(0),
   profitAllocation: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
+  scopeWorkTypeId: z.string().optional(),
 });
 
 type LineItemFormValues = z.infer<typeof lineItemSchema>;
@@ -81,6 +83,7 @@ export default function BidEstimate() {
   const [editingLineItem, setEditingLineItem] = useState<EstimateLineItem | null>(null);
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
+  const [selectedScopeData, setSelectedScopeData] = useState<ScopeSelectionData | null>(null);
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -112,6 +115,7 @@ export default function BidEstimate() {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
+      setSelectedScopeData(null);
       toast({ title: "Line item added successfully" });
     },
     onError: () => {
@@ -177,8 +181,46 @@ export default function BidEstimate() {
       overheadAllocation: 0,
       profitAllocation: 0,
       notes: "",
+      scopeWorkTypeId: undefined,
     },
   });
+
+  // Handle standardized scope selection
+  const handleScopeSelect = (data: ScopeSelectionData) => {
+    setSelectedScopeData(data);
+    form.setValue("description", data.canonicalName);
+    form.setValue("unit", data.unit);
+    form.setValue("scopeWorkTypeId", data.workTypeId);
+    
+    // Map category name to our category enum
+    const categoryMap: Record<string, string> = {
+      "Sidewalk": "CONCRETE",
+      "Driveway": "CONCRETE",
+      "Curb & Gutter": "CONCRETE",
+      "Foundation": "CONCRETE",
+      "Patio": "CONCRETE",
+      "Flatwork": "CONCRETE",
+      "Excavation": "EXCAVATION",
+      "Grading": "EXCAVATION",
+      "Pavers": "PAVERS",
+      "Bollards": "BOLLARDS",
+      "Striping": "STRIPING",
+      "Signage": "SIGNAGE",
+      "Landscaping": "LANDSCAPING",
+      "Electrical": "ELECTRICAL",
+    };
+    const mappedCategory = categoryMap[data.categoryName] || "OTHER";
+    form.setValue("category", mappedCategory);
+  };
+  
+  // Reset form and scope selection when dialog closes
+  const handleDialogClose = (open: boolean) => {
+    setAddLineItemOpen(open);
+    if (!open) {
+      form.reset();
+      setSelectedScopeData(null);
+    }
+  };
 
   const onSubmit = (values: LineItemFormValues) => {
     if (!estimateData?.estimate) return;
@@ -199,6 +241,7 @@ export default function BidEstimate() {
         overheadAllocation: values.overheadAllocation,
         profitAllocation: values.profitAllocation,
         notes: values.notes || undefined,
+        scopeWorkTypeId: values.scopeWorkTypeId || undefined,
       };
       
       editLineItemMutation.mutate({
@@ -224,6 +267,7 @@ export default function BidEstimate() {
         profitAllocation: String(values.profitAllocation),
         source: "MANUAL",
         notes: values.notes || undefined,
+        scopeWorkTypeId: values.scopeWorkTypeId || undefined,
       };
       
       addLineItemMutation.mutate(addPayload as any);
@@ -552,7 +596,7 @@ export default function BidEstimate() {
 
         {hasEstimateAccess && (
           <div className="flex gap-3">
-            <Dialog open={addLineItemOpen} onOpenChange={setAddLineItemOpen}>
+            <Dialog open={addLineItemOpen} onOpenChange={handleDialogClose}>
               <DialogTrigger asChild>
                 <Button data-testid="button-open-add-line-item">
                   <Plus className="h-4 w-4 mr-2" />
@@ -568,6 +612,27 @@ export default function BidEstimate() {
                 </DialogHeader>
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                    {/* Standardized SOW Selector */}
+                    <div className="border rounded-md p-4 bg-muted/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Layers className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">Standardized Scope of Work</span>
+                        <span className="text-xs text-muted-foreground ml-auto">Recommended for tracking</span>
+                      </div>
+                      <StandardizedScopeSelector
+                        value={selectedScopeData || undefined}
+                        onChange={handleScopeSelect}
+                        showDimensionInputs={false}
+                      />
+                      {selectedScopeData && (
+                        <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/30 rounded border border-green-200 dark:border-green-900">
+                          <p className="text-xs text-green-700 dark:text-green-400">
+                            SOW selected: Description, unit, and category have been auto-filled. You can still customize them below.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
@@ -593,7 +658,7 @@ export default function BidEstimate() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Category</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select onValueChange={field.onChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-category">
                                   <SelectValue placeholder="Select a category" />
