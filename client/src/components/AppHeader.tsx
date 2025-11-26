@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,13 +10,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
 import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 interface AppHeaderProps {
   userName: string;
@@ -24,6 +37,12 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({ userName, userRole, onLogout }: AppHeaderProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [timeClockOpen, setTimeClockOpen] = useState(false);
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [location] = useLocation();
+
   const initials = userName
     .split(" ")
     .map((n) => n[0])
@@ -51,6 +70,15 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
     await onLogout();
   };
 
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+    setTimeClockOpen(false);
+    setAiMenuOpen(false);
+    setAdminMenuOpen(false);
+  };
+
+  const isActive = (path: string) => location === path || location.startsWith(path + "/");
+
   // Filter navigation items based on user role
   const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
   const visibleAIItems = NavigationConfig.aiMenu.filter(item => item.visible(userRole));
@@ -58,21 +86,186 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
   const hasAdminMenu = visibleAdminItems.length > 0;
   const hasAIMenu = visibleAIItems.length > 0;
 
+  // Mobile navigation items
+  const mobileNavItems = [
+    { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/projects", icon: Briefcase, label: "Projects" },
+    { href: "/calendar", icon: Calendar, label: "Calendar" },
+    { href: "/communications", icon: MessageSquare, label: "Communications" },
+    { href: "/bids", icon: Gavel, label: "Bids" },
+  ];
+
+  // Mobile navigation link component
+  const MobileNavLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
+    <Link href={href} onClick={closeMobileMenu}>
+      <div
+        className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+          isActive(href)
+            ? "bg-primary/10 text-primary font-medium"
+            : "hover:bg-accent text-foreground"
+        }`}
+        data-testid={`mobile-nav-${label.toLowerCase()}`}
+      >
+        <Icon className="w-5 h-5" />
+        <span>{label}</span>
+      </div>
+    </Link>
+  );
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-6 gap-6">
+      <div className="flex h-14 md:h-16 items-center justify-between px-4 md:px-6 gap-2 md:gap-6">
+        {/* Mobile hamburger menu */}
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              data-testid="button-mobile-menu"
+            >
+              <Menu className="h-6 w-6" />
+              <span className="sr-only">Toggle menu</span>
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-80 p-0">
+            <SheetHeader className="p-4 border-b">
+              <SheetTitle className="flex items-center gap-2">
+                <Building2 className="w-6 h-6 text-primary" />
+                <span>TFR Construction</span>
+              </SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="h-[calc(100vh-80px)]">
+              <nav className="flex flex-col gap-1 p-4">
+                {/* Main nav items */}
+                {mobileNavItems.map((item) => (
+                  <MobileNavLink key={item.href} {...item} />
+                ))}
+
+                {/* CRM - conditional */}
+                {hasManagementAccess(userRole) && (
+                  <MobileNavLink href="/crm" icon={UsersIcon} label="CRM" />
+                )}
+
+                {/* Time Clock - collapsible */}
+                <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen}>
+                  <CollapsibleTrigger asChild>
+                    <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <Clock className="w-5 h-5" />
+                        <span>Time Clock</span>
+                      </div>
+                      <ChevronRight className={`w-4 h-4 transition-transform ${timeClockOpen ? "rotate-90" : ""}`} />
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pl-8 space-y-1">
+                    <Link href="/time-clock" onClick={closeMobileMenu}>
+                      <div className={`px-4 py-2 rounded-lg ${isActive("/time-clock") ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                        My Time Clock
+                      </div>
+                    </Link>
+                    {NavigationConfig.timeClockMenu.slice(1).map((item) =>
+                      item.visible(userRole) && (
+                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                            {item.label}
+                          </div>
+                        </Link>
+                      )
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* AI Menu - collapsible */}
+                {hasAIMenu && (
+                  <Collapsible open={aiMenuOpen} onOpenChange={setAiMenuOpen}>
+                    <CollapsibleTrigger asChild>
+                      <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Bot className="w-5 h-5" />
+                          <span>AI</span>
+                        </div>
+                        <ChevronRight className={`w-4 h-4 transition-transform ${aiMenuOpen ? "rotate-90" : ""}`} />
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pl-8 space-y-1">
+                      {visibleAIItems.map((item) => (
+                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                            {item.label}
+                          </div>
+                        </Link>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+
+                {/* Admin Menu - collapsible */}
+                {hasAdminMenu && (
+                  <Collapsible open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
+                    <CollapsibleTrigger asChild>
+                      <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <Shield className="w-5 h-5" />
+                          <span>Admin</span>
+                        </div>
+                        <ChevronRight className={`w-4 h-4 transition-transform ${adminMenuOpen ? "rotate-90" : ""}`} />
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pl-8 space-y-1">
+                      {visibleAdminItems.map((item) => (
+                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                            {item.label}
+                          </div>
+                        </Link>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+
+                {/* User section at bottom */}
+                <div className="border-t mt-4 pt-4">
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <Avatar className="w-10 h-10">
+                      <AvatarFallback>{initials}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">{userName}</p>
+                      <p className="text-sm text-muted-foreground">{userRole}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start gap-3 px-4 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={(e) => {
+                      closeMobileMenu();
+                      handleLogout(e);
+                    }}
+                    data-testid="mobile-logout"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    Logout
+                  </Button>
+                </div>
+              </nav>
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
+
+        {/* Logo - simplified on mobile */}
         <Link href="/dashboard" data-testid="link-dashboard">
-          <div className="flex items-center gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md -ml-2 pl-2 pr-3 py-2">
-            <Building2 className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-xl font-bold text-foreground">TFR Construction</h1>
-              <p className="text-xs text-muted-foreground">Management Platform</p>
+          <div className="flex items-center gap-2 md:gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md pl-1 md:pl-2 pr-2 md:pr-3 py-2">
+            <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
+            <div className="hidden sm:block">
+              <h1 className="text-lg md:text-xl font-bold text-foreground">TFR Construction</h1>
+              <p className="text-xs text-muted-foreground hidden md:block">Management Platform</p>
             </div>
           </div>
         </Link>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+        {/* Desktop Navigation - hidden on mobile */}
+        <nav className="hidden md:flex items-center gap-1 flex-1 overflow-x-auto">
           <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-dashboard">
             <Link href="/dashboard">
               <LayoutDashboard className="w-4 h-4" />

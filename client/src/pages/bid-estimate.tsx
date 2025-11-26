@@ -1359,12 +1359,12 @@ export default function BidEstimate() {
                 <p className="text-sm mt-2">Add manual line items to get started</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <Table className="min-w-[1000px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
+                      <TableHead className="whitespace-nowrap">Description</TableHead>
+                      <TableHead className="whitespace-nowrap">Category</TableHead>
                       <TableHead>Qty</TableHead>
                       <TableHead>Unit</TableHead>
                       <TableHead className="text-right">Material</TableHead>

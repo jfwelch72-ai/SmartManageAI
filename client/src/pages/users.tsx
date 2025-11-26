@@ -139,17 +139,18 @@ export default function UsersPage() {
             ) : users.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">No users found</div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Active</TableHead>
-                  </TableRow>
-                </TableHeader>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <Table className="min-w-[700px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Name</TableHead>
+                      <TableHead className="whitespace-nowrap">Email</TableHead>
+                      <TableHead className="whitespace-nowrap">Phone</TableHead>
+                      <TableHead className="whitespace-nowrap">Role</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead className="whitespace-nowrap">Active</TableHead>
+                    </TableRow>
+                  </TableHeader>
                 <TableBody>
                   {users.map((u) => (
                     <TableRow key={u.id} data-testid={`row-user-${u.id}`}>

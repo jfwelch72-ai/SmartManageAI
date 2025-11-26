@@ -531,17 +531,18 @@ export default function CRMPage() {
                   <p className="text-sm">Try adjusting your search or filters</p>
                 </div>
               ) : (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>Specialties</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <ScrollArea className="h-[500px]">
+                    <Table className="min-w-[600px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Name</TableHead>
+                          <TableHead className="whitespace-nowrap">Type</TableHead>
+                          <TableHead className="whitespace-nowrap">Location</TableHead>
+                          <TableHead className="whitespace-nowrap">Specialties</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
                     <TableBody>
                       {filteredOrganizations.map((org) => (
                         <TableRow 

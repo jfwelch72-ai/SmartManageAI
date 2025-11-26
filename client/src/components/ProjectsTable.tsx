@@ -21,8 +21,8 @@ interface ProjectsTableProps {
 
 export default function ProjectsTable({ projects, onRowClick, canDelete, onDelete }: ProjectsTableProps) {
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="rounded-md border overflow-x-auto -mx-4 sm:mx-0">
+      <Table className="min-w-[600px]">
         <TableHeader>
           <TableRow>
             <TableHead className="font-semibold">Code</TableHead>

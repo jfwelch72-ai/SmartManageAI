@@ -311,17 +311,18 @@ export default function TimeClockPage() {
                 No shifts recorded yet
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Clock In</TableHead>
-                    <TableHead>Clock Out</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <Table className="min-w-[600px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Project</TableHead>
+                      <TableHead className="whitespace-nowrap">Clock In</TableHead>
+                      <TableHead className="whitespace-nowrap">Clock Out</TableHead>
+                      <TableHead className="whitespace-nowrap">Duration</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
                 <TableBody>
                   {myShifts.map((shift: any) => (
                     <TableRow key={shift.id} data-testid={`row-shift-${shift.id}`}>
