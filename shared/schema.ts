@@ -284,6 +284,19 @@ export const tmTickets = pgTable("tm_tickets", {
   workDate: date("work_date").notNull(),
   tfrRepresentativeId: varchar("tfr_representative_id").notNull().references(() => users.id),
   workOrderReference: text("work_order_reference"),
+  
+  // Standardized scope of work (matches estimating sheets for production rate tracking)
+  workTypeId: varchar("work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
+  workTypeCode: text("work_type_code"), // Machine-readable code for AI/production tracking
+  workTypeName: text("work_type_name"), // Display name e.g. "4\" Sidewalk"
+  categoryName: text("category_name"), // Category e.g. "Sidewalk"
+  scopeModifierIds: text("scope_modifier_ids"), // JSON array of modifier IDs
+  scopeModifierNames: text("scope_modifier_names"), // JSON array of modifier names
+  canonicalName: text("canonical_name"), // Full standardized name for tracking
+  scopeUnit: text("scope_unit"), // Unit of measure (SF, LF, CY, EA)
+  scopeQuantity: decimal("scope_quantity", { precision: 12, scale: 2 }), // Quantity completed
+  
+  // Freetext description for additional details
   scopeDescription: text("scope_description").notNull(),
   notes: text("notes"),
   status: tmTicketStatusEnum("status").notNull().default("DRAFT"),
@@ -317,6 +330,7 @@ export const tmTickets = pgTable("tm_tickets", {
   projectIdIdx: index("tm_tickets_project_id_idx").on(table.projectId),
   statusIdx: index("tm_tickets_status_idx").on(table.status),
   workDateIdx: index("tm_tickets_work_date_idx").on(table.workDate),
+  workTypeCodeIdx: index("tm_tickets_work_type_code_idx").on(table.workTypeCode),
 }));
 
 // T&M Ticket Labor Entries

@@ -125,9 +125,25 @@ export function registerTMTicketRoutes(app: Express) {
       });
       const ticketNumber = `TM-${project.code}-${String(existingTickets.length + 1).padStart(3, '0')}`;
       
-      const { laborEntries, equipmentEntries, materialEntries, description, ...restTicketData } = req.body;
+      const { 
+        laborEntries, 
+        equipmentEntries, 
+        materialEntries, 
+        description,
+        // Standardized scope fields
+        workTypeId,
+        workTypeCode,
+        workTypeName,
+        categoryName,
+        scopeModifierIds,
+        scopeModifierNames,
+        canonicalName,
+        scopeUnit,
+        scopeQuantity,
+        ...restTicketData 
+      } = req.body;
       
-      // Create the ticket
+      // Create the ticket with standardized scope data
       const [newTicket] = await db.insert(tmTickets).values({
         ...restTicketData,
         projectId,
@@ -135,6 +151,16 @@ export function registerTMTicketRoutes(app: Express) {
         createdById: userId,
         tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
         scopeDescription: description || restTicketData.scopeDescription || "Work performed",
+        // Standardized scope of work (matches estimating sheets for production rate tracking)
+        workTypeId: workTypeId || null,
+        workTypeCode: workTypeCode || null,
+        workTypeName: workTypeName || null,
+        categoryName: categoryName || null,
+        scopeModifierIds: scopeModifierIds ? JSON.stringify(scopeModifierIds) : null,
+        scopeModifierNames: scopeModifierNames ? JSON.stringify(scopeModifierNames) : null,
+        canonicalName: canonicalName || null,
+        scopeUnit: scopeUnit || null,
+        scopeQuantity: scopeQuantity || null,
         status: "DRAFT",
       }).returning();
       

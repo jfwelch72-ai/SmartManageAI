@@ -12,8 +12,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useTMTickets, useCreateTMTicket, useSubmitTMTicket, useApproveTMTicket, useRejectTMTicket, useDeleteTMTicket, type TMTicket, type TMTicketLaborEntry, type TMTicketEquipmentEntry, type TMTicketMaterialEntry } from "@/hooks/use-data";
-import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler } from "lucide-react";
 import { format } from "date-fns";
+import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 
 interface TMTicketsSectionProps {
   projectId: string;
@@ -106,6 +107,10 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
   const [equipmentEntries, setEquipmentEntries] = useState<EquipmentEntry[]>([]);
   const [materialEntries, setMaterialEntries] = useState<MaterialEntry[]>([]);
   const [activeEntryTab, setActiveEntryTab] = useState("labor");
+  
+  // Standardized scope of work selection (matches estimating sheets)
+  const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
+  const [scopeQuantity, setScopeQuantity] = useState("");
 
   const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
   const canApprove = ["ADMIN", "MANAGER"].includes(userRole);
@@ -128,6 +133,8 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
     setEquipmentEntries([]);
     setMaterialEntries([]);
     setActiveEntryTab("labor");
+    setScopeSelection(null);
+    setScopeQuantity("");
   };
 
   const handleCreate = async () => {
@@ -151,6 +158,16 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
         workDate,
         description,
         location: location || undefined,
+        // Standardized scope data for production rate tracking
+        workTypeId: scopeSelection?.workTypeId || undefined,
+        workTypeCode: scopeSelection?.workTypeCode || undefined,
+        workTypeName: scopeSelection?.workTypeName || undefined,
+        categoryName: scopeSelection?.categoryName || undefined,
+        scopeModifierIds: scopeSelection?.modifierIds || undefined,
+        scopeModifierNames: scopeSelection?.modifierNames || undefined,
+        canonicalName: scopeSelection?.canonicalName || undefined,
+        scopeUnit: scopeSelection?.unit || undefined,
+        scopeQuantity: scopeQuantity || undefined,
         laborEntries: validLaborEntries.map(e => ({
           employeeName: e.employeeName,
           position: e.position || undefined,
@@ -319,13 +336,56 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                     />
                   </div>
                 </div>
+
+                {/* Standardized Scope of Work - matches estimating sheets for production rate tracking */}
+                <Card className="p-4 bg-muted/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Ruler className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-sm font-medium">Scope of Work (for Production Rate Tracking)</Label>
+                  </div>
+                  <StandardizedScopeSelector
+                    value={scopeSelection || undefined}
+                    onChange={setScopeSelection}
+                    showDimensionInputs={false}
+                  />
+                  {scopeSelection && (
+                    <div className="mt-3 grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="tm-scope-quantity">Quantity Completed</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="tm-scope-quantity"
+                            type="number"
+                            step="0.01"
+                            value={scopeQuantity}
+                            onChange={(e) => setScopeQuantity(e.target.value)}
+                            placeholder="0"
+                            data-testid="input-tm-scope-quantity"
+                          />
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">{scopeSelection.unit}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-end">
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Selected:</span> {scopeSelection.canonicalName}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!scopeSelection && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Select a work type to enable production rate tracking for T&M work.
+                    </p>
+                  )}
+                </Card>
+
                 <div>
-                  <Label htmlFor="tm-description">Work Description</Label>
+                  <Label htmlFor="tm-description">Work Description / Notes</Label>
                   <Textarea
                     id="tm-description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe the T&M work performed..."
+                    placeholder="Describe the T&M work performed (required)..."
                     data-testid="input-tm-description"
                   />
                 </div>
