@@ -5006,6 +5006,236 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Pending Quotes Routes (for quotes transferred from bids but not yet selected)
+  // ====================
+
+  // Get all pending (non-selected) quotes for a project
+  app.get("/api/projects/:code/pending-quotes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const { and } = await import("drizzle-orm");
+
+      // Get non-selected subcontractor quotes for this project
+      const pendingSubQuotes = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(and(
+          eq(bidSubcontractorQuotes.projectId, project.id),
+          eq(bidSubcontractorQuotes.isSelected, false)
+        ))
+        .orderBy(desc(bidSubcontractorQuotes.createdAt));
+
+      // Get non-selected material quotes for this project
+      const pendingMatQuotes = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(and(
+          eq(bidMaterialQuotes.projectId, project.id),
+          eq(bidMaterialQuotes.isSelected, false)
+        ))
+        .orderBy(desc(bidMaterialQuotes.createdAt));
+
+      res.json({
+        subcontractorQuotes: pendingSubQuotes,
+        materialQuotes: pendingMatQuotes,
+      });
+    } catch (error) {
+      console.error("Get pending quotes error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Select a pending subcontractor quote (creates contract)
+  app.post("/api/projects/:code/pending-quotes/subcontractor/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const { and } = await import("drizzle-orm");
+
+      // Get the quote
+      const [quote] = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(and(
+          eq(bidSubcontractorQuotes.id, req.params.quoteId),
+          eq(bidSubcontractorQuotes.projectId, project.id),
+          eq(bidSubcontractorQuotes.isSelected, false)
+        ))
+        .limit(1);
+
+      if (!quote) {
+        res.status(404).json({ error: "Pending quote not found" });
+        return;
+      }
+
+      // Find or create subcontractor record
+      let subcontractor;
+      if (quote.contactEmail || quote.contactPhone) {
+        const { or, and: andFn } = await import("drizzle-orm");
+        const contactConditions = [];
+        if (quote.contactEmail) {
+          contactConditions.push(eq(subcontractors.email, quote.contactEmail));
+        }
+        if (quote.contactPhone) {
+          contactConditions.push(eq(subcontractors.phone, quote.contactPhone));
+        }
+        
+        subcontractor = await db.query.subcontractors.findFirst({
+          where: andFn(
+            eq(subcontractors.companyName, quote.subcontractorName),
+            or(...contactConditions)
+          ),
+        });
+      }
+      
+      if (!subcontractor) {
+        subcontractor = await db.query.subcontractors.findFirst({
+          where: eq(subcontractors.companyName, quote.subcontractorName),
+        });
+      }
+
+      if (!subcontractor) {
+        [subcontractor] = await db.insert(subcontractors).values({
+          companyName: quote.subcontractorName,
+          contactName: quote.contactName || null,
+          email: quote.contactEmail || null,
+          phone: quote.contactPhone || null,
+          notes: quote.notes || null,
+          isActive: true,
+        }).returning();
+      }
+
+      // Get count of existing contracts for contract number
+      const existingContracts = await db
+        .select()
+        .from(subcontractorContracts)
+        .where(eq(subcontractorContracts.projectId, project.id));
+
+      // Create subcontractor contract from quote
+      const contractNumber = `SC-${project.code}-${String(existingContracts.length + 1).padStart(3, '0')}`;
+      const paymentTerms = quote.leadTime ? `Lead Time: ${quote.leadTime}`.substring(0, 500) : null;
+      
+      const notesParts: string[] = [];
+      if (quote.estimatedCompletionTime) notesParts.push(`Estimated Completion: ${quote.estimatedCompletionTime}`);
+      if (quote.notes) notesParts.push(quote.notes);
+      if (quote.fileUrl) {
+        const sanitizedFileName = (quote.fileName || 'Document').replace(/[\r\n]/g, ' ').trim();
+        notesParts.push(`[Quote Attachment: ${sanitizedFileName}]`);
+      }
+      
+      const notes = notesParts.length > 0 ? notesParts.join('\n').substring(0, 1000) : null;
+      
+      const [newContract] = await db.insert(subcontractorContracts).values({
+        subcontractorId: subcontractor.id,
+        projectId: project.id,
+        contractNumber,
+        scopeOfWork: quote.scopeOfWork,
+        contractAmount: quote.quoteAmount,
+        status: "PENDING",
+        paymentTerms,
+        notes,
+        createdById: req.user!.id,
+      }).returning();
+
+      // Mark quote as selected
+      await db
+        .update(bidSubcontractorQuotes)
+        .set({ isSelected: true, updatedAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, quote.id));
+
+      res.json({ 
+        success: true, 
+        contract: newContract,
+        message: `Subcontractor contract created: ${contractNumber}`
+      });
+    } catch (error) {
+      console.error("Select pending subcontractor quote error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Select a pending material quote (creates procurement item)
+  app.post("/api/projects/:code/pending-quotes/material/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+      
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      const { and } = await import("drizzle-orm");
+
+      // Get the quote
+      const [quote] = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(and(
+          eq(bidMaterialQuotes.id, req.params.quoteId),
+          eq(bidMaterialQuotes.projectId, project.id),
+          eq(bidMaterialQuotes.isSelected, false)
+        ))
+        .limit(1);
+
+      if (!quote) {
+        res.status(404).json({ error: "Pending quote not found" });
+        return;
+      }
+
+      // Build comprehensive description with all quote details
+      let fullDescription = quote.materialName;
+      if (quote.specs) fullDescription += ` - ${quote.specs}`;
+      if (quote.description) fullDescription += `\n${quote.description}`;
+      
+      const additionalInfo: string[] = [];
+      if (quote.leadTime) additionalInfo.push(`Lead Time: ${quote.leadTime}`);
+      if (quote.supplierContact) additionalInfo.push(`Supplier Contact: ${quote.supplierContact}`);
+      
+      if (additionalInfo.length > 0) {
+        fullDescription += `\n\n[Quote Details]\n${additionalInfo.join('\n')}`;
+      }
+      
+      // Create procurement item from material quote
+      const [newItem] = await db.insert(procurementItems).values({
+        projectId: project.id,
+        description: fullDescription,
+        vendor: quote.supplierName || null,
+        quantity: "1",
+        unit: "LOT",
+        unitCost: quote.cost,
+        status: "PLANNED",
+        neededByDate: null,
+      }).returning();
+
+      // Mark quote as selected
+      await db
+        .update(bidMaterialQuotes)
+        .set({ isSelected: true, updatedAt: new Date() })
+        .where(eq(bidMaterialQuotes.id, quote.id));
+
+      res.json({ 
+        success: true, 
+        procurementItem: newItem,
+        message: `Procurement item created: ${quote.materialName}`
+      });
+    } catch (error) {
+      console.error("Select pending material quote error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Receipts Routes
   // ====================
 
