@@ -11,7 +11,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
 
 -   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
 -   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
--   **Database**: PostgreSQL on Neon, managed with Drizzle ORM. Bid-Estimate-Project integration uses nullable bidId/projectId with a CHECK constraint and ON DELETE SET NULL for bidId (preserves estimates when bids are deleted). Quote transfer automatically creates subcontractor contracts and procurement items during bid-to-project conversion.
+-   **Database**: PostgreSQL on Neon, managed with Drizzle ORM. Bid-Estimate-Project integration uses nullable bidId/projectId with a CHECK constraint and ON DELETE SET NULL for bidId (preserves estimates when bids are deleted). Quote preservation system retains ALL bid quotes (selected and non-selected) during bid-to-project conversion, enabling later selection on project pages.
 -   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, Role-Based Access Control (RBAC) across six user roles, and self-service registration.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS with a focus on intuitive project management workflows.
