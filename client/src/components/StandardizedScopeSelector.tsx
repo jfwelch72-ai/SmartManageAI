@@ -1,8 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -84,6 +83,11 @@ export default function StandardizedScopeSelector({
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [dimensions, setDimensions] = useState<Dimensions>({});
   const [expandedModifierCategories, setExpandedModifierCategories] = useState<string[]>([]);
+  
+  // Use refs to prevent infinite loops
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const lastEmittedDataRef = useRef<string>("");
 
   const { data: workTypeCategories = [], isLoading: loadingWorkTypes } = useQuery<WorkTypeCategory[]>({
     queryKey: ["/api/scope/work-types"],
@@ -155,22 +159,32 @@ export default function StandardizedScopeSelector({
     }
   }, [value, workTypeCategories, selectedWorkTypeId]);
 
-  useEffect(() => {
-    if (selectedWorkType) {
-      const data: ScopeSelectionData = {
-        workTypeId: selectedWorkType.id,
-        workTypeName: selectedWorkType.name,
-        workTypeCode: selectedWorkType.code,
-        categoryName: selectedCategory?.name || "",
-        unit: selectedWorkType.defaultUnit,
-        modifierIds: selectedModifierIds,
-        modifierNames: selectedModifiers.map((m) => m.name),
-        dimensions: selectedWorkType.requiresDimensions ? dimensions : undefined,
-        canonicalName,
-      };
-      onChange(data);
-    }
+  // Build data object for onChange - memoized to avoid recalculation
+  const currentData = useMemo((): ScopeSelectionData | null => {
+    if (!selectedWorkType) return null;
+    return {
+      workTypeId: selectedWorkType.id,
+      workTypeName: selectedWorkType.name,
+      workTypeCode: selectedWorkType.code,
+      categoryName: selectedCategory?.name || "",
+      unit: selectedWorkType.defaultUnit,
+      modifierIds: selectedModifierIds,
+      modifierNames: selectedModifiers.map((m) => m.name),
+      dimensions: selectedWorkType.requiresDimensions ? dimensions : undefined,
+      canonicalName,
+    };
   }, [selectedWorkType, selectedCategory, selectedModifierIds, selectedModifiers, dimensions, canonicalName]);
+  
+  // Only emit onChange when the data actually changes (compare by serialized value)
+  useEffect(() => {
+    if (currentData) {
+      const serialized = JSON.stringify(currentData);
+      if (serialized !== lastEmittedDataRef.current) {
+        lastEmittedDataRef.current = serialized;
+        onChangeRef.current(currentData);
+      }
+    }
+  }, [currentData]);
 
   const handleCategoryChange = (categoryId: string) => {
     setSelectedCategoryId(categoryId);
@@ -351,20 +365,24 @@ export default function StandardizedScopeSelector({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-2 pl-2">
                   <div className="flex flex-wrap gap-2">
-                    {cat.modifiers.map((mod) => (
-                      <div
-                        key={mod.id}
-                        className="flex items-center gap-2 p-2 rounded-md border bg-background cursor-pointer hover-elevate"
-                        onClick={() => handleModifierToggle(mod.id)}
-                        data-testid={`modifier-checkbox-${mod.id}`}
-                      >
-                        <Checkbox
-                          checked={selectedModifierIds.includes(mod.id)}
-                          onCheckedChange={() => handleModifierToggle(mod.id)}
-                        />
-                        <span className="text-sm">{mod.name}</span>
-                      </div>
-                    ))}
+                    {cat.modifiers.map((mod) => {
+                      const isChecked = selectedModifierIds.includes(mod.id);
+                      return (
+                        <label
+                          key={mod.id}
+                          className="flex items-center gap-2 p-2 rounded-md border bg-background cursor-pointer hover-elevate"
+                          data-testid={`modifier-checkbox-${mod.id}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleModifierToggle(mod.id)}
+                            className="h-4 w-4 rounded border-primary text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm">{mod.name}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </CollapsibleContent>
               </Collapsible>
