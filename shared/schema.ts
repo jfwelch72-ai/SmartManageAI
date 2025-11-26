@@ -103,9 +103,12 @@ export const bids = pgTable("bids", {
 });
 
 // Bid Subcontractor Quotes table
+// During conversion: projectId added, bidId set to null when bid deleted
+// Non-selected quotes preserved for later selection on project page
 export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   subcontractorName: text("subcontractor_name").notNull(),
   scopeOfWork: text("scope_of_work").notNull(),
   quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
@@ -125,9 +128,12 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
 });
 
 // Bid Material Quotes table
+// During conversion: projectId added, bidId set to null when bid deleted
+// Non-selected quotes preserved for later selection on project page
 export const bidMaterialQuotes = pgTable("bid_material_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   materialName: text("material_name").notNull(),
   description: text("description").notNull(),
   specs: text("specs"),
