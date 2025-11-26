@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
 import ProjectsTable from "@/components/ProjectsTable";
+import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -48,6 +51,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProjectSchema } from "@shared/schema";
+import type { CrmOrganisation, CrmContact } from "@shared/schema";
 import { z } from "zod";
 
 export default function ProjectsPage() {
@@ -66,6 +70,12 @@ export default function ProjectsPage() {
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<{ code: string; name: string } | null>(null);
+  
+  // CRM organization state for project creation
+  const [selectedGcOrg, setSelectedGcOrg] = useState<CrmOrganisation | null>(null);
+  const [selectedGcContact, setSelectedGcContact] = useState<CrmContact | null>(null);
+  const [selectedOwnerRepOrg, setSelectedOwnerRepOrg] = useState<CrmOrganisation | null>(null);
+  const [selectedOwnerRepContact, setSelectedOwnerRepContact] = useState<CrmContact | null>(null);
   
   // Check if user can delete projects (ADMIN or MANAGER only)
   const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER";
@@ -112,8 +122,87 @@ export default function ProjectsPage() {
       city: "",
       state: "",
       description: "",
+      gcOrganizationId: undefined,
+      ownerRepOrganizationId: undefined,
     },
   });
+  
+  // Handle GC organization selection - auto-populate client fields
+  const handleGcSelect = (org: CrmOrganisation | null) => {
+    const previousOrgId = selectedGcOrg?.id;
+    setSelectedGcOrg(org);
+    
+    // Always clear contact when org changes (different org or deselected)
+    if (!org || org.id !== previousOrgId) {
+      setSelectedGcContact(null);
+      form.setValue("clientContactName", "");
+      form.setValue("clientContactEmail", "");
+      form.setValue("clientContactPhone", "");
+    }
+    
+    if (org) {
+      form.setValue("gcOrganizationId", org.id);
+      form.setValue("clientName", org.name);
+    } else {
+      // Clear GC-related fields when deselected
+      form.setValue("gcOrganizationId", undefined);
+      form.setValue("clientName", "");
+    }
+  };
+  
+  // Handle GC contact selection - auto-populate contact fields
+  const handleGcContactSelect = (contact: CrmContact | null) => {
+    setSelectedGcContact(contact);
+    if (contact) {
+      const fullName = `${contact.firstName} ${contact.lastName}`.trim();
+      form.setValue("clientContactName", fullName);
+      form.setValue("clientContactEmail", contact.email || "");
+      form.setValue("clientContactPhone", contact.phone || contact.mobile || "");
+    } else {
+      // Clear contact fields when deselected
+      form.setValue("clientContactName", "");
+      form.setValue("clientContactEmail", "");
+      form.setValue("clientContactPhone", "");
+    }
+  };
+  
+  // Handle Owner Rep organization selection
+  const handleOwnerRepSelect = (org: CrmOrganisation | null) => {
+    const previousOrgId = selectedOwnerRepOrg?.id;
+    setSelectedOwnerRepOrg(org);
+    
+    // Always clear contact when org changes (different org or deselected)
+    if (!org || org.id !== previousOrgId) {
+      setSelectedOwnerRepContact(null);
+    }
+    
+    if (org) {
+      form.setValue("ownerRepOrganizationId", org.id);
+    } else {
+      form.setValue("ownerRepOrganizationId", undefined);
+    }
+  };
+  
+  // Handle Owner Rep contact selection
+  const handleOwnerRepContactSelect = (contact: CrmContact | null) => {
+    setSelectedOwnerRepContact(contact);
+  };
+  
+  // Handle dialog open/close - reset state when closing
+  const handleDialogOpenChange = (open: boolean) => {
+    setShowCreateDialog(open);
+    if (!open) {
+      resetFormAndCrmState();
+    }
+  };
+
+  const resetFormAndCrmState = () => {
+    form.reset();
+    setSelectedGcOrg(null);
+    setSelectedGcContact(null);
+    setSelectedOwnerRepOrg(null);
+    setSelectedOwnerRepContact(null);
+  };
 
   const onSubmit = async (data: CreateProjectFormInput) => {
     try {
@@ -130,6 +219,8 @@ export default function ProjectsPage() {
         city: data.city || undefined,
         state: data.state || undefined,
         description: data.description || undefined,
+        gcOrganizationId: selectedGcOrg?.id || undefined,
+        ownerRepOrganizationId: selectedOwnerRepOrg?.id || undefined,
       };
       
       const result = await createProject.mutateAsync(submitData);
@@ -140,7 +231,7 @@ export default function ProjectsPage() {
           description: `Project ${result.code} created successfully!`,
         });
         setShowCreateDialog(false);
-        form.reset();
+        resetFormAndCrmState();
         // Navigate to the new project using the auto-generated code
         setLocation(`/projects/${result.code}`);
       }
@@ -313,7 +404,7 @@ export default function ProjectsPage() {
         )}
       </main>
 
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-project">
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
@@ -336,6 +427,45 @@ export default function ProjectsPage() {
                   </FormItem>
                 )}
               />
+
+              <Separator className="my-2" />
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">CRM Integration</Label>
+                  <span className="text-xs text-muted-foreground">Select from CRM to auto-fill client info</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">GC / General Contractor</Label>
+                    <CrmOrganizationSelector
+                      value={selectedGcOrg?.id}
+                      onSelect={handleGcSelect}
+                      onContactSelect={handleGcContactSelect}
+                      filterTypes={["CONTRACTOR"]}
+                      placeholder="Select GC..."
+                      showContactSelector={true}
+                      selectedContactId={selectedGcContact?.id}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm">Owner Representative</Label>
+                    <CrmOrganizationSelector
+                      value={selectedOwnerRepOrg?.id}
+                      onSelect={handleOwnerRepSelect}
+                      onContactSelect={handleOwnerRepContactSelect}
+                      filterTypes={["OWNER_REP"]}
+                      placeholder="Select Owner Rep..."
+                      showContactSelector={true}
+                      selectedContactId={selectedOwnerRepContact?.id}
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              <Separator className="my-2" />
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -487,7 +617,7 @@ export default function ProjectsPage() {
               />
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowCreateDialog(false)} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)} data-testid="button-cancel">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createProject.isPending} data-testid="button-create-project">
