@@ -15,7 +15,7 @@ import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -585,6 +585,13 @@ export default function ProjectDetailPage() {
   const [employeeRegularRate, setEmployeeRegularRate] = useState("");
   const [employeeOvertimeRate, setEmployeeOvertimeRate] = useState("");
   const [employeeRateNotes, setEmployeeRateNotes] = useState("");
+
+  // Quote detail dialog state
+  const [showQuoteDetailDialog, setShowQuoteDetailDialog] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState<{
+    type: "subcontractor" | "material";
+    data: any;
+  } | null>(null);
 
   // Mutations
   const createProcurementMutation = useCreateProcurementItem();
@@ -2400,19 +2407,31 @@ export default function ProjectDetailPage() {
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold text-muted-foreground">Subcontractor Quotes</h4>
                       {pendingQuotes.subcontractorQuotes.map((quote) => (
-                        <Card key={quote.id} className="border-dashed" data-testid={`pending-sub-quote-${quote.id}`}>
+                        <Card 
+                          key={quote.id} 
+                          className="border-dashed hover-elevate cursor-pointer" 
+                          data-testid={`pending-sub-quote-${quote.id}`}
+                          onClick={() => {
+                            setSelectedQuote({ type: "subcontractor", data: quote });
+                            setShowQuoteDetailDialog(true);
+                          }}
+                        >
                           <CardHeader className="pb-2">
                             <div className="flex items-start justify-between gap-4 flex-wrap">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="font-medium">{quote.subcontractorName}</span>
                                   <Badge variant="secondary">Pending</Badge>
+                                  {quote.fileUrl && (
+                                    <Badge variant="outline" className="text-xs">
+                                      <FileText className="w-3 h-3 mr-1" />
+                                      Has Attachment
+                                    </Badge>
+                                  )}
                                 </div>
                                 {quote.contactName && (
                                   <p className="text-xs text-muted-foreground">
                                     Contact: {quote.contactName}
-                                    {quote.contactPhone && ` • ${quote.contactPhone}`}
-                                    {quote.contactEmail && ` • ${quote.contactEmail}`}
                                   </p>
                                 )}
                               </div>
@@ -2431,21 +2450,18 @@ export default function ProjectDetailPage() {
                           <CardContent className="space-y-2">
                             <div>
                               <p className="text-sm font-medium mb-1">Scope of Work</p>
-                              <p className="text-sm text-muted-foreground">{quote.scopeOfWork}</p>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{quote.scopeOfWork}</p>
                             </div>
-                            {quote.notes && (
-                              <div>
-                                <p className="text-sm font-medium mb-1">Notes</p>
-                                <p className="text-sm text-muted-foreground">{quote.notes}</p>
-                              </div>
-                            )}
                             <div className="flex items-center justify-between pt-2 border-t">
                               <p className="text-xs text-muted-foreground">
-                                Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
+                                Click to view details • Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
                               </p>
                               <Button
                                 size="sm"
-                                onClick={() => selectSubQuoteMutation.mutate(quote.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectSubQuoteMutation.mutate(quote.id);
+                                }}
                                 disabled={selectSubQuoteMutation.isPending}
                                 data-testid={`button-select-sub-quote-${quote.id}`}
                               >
@@ -2464,18 +2480,31 @@ export default function ProjectDetailPage() {
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold text-muted-foreground">Material Quotes</h4>
                       {pendingQuotes.materialQuotes.map((quote) => (
-                        <Card key={quote.id} className="border-dashed" data-testid={`pending-mat-quote-${quote.id}`}>
+                        <Card 
+                          key={quote.id} 
+                          className="border-dashed hover-elevate cursor-pointer" 
+                          data-testid={`pending-mat-quote-${quote.id}`}
+                          onClick={() => {
+                            setSelectedQuote({ type: "material", data: quote });
+                            setShowQuoteDetailDialog(true);
+                          }}
+                        >
                           <CardHeader className="pb-2">
                             <div className="flex items-start justify-between gap-4 flex-wrap">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="font-medium">{quote.materialName}</span>
                                   <Badge variant="secondary">Pending</Badge>
+                                  {quote.fileUrl && (
+                                    <Badge variant="outline" className="text-xs">
+                                      <FileText className="w-3 h-3 mr-1" />
+                                      Has Attachment
+                                    </Badge>
+                                  )}
                                 </div>
                                 {quote.supplierName && (
                                   <p className="text-xs text-muted-foreground">
                                     Supplier: {quote.supplierName}
-                                    {quote.supplierContact && ` • ${quote.supplierContact}`}
                                   </p>
                                 )}
                               </div>
@@ -2494,21 +2523,18 @@ export default function ProjectDetailPage() {
                           <CardContent className="space-y-2">
                             <div>
                               <p className="text-sm font-medium mb-1">Description</p>
-                              <p className="text-sm text-muted-foreground">{quote.description}</p>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{quote.description}</p>
                             </div>
-                            {quote.specs && (
-                              <div>
-                                <p className="text-sm font-medium mb-1">Specifications</p>
-                                <p className="text-sm text-muted-foreground">{quote.specs}</p>
-                              </div>
-                            )}
                             <div className="flex items-center justify-between pt-2 border-t">
                               <p className="text-xs text-muted-foreground">
-                                Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
+                                Click to view details • Added: {format(new Date(quote.createdAt), "MMM d, yyyy")}
                               </p>
                               <Button
                                 size="sm"
-                                onClick={() => selectMatQuoteMutation.mutate(quote.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectMatQuoteMutation.mutate(quote.id);
+                                }}
                                 disabled={selectMatQuoteMutation.isPending}
                                 data-testid={`button-select-mat-quote-${quote.id}`}
                               >
@@ -2524,6 +2550,225 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Quote Detail Dialog */}
+            <Dialog open={showQuoteDetailDialog} onOpenChange={(open) => {
+              setShowQuoteDetailDialog(open);
+              if (!open) setSelectedQuote(null);
+            }}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-quote-detail">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {selectedQuote?.type === "subcontractor" ? (
+                      <>
+                        <Users className="w-5 h-5" />
+                        Subcontractor Quote Details
+                      </>
+                    ) : (
+                      <>
+                        <Package className="w-5 h-5" />
+                        Material Quote Details
+                      </>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Review the full details of this quote before selecting it.
+                  </DialogDescription>
+                </DialogHeader>
+
+                {selectedQuote && (
+                  <div className="space-y-6">
+                    {/* Header with name and amount */}
+                    <div className="flex items-start justify-between gap-4 p-4 bg-muted rounded-lg">
+                      <div>
+                        <h3 className="text-lg font-semibold">
+                          {selectedQuote.type === "subcontractor" 
+                            ? selectedQuote.data.subcontractorName 
+                            : selectedQuote.data.materialName}
+                        </h3>
+                        <Badge variant="secondary" className="mt-1">Pending Selection</Badge>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold font-mono text-primary">
+                          ${parseFloat(selectedQuote.type === "subcontractor" 
+                            ? selectedQuote.data.quoteAmount 
+                            : selectedQuote.data.cost).toLocaleString()}
+                        </p>
+                        {selectedQuote.data.leadTime && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            <Clock className="w-3 h-3 inline mr-1" />
+                            Lead Time: {selectedQuote.data.leadTime}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Contact Information for Subcontractor */}
+                    {selectedQuote.type === "subcontractor" && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          Contact Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border rounded-lg">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Name</p>
+                            <p className="text-sm font-medium">{selectedQuote.data.contactName || "Not provided"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Phone</p>
+                            <p className="text-sm font-medium">{selectedQuote.data.contactPhone || "Not provided"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <p className="text-xs text-muted-foreground">Email</p>
+                            <p className="text-sm font-medium">{selectedQuote.data.contactEmail || "Not provided"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Supplier Information for Material */}
+                    {selectedQuote.type === "material" && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Building2 className="w-4 h-4" />
+                          Supplier Information
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border rounded-lg">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Supplier Name</p>
+                            <p className="text-sm font-medium">{selectedQuote.data.supplierName || "Not provided"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Contact</p>
+                            <p className="text-sm font-medium">{selectedQuote.data.supplierContact || "Not provided"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scope/Description */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        {selectedQuote.type === "subcontractor" ? "Scope of Work" : "Description"}
+                      </h4>
+                      <div className="p-3 border rounded-lg bg-card">
+                        <p className="text-sm whitespace-pre-wrap">
+                          {selectedQuote.type === "subcontractor" 
+                            ? selectedQuote.data.scopeOfWork 
+                            : selectedQuote.data.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Specifications for Material */}
+                    {selectedQuote.type === "material" && selectedQuote.data.specs && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Ruler className="w-4 h-4" />
+                          Specifications
+                        </h4>
+                        <div className="p-3 border rounded-lg bg-card">
+                          <p className="text-sm whitespace-pre-wrap">{selectedQuote.data.specs}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Estimated Completion Time for Subcontractor */}
+                    {selectedQuote.type === "subcontractor" && selectedQuote.data.estimatedCompletionTime && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <CalendarCheck className="w-4 h-4" />
+                          Estimated Completion Time
+                        </h4>
+                        <div className="p-3 border rounded-lg">
+                          <p className="text-sm">{selectedQuote.data.estimatedCompletionTime}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Notes */}
+                    {selectedQuote.data.notes && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <StickyNote className="w-4 h-4" />
+                          Notes
+                        </h4>
+                        <div className="p-3 border rounded-lg bg-card">
+                          <p className="text-sm whitespace-pre-wrap">{selectedQuote.data.notes}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attached File */}
+                    {selectedQuote.data.fileUrl && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Paperclip className="w-4 h-4" />
+                          Attached Document
+                        </h4>
+                        <div className="p-3 border rounded-lg flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <FileText className="w-8 h-8 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">{selectedQuote.data.fileName || "Document"}</p>
+                              {selectedQuote.data.fileSize && (
+                                <p className="text-xs text-muted-foreground">
+                                  {(selectedQuote.data.fileSize / 1024).toFixed(1)} KB
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(selectedQuote.data.fileUrl, '_blank')}
+                            data-testid="button-view-quote-attachment"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            View File
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Metadata */}
+                    <div className="pt-4 border-t text-xs text-muted-foreground">
+                      <p>Added: {format(new Date(selectedQuote.data.createdAt), "MMMM d, yyyy 'at' h:mm a")}</p>
+                      {selectedQuote.data.updatedAt !== selectedQuote.data.createdAt && (
+                        <p>Updated: {format(new Date(selectedQuote.data.updatedAt), "MMMM d, yyyy 'at' h:mm a")}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowQuoteDetailDialog(false)}
+                    data-testid="button-close-quote-detail"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (selectedQuote?.type === "subcontractor") {
+                        selectSubQuoteMutation.mutate(selectedQuote.data.id);
+                      } else if (selectedQuote?.type === "material") {
+                        selectMatQuoteMutation.mutate(selectedQuote.data.id);
+                      }
+                      setShowQuoteDetailDialog(false);
+                    }}
+                    disabled={selectSubQuoteMutation.isPending || selectMatQuoteMutation.isPending}
+                    data-testid="button-select-quote-from-dialog"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {selectedQuote?.type === "subcontractor" ? "Select & Create Contract" : "Select & Create Procurement"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <Dialog open={showPaymentDialog} onOpenChange={(open) => {
               setShowPaymentDialog(open);
