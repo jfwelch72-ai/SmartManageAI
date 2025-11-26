@@ -864,6 +864,9 @@ export const estimateCrews = pgTable("estimate_crews", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Stone type enum for sub-base calculations
+export const stoneTypeEnum = pgEnum("stone_type", ["CRUSHED_STONE", "LIMESTONE", "COMPACTED_BASE", "PEA_GRAVEL", "RECYCLED_CONCRETE"]);
+
 // Estimate Line Items table (detailed cost breakdown per line)
 export const estimateLineItems = pgTable("estimate_line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -875,6 +878,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   source: estimateLineItemSourceEnum("source").notNull().default("MANUAL"),
   sourceTakeoffCategoryId: varchar("source_takeoff_category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
   scopeWorkTypeId: varchar("scope_work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
+  workTypeCode: text("work_type_code"),
   computedQuantity: decimal("computed_quantity", { precision: 12, scale: 2 }),
   materialCost: decimal("material_cost", { precision: 12, scale: 2 }).notNull().default('0'),
   laborHours: decimal("labor_hours", { precision: 10, scale: 2 }).notNull().default('0'),
@@ -888,6 +892,21 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
   userAdjusted: boolean("user_adjusted").notNull().default(false),
   metadata: text("metadata"),
+  
+  // Material Calculator Fields - Concrete
+  concreteDepthInches: decimal("concrete_depth_inches", { precision: 6, scale: 2 }),
+  dimensionWidthInches: decimal("dimension_width_inches", { precision: 8, scale: 2 }),
+  dimensionHeightInches: decimal("dimension_height_inches", { precision: 8, scale: 2 }),
+  concreteWasteFactor: decimal("concrete_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedConcreteYards: decimal("calculated_concrete_yards", { precision: 10, scale: 2 }),
+  
+  // Material Calculator Fields - Stone Sub-Base
+  requiresStoneBase: boolean("requires_stone_base").default(false),
+  stoneType: stoneTypeEnum("stone_type"),
+  stoneDepthInches: decimal("stone_depth_inches", { precision: 6, scale: 2 }),
+  stoneWasteFactor: decimal("stone_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedStoneTons: decimal("calculated_stone_tons", { precision: 10, scale: 2 }),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -895,6 +914,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   categoryIdx: index("estimate_line_items_category_idx").on(table.category),
   sourceIdx: index("estimate_line_items_source_idx").on(table.source),
   scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
+  workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
 }));
 
 // Estimate Versions table (snapshots of estimates)

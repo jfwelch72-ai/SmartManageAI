@@ -6,10 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers } from "lucide-react";
+import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers, Mountain } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { 
   Dialog, 
   DialogContent, 
@@ -84,6 +85,7 @@ export default function BidEstimate() {
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
   const [selectedScopeData, setSelectedScopeData] = useState<ScopeSelectionData | null>(null);
+  const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -158,6 +160,7 @@ export default function BidEstimate() {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setEditLineItemOpen(false);
       setEditingLineItem(null);
+      setMaterialCalcData(getDefaultMaterialCalculatorData());
       toast({ title: "Line item updated successfully" });
     },
     onError: () => {
@@ -219,6 +222,7 @@ export default function BidEstimate() {
     if (!open) {
       form.reset();
       setSelectedScopeData(null);
+      setMaterialCalcData(getDefaultMaterialCalculatorData());
     }
   };
 
@@ -242,6 +246,17 @@ export default function BidEstimate() {
         profitAllocation: values.profitAllocation,
         notes: values.notes || undefined,
         scopeWorkTypeId: values.scopeWorkTypeId || undefined,
+        // Material calculator fields
+        concreteDepthInches: materialCalcData.concreteDepthInches || undefined,
+        dimensionWidthInches: materialCalcData.dimensionWidthInches || undefined,
+        dimensionHeightInches: materialCalcData.dimensionHeightInches || undefined,
+        concreteWasteFactor: materialCalcData.concreteWasteFactor || "10",
+        calculatedConcreteYards: materialCalcData.calculatedConcreteYards || undefined,
+        requiresStoneBase: materialCalcData.requiresStoneBase || false,
+        stoneType: materialCalcData.requiresStoneBase ? (materialCalcData.stoneType || "CRUSHED_STONE") : undefined,
+        stoneDepthInches: materialCalcData.requiresStoneBase ? (materialCalcData.stoneDepthInches || undefined) : undefined,
+        stoneWasteFactor: materialCalcData.requiresStoneBase ? (materialCalcData.stoneWasteFactor || "10") : undefined,
+        calculatedStoneTons: materialCalcData.requiresStoneBase ? (materialCalcData.calculatedStoneTons || undefined) : undefined,
       };
       
       editLineItemMutation.mutate({
@@ -268,6 +283,18 @@ export default function BidEstimate() {
         source: "MANUAL",
         notes: values.notes || undefined,
         scopeWorkTypeId: values.scopeWorkTypeId || undefined,
+        workTypeCode: selectedScopeData?.workTypeCode || undefined,
+        // Material calculator fields
+        concreteDepthInches: materialCalcData.concreteDepthInches || undefined,
+        dimensionWidthInches: materialCalcData.dimensionWidthInches || undefined,
+        dimensionHeightInches: materialCalcData.dimensionHeightInches || undefined,
+        concreteWasteFactor: materialCalcData.concreteWasteFactor || "10",
+        calculatedConcreteYards: materialCalcData.calculatedConcreteYards || undefined,
+        requiresStoneBase: materialCalcData.requiresStoneBase || false,
+        stoneType: materialCalcData.requiresStoneBase ? (materialCalcData.stoneType || "CRUSHED_STONE") : undefined,
+        stoneDepthInches: materialCalcData.requiresStoneBase ? (materialCalcData.stoneDepthInches || undefined) : undefined,
+        stoneWasteFactor: materialCalcData.requiresStoneBase ? (materialCalcData.stoneWasteFactor || "10") : undefined,
+        calculatedStoneTons: materialCalcData.requiresStoneBase ? (materialCalcData.calculatedStoneTons || undefined) : undefined,
       };
       
       addLineItemMutation.mutate(addPayload as any);
@@ -427,6 +454,9 @@ export default function BidEstimate() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Material Quantities Summary - Job Totals */}
+        <MaterialJobTotals lineItems={estimate.lineItems} />
 
         {estimate.lineItems.length > 0 && (
           <Card className="border-primary/20 bg-primary/5" data-testid="card-markup-calculator">
@@ -794,6 +824,29 @@ export default function BidEstimate() {
                       />
                     </div>
 
+                    {/* Material Calculator - only show for concrete-related work */}
+                    {(() => {
+                      const watchedValues = form.watch();
+                      const unit = watchedValues.unit;
+                      const quantity = Number(watchedValues.quantity) || 0;
+                      const category = watchedValues.category;
+                      const description = watchedValues.description || "";
+                      
+                      // Only show for SF or LF units with concrete-related categories
+                      const showMaterialCalc = (unit === "SF" || unit === "LF") && 
+                        ["CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB"].includes(category || "");
+                      
+                      return showMaterialCalc ? (
+                        <MaterialCalculator
+                          unit={unit}
+                          quantity={quantity}
+                          description={description}
+                          value={materialCalcData}
+                          onChange={setMaterialCalcData}
+                        />
+                      ) : null;
+                    })()}
+
                     {/* Cost Per Unit Preview */}
                     {(() => {
                       const watchedValues = form.watch();
@@ -910,6 +963,7 @@ export default function BidEstimate() {
               if (!open) {
                 setEditingLineItem(null);
                 form.reset();
+                setMaterialCalcData(getDefaultMaterialCalculatorData());
               }
             }}>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1185,6 +1239,7 @@ export default function BidEstimate() {
                         setEditLineItemOpen(false);
                         setEditingLineItem(null);
                         form.reset();
+                        setMaterialCalcData(getDefaultMaterialCalculatorData());
                       }} data-testid="button-cancel-edit">
                         Cancel
                       </Button>
@@ -1300,6 +1355,20 @@ export default function BidEstimate() {
                                     overheadAllocation: 0,
                                     profitAllocation: 0,
                                     notes: (item as any).metadata || "",
+                                  });
+                                  // Load material calc data from line item
+                                  const lineItemAny = item as any;
+                                  setMaterialCalcData({
+                                    concreteDepthInches: lineItemAny.concreteDepthInches || "",
+                                    dimensionWidthInches: lineItemAny.dimensionWidthInches || "",
+                                    dimensionHeightInches: lineItemAny.dimensionHeightInches || "",
+                                    concreteWasteFactor: lineItemAny.concreteWasteFactor || "10",
+                                    calculatedConcreteYards: lineItemAny.calculatedConcreteYards || "",
+                                    requiresStoneBase: lineItemAny.requiresStoneBase || false,
+                                    stoneType: lineItemAny.stoneType || "CRUSHED_STONE",
+                                    stoneDepthInches: lineItemAny.stoneDepthInches || "",
+                                    stoneWasteFactor: lineItemAny.stoneWasteFactor || "10",
+                                    calculatedStoneTons: lineItemAny.calculatedStoneTons || "",
                                   });
                                   setEditLineItemOpen(true);
                                 }}
