@@ -72,7 +72,10 @@ export default function BidsPage() {
   const [bidToDelete, setBidToDelete] = useState<{ code: string; name: string } | null>(null);
   
   // CRM integration state
-  const [selectedContactId, setSelectedContactId] = useState<string | undefined>(undefined);
+  const [selectedGcOrg, setSelectedGcOrg] = useState<CrmOrganisation | null>(null);
+  const [selectedGcContact, setSelectedGcContact] = useState<CrmContact | null>(null);
+  const [selectedOwnerRepOrg, setSelectedOwnerRepOrg] = useState<CrmOrganisation | null>(null);
+  const [selectedOwnerRepContact, setSelectedOwnerRepContact] = useState<CrmContact | null>(null);
   
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
@@ -96,8 +99,86 @@ export default function BidsPage() {
       state: "",
       description: "",
       estimatorId: user?.id || undefined,
+      gcOrganizationId: undefined,
+      ownerRepOrganizationId: undefined,
     },
   });
+  
+  // Handle GC organization selection - auto-populate client fields
+  const handleGcSelect = (org: CrmOrganisation | null) => {
+    const previousOrgId = selectedGcOrg?.id;
+    setSelectedGcOrg(org);
+    
+    // Always clear contact when org changes (different org or deselected)
+    if (!org || org.id !== previousOrgId) {
+      setSelectedGcContact(null);
+      form.setValue("clientContactName", "");
+      form.setValue("clientContactEmail", "");
+      form.setValue("clientContactPhone", "");
+    }
+    
+    if (org) {
+      form.setValue("gcOrganizationId", org.id);
+      form.setValue("clientName", org.name);
+    } else {
+      form.setValue("gcOrganizationId", undefined);
+      form.setValue("clientName", "");
+    }
+  };
+  
+  // Handle GC contact selection - auto-populate contact fields
+  const handleGcContactSelect = (contact: CrmContact | null) => {
+    setSelectedGcContact(contact);
+    if (contact) {
+      const fullName = `${contact.firstName} ${contact.lastName}`.trim();
+      form.setValue("clientContactName", fullName);
+      form.setValue("clientContactEmail", contact.email || "");
+      form.setValue("clientContactPhone", contact.phone || contact.mobile || "");
+    } else {
+      form.setValue("clientContactName", "");
+      form.setValue("clientContactEmail", "");
+      form.setValue("clientContactPhone", "");
+    }
+  };
+  
+  // Handle Owner Rep organization selection
+  const handleOwnerRepSelect = (org: CrmOrganisation | null) => {
+    const previousOrgId = selectedOwnerRepOrg?.id;
+    setSelectedOwnerRepOrg(org);
+    
+    // Always clear contact when org changes (different org or deselected)
+    if (!org || org.id !== previousOrgId) {
+      setSelectedOwnerRepContact(null);
+    }
+    
+    if (org) {
+      form.setValue("ownerRepOrganizationId", org.id);
+    } else {
+      form.setValue("ownerRepOrganizationId", undefined);
+    }
+  };
+  
+  // Handle Owner Rep contact selection
+  const handleOwnerRepContactSelect = (contact: CrmContact | null) => {
+    setSelectedOwnerRepContact(contact);
+  };
+  
+  // Reset form and CRM state
+  const resetFormAndCrmState = () => {
+    form.reset();
+    setSelectedGcOrg(null);
+    setSelectedGcContact(null);
+    setSelectedOwnerRepOrg(null);
+    setSelectedOwnerRepContact(null);
+  };
+  
+  // Handle dialog open/close
+  const handleDialogOpenChange = (open: boolean) => {
+    setShowCreateDialog(open);
+    if (!open) {
+      resetFormAndCrmState();
+    }
+  };
 
   const filteredBids = useMemo(() => {
     return bids.filter(bid => 
@@ -152,6 +233,8 @@ export default function BidsPage() {
         state: data.state || undefined,
         description: data.description || undefined,
         estimatorId: data.estimatorId || undefined,
+        gcOrganizationId: selectedGcOrg?.id || undefined,
+        ownerRepOrganizationId: selectedOwnerRepOrg?.id || undefined,
       };
 
       const newBid = await createBid.mutateAsync(cleanedData);
@@ -160,8 +243,7 @@ export default function BidsPage() {
         description: `Bid ${newBid.code} has been created successfully!`,
       });
       setShowCreateDialog(false);
-      form.reset();
-      setSelectedContactId(undefined);
+      resetFormAndCrmState();
       // Navigate to the new bid detail page using the auto-generated code
       setLocation(`/bids/${newBid.code}`);
     } catch (error: any) {
@@ -311,7 +393,7 @@ export default function BidsPage() {
       </AlertDialog>
 
       {/* Create Bid Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-bid">
           <DialogHeader>
             <DialogTitle>Create New Bid</DialogTitle>
@@ -356,41 +438,39 @@ export default function BidsPage() {
                   )}
                 />
 
-                <div className="col-span-2 space-y-2">
-                  <Label>Client / General Contractor *</Label>
-                  <CrmOrganizationSelector
-                    value={form.watch("clientName")}
-                    filterTypes={["CONTRACTOR"]}
-                    placeholder="Select or search for a contractor..."
-                    selectedContactId={selectedContactId}
-                    onSelect={(org) => {
-                      if (org) {
-                        form.setValue("clientName", org.name);
-                      } else {
-                        form.setValue("clientName", "");
-                        form.setValue("clientContactName", "");
-                        form.setValue("clientContactEmail", "");
-                        form.setValue("clientContactPhone", "");
-                        setSelectedContactId(undefined);
-                      }
-                    }}
-                    onContactSelect={(contact) => {
-                      if (contact) {
-                        setSelectedContactId(contact.id);
-                        form.setValue("clientContactName", `${contact.firstName} ${contact.lastName}`);
-                        form.setValue("clientContactEmail", contact.email || "");
-                        form.setValue("clientContactPhone", contact.phone || contact.mobile || "");
-                      } else {
-                        setSelectedContactId(undefined);
-                        form.setValue("clientContactName", "");
-                        form.setValue("clientContactEmail", "");
-                        form.setValue("clientContactPhone", "");
-                      }
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Select from CRM or type a new name below
-                  </p>
+                <div className="col-span-2 space-y-4 border rounded-md p-4 bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">CRM Integration</Label>
+                    <span className="text-xs text-muted-foreground">Select from CRM to auto-fill client info</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm">GC / General Contractor</Label>
+                      <CrmOrganizationSelector
+                        value={selectedGcOrg?.id}
+                        onSelect={handleGcSelect}
+                        onContactSelect={handleGcContactSelect}
+                        filterTypes={["CONTRACTOR"]}
+                        placeholder="Select GC..."
+                        showContactSelector={true}
+                        selectedContactId={selectedGcContact?.id}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm">Owner Representative</Label>
+                      <CrmOrganizationSelector
+                        value={selectedOwnerRepOrg?.id}
+                        onSelect={handleOwnerRepSelect}
+                        onContactSelect={handleOwnerRepContactSelect}
+                        filterTypes={["OWNER_REP"]}
+                        placeholder="Select Owner Rep..."
+                        showContactSelector={true}
+                        selectedContactId={selectedOwnerRepContact?.id}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <FormField
@@ -527,7 +607,7 @@ export default function BidsPage() {
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setShowCreateDialog(false); setSelectedContactId(undefined); }} data-testid="button-cancel-create">
+                <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)} data-testid="button-cancel-create">
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createBid.isPending} data-testid="button-submit-create">

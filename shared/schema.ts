@@ -101,6 +101,8 @@ export const bids = pgTable("bids", {
   state: text("state"),
   description: text("description"),
   estimatorId: varchar("estimator_id").references(() => users.id),
+  gcOrganizationId: varchar("gc_organization_id"),
+  ownerRepOrganizationId: varchar("owner_rep_organization_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
