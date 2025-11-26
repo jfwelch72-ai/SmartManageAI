@@ -1286,30 +1286,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Transfer ONLY SELECTED subcontractor quotes to project as subcontractor contracts
+      // Transfer ALL subcontractor quotes to project (preserving for later selection)
       const { bidSubcontractorQuotes: subQuotesTable } = await import("@shared/schema");
       const { subcontractors, subcontractorContracts } = await import("@shared/schema");
       const { and } = await import("drizzle-orm");
       
-      // Get selected quotes only
-      const subQuotes = await db
+      // Get all quotes for this bid
+      const allSubQuotes = await db
         .select()
         .from(subQuotesTable)
-        .where(and(
-          eq(subQuotesTable.bidId, bid.id),
-          eq(subQuotesTable.isSelected, true)
-        ));
+        .where(eq(subQuotesTable.bidId, bid.id));
       
-      // Delete non-selected quotes
-      const deletedSubQuotes = await db
-        .delete(subQuotesTable)
-        .where(and(
-          eq(subQuotesTable.bidId, bid.id),
-          eq(subQuotesTable.isSelected, false)
-        ))
-        .returning();
+      // Update ALL quotes with projectId (preserving them for later selection on project page)
+      if (allSubQuotes.length > 0) {
+        await db
+          .update(subQuotesTable)
+          .set({ projectId: newProject.id })
+          .where(eq(subQuotesTable.bidId, bid.id));
+      }
+      
+      // Filter to get only selected quotes for contract creation
+      const subQuotes = allSubQuotes.filter(q => q.isSelected);
+      const pendingSubQuotes = allSubQuotes.filter(q => !q.isSelected);
 
-      console.log(`[Bid Conversion] Transferring ${subQuotes.length} selected subcontractor quotes (deleted ${deletedSubQuotes.length} non-selected)`);
+      console.log(`[Bid Conversion] Transferred ${allSubQuotes.length} subcontractor quotes to project (${subQuotes.length} selected, ${pendingSubQuotes.length} pending)`);
 
       for (const quote of subQuotes) {
         // Find or create subcontractor record with improved matching
@@ -1382,29 +1382,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Transfer ONLY SELECTED material quotes to project as procurement items
+      // Transfer ALL material quotes to project (preserving for later selection)
       const { bidMaterialQuotes: matQuotesTable } = await import("@shared/schema");
       const { procurementItems } = await import("@shared/schema");
       
-      // Get selected material quotes only
-      const matQuotes = await db
+      // Get all material quotes for this bid
+      const allMatQuotes = await db
         .select()
         .from(matQuotesTable)
-        .where(and(
-          eq(matQuotesTable.bidId, bid.id),
-          eq(matQuotesTable.isSelected, true)
-        ));
+        .where(eq(matQuotesTable.bidId, bid.id));
       
-      // Delete non-selected material quotes
-      const deletedMatQuotes = await db
-        .delete(matQuotesTable)
-        .where(and(
-          eq(matQuotesTable.bidId, bid.id),
-          eq(matQuotesTable.isSelected, false)
-        ))
-        .returning();
+      // Update ALL material quotes with projectId (preserving them for later selection on project page)
+      if (allMatQuotes.length > 0) {
+        await db
+          .update(matQuotesTable)
+          .set({ projectId: newProject.id })
+          .where(eq(matQuotesTable.bidId, bid.id));
+      }
+      
+      // Filter to get only selected quotes for procurement creation
+      const matQuotes = allMatQuotes.filter(q => q.isSelected);
+      const pendingMatQuotes = allMatQuotes.filter(q => !q.isSelected);
 
-      console.log(`[Bid Conversion] Transferring ${matQuotes.length} selected material quotes (deleted ${deletedMatQuotes.length} non-selected)`);
+      console.log(`[Bid Conversion] Transferred ${allMatQuotes.length} material quotes to project (${matQuotes.length} selected, ${pendingMatQuotes.length} pending)`);
 
       for (const quote of matQuotes) {
         // Build comprehensive description with all quote details
