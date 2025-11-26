@@ -1499,3 +1499,77 @@ export const handoffPackets = pgTable("handoff_packets", {
 export const insertHandoffPacketSchema = createInsertSchema(handoffPackets).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertHandoffPacket = z.infer<typeof insertHandoffPacketSchema>;
 export type HandoffPacket = typeof handoffPackets.$inferSelect;
+
+// ============================================================
+// STANDARDIZED SCOPE OF WORK SYSTEM
+// Admin-editable work types and modifiers for consistent AI tracking
+// ============================================================
+
+// Scope Work Type Categories (grouping similar work types)
+export const scopeWorkTypeCategories = pgTable("scope_work_type_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // e.g., "Sidewalk", "Driveway", "Curb & Gutter"
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Scope Work Types (admin-editable, used in dropdowns)
+export const scopeWorkTypes = pgTable("scope_work_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => scopeWorkTypeCategories.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g., "4\" Sidewalk", "6\" Driveway"
+  code: text("code").notNull().unique(), // Machine-readable code for AI grouping: "sidewalk_4in"
+  requiresDimensions: boolean("requires_dimensions").notNull().default(false), // For footings/foundations
+  dimensionLabel: text("dimension_label"), // e.g., "L x W x D" or "L x H x Thickness"
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  isCustom: boolean("is_custom").notNull().default(false), // Admin-added custom types
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  categoryIdx: index("scope_work_types_category_idx").on(table.categoryId),
+}));
+
+// Scope Modifier Categories (grouping similar modifiers)
+export const scopeModifierCategories = pgTable("scope_modifier_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // e.g., "Reinforcement", "Mix Type", "Finish Type"
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Scope Modifiers (admin-editable, used in multi-select)
+export const scopeModifiers = pgTable("scope_modifiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: varchar("category_id").notNull().references(() => scopeModifierCategories.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g., "Rebar (#4)", "High Early", "Broom Finish"
+  code: text("code").notNull().unique(), // Machine-readable: "rebar_4", "mix_high_early"
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  isCustom: boolean("is_custom").notNull().default(false), // Admin-added custom modifiers
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  categoryIdx: index("scope_modifiers_category_idx").on(table.categoryId),
+}));
+
+// Insert/Select Schemas for Scope System
+export const insertScopeWorkTypeCategorySchema = createInsertSchema(scopeWorkTypeCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertScopeWorkTypeCategory = z.infer<typeof insertScopeWorkTypeCategorySchema>;
+export type ScopeWorkTypeCategory = typeof scopeWorkTypeCategories.$inferSelect;
+
+export const insertScopeWorkTypeSchema = createInsertSchema(scopeWorkTypes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertScopeWorkType = z.infer<typeof insertScopeWorkTypeSchema>;
+export type ScopeWorkType = typeof scopeWorkTypes.$inferSelect;
+
+export const insertScopeModifierCategorySchema = createInsertSchema(scopeModifierCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertScopeModifierCategory = z.infer<typeof insertScopeModifierCategorySchema>;
+export type ScopeModifierCategory = typeof scopeModifierCategories.$inferSelect;
+
+export const insertScopeModifierSchema = createInsertSchema(scopeModifiers).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertScopeModifier = z.infer<typeof insertScopeModifierSchema>;
+export type ScopeModifier = typeof scopeModifiers.$inferSelect;
