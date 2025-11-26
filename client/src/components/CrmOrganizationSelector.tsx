@@ -26,17 +26,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { CrmOrganisation, CrmContact } from "@shared/schema";
 
-type OrganisationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR";
+type OrganisationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP";
 
 interface OrganisationWithContacts extends CrmOrganisation {
   contacts?: CrmContact[];
 }
 
 const TYPE_LABELS: Record<OrganisationType, string> = {
-  CONTRACTOR: "Contractor",
+  CONTRACTOR: "GC / Contractor",
   SUBCONTRACTOR: "Subcontractor",
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
+  OWNER_REP: "Owner Rep",
 };
 
 const TYPE_COLORS: Record<OrganisationType, string> = {
@@ -44,6 +45,7 @@ const TYPE_COLORS: Record<OrganisationType, string> = {
   SUBCONTRACTOR: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   SUPPLIER: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   VENDOR: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  OWNER_REP: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
 };
 
 interface CrmOrganizationSelectorProps {

@@ -39,7 +39,7 @@ import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNot
 import { format, formatDistanceToNow } from "date-fns";
 import { MessageSquare, Clock } from "lucide-react";
 
-type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR";
+type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP";
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
 type NoteType = "CALL" | "EMAIL" | "MEETING" | "HOT_LEAD" | "COLD_LEAD" | "FOLLOW_UP" | "ISSUE" | "GENERAL";
 
@@ -55,10 +55,11 @@ interface OrganizationWithContacts extends CrmOrganization {
 }
 
 const TYPE_LABELS: Record<OrganizationType, string> = {
-  CONTRACTOR: "Contractor",
+  CONTRACTOR: "GC / Contractor",
   SUBCONTRACTOR: "Subcontractor",
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
+  OWNER_REP: "Owner Rep",
 };
 
 const TYPE_COLORS: Record<OrganizationType, string> = {
@@ -66,6 +67,7 @@ const TYPE_COLORS: Record<OrganizationType, string> = {
   SUBCONTRACTOR: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   SUPPLIER: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   VENDOR: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  OWNER_REP: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
 };
 
 const ROLE_LABELS: Record<ContactRole, string> = {
@@ -339,6 +341,7 @@ export default function CRMPage() {
     subcontractors: organizations?.filter(o => o.type === "SUBCONTRACTOR" && o.isActive).length || 0,
     suppliers: organizations?.filter(o => o.type === "SUPPLIER" && o.isActive).length || 0,
     vendors: organizations?.filter(o => o.type === "VENDOR" && o.isActive).length || 0,
+    ownerReps: organizations?.filter(o => o.type === "OWNER_REP" && o.isActive).length || 0,
   };
 
   const openOrgDetail = (org: CrmOrganization) => {
@@ -468,6 +471,19 @@ export default function CRMPage() {
                 </div>
               </CardContent>
             </Card>
+            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("OWNER_REP")} data-testid="card-owner-rep-count">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-md bg-cyan-100 dark:bg-cyan-900">
+                    <Shield className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{orgCounts.ownerReps}</p>
+                    <p className="text-sm text-muted-foreground">Owner Reps</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
           
           <Card>
@@ -491,10 +507,11 @@ export default function CRMPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="CONTRACTOR">Contractors</SelectItem>
+                      <SelectItem value="CONTRACTOR">GC / Contractors</SelectItem>
                       <SelectItem value="SUBCONTRACTOR">Subcontractors</SelectItem>
                       <SelectItem value="SUPPLIER">Suppliers</SelectItem>
                       <SelectItem value="VENDOR">Vendors</SelectItem>
+                      <SelectItem value="OWNER_REP">Owner Reps</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -596,10 +613,11 @@ export default function CRMPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CONTRACTOR">Contractor</SelectItem>
+                    <SelectItem value="CONTRACTOR">GC / Contractor</SelectItem>
                     <SelectItem value="SUBCONTRACTOR">Subcontractor</SelectItem>
                     <SelectItem value="SUPPLIER">Supplier</SelectItem>
                     <SelectItem value="VENDOR">Vendor</SelectItem>
+                    <SelectItem value="OWNER_REP">Owner Rep</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -722,10 +740,11 @@ export default function CRMPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CONTRACTOR">Contractor</SelectItem>
+                    <SelectItem value="CONTRACTOR">GC / Contractor</SelectItem>
                     <SelectItem value="SUBCONTRACTOR">Subcontractor</SelectItem>
                     <SelectItem value="SUPPLIER">Supplier</SelectItem>
                     <SelectItem value="VENDOR">Vendor</SelectItem>
+                    <SelectItem value="OWNER_REP">Owner Rep</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
