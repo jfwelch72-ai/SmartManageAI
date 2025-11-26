@@ -17,7 +17,10 @@ import {
   projectLaborRates, projectEmployeeRates,
   insertProjectLaborRateSchema, insertProjectEmployeeRateSchema,
   aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, 
-  quantityCategories, tasks, dailyScopeProgress
+  quantityCategories, tasks, dailyScopeProgress,
+  scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers,
+  insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema,
+  insertScopeModifierCategorySchema, insertScopeModifierSchema
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -4208,6 +4211,278 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ organisations });
     } catch (error) {
       console.error("CRM search error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Scope Standardization Routes
+  // ====================
+
+  // Get all work type categories with their work types
+  app.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const categories = await db
+        .select()
+        .from(scopeWorkTypeCategories)
+        .where(eq(scopeWorkTypeCategories.isActive, true))
+        .orderBy(scopeWorkTypeCategories.displayOrder);
+
+      const workTypes = await db
+        .select()
+        .from(scopeWorkTypes)
+        .where(eq(scopeWorkTypes.isActive, true))
+        .orderBy(scopeWorkTypes.displayOrder);
+
+      // Group work types by category
+      const categoriesWithTypes = categories.map(cat => ({
+        ...cat,
+        workTypes: workTypes.filter(wt => wt.categoryId === cat.id)
+      }));
+
+      res.json(categoriesWithTypes);
+    } catch (error) {
+      console.error("Get scope work types error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all modifier categories with their modifiers
+  app.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const categories = await db
+        .select()
+        .from(scopeModifierCategories)
+        .where(eq(scopeModifierCategories.isActive, true))
+        .orderBy(scopeModifierCategories.displayOrder);
+
+      const modifiers = await db
+        .select()
+        .from(scopeModifiers)
+        .where(eq(scopeModifiers.isActive, true))
+        .orderBy(scopeModifiers.displayOrder);
+
+      // Group modifiers by category
+      const categoriesWithModifiers = categories.map(cat => ({
+        ...cat,
+        modifiers: modifiers.filter(m => m.categoryId === cat.id)
+      }));
+
+      res.json(categoriesWithModifiers);
+    } catch (error) {
+      console.error("Get scope modifiers error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Create work type category
+  app.post("/api/scope/work-type-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertScopeWorkTypeCategorySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newCategory] = await db
+        .insert(scopeWorkTypeCategories)
+        .values(validationResult.data)
+        .returning();
+
+      res.status(201).json(newCategory);
+    } catch (error) {
+      console.error("Create work type category error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Create work type
+  app.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertScopeWorkTypeSchema.safeParse({
+        ...req.body,
+        isCustom: true // Admin-added types are marked as custom
+      });
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newWorkType] = await db
+        .insert(scopeWorkTypes)
+        .values(validationResult.data)
+        .returning();
+
+      res.status(201).json(newWorkType);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(400).json({ error: "A work type with this code already exists" });
+        return;
+      }
+      console.error("Create work type error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Update work type
+  app.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(scopeWorkTypes)
+        .where(eq(scopeWorkTypes.id, req.params.id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Work type not found" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(scopeWorkTypes)
+        .set({
+          ...req.body,
+          updatedAt: new Date()
+        })
+        .where(eq(scopeWorkTypes.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update work type error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Soft delete work type (set inactive)
+  app.delete("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(scopeWorkTypes)
+        .where(eq(scopeWorkTypes.id, req.params.id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Work type not found" });
+        return;
+      }
+
+      // Soft delete - set inactive instead of hard delete
+      await db
+        .update(scopeWorkTypes)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(scopeWorkTypes.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete work type error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Create modifier category
+  app.post("/api/scope/modifier-categories", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertScopeModifierCategorySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newCategory] = await db
+        .insert(scopeModifierCategories)
+        .values(validationResult.data)
+        .returning();
+
+      res.status(201).json(newCategory);
+    } catch (error) {
+      console.error("Create modifier category error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Create modifier
+  app.post("/api/scope/modifiers", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const validationResult = insertScopeModifierSchema.safeParse({
+        ...req.body,
+        isCustom: true // Admin-added modifiers are marked as custom
+      });
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newModifier] = await db
+        .insert(scopeModifiers)
+        .values(validationResult.data)
+        .returning();
+
+      res.status(201).json(newModifier);
+    } catch (error: any) {
+      if (error.code === '23505') {
+        res.status(400).json({ error: "A modifier with this code already exists" });
+        return;
+      }
+      console.error("Create modifier error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Update modifier
+  app.put("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(scopeModifiers)
+        .where(eq(scopeModifiers.id, req.params.id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Modifier not found" });
+        return;
+      }
+
+      const [updated] = await db
+        .update(scopeModifiers)
+        .set({
+          ...req.body,
+          updatedAt: new Date()
+        })
+        .where(eq(scopeModifiers.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update modifier error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin: Soft delete modifier (set inactive)
+  app.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(scopeModifiers)
+        .where(eq(scopeModifiers.id, req.params.id))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Modifier not found" });
+        return;
+      }
+
+      // Soft delete - set inactive instead of hard delete
+      await db
+        .update(scopeModifiers)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(scopeModifiers.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete modifier error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
