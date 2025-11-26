@@ -30,6 +30,8 @@ import type { UploadResult } from "@uppy/core";
 
 const quoteFormSchema = insertBidSubcontractorQuoteSchema.omit({ bidId: true }).extend({
   quoteAmount: z.string().min(1, "Quote amount is required"),
+  scopeOfWork: z.string().min(1, "Scope of work is required"),
+  subcontractorName: z.string().min(1, "Subcontractor name is required"),
 });
 type QuoteFormValues = z.infer<typeof quoteFormSchema>;
 
