@@ -2460,14 +2460,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
       const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
-      // Get T&M daily sheets for billing totals
-      const { tmDailySheets } = await import("@shared/schema");
+      // Get T&M daily sheets for billing totals (legacy)
+      const { tmDailySheets, tmTickets } = await import("@shared/schema");
       const projectTMSheets = await db
         .select()
         .from(tmDailySheets)
         .where(eq(tmDailySheets.projectId, project.id));
 
-      // Calculate T&M totals from sheets (parse JSON fields)
+      // Get T&M work tickets (new system)
+      const projectTMTickets = await db
+        .select()
+        .from(tmTickets)
+        .where(eq(tmTickets.projectId, project.id));
+
+      // Calculate T&M ticket totals (new system)
+      const approvedTMTickets = projectTMTickets.filter(t => t.status === "APPROVED");
+      const pendingTMTickets = projectTMTickets.filter(t => t.status === "SUBMITTED");
+      const draftTMTickets = projectTMTickets.filter(t => t.status === "DRAFT");
+      
+      const tmTicketApprovedTotal = approvedTMTickets.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0);
+      const tmTicketPendingTotal = pendingTMTickets.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0);
+      const tmTicketLaborTotal = approvedTMTickets.reduce((sum, t) => sum + Number(t.totalLaborCost || 0), 0);
+      const tmTicketEquipmentTotal = approvedTMTickets.reduce((sum, t) => sum + Number(t.totalEquipmentCost || 0), 0);
+      const tmTicketMaterialTotal = approvedTMTickets.reduce((sum, t) => sum + Number(t.totalMaterialCost || 0), 0);
+
+      // Calculate T&M totals from sheets (parse JSON fields) - legacy
       let tmLaborTotal = 0;
       let tmEquipmentTotal = 0;
       let tmMaterialsTotal = 0;
@@ -2642,7 +2659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate totals
       const budget = Number(project.budget || 0); // Direct cost to do the job
       const originalContract = Number(project.contractAmount || 0); // What client pays (budget + overhead + profit)
-      const contractAdditions = approvedCOValue + tmChargesTotal; // Total additions from COs and T&M
+      const contractAdditions = approvedCOValue + tmChargesTotal + tmTicketApprovedTotal; // Total additions from COs and T&M
       const adjustedContract = originalContract + contractAdditions; // With change orders and T&M
       
       // Total actual costs incurred
@@ -2665,6 +2682,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           materials: tmMaterialsTotal,
           total: tmChargesTotal,
           sheetsCount: projectTMSheets.length,
+        },
+        tmTickets: {
+          total: projectTMTickets.length,
+          approved: approvedTMTickets.length,
+          pending: pendingTMTickets.length,
+          draft: draftTMTickets.length,
+          approvedTotal: tmTicketApprovedTotal,
+          pendingTotal: tmTicketPendingTotal,
+          labor: tmTicketLaborTotal,
+          equipment: tmTicketEquipmentTotal,
+          materials: tmTicketMaterialTotal,
         },
         projectedProfit,
         actualProfit,

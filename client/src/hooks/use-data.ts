@@ -827,3 +827,217 @@ export function useDeleteProjectEmployeeRate() {
     },
   });
 }
+
+// T&M Tickets - matches database schema
+export interface TMTicket {
+  id: string;
+  projectId: string;
+  ticketNumber: string;
+  workDate: string;
+  scopeDescription: string;
+  notes: string | null;
+  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED";
+  totalLaborHours: string;
+  totalLaborCost: string;
+  totalEquipmentCost: string;
+  totalMaterialCost: string;
+  grandTotal: string;
+  rejectionReason: string | null;
+  signedDocumentUrl: string | null;
+  createdById: string;
+  approvedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  submittedAt: string | null;
+  laborEntries?: TMTicketLaborEntry[];
+  equipmentEntries?: TMTicketEquipmentEntry[];
+  materialEntries?: TMTicketMaterialEntry[];
+}
+
+export interface TMTicketLaborEntry {
+  id: string;
+  ticketId: string;
+  employeeName: string;
+  position: string;
+  crewMemberCount: number;
+  hoursWorked: string;
+  totalHours: string;
+  hourlyRate: string | null;
+  totalCost: string | null;
+}
+
+export interface TMTicketEquipmentEntry {
+  id: string;
+  ticketId: string;
+  equipmentType: string;
+  quantity: number;
+  hoursUsed: string;
+  hourlyRate: string | null;
+  totalCost: string | null;
+}
+
+export interface TMTicketMaterialEntry {
+  id: string;
+  ticketId: string;
+  materialDescription: string;
+  quantity: string;
+  unit: string | null;
+  unitCost: string | null;
+  totalCost: string | null;
+}
+
+export function useTMTickets(projectId: string) {
+  return useQuery<TMTicket[]>({
+    queryKey: ["/api/projects", projectId, "tm-tickets"],
+    enabled: !!projectId,
+  });
+}
+
+export function useTMTicket(ticketId: string) {
+  return useQuery<TMTicket>({
+    queryKey: ["/api/tm-tickets", ticketId],
+    enabled: !!ticketId,
+  });
+}
+
+export function useCreateTMTicket() {
+  return useMutation({
+    mutationFn: async (data: {
+      projectId: string;
+      workDate: string;
+      description: string;
+      location?: string;
+      laborEntries?: Array<{
+        employeeName: string;
+        position?: string;
+        crewName?: string;
+        regularHours: string;
+        overtimeHours?: string;
+        rate: string;
+        overtimeRate?: string;
+      }>;
+      equipmentEntries?: Array<{
+        equipmentType: string;
+        description?: string;
+        quantity: string;
+        hours: string;
+        rate: string;
+      }>;
+      materialEntries?: Array<{
+        description: string;
+        quantity: string;
+        unit?: string;
+        unitCost: string;
+      }>;
+    }) => {
+      const { projectId, ...ticketData } = data;
+      const response = await apiRequest("POST", `/api/projects/${projectId}/tm-tickets`, ticketData);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}
+
+export function useUpdateTMTicket() {
+  return useMutation({
+    mutationFn: async ({ ticketId, projectId, data }: {
+      ticketId: string;
+      projectId: string;
+      data: {
+        workDate?: string;
+        description?: string;
+        location?: string;
+        laborEntries?: Array<{
+          id?: string;
+          employeeName: string;
+          position?: string;
+          crewName?: string;
+          regularHours: string;
+          overtimeHours?: string;
+          rate: string;
+          overtimeRate?: string;
+        }>;
+        equipmentEntries?: Array<{
+          id?: string;
+          equipmentType: string;
+          description?: string;
+          quantity: string;
+          hours: string;
+          rate: string;
+        }>;
+        materialEntries?: Array<{
+          id?: string;
+          description: string;
+          quantity: string;
+          unit?: string;
+          unitCost: string;
+        }>;
+      };
+    }) => {
+      const response = await apiRequest("PATCH", `/api/tm-tickets/${ticketId}`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-tickets", variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}
+
+export function useSubmitTMTicket() {
+  return useMutation({
+    mutationFn: async ({ ticketId, projectId }: { ticketId: string; projectId: string; }) => {
+      const response = await apiRequest("POST", `/api/tm-tickets/${ticketId}/submit`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-tickets", variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+    },
+  });
+}
+
+export function useApproveTMTicket() {
+  return useMutation({
+    mutationFn: async ({ ticketId, projectId }: { ticketId: string; projectId: string; }) => {
+      const response = await apiRequest("POST", `/api/tm-tickets/${ticketId}/approve`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-tickets", variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}
+
+export function useRejectTMTicket() {
+  return useMutation({
+    mutationFn: async ({ ticketId, projectId, reason }: { ticketId: string; projectId: string; reason: string; }) => {
+      const response = await apiRequest("POST", `/api/tm-tickets/${ticketId}/reject`, { reason });
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-tickets", variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+    },
+  });
+}
+
+export function useDeleteTMTicket() {
+  return useMutation({
+    mutationFn: async ({ ticketId, projectId }: { ticketId: string; projectId: string; }) => {
+      const response = await apiRequest("DELETE", `/api/tm-tickets/${ticketId}`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectId, "tm-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+    },
+  });
+}

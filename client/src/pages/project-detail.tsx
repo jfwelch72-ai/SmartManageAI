@@ -15,6 +15,7 @@ import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
+import TMTicketsSection from "@/components/TMTicketsSection";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -1171,10 +1172,24 @@ export default function ProjectDetailPage() {
                               <span>Change Orders ({financials.approvedChangeOrdersCount}):</span>
                               <span className="font-mono">${financials.approvedChangeOrdersTotal.toLocaleString()}</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span>T&M Charges ({financials.tmCharges?.sheetsCount || 0}):</span>
-                              <span className="font-mono">${(financials.tmCharges?.total || 0).toLocaleString()}</span>
-                            </div>
+                            {financials.tmTickets?.approvedTotal > 0 && (
+                              <div className="flex justify-between">
+                                <span>T&M Tickets ({financials.tmTickets?.approved || 0}):</span>
+                                <span className="font-mono">${(financials.tmTickets?.approvedTotal || 0).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {financials.tmTickets?.pending > 0 && (
+                              <div className="flex justify-between text-amber-600">
+                                <span>Pending T&M ({financials.tmTickets?.pending}):</span>
+                                <span className="font-mono">${(financials.tmTickets?.pendingTotal || 0).toLocaleString()}</span>
+                              </div>
+                            )}
+                            {financials.tmCharges?.total > 0 && (
+                              <div className="flex justify-between">
+                                <span>Legacy T&M ({financials.tmCharges?.sheetsCount || 0}):</span>
+                                <span className="font-mono">${(financials.tmCharges?.total || 0).toLocaleString()}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -2072,71 +2087,87 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="time">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
-                <CardTitle>Time & Material Tracking</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">Time Entries</h3>
-                    {timeEntriesLoading ? (
-                      <div className="text-center py-4 text-muted-foreground">Loading time entries...</div>
-                    ) : timeEntries.length === 0 ? (
-                      <div className="text-center py-4 text-muted-foreground">No time entries yet</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {timeEntries.map((entry) => {
-                          const totalHours = parseFloat(entry.hoursRegular) + parseFloat(entry.hoursOvertime || "0");
-                          return (
-                            <div key={entry.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`time-entry-${entry.id}`}>
-                              <div>
-                                <p className="text-sm font-medium">{format(new Date(entry.date), "MMM d, yyyy")}</p>
-                                {entry.notes && (
-                                  <p className="text-xs text-muted-foreground">{entry.notes}</p>
-                                )}
-                                {entry.costCode && (
-                                  <p className="text-xs text-muted-foreground">Cost Code: {entry.costCode}</p>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <p className="font-mono text-sm">{totalHours} hours</p>
-                                <Badge variant={entry.approvedAt ? "default" : "secondary"}>
-                                  {entry.approvedAt ? "Approved" : "Pending"}
-                                </Badge>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle>Time & Material Tracking</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {project && user && (
+                    <TMTicketsSection
+                      projectId={project.id}
+                      projectCode={project.code}
+                      userRole={user.role}
+                    />
+                  )}
+                </CardContent>
+              </Card>
 
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3">T&M Daily Sheets</h3>
-                    {tmSheetsLoading ? (
-                      <div className="text-center py-4 text-muted-foreground">Loading T&M sheets...</div>
-                    ) : tmSheets.length === 0 ? (
-                      <div className="text-center py-4 text-muted-foreground">No T&M sheets yet</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {tmSheets.map((sheet) => (
-                          <div key={sheet.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`tm-sheet-${sheet.id}`}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Time Entries</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {timeEntriesLoading ? (
+                    <div className="text-center py-4 text-muted-foreground">Loading time entries...</div>
+                  ) : timeEntries.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground">No time entries yet</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {timeEntries.map((entry) => {
+                        const totalHours = parseFloat(entry.hoursRegular) + parseFloat(entry.hoursOvertime || "0");
+                        return (
+                          <div key={entry.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`time-entry-${entry.id}`}>
                             <div>
-                              <p className="text-sm font-medium">{format(new Date(sheet.date), "MMM d, yyyy")}</p>
-                              <p className="text-xs text-muted-foreground">TFR Rep: {sheet.tfrRepName}</p>
-                              {sheet.clientRepName && (
-                                <p className="text-xs text-muted-foreground">Client Rep: {sheet.clientRepName}</p>
+                              <p className="text-sm font-medium">{format(new Date(entry.date), "MMM d, yyyy")}</p>
+                              {entry.notes && (
+                                <p className="text-xs text-muted-foreground">{entry.notes}</p>
+                              )}
+                              {entry.costCode && (
+                                <p className="text-xs text-muted-foreground">Cost Code: {entry.costCode}</p>
                               )}
                             </div>
+                            <div className="text-right">
+                              <p className="font-mono text-sm">{totalHours} hours</p>
+                              <Badge variant={entry.approvedAt ? "default" : "secondary"}>
+                                {entry.approvedAt ? "Approved" : "Pending"}
+                              </Badge>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>T&M Daily Sheets (Legacy)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {tmSheetsLoading ? (
+                    <div className="text-center py-4 text-muted-foreground">Loading T&M sheets...</div>
+                  ) : tmSheets.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground">No T&M sheets yet</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {tmSheets.map((sheet) => (
+                        <div key={sheet.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`tm-sheet-${sheet.id}`}>
+                          <div>
+                            <p className="text-sm font-medium">{format(new Date(sheet.date), "MMM d, yyyy")}</p>
+                            <p className="text-xs text-muted-foreground">TFR Rep: {sheet.tfrRepName}</p>
+                            {sheet.clientRepName && (
+                              <p className="text-xs text-muted-foreground">Client Rep: {sheet.clientRepName}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="labor-hours">

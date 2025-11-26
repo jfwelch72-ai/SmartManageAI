@@ -125,59 +125,82 @@ export function registerTMTicketRoutes(app: Express) {
       });
       const ticketNumber = `TM-${project.code}-${String(existingTickets.length + 1).padStart(3, '0')}`;
       
-      const { laborEntries, equipmentEntries, materialEntries, ...ticketData } = req.body;
+      const { laborEntries, equipmentEntries, materialEntries, description, ...restTicketData } = req.body;
       
       // Create the ticket
       const [newTicket] = await db.insert(tmTickets).values({
-        ...ticketData,
+        ...restTicketData,
         projectId,
         ticketNumber,
         createdById: userId,
-        tfrRepresentativeId: ticketData.tfrRepresentativeId || userId,
+        tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
+        scopeDescription: description || restTicketData.scopeDescription || "Work performed",
         status: "DRAFT",
       }).returning();
       
-      // Insert labor entries
+      // Insert labor entries (map frontend fields to database columns)
       if (laborEntries && laborEntries.length > 0) {
         await db.insert(tmTicketLaborEntries).values(
-          laborEntries.map((entry: any) => ({
-            ticketId: newTicket.id,
-            employeeName: entry.employeeName,
-            position: entry.position,
-            crewMemberCount: entry.crewMemberCount || 1,
-            hoursWorked: entry.hoursWorked,
-            totalHours: String(Number(entry.hoursWorked) * (entry.crewMemberCount || 1)),
-            hourlyRate: entry.hourlyRate || null,
-            totalCost: entry.totalCost || null,
-          }))
+          laborEntries.map((entry: any) => {
+            const regularHours = parseFloat(entry.regularHours || entry.hoursWorked || "0");
+            const overtimeHours = parseFloat(entry.overtimeHours || "0");
+            const regularRate = parseFloat(entry.rate || entry.hourlyRate || "0");
+            const overtimeRate = parseFloat(entry.overtimeRate || String(regularRate * 1.5));
+            const totalHours = regularHours + overtimeHours;
+            const totalCost = (regularHours * regularRate) + (overtimeHours * overtimeRate);
+            
+            return {
+              ticketId: newTicket.id,
+              employeeName: entry.employeeName,
+              position: entry.position || "General Labor",
+              crewMemberCount: entry.crewMemberCount || 1,
+              hoursWorked: String(regularHours),
+              totalHours: String(totalHours),
+              hourlyRate: String(regularRate),
+              totalCost: String(totalCost),
+            };
+          })
         );
       }
       
-      // Insert equipment entries
+      // Insert equipment entries (map frontend fields to database columns)
       if (equipmentEntries && equipmentEntries.length > 0) {
         await db.insert(tmTicketEquipmentEntries).values(
-          equipmentEntries.map((entry: any) => ({
-            ticketId: newTicket.id,
-            equipmentType: entry.equipmentType,
-            quantity: entry.quantity || 1,
-            hoursUsed: entry.hoursUsed,
-            hourlyRate: entry.hourlyRate || null,
-            totalCost: entry.totalCost || null,
-          }))
+          equipmentEntries.map((entry: any) => {
+            const qty = parseFloat(entry.quantity || "1");
+            const hours = parseFloat(entry.hours || entry.hoursUsed || "0");
+            const rate = parseFloat(entry.rate || entry.hourlyRate || "0");
+            const totalCost = qty * hours * rate;
+            
+            return {
+              ticketId: newTicket.id,
+              equipmentType: entry.equipmentType,
+              quantity: qty,
+              hoursUsed: String(hours),
+              hourlyRate: String(rate),
+              totalCost: String(totalCost),
+            };
+          })
         );
       }
       
-      // Insert material entries
+      // Insert material entries (map frontend fields to database columns)
       if (materialEntries && materialEntries.length > 0) {
         await db.insert(tmTicketMaterialEntries).values(
-          materialEntries.map((entry: any) => ({
-            ticketId: newTicket.id,
-            materialDescription: entry.materialDescription,
-            quantity: entry.quantity,
-            unit: entry.unit,
-            unitCost: entry.unitCost || null,
-            totalCost: entry.totalCost || null,
-          }))
+          materialEntries.map((entry: any) => {
+            const qty = parseFloat(entry.quantity || "1");
+            const unitCost = parseFloat(entry.unitCost || "0");
+            const totalCost = qty * unitCost;
+            
+            return {
+              ticketId: newTicket.id,
+              materialDescription: entry.description || entry.materialDescription,
+              quantity: String(qty),
+              unit: entry.unit || "EA",
+              unitCost: String(unitCost),
+              totalCost: String(totalCost),
+            };
+          })
         );
       }
       
@@ -530,6 +553,271 @@ export function registerTMTicketRoutes(app: Express) {
     } catch (error) {
       console.error("Error deleting T&M ticket:", error);
       res.status(500).json({ error: "Failed to delete T&M ticket" });
+    }
+  });
+
+  // Generate PDF-ready HTML for a T&M ticket
+  app.get("/api/tm-tickets/:ticketId/pdf", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { ticketId } = req.params;
+      
+      const ticket = await db.query.tmTickets.findFirst({
+        where: eq(tmTickets.id, ticketId),
+      });
+      
+      if (!ticket) {
+        return res.status(404).json({ error: "T&M ticket not found" });
+      }
+      
+      // Get all entries and related info
+      const [laborEntries, equipmentEntries, materialEntries, project, rep, createdBy] = await Promise.all([
+        db.query.tmTicketLaborEntries.findMany({ where: eq(tmTicketLaborEntries.ticketId, ticketId) }),
+        db.query.tmTicketEquipmentEntries.findMany({ where: eq(tmTicketEquipmentEntries.ticketId, ticketId) }),
+        db.query.tmTicketMaterialEntries.findMany({ where: eq(tmTicketMaterialEntries.ticketId, ticketId) }),
+        db.query.projects.findFirst({ where: eq(projects.id, ticket.projectId) }),
+        db.query.users.findFirst({ where: eq(users.id, ticket.tfrRepresentativeId) }),
+        db.query.users.findFirst({ where: eq(users.id, ticket.createdById) }),
+      ]);
+      
+      const formatCurrency = (val: string | number | null) => {
+        const num = typeof val === 'string' ? parseFloat(val) : (val || 0);
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
+      };
+      
+      const formatDate = (dateStr: string | Date) => {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      };
+      
+      // Generate HTML document for PDF
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>T&M Work Ticket - ${ticket.ticketNumber}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 12px; padding: 20px; max-width: 800px; margin: 0 auto; }
+    .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    .header h1 { font-size: 24px; margin-bottom: 5px; }
+    .header h2 { font-size: 16px; font-weight: normal; color: #666; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .info-row { display: flex; }
+    .info-label { font-weight: bold; min-width: 120px; }
+    .info-value { flex: 1; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-size: 14px; font-weight: bold; background: #f0f0f0; padding: 5px 10px; margin-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
+    th { background: #f0f0f0; font-weight: bold; }
+    .text-right { text-align: right; }
+    .totals { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
+    .totals-row { display: flex; justify-content: flex-end; margin-bottom: 5px; }
+    .totals-label { font-weight: bold; min-width: 150px; }
+    .totals-value { min-width: 100px; text-align: right; }
+    .grand-total { font-size: 16px; font-weight: bold; border-top: 1px solid #333; padding-top: 10px; }
+    .signatures { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+    .signature-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 5px; }
+    .notes { background: #f9f9f9; padding: 10px; border: 1px solid #ddd; margin-top: 10px; }
+    .status-badge { display: inline-block; padding: 3px 10px; border-radius: 3px; font-weight: bold; }
+    .status-approved { background: #4ade80; color: #166534; }
+    .status-submitted { background: #fbbf24; color: #92400e; }
+    .status-draft { background: #e5e7eb; color: #374151; }
+    .status-rejected { background: #f87171; color: #991b1b; }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>TFR CONSTRUCTION</h1>
+    <h2>TIME AND MATERIAL WORK TICKET</h2>
+  </div>
+  
+  <div class="info-grid">
+    <div class="info-row">
+      <span class="info-label">Ticket Number:</span>
+      <span class="info-value">${ticket.ticketNumber}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Status:</span>
+      <span class="info-value">
+        <span class="status-badge status-${ticket.status.toLowerCase()}">${ticket.status}</span>
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Project:</span>
+      <span class="info-value">${project?.name || 'N/A'} (${project?.code || 'N/A'})</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Work Date:</span>
+      <span class="info-value">${formatDate(ticket.workDate)}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Client:</span>
+      <span class="info-value">${project?.clientName || 'N/A'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">TFR Rep:</span>
+      <span class="info-value">${rep ? `${rep.firstName} ${rep.lastName}` : 'N/A'}</span>
+    </div>
+    ${ticket.workOrderReference ? `
+    <div class="info-row">
+      <span class="info-label">Work Order Ref:</span>
+      <span class="info-value">${ticket.workOrderReference}</span>
+    </div>
+    ` : ''}
+  </div>
+  
+  <div class="section">
+    <div class="section-title">SCOPE OF WORK</div>
+    <div class="notes">${ticket.scopeDescription}</div>
+    ${ticket.notes ? `
+    <div style="margin-top: 10px;">
+      <strong>Notes:</strong>
+      <div class="notes">${ticket.notes}</div>
+    </div>
+    ` : ''}
+  </div>
+  
+  ${laborEntries.length > 0 ? `
+  <div class="section">
+    <div class="section-title">LABOR</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Employee Name</th>
+          <th>Position</th>
+          <th class="text-right">Crew</th>
+          <th class="text-right">Hours</th>
+          <th class="text-right">Rate</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${laborEntries.map(entry => `
+        <tr>
+          <td>${entry.employeeName}</td>
+          <td>${entry.position}</td>
+          <td class="text-right">${entry.crewMemberCount}</td>
+          <td class="text-right">${entry.hoursWorked}</td>
+          <td class="text-right">${formatCurrency(entry.hourlyRate)}</td>
+          <td class="text-right">${formatCurrency(entry.totalCost)}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+  
+  ${equipmentEntries.length > 0 ? `
+  <div class="section">
+    <div class="section-title">EQUIPMENT</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Equipment Type</th>
+          <th class="text-right">Quantity</th>
+          <th class="text-right">Hours</th>
+          <th class="text-right">Rate</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${equipmentEntries.map(entry => `
+        <tr>
+          <td>${entry.equipmentType}</td>
+          <td class="text-right">${entry.quantity}</td>
+          <td class="text-right">${entry.hoursUsed}</td>
+          <td class="text-right">${formatCurrency(entry.hourlyRate)}</td>
+          <td class="text-right">${formatCurrency(entry.totalCost)}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+  
+  ${materialEntries.length > 0 ? `
+  <div class="section">
+    <div class="section-title">MATERIALS</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="text-right">Quantity</th>
+          <th>Unit</th>
+          <th class="text-right">Unit Cost</th>
+          <th class="text-right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${materialEntries.map(entry => `
+        <tr>
+          <td>${entry.materialDescription}</td>
+          <td class="text-right">${entry.quantity}</td>
+          <td>${entry.unit || '-'}</td>
+          <td class="text-right">${formatCurrency(entry.unitCost)}</td>
+          <td class="text-right">${formatCurrency(entry.totalCost)}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
+  
+  <div class="totals">
+    <div class="totals-row">
+      <span class="totals-label">Labor Total:</span>
+      <span class="totals-value">${formatCurrency(ticket.totalLaborCost)}</span>
+    </div>
+    <div class="totals-row">
+      <span class="totals-label">Equipment Total:</span>
+      <span class="totals-value">${formatCurrency(ticket.totalEquipmentCost)}</span>
+    </div>
+    <div class="totals-row">
+      <span class="totals-label">Materials Total:</span>
+      <span class="totals-value">${formatCurrency(ticket.totalMaterialCost)}</span>
+    </div>
+    <div class="totals-row grand-total">
+      <span class="totals-label">GRAND TOTAL:</span>
+      <span class="totals-value">${formatCurrency(ticket.grandTotal)}</span>
+    </div>
+  </div>
+  
+  <div class="signatures">
+    <div>
+      <p><strong>TFR Representative</strong></p>
+      <div class="signature-line">
+        <p>Name: ${rep ? `${rep.firstName} ${rep.lastName}` : '_________________'}</p>
+        <p>Date: _________________</p>
+      </div>
+    </div>
+    <div>
+      <p><strong>Client Representative</strong></p>
+      <div class="signature-line">
+        <p>Name: _________________</p>
+        <p>Date: _________________</p>
+      </div>
+    </div>
+  </div>
+  
+  <div style="margin-top: 30px; font-size: 10px; color: #666; text-align: center;">
+    <p>Generated on ${new Date().toLocaleString()} | TFR Construction Management Platform</p>
+  </div>
+</body>
+</html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `inline; filename="tm-ticket-${ticket.ticketNumber}.html"`);
+      res.send(html);
+    } catch (error) {
+      console.error("Error generating T&M ticket PDF:", error);
+      res.status(500).json({ error: "Failed to generate T&M ticket PDF" });
     }
   });
 
