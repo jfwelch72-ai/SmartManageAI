@@ -1279,15 +1279,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (!existingScopeItem) {
             // Create new scope item linked to estimate line item
+            // Copy estimated material quantities from estimate for variance tracking
+            const lineItemAny = lineItem as any;
             await db.insert(scopeItems).values({
               projectId: newProject.id,
               estimateLineItemId: lineItem.id,
+              subcontractorQuoteId: lineItemAny.subcontractorQuoteId || null,
               description: lineItem.description,
               unit: lineItem.unit,
               totalQuantity: lineItem.quantity,
               unitPrice: lineItem.totalCost ? 
                 (Number(lineItem.totalCost) / Number(lineItem.quantity)).toFixed(2) : 
                 null,
+              // Copy estimated material quantities for variance tracking
+              estimatedConcreteYards: lineItemAny.calculatedConcreteYards || null,
+              estimatedStoneTons: lineItemAny.calculatedStoneTons || null,
+              estimatedExcavationYards: lineItemAny.calculatedExcavationYards || null,
+              // Set initial material responsibility based on subcontractor assignment
+              materialResponsibility: lineItemAny.subcontractorQuoteId ? "SUBCONTRACTOR" : "TFR",
             });
           }
         }
@@ -3185,6 +3194,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete scope item error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update actual materials for a scope item (with overage detection)
+  app.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const materialsSchema = z.object({
+        actualConcreteYards: z.string().nullable().optional(),
+        actualStoneTons: z.string().nullable().optional(),
+        actualExcavationYards: z.string().nullable().optional(),
+        materialResponsibility: z.enum(["TFR", "SUBCONTRACTOR", "CUSTOMER", "PENDING"]).optional(),
+        overageActionStatus: z.enum(["NONE", "PENDING", "BILLED", "DEDUCTED", "ABSORBED", "RESOLVED"]).optional(),
+        overageNotes: z.string().optional(),
+      });
+
+      const validationResult = materialsSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Get existing scope item
+      const [scopeItem] = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.id, req.params.id));
+
+      if (!scopeItem) {
+        res.status(404).json({ error: "Scope item not found" });
+        return;
+      }
+
+      // Calculate if there's an overage
+      const data = validationResult.data;
+      const actualConcrete = Number(data.actualConcreteYards) || 0;
+      const actualStone = Number(data.actualStoneTons) || 0;
+      const actualExcavation = Number(data.actualExcavationYards) || 0;
+      
+      const estConcrete = Number(scopeItem.estimatedConcreteYards) || 0;
+      const estStone = Number(scopeItem.estimatedStoneTons) || 0;
+      const estExcavation = Number(scopeItem.estimatedExcavationYards) || 0;
+
+      const hasConcreteOverage = estConcrete > 0 && actualConcrete > estConcrete;
+      const hasStoneOverage = estStone > 0 && actualStone > estStone;
+      const hasExcavationOverage = estExcavation > 0 && actualExcavation > estExcavation;
+      const hasAnyOverage = hasConcreteOverage || hasStoneOverage || hasExcavationOverage;
+
+      // Auto-set overage action status to PENDING if there's a new overage
+      let overageActionStatus = data.overageActionStatus;
+      if (hasAnyOverage && scopeItem.overageActionStatus === "NONE" && !overageActionStatus) {
+        overageActionStatus = "PENDING";
+      }
+
+      const updateData: any = {
+        actualConcreteYards: data.actualConcreteYards,
+        actualStoneTons: data.actualStoneTons,
+        actualExcavationYards: data.actualExcavationYards,
+        materialResponsibility: data.materialResponsibility,
+        overageActionStatus: overageActionStatus,
+        overageNotes: data.overageNotes,
+        updatedAt: new Date(),
+      };
+
+      // Set resolved info if action is being completed
+      if (overageActionStatus && overageActionStatus !== "NONE" && overageActionStatus !== "PENDING" && 
+          scopeItem.overageActionStatus !== overageActionStatus) {
+        updateData.overageResolvedById = req.user!.id;
+        updateData.overageResolvedAt = new Date();
+      }
+
+      const [updatedItem] = await db
+        .update(scopeItems)
+        .set(updateData)
+        .where(eq(scopeItems.id, req.params.id))
+        .returning();
+
+      // Create notification for managers if a new overage is detected
+      if (hasAnyOverage && scopeItem.overageActionStatus === "NONE") {
+        const managers = await db
+          .select()
+          .from(users)
+          .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+        
+        const overageDetails: string[] = [];
+        if (hasConcreteOverage) {
+          overageDetails.push(`Concrete: +${(actualConcrete - estConcrete).toFixed(2)} CY`);
+        }
+        if (hasStoneOverage) {
+          overageDetails.push(`Stone: +${(actualStone - estStone).toFixed(2)} Tons`);
+        }
+        if (hasExcavationOverage) {
+          overageDetails.push(`Excavation: +${(actualExcavation - estExcavation).toFixed(2)} CY`);
+        }
+
+        const notificationsToCreate = managers.map(manager => ({
+          userId: manager.id,
+          type: "MATERIAL_OVERAGE" as const,
+          title: "Material Overage Detected",
+          message: `Overage on "${scopeItem.description}": ${overageDetails.join(", ")}`,
+          relatedEntityId: scopeItem.id,
+          relatedEntityType: "scopeItem",
+        }));
+
+        if (notificationsToCreate.length > 0) {
+          await db.insert(notifications).values(notificationsToCreate);
+        }
+      }
+
+      // Log the action
+      console.log(`Material update for scope item ${req.params.id} by user ${req.user!.id}:`, {
+        actualMaterials: { actualConcrete, actualStone, actualExcavation },
+        overages: { hasConcreteOverage, hasStoneOverage, hasExcavationOverage },
+        actionStatus: overageActionStatus,
+      });
+
+      res.json(updatedItem);
+    } catch (error: any) {
+      console.error("Update scope item materials error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get scope items with material overages for a project
+  app.get("/api/projects/:projectId/material-overages", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const projectId = req.params.projectId;
+      
+      // Get all scope items for the project that have material estimates
+      const items = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.projectId, projectId));
+
+      // Filter to items with overages
+      const overageItems = items.filter(item => {
+        const estConcrete = Number(item.estimatedConcreteYards) || 0;
+        const estStone = Number(item.estimatedStoneTons) || 0;
+        const estExcavation = Number(item.estimatedExcavationYards) || 0;
+        const actualConcrete = Number(item.actualConcreteYards) || 0;
+        const actualStone = Number(item.actualStoneTons) || 0;
+        const actualExcavation = Number(item.actualExcavationYards) || 0;
+
+        return (
+          (estConcrete > 0 && actualConcrete > estConcrete) ||
+          (estStone > 0 && actualStone > estStone) ||
+          (estExcavation > 0 && actualExcavation > estExcavation)
+        );
+      }).map(item => {
+        const estConcrete = Number(item.estimatedConcreteYards) || 0;
+        const estStone = Number(item.estimatedStoneTons) || 0;
+        const estExcavation = Number(item.estimatedExcavationYards) || 0;
+        const actualConcrete = Number(item.actualConcreteYards) || 0;
+        const actualStone = Number(item.actualStoneTons) || 0;
+        const actualExcavation = Number(item.actualExcavationYards) || 0;
+
+        return {
+          ...item,
+          concreteVariance: actualConcrete - estConcrete,
+          stoneVariance: actualStone - estStone,
+          excavationVariance: actualExcavation - estExcavation,
+          hasConcreteOverage: estConcrete > 0 && actualConcrete > estConcrete,
+          hasStoneOverage: estStone > 0 && actualStone > estStone,
+          hasExcavationOverage: estExcavation > 0 && actualExcavation > estExcavation,
+        };
+      });
+
+      res.json({ overages: overageItems, count: overageItems.length });
+    } catch (error) {
+      console.error("Get material overages error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

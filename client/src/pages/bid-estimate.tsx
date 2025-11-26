@@ -293,6 +293,7 @@ export default function BidEstimate() {
         equipmentCost: String(values.equipmentCost),
         consumablesCost: String(values.consumablesCost || 0),
         subcontractCost: String(values.subcontractCost || 0),
+        subcontractorQuoteId: values.subcontractorQuoteId || undefined,
         overheadAllocation: String(values.overheadAllocation),
         profitAllocation: String(values.profitAllocation),
         source: "MANUAL",

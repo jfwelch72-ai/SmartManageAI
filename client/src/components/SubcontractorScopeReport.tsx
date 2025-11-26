@@ -48,13 +48,13 @@ export function SubcontractorScopeReport({
 
   const getSubcontractedItems = () => {
     return lineItems.filter((item) => {
+      // Item must have a subcontract cost
       if (!item.subcontractCost || parseFloat(item.subcontractCost) <= 0) {
         return false;
       }
-      if (item.subcontractorQuoteId) {
-        return item.subcontractorQuoteId === quote.id;
-      }
-      return true;
+      // Item must be explicitly assigned to this subcontractor quote
+      // Items without subcontractorQuoteId are unassigned and should not appear on any report
+      return item.subcontractorQuoteId === quote.id;
     });
   };
 

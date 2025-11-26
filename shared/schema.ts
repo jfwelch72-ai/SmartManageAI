@@ -15,7 +15,7 @@ export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
 export const auditActionEnum = pgEnum("audit_action", [
   "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
@@ -485,11 +485,30 @@ export const updateTaskSchema = insertTaskSchema.partial();
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 
+// Material responsibility enum - who is responsible for material overages
+export const materialResponsibilityEnum = pgEnum("material_responsibility", [
+  "TFR",           // TFR is responsible (absorb cost)
+  "SUBCONTRACTOR", // Subcontractor is responsible (deduct from payment)
+  "CUSTOMER",      // Customer is responsible (bill as change order)
+  "PENDING",       // Not yet determined
+]);
+
+// Overage action status enum
+export const overageActionStatusEnum = pgEnum("overage_action_status", [
+  "NONE",       // No overage or no action needed
+  "PENDING",    // Overage detected, awaiting decision
+  "BILLED",     // Billed to customer
+  "DEDUCTED",   // Deducted from subcontractor
+  "ABSORBED",   // Absorbed by TFR
+  "RESOLVED",   // Resolved through other means
+]);
+
 // Scope of Work Items table
 export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
+  subcontractorQuoteId: varchar("subcontractor_quote_id"),
   description: text("description").notNull(),
   unit: text("unit").notNull(),
   totalQuantity: decimal("total_quantity", { precision: 12, scale: 2 }).notNull(),
@@ -498,6 +517,24 @@ export const scopeItems = pgTable("scope_items", {
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
   billingStatus: billingStatusEnum("billing_status").notNull().default("NOT_READY"),
   lastBilledDate: timestamp("last_billed_date"),
+  
+  // Estimated material quantities (copied from estimate at project creation)
+  estimatedConcreteYards: decimal("estimated_concrete_yards", { precision: 10, scale: 2 }),
+  estimatedStoneTons: decimal("estimated_stone_tons", { precision: 10, scale: 2 }),
+  estimatedExcavationYards: decimal("estimated_excavation_yards", { precision: 10, scale: 2 }),
+  
+  // Actual material quantities (recorded during project execution)
+  actualConcreteYards: decimal("actual_concrete_yards", { precision: 10, scale: 2 }),
+  actualStoneTons: decimal("actual_stone_tons", { precision: 10, scale: 2 }),
+  actualExcavationYards: decimal("actual_excavation_yards", { precision: 10, scale: 2 }),
+  
+  // Material variance tracking
+  materialResponsibility: materialResponsibilityEnum("material_responsibility").default("PENDING"),
+  overageActionStatus: overageActionStatusEnum("overage_action_status").default("NONE"),
+  overageNotes: text("overage_notes"),
+  overageResolvedById: varchar("overage_resolved_by_id").references(() => users.id),
+  overageResolvedAt: timestamp("overage_resolved_at"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
