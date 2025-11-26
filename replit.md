@@ -35,6 +35,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Delete Bid/Project**: Production-ready delete functionality with RBAC, comprehensive cascade deletion, audit logging, and cache invalidation.
     -   **Production Rate Tracking**: Analyzes historical field data from daily scope progress entries to compute production benchmarks for estimating, aggregating by work type with various statistics and filtering options.
     -   **CRM System**: Comprehensive relationship management for CONTRACTOR, SUBCONTRACTOR, SUPPLIER, and VENDOR entities. Features organization management, multi-contact per organization, search/filter, and RBAC.
+    -   **T&M Tracking Module**: Site superintendents log work outside contract scope (labor, equipment, materials) with full status workflow (DRAFT→SUBMITTED→APPROVED/REJECTED). Features auto-generated ticket IDs (TM-{projectCode}-{seq}), line item management, PDF ticket generation, role-based approval workflow, attachment support for signed documents, and financial integration with approved totals flowing into adjusted contract calculations.
 
 ## External Dependencies
 -   **PostgreSQL (Neon)**: Primary database.
