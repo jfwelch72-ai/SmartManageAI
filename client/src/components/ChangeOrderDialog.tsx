@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit } from "lucide-react";
+import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,16 @@ interface ChangeOrder {
   rejectionReason?: string | null;
   createdAt: string;
   updatedAt: string;
+  // Standardized scope fields
+  workTypeId?: string | null;
+  workTypeCode?: string | null;
+  workTypeName?: string | null;
+  categoryName?: string | null;
+  scopeModifierIds?: string | null;
+  scopeModifierNames?: string | null;
+  canonicalName?: string | null;
+  scopeUnit?: string | null;
+  scopeQuantity?: string | null;
 }
 
 interface ChangeOrderDialogProps {
@@ -265,6 +275,39 @@ export function ChangeOrderDialog({
                 </div>
               )}
             </div>
+
+            {/* Standardized Scope of Work display */}
+            {changeOrder.canonicalName && (
+              <div className="p-3 bg-muted/30 rounded-md">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ruler className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Scope of Work</span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-muted-foreground">Work Type:</span> {changeOrder.canonicalName}</p>
+                  {changeOrder.categoryName && (
+                    <p><span className="text-muted-foreground">Category:</span> {changeOrder.categoryName}</p>
+                  )}
+                  {changeOrder.scopeQuantity && changeOrder.scopeUnit && (
+                    <p><span className="text-muted-foreground">Quantity:</span> {changeOrder.scopeQuantity} {changeOrder.scopeUnit}</p>
+                  )}
+                  {changeOrder.scopeModifierNames && (() => {
+                    try {
+                      const modifiers = JSON.parse(changeOrder.scopeModifierNames);
+                      if (Array.isArray(modifiers) && modifiers.length > 0) {
+                        return (
+                          <p><span className="text-muted-foreground">Modifiers:</span> {modifiers.join(", ")}</p>
+                        );
+                      }
+                    } catch (e) {}
+                    return null;
+                  })()}
+                  {changeOrder.workTypeCode && (
+                    <p className="text-xs text-muted-foreground">Code: {changeOrder.workTypeCode}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <Separator />

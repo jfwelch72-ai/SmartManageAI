@@ -163,8 +163,9 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
         workTypeCode: scopeSelection?.workTypeCode || undefined,
         workTypeName: scopeSelection?.workTypeName || undefined,
         categoryName: scopeSelection?.categoryName || undefined,
-        scopeModifierIds: scopeSelection?.modifierIds || undefined,
-        scopeModifierNames: scopeSelection?.modifierNames || undefined,
+        // Stringify arrays for API (schema expects JSON strings) - always send "[]" when empty
+        scopeModifierIds: scopeSelection ? JSON.stringify(scopeSelection.modifierIds || []) : undefined,
+        scopeModifierNames: scopeSelection ? JSON.stringify(scopeSelection.modifierNames || []) : undefined,
         canonicalName: scopeSelection?.canonicalName || undefined,
         scopeUnit: scopeSelection?.unit || undefined,
         scopeQuantity: scopeQuantity || undefined,

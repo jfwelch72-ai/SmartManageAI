@@ -156,8 +156,9 @@ export function registerTMTicketRoutes(app: Express) {
         workTypeCode: workTypeCode || null,
         workTypeName: workTypeName || null,
         categoryName: categoryName || null,
-        scopeModifierIds: scopeModifierIds ? JSON.stringify(scopeModifierIds) : null,
-        scopeModifierNames: scopeModifierNames ? JSON.stringify(scopeModifierNames) : null,
+        // Frontend sends these as JSON strings already
+        scopeModifierIds: scopeModifierIds || null,
+        scopeModifierNames: scopeModifierNames || null,
         canonicalName: canonicalName || null,
         scopeUnit: scopeUnit || null,
         scopeQuantity: scopeQuantity || null,

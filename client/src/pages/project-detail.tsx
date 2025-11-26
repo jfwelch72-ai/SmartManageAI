@@ -37,6 +37,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ChangeOrderFiles } from "@/components/ChangeOrderFiles";
 import { ChangeOrderDialog } from "@/components/ChangeOrderDialog";
+import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -53,6 +54,9 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
   const [changeOrderNumber, setChangeOrderNumber] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  // Standardized scope of work selection (matches estimating sheets)
+  const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
+  const [scopeQuantity, setScopeQuantity] = useState("");
   const { toast } = useToast();
 
   const createMutation = useCreateChangeOrder();
@@ -75,12 +79,25 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
         changeOrderNumber,
         description,
         amount,
+        // Standardized scope data for production rate tracking
+        workTypeId: scopeSelection?.workTypeId || undefined,
+        workTypeCode: scopeSelection?.workTypeCode || undefined,
+        workTypeName: scopeSelection?.workTypeName || undefined,
+        categoryName: scopeSelection?.categoryName || undefined,
+        // Stringify arrays for API (schema expects JSON strings) - always send "[]" when empty
+        scopeModifierIds: scopeSelection ? JSON.stringify(scopeSelection.modifierIds || []) : undefined,
+        scopeModifierNames: scopeSelection ? JSON.stringify(scopeSelection.modifierNames || []) : undefined,
+        canonicalName: scopeSelection?.canonicalName || undefined,
+        scopeUnit: scopeSelection?.unit || undefined,
+        scopeQuantity: scopeQuantity || undefined,
       });
       toast({ title: "Success", description: "Change order created" });
       setShowCreateDialog(false);
       setChangeOrderNumber("");
       setDescription("");
       setAmount("");
+      setScopeSelection(null);
+      setScopeQuantity("");
     } catch (error) {
       toast({ title: "Error", description: "Failed to create change order", variant: "destructive" });
     }
@@ -150,21 +167,81 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                 New Change Order
               </Button>
             </DialogTrigger>
-            <DialogContent data-testid="dialog-create-change-order">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
               <DialogHeader>
                 <DialogTitle>Create Change Order</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div>
-                  <Label htmlFor="co-number">Change Order Number</Label>
-                  <Input
-                    id="co-number"
-                    value={changeOrderNumber}
-                    onChange={(e) => setChangeOrderNumber(e.target.value)}
-                    placeholder="CO-001"
-                    data-testid="input-change-order-number"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="co-number">Change Order Number</Label>
+                    <Input
+                      id="co-number"
+                      value={changeOrderNumber}
+                      onChange={(e) => setChangeOrderNumber(e.target.value)}
+                      placeholder="CO-001"
+                      data-testid="input-change-order-number"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="co-amount">Amount ($)</Label>
+                    <Input
+                      id="co-amount"
+                      type="number"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="2500.00"
+                      data-testid="input-change-order-amount"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Enter positive for additions or negative for deductions
+                    </p>
+                  </div>
                 </div>
+
+                {/* Standardized Scope of Work - matches estimating sheets for production rate tracking */}
+                <Card className="p-4 bg-muted/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Ruler className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-sm font-medium">Scope of Work (for Production Rate Tracking)</Label>
+                  </div>
+                  <StandardizedScopeSelector
+                    value={scopeSelection || undefined}
+                    onChange={setScopeSelection}
+                    showDimensionInputs={false}
+                  />
+                  {scopeSelection && (
+                    <div className="mt-3 grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="co-scope-quantity">Quantity</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="co-scope-quantity"
+                            type="number"
+                            step="0.01"
+                            value={scopeQuantity}
+                            onChange={(e) => setScopeQuantity(e.target.value)}
+                            placeholder="0"
+                            data-testid="input-co-scope-quantity"
+                          />
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">{scopeSelection.unit}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-end">
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium">Selected:</span> {scopeSelection.canonicalName}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!scopeSelection && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Select a work type to enable production rate tracking for this change order.
+                    </p>
+                  )}
+                </Card>
+
                 <div>
                   <Label htmlFor="co-description">Description</Label>
                   <Textarea
@@ -174,21 +251,6 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                     placeholder="Describe the change..."
                     data-testid="input-change-order-description"
                   />
-                </div>
-                <div>
-                  <Label htmlFor="co-amount">Amount ($)</Label>
-                  <Input
-                    id="co-amount"
-                    type="number"
-                    step="0.01"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="2500.00"
-                    data-testid="input-change-order-amount"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Enter positive for additions or negative for deductions (e.g., -500 for scope reduction)
-                  </p>
                 </div>
               </div>
               <DialogFooter>

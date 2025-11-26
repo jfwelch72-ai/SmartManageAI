@@ -6174,8 +6174,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Extract standardized scope fields from request body
+      const {
+        workTypeId,
+        workTypeCode,
+        workTypeName,
+        categoryName,
+        scopeModifierIds,
+        scopeModifierNames,
+        canonicalName,
+        scopeUnit,
+        scopeQuantity,
+      } = req.body;
+
       // Ensure required field is set (TypeScript safety)
-      const insertData = { ...validationResult.data, requestedById: req.user!.id };
+      const insertData = { 
+        ...validationResult.data, 
+        requestedById: req.user!.id,
+        // Standardized scope of work (matches estimating sheets for production rate tracking)
+        workTypeId: workTypeId || null,
+        workTypeCode: workTypeCode || null,
+        workTypeName: workTypeName || null,
+        categoryName: categoryName || null,
+        // Frontend sends these as JSON strings already
+        scopeModifierIds: scopeModifierIds || null,
+        scopeModifierNames: scopeModifierNames || null,
+        canonicalName: canonicalName || null,
+        scopeUnit: scopeUnit || null,
+        scopeQuantity: scopeQuantity || null,
+      };
       const [newOrder] = await db.insert(changeOrders).values([insertData]).returning();
       
       // Create notification for managers/admins about pending change order
