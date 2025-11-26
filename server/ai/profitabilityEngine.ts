@@ -7,7 +7,8 @@ import {
   receipts,
   users,
   subcontractorContracts,
-  subcontractorPayments 
+  subcontractorPayments,
+  tmTickets
 } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 
@@ -19,7 +20,9 @@ export interface ProjectProfitability {
   total_material_cost: number;
   total_subcontractor_cost: number;
   total_other_expenses: number;
+  total_tm_cost: number;
   approved_change_orders_value: number;
+  approved_tm_value: number;
   adjusted_budget: number;
   total_actual_cost: number;
   variance: number;
@@ -36,7 +39,9 @@ export interface ProjectProfitability {
     labor_efficiency: string;
     material_spend_rate: string;
     pending_change_orders_value: number;
+    pending_tm_value: number;
     subcontractor_count: number;
+    tm_ticket_count: number;
   };
 }
 
@@ -146,9 +151,34 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
   const pendingCOValue = pendingCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
 
+  // Calculate T&M ticket costs - approved T&M adds to adjusted budget (billable extra work)
+  const projectTMTickets = await db
+    .select({
+      status: tmTickets.status,
+      grandTotal: tmTickets.grandTotal,
+    })
+    .from(tmTickets)
+    .where(eq(tmTickets.projectId, project.id))
+    .limit(500);
+
+  const approvedTMTickets = projectTMTickets.filter(t => t.status === 'APPROVED');
+  const pendingTMTickets = projectTMTickets.filter(t => 
+    ['DRAFT', 'SUBMITTED'].includes(t.status)
+  );
+
+  // Calculate total T&M value from grandTotal (already includes all costs)
+  const calculateTMValue = (tickets: typeof projectTMTickets) => {
+    return tickets.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0);
+  };
+
+  const approvedTMValue = calculateTMValue(approvedTMTickets);
+  const pendingTMValue = calculateTMValue(pendingTMTickets);
+  const totalTMCost = calculateTMValue(projectTMTickets); // All T&M for tracking
+
   // Calculate totals - use contractAmount as primary, fallback to budget
+  // Adjusted budget includes approved change orders AND approved T&M tickets (billable extra work)
   const baseBudget = Number(project.contractAmount || project.budget || 0);
-  const adjustedBudget = baseBudget + approvedCOValue;
+  const adjustedBudget = baseBudget + approvedCOValue + approvedTMValue;
   const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalOtherExpenses;
   const variance = adjustedBudget - totalActualCost;
   const variancePercent = adjustedBudget > 0 ? (variance / adjustedBudget) * 100 : 0;
@@ -265,7 +295,9 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     total_material_cost: Math.round(totalMaterialCost * 100) / 100,
     total_subcontractor_cost: Math.round(totalSubcontractorCost * 100) / 100,
     total_other_expenses: Math.round(totalOtherExpenses * 100) / 100,
+    total_tm_cost: Math.round(totalTMCost * 100) / 100,
     approved_change_orders_value: Math.round(approvedCOValue * 100) / 100,
+    approved_tm_value: Math.round(approvedTMValue * 100) / 100,
     adjusted_budget: Math.round(adjustedBudget * 100) / 100,
     total_actual_cost: Math.round(totalActualCost * 100) / 100,
     variance: Math.round(variance * 100) / 100,
@@ -282,7 +314,9 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       labor_efficiency: laborEfficiency,
       material_spend_rate: materialSpendRate,
       pending_change_orders_value: Math.round(pendingCOValue * 100) / 100,
+      pending_tm_value: Math.round(pendingTMValue * 100) / 100,
       subcontractor_count: subcontractorCount,
+      tm_ticket_count: projectTMTickets.length,
     },
   };
 }

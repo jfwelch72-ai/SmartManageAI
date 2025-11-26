@@ -12,9 +12,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useTMTickets, useCreateTMTicket, useSubmitTMTicket, useApproveTMTicket, useRejectTMTicket, useDeleteTMTicket, type TMTicket, type TMTicketLaborEntry, type TMTicketEquipmentEntry, type TMTicketMaterialEntry } from "@/hooks/use-data";
-import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler, ListChecks } from "lucide-react";
 import { format } from "date-fns";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import type { ScopeItem } from "@shared/schema";
 
 interface TMTicketsSectionProps {
   projectId: string;
@@ -91,6 +93,12 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
   const approveMutation = useApproveTMTicket();
   const rejectMutation = useRejectTMTicket();
   const deleteMutation = useDeleteTMTicket();
+  
+  // Fetch existing project scope items for quick selection
+  const { data: projectScopeItems = [] } = useQuery<ScopeItem[]>({
+    queryKey: ["/api/projects", projectId, "scope-items"],
+    enabled: !!projectId,
+  });
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
@@ -344,6 +352,46 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                     <Ruler className="w-4 h-4 text-muted-foreground" />
                     <Label className="text-sm font-medium">Scope of Work (for Production Rate Tracking)</Label>
                   </div>
+                  
+                  {/* Quick selection from existing project scope items */}
+                  {projectScopeItems.length > 0 && (
+                    <div className="space-y-2 mb-4 p-3 bg-background rounded-md border">
+                      <div className="flex items-center gap-2">
+                        <ListChecks className="w-4 h-4 text-muted-foreground" />
+                        <Label className="text-xs text-muted-foreground">Select from Project Scope Items</Label>
+                      </div>
+                      <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                        {projectScopeItems.map((item) => (
+                          <Button
+                            key={item.id}
+                            type="button"
+                            variant={scopeSelection?.workTypeCode === item.workTypeCode ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs h-auto py-1 px-2"
+                            onClick={() => {
+                              setScopeSelection({
+                                workTypeId: "",
+                                workTypeName: item.name,
+                                workTypeCode: item.workTypeCode || "",
+                                categoryName: "",
+                                unit: item.unit,
+                                modifierIds: [],
+                                modifierNames: [],
+                                canonicalName: item.name,
+                              });
+                            }}
+                            data-testid={`button-scope-item-${item.id}`}
+                          >
+                            {item.name} ({item.completedQuantity || 0}/{item.totalQuantity} {item.unit})
+                          </Button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Or use the selector below to create a new scope entry
+                      </p>
+                    </div>
+                  )}
+                  
                   <StandardizedScopeSelector
                     value={scopeSelection || undefined}
                     onChange={setScopeSelection}

@@ -17,7 +17,7 @@ import {
   projectLaborRates, projectEmployeeRates,
   insertProjectLaborRateSchema, insertProjectEmployeeRateSchema,
   aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, 
-  quantityCategories, tasks, dailyScopeProgress,
+  quantityCategories, tasks, dailyScopeProgress, tmTickets,
   scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers,
   insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema,
   insertScopeModifierCategorySchema, insertScopeModifierSchema
@@ -3734,6 +3734,256 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Get production rate detail error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Extended production rates including T&M and Change Order scope data
+  // Aggregates workTypeCode data from all sources for unified production tracking
+  app.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { startDate, endDate, projectCode, source } = req.query;
+      
+      // Results from all sources
+      const unifiedRates: {
+        workTypeCode: string;
+        workTypeName: string;
+        categoryName: string;
+        unit: string;
+        source: 'SCOPE_PROGRESS' | 'TM_TICKET' | 'CHANGE_ORDER';
+        quantity: number;
+        projectCode: string;
+        projectName: string;
+        workDate: string | null;
+        entryId: string;
+      }[] = [];
+
+      // 1. Get scope progress data (existing system)
+      if (!source || source === 'SCOPE_PROGRESS' || source === 'ALL') {
+        const scopeResults = await db
+          .select({
+            id: dailyScopeProgress.id,
+            description: scopeItems.description,
+            unit: scopeItems.unit,
+            projectCode: projects.code,
+            projectName: projects.name,
+            workDate: dailyScopeProgress.workDate,
+            quantityCompleted: dailyScopeProgress.quantityCompleted,
+          })
+          .from(dailyScopeProgress)
+          .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+          .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+          .limit(2000);
+
+        for (const r of scopeResults) {
+          if (startDate && r.workDate < startDate) continue;
+          if (endDate && r.workDate > endDate) continue;
+          if (projectCode && r.projectCode !== projectCode) continue;
+
+          unifiedRates.push({
+            workTypeCode: r.description, // Use description as code for scope items
+            workTypeName: r.description,
+            categoryName: 'Scope Progress',
+            unit: r.unit,
+            source: 'SCOPE_PROGRESS',
+            quantity: parseFloat(r.quantityCompleted),
+            projectCode: r.projectCode,
+            projectName: r.projectName,
+            workDate: r.workDate,
+            entryId: r.id,
+          });
+        }
+      }
+
+      // 2. Get T&M ticket scope data (using workTypeCode)
+      if (!source || source === 'TM_TICKET' || source === 'ALL') {
+        const tmResults = await db
+          .select({
+            id: tmTickets.id,
+            workTypeCode: tmTickets.workTypeCode,
+            workTypeName: tmTickets.workTypeName,
+            categoryName: tmTickets.categoryName,
+            scopeUnit: tmTickets.scopeUnit,
+            scopeQuantity: tmTickets.scopeQuantity,
+            projectCode: projects.code,
+            projectName: projects.name,
+            workDate: tmTickets.workDate,
+            status: tmTickets.status,
+          })
+          .from(tmTickets)
+          .innerJoin(projects, eq(tmTickets.projectId, projects.id))
+          .where(sql`${tmTickets.workTypeCode} IS NOT NULL`)
+          .limit(2000);
+
+        for (const r of tmResults) {
+          if (startDate && r.workDate < startDate) continue;
+          if (endDate && r.workDate > endDate) continue;
+          if (projectCode && r.projectCode !== projectCode) continue;
+          if (!r.scopeQuantity) continue;
+
+          unifiedRates.push({
+            workTypeCode: r.workTypeCode!,
+            workTypeName: r.workTypeName || r.workTypeCode!,
+            categoryName: r.categoryName || 'T&M Work',
+            unit: r.scopeUnit || 'EA',
+            source: 'TM_TICKET',
+            quantity: parseFloat(r.scopeQuantity),
+            projectCode: r.projectCode,
+            projectName: r.projectName,
+            workDate: r.workDate,
+            entryId: r.id,
+          });
+        }
+      }
+
+      // 3. Get Change Order scope data (using workTypeCode)
+      if (!source || source === 'CHANGE_ORDER' || source === 'ALL') {
+        const coResults = await db
+          .select({
+            id: changeOrders.id,
+            workTypeCode: changeOrders.workTypeCode,
+            workTypeName: changeOrders.workTypeName,
+            categoryName: changeOrders.categoryName,
+            scopeUnit: changeOrders.scopeUnit,
+            scopeQuantity: changeOrders.scopeQuantity,
+            projectCode: projects.code,
+            projectName: projects.name,
+            createdAt: changeOrders.createdAt,
+            status: changeOrders.status,
+          })
+          .from(changeOrders)
+          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+          .where(sql`${changeOrders.workTypeCode} IS NOT NULL`)
+          .limit(2000);
+
+        for (const r of coResults) {
+          const workDate = r.createdAt ? r.createdAt.toISOString().split('T')[0] : null;
+          if (startDate && workDate && workDate < startDate) continue;
+          if (endDate && workDate && workDate > endDate) continue;
+          if (projectCode && r.projectCode !== projectCode) continue;
+          if (!r.scopeQuantity) continue;
+
+          unifiedRates.push({
+            workTypeCode: r.workTypeCode!,
+            workTypeName: r.workTypeName || r.workTypeCode!,
+            categoryName: r.categoryName || 'Change Order',
+            unit: r.scopeUnit || 'EA',
+            source: 'CHANGE_ORDER',
+            quantity: parseFloat(r.scopeQuantity),
+            projectCode: r.projectCode,
+            projectName: r.projectName,
+            workDate,
+            entryId: r.id,
+          });
+        }
+      }
+
+      // Aggregate by workTypeCode and unit
+      const aggregated = new Map<string, {
+        workTypeCode: string;
+        workTypeName: string;
+        categoryName: string;
+        unit: string;
+        totalQuantity: number;
+        sources: { SCOPE_PROGRESS: number; TM_TICKET: number; CHANGE_ORDER: number };
+        projectCodes: Set<string>;
+        dailyTotals: Map<string, number>;
+        entryCount: number;
+      }>();
+
+      for (const entry of unifiedRates) {
+        const key = `${entry.workTypeCode}|||${entry.unit}`;
+        
+        if (!aggregated.has(key)) {
+          aggregated.set(key, {
+            workTypeCode: entry.workTypeCode,
+            workTypeName: entry.workTypeName,
+            categoryName: entry.categoryName,
+            unit: entry.unit,
+            totalQuantity: 0,
+            sources: { SCOPE_PROGRESS: 0, TM_TICKET: 0, CHANGE_ORDER: 0 },
+            projectCodes: new Set(),
+            dailyTotals: new Map(),
+            entryCount: 0,
+          });
+        }
+
+        const agg = aggregated.get(key)!;
+        agg.totalQuantity += entry.quantity;
+        agg.sources[entry.source] += entry.quantity;
+        agg.projectCodes.add(entry.projectCode);
+        agg.entryCount += 1;
+
+        if (entry.workDate) {
+          const currentDayTotal = agg.dailyTotals.get(entry.workDate) || 0;
+          agg.dailyTotals.set(entry.workDate, currentDayTotal + entry.quantity);
+        }
+      }
+
+      // Calculate statistics
+      const rates = Array.from(aggregated.values()).map(agg => {
+        const dailyTotalsArray = Array.from(agg.dailyTotals.values());
+        const sortedDailyTotals = [...dailyTotalsArray].sort((a, b) => a - b);
+        const totalDays = agg.dailyTotals.size;
+        const avgPerDay = totalDays > 0 ? agg.totalQuantity / totalDays : 0;
+        const minPerDay = sortedDailyTotals.length > 0 ? sortedDailyTotals[0] : 0;
+        const maxPerDay = sortedDailyTotals.length > 0 ? sortedDailyTotals[sortedDailyTotals.length - 1] : 0;
+
+        let medianPerDay = 0;
+        if (sortedDailyTotals.length > 0) {
+          const mid = Math.floor(sortedDailyTotals.length / 2);
+          medianPerDay = sortedDailyTotals.length % 2 !== 0 
+            ? sortedDailyTotals[mid] 
+            : (sortedDailyTotals[mid - 1] + sortedDailyTotals[mid]) / 2;
+        }
+
+        return {
+          workTypeCode: agg.workTypeCode,
+          workTypeName: agg.workTypeName,
+          categoryName: agg.categoryName,
+          unit: agg.unit,
+          totalQuantity: Math.round(agg.totalQuantity * 100) / 100,
+          totalDays,
+          totalProjects: agg.projectCodes.size,
+          avgPerDay: Math.round(avgPerDay * 100) / 100,
+          minPerDay: Math.round(minPerDay * 100) / 100,
+          maxPerDay: Math.round(maxPerDay * 100) / 100,
+          medianPerDay: Math.round(medianPerDay * 100) / 100,
+          entryCount: agg.entryCount,
+          sourceBreakdown: {
+            scopeProgress: Math.round(agg.sources.SCOPE_PROGRESS * 100) / 100,
+            tmTickets: Math.round(agg.sources.TM_TICKET * 100) / 100,
+            changeOrders: Math.round(agg.sources.CHANGE_ORDER * 100) / 100,
+          },
+        };
+      });
+
+      // Sort by total quantity descending
+      rates.sort((a, b) => b.totalQuantity - a.totalQuantity);
+
+      // Summary stats
+      const summary = {
+        totalWorkTypes: rates.length,
+        totalEntries: unifiedRates.length,
+        totalProjects: new Set(unifiedRates.map(r => r.projectCode)).size,
+        bySource: {
+          scopeProgress: unifiedRates.filter(r => r.source === 'SCOPE_PROGRESS').length,
+          tmTickets: unifiedRates.filter(r => r.source === 'TM_TICKET').length,
+          changeOrders: unifiedRates.filter(r => r.source === 'CHANGE_ORDER').length,
+        },
+      };
+
+      const availableUnits = Array.from(new Set(rates.map(r => r.unit))).sort();
+      const availableCategories = Array.from(new Set(rates.map(r => r.categoryName))).sort();
+
+      res.json({
+        rates,
+        summary,
+        availableUnits,
+        availableCategories,
+      });
+    } catch (error) {
+      console.error("Get unified production rates error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

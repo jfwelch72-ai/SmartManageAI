@@ -1411,6 +1411,43 @@ export default function BidDetailPage() {
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Scope of Work</Label>
+                {/* Quick selection from estimate line items if estimate exists */}
+                {estimateData?.estimate?.lineItems && estimateData.estimate.lineItems.length > 0 && (
+                  <div className="space-y-2 p-3 bg-muted/50 rounded-md border">
+                    <Label className="text-xs text-muted-foreground">Select from Estimate Scope Items</Label>
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                      {estimateData.estimate.lineItems.map((item) => (
+                        <Button
+                          key={item.id}
+                          type="button"
+                          variant={form.watch("scopeOfWork") === item.description ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs h-auto py-1 px-2"
+                          onClick={() => {
+                            const scopeData: ScopeSelectionData = {
+                              workTypeId: "",
+                              workTypeName: item.description,
+                              workTypeCode: item.workTypeCode || "",
+                              categoryName: "",
+                              unit: item.unit,
+                              modifierIds: [],
+                              modifierNames: [],
+                              canonicalName: item.description,
+                            };
+                            setScopeSelectionData(scopeData);
+                            form.setValue("scopeOfWork", item.description);
+                          }}
+                          data-testid={`button-estimate-scope-${item.id}`}
+                        >
+                          {item.description} ({item.quantity} {item.unit})
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Or use the standardized scope selector below for custom scope
+                    </p>
+                  </div>
+                )}
                 <StandardizedScopeSelector
                   value={scopeSelectionData}
                   onChange={(data) => {
