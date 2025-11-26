@@ -30,6 +30,7 @@ import CompanyCommunicationsPage from "@/pages/company-communications";
 import TasksPage from "@/pages/tasks";
 import ProductionRatesPage from "@/pages/production-rates";
 import CRMPage from "@/pages/crm";
+import ScopeSettingsPage from "@/pages/scope-settings";
 
 function ProtectedRoute({ 
   component: Component,
@@ -111,6 +112,7 @@ function Router() {
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} />} />
       <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/scope-settings" component={() => <ProtectedRoute component={ScopeSettingsPage} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       
       <Route component={NotFound} />
     </Switch>
