@@ -35,6 +35,7 @@ export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH"
 export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR"]);
 export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
 export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
+export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -1353,6 +1354,25 @@ export const crmContacts = pgTable("crm_contacts", {
 export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCrmContact = z.infer<typeof insertCrmContactSchema>;
 export type CrmContact = typeof crmContacts.$inferSelect;
+
+// CRM Organisation Notes table - Activity log for tracking interactions
+// Auto-timestamps to track when managers contact organizations/people
+export const crmOrganisationNotes = pgTable("crm_organisation_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }), // Optional: link to specific contact
+  noteType: crmNoteTypeEnum("note_type").notNull().default("GENERAL"),
+  content: text("content").notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  organisationIdx: index("crm_org_notes_organisation_idx").on(table.organisationId),
+  createdAtIdx: index("crm_org_notes_created_at_idx").on(table.createdAt),
+}));
+
+export const insertCrmOrganisationNoteSchema = createInsertSchema(crmOrganisationNotes).omit({ id: true, createdAt: true });
+export type InsertCrmOrganisationNote = z.infer<typeof insertCrmOrganisationNoteSchema>;
+export type CrmOrganisationNote = typeof crmOrganisationNotes.$inferSelect;
 
 // Takeoff + Estimating Insert/Select Schemas
 export const insertProjectPlanSchema = createInsertSchema(projectPlans).omit({ id: true, createdAt: true, updatedAt: true });
