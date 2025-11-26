@@ -353,6 +353,7 @@ export default function TimeClockPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>

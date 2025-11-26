@@ -591,6 +591,7 @@ export default function CRMPage() {
                     </TableBody>
                   </Table>
                 </ScrollArea>
+                </div>
               )}
             </CardContent>
           </Card>
