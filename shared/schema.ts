@@ -887,6 +887,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }).notNull().default('0'),
   consumablesCost: decimal("consumables_cost", { precision: 12, scale: 2 }).notNull().default('0'),
   subcontractCost: decimal("subcontract_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  subcontractorQuoteId: varchar("subcontractor_quote_id").references(() => bidSubcontractorQuotes.id, { onDelete: "set null" }),
   overheadAllocation: decimal("overhead_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
   profitAllocation: decimal("profit_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
@@ -922,6 +923,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   sourceIdx: index("estimate_line_items_source_idx").on(table.source),
   scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
   workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
+  subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),
 }));
 
 // Estimate Versions table (snapshots of estimates)

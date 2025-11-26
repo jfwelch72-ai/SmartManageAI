@@ -15,6 +15,7 @@ import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2 } from "lucide-react";
 import JobInformationForm from "@/components/JobInformationForm";
+import { SubcontractorScopeReportDialog } from "@/components/SubcontractorScopeReport";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -1104,26 +1105,37 @@ export default function BidDetailPage() {
                             )}
                           </div>
                         </div>
-                        {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                          <div className="flex gap-2 ml-4">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditQuote(quote)}
-                              data-testid={`button-edit-quote-${quote.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteQuote(quote.id)}
-                              data-testid={`button-delete-quote-${quote.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex gap-2 ml-4">
+                          {estimateData?.estimate && (
+                            <SubcontractorScopeReportDialog
+                              quote={quote}
+                              estimate={estimateData.estimate}
+                              lineItems={estimateData.estimate.lineItems || []}
+                              bidName={bid?.name || ""}
+                              bidCode={String(bid?.code || "")}
+                            />
+                          )}
+                          {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEditQuote(quote)}
+                                data-testid={`button-edit-quote-${quote.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleDeleteQuote(quote.id)}
+                                data-testid={`button-delete-quote-${quote.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

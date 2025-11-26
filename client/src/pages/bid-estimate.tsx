@@ -44,6 +44,7 @@ import {
 import type { 
   Estimate, 
   EstimateLineItem, 
+  BidSubcontractorQuote,
 } from "@shared/schema";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
@@ -59,6 +60,7 @@ const lineItemSchema = z.object({
   equipmentCost: z.coerce.number().min(0).default(0),
   consumablesCost: z.coerce.number().min(0).default(0),
   subcontractCost: z.coerce.number().min(0).default(0),
+  subcontractorQuoteId: z.string().optional(),
   overheadAllocation: z.coerce.number().min(0).default(0),
   profitAllocation: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
@@ -96,6 +98,12 @@ export default function BidEstimate() {
   });
 
   const estimate = estimateData?.estimate || null;
+  
+  // Fetch subcontractor quotes for the bid
+  const { data: subcontractorQuotes = [] } = useQuery<BidSubcontractorQuote[]>({
+    queryKey: ["/api/bids", bidId, "subcontractor-quotes"],
+    enabled: !!bidId,
+  });
   
   const totals = estimate?.totals || {
     materialCost: 0,
@@ -242,6 +250,7 @@ export default function BidEstimate() {
         equipmentCost: values.equipmentCost,
         consumablesCost: values.consumablesCost || 0,
         subcontractCost: values.subcontractCost || 0,
+        subcontractorQuoteId: values.subcontractorQuoteId || undefined,
         overheadAllocation: values.overheadAllocation,
         profitAllocation: values.profitAllocation,
         notes: values.notes || undefined,
@@ -821,6 +830,38 @@ export default function BidEstimate() {
                         )}
                       />
 
+                      {/* Subcontractor Quote Selector - shows when subcontract cost > 0 */}
+                      {form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
+                        <FormField
+                          control={form.control}
+                          name="subcontractorQuoteId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Assign to Subcontractor</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-subcontractor-quote">
+                                    <SelectValue placeholder="Select subcontractor..." />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="">None</SelectItem>
+                                  {subcontractorQuotes.map((quote) => (
+                                    <SelectItem key={quote.id} value={quote.id}>
+                                      {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
                       <FormField
                         control={form.control}
                         name="notes"
@@ -1137,6 +1178,38 @@ export default function BidEstimate() {
                         )}
                       />
 
+                      {/* Subcontractor Quote Selector - shows when subcontract cost > 0 */}
+                      {form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
+                        <FormField
+                          control={form.control}
+                          name="subcontractorQuoteId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Assign to Subcontractor</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-edit-subcontractor-quote">
+                                    <SelectValue placeholder="Select subcontractor..." />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="">None</SelectItem>
+                                  {subcontractorQuotes.map((quote) => (
+                                    <SelectItem key={quote.id} value={quote.id}>
+                                      {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
                       <FormField
                         control={form.control}
                         name="notes"
@@ -1368,6 +1441,7 @@ export default function BidEstimate() {
                                     equipmentCost: Number(item.equipmentCost),
                                     consumablesCost: Number(item.consumablesCost || 0),
                                     subcontractCost: Number(item.subcontractCost || 0),
+                                    subcontractorQuoteId: (item as any).subcontractorQuoteId || undefined,
                                     overheadAllocation: 0,
                                     profitAllocation: 0,
                                     notes: (item as any).metadata || "",
