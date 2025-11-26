@@ -557,11 +557,22 @@ export const changeOrders = pgTable("change_orders", {
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
   attachmentsJson: text("attachments_json"),
+  // Standardized Scope of Work fields (matches estimating sheets for production rate tracking)
+  workTypeId: varchar("work_type_id"),
+  workTypeCode: text("work_type_code"),
+  workTypeName: text("work_type_name"),
+  categoryName: text("category_name"),
+  scopeModifierIds: text("scope_modifier_ids"),
+  scopeModifierNames: text("scope_modifier_names"),
+  canonicalName: text("canonical_name"),
+  scopeUnit: text("scope_unit"),
+  scopeQuantity: text("scope_quantity"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   statusIdx: index("change_orders_status_idx").on(table.status),
   projectIdIdx: index("change_orders_project_id_idx").on(table.projectId),
+  workTypeCodeIdx: index("change_orders_work_type_code_idx").on(table.workTypeCode),
 }));
 
 // Calendar Events table
