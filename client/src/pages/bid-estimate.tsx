@@ -257,6 +257,12 @@ export default function BidEstimate() {
         stoneDepthInches: materialCalcData.requiresStoneBase ? (materialCalcData.stoneDepthInches || undefined) : undefined,
         stoneWasteFactor: materialCalcData.requiresStoneBase ? (materialCalcData.stoneWasteFactor || "10") : undefined,
         calculatedStoneTons: materialCalcData.requiresStoneBase ? (materialCalcData.calculatedStoneTons || undefined) : undefined,
+        // Excavation fields
+        requiresExcavation: materialCalcData.requiresExcavation || false,
+        excavationDepthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationDepthInches || undefined) : undefined,
+        excavationWidthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationWidthInches || undefined) : undefined,
+        excavationSwellFactor: materialCalcData.requiresExcavation ? (materialCalcData.excavationSwellFactor || "25") : undefined,
+        calculatedExcavationYards: materialCalcData.requiresExcavation ? (materialCalcData.calculatedExcavationYards || undefined) : undefined,
       };
       
       editLineItemMutation.mutate({
@@ -295,6 +301,12 @@ export default function BidEstimate() {
         stoneDepthInches: materialCalcData.requiresStoneBase ? (materialCalcData.stoneDepthInches || undefined) : undefined,
         stoneWasteFactor: materialCalcData.requiresStoneBase ? (materialCalcData.stoneWasteFactor || "10") : undefined,
         calculatedStoneTons: materialCalcData.requiresStoneBase ? (materialCalcData.calculatedStoneTons || undefined) : undefined,
+        // Excavation fields
+        requiresExcavation: materialCalcData.requiresExcavation || false,
+        excavationDepthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationDepthInches || undefined) : undefined,
+        excavationWidthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationWidthInches || undefined) : undefined,
+        excavationSwellFactor: materialCalcData.requiresExcavation ? (materialCalcData.excavationSwellFactor || "25") : undefined,
+        calculatedExcavationYards: materialCalcData.requiresExcavation ? (materialCalcData.calculatedExcavationYards || undefined) : undefined,
       };
       
       addLineItemMutation.mutate(addPayload as any);
@@ -824,7 +836,7 @@ export default function BidEstimate() {
                       />
                     </div>
 
-                    {/* Material Calculator - only show for concrete-related work */}
+                    {/* Material Calculator - show for concrete, excavation, and related work */}
                     {(() => {
                       const watchedValues = form.watch();
                       const unit = watchedValues.unit;
@@ -832,9 +844,13 @@ export default function BidEstimate() {
                       const category = watchedValues.category;
                       const description = watchedValues.description || "";
                       
-                      // Only show for SF or LF units with concrete-related categories
+                      // Show for SF or LF units with concrete, excavation, or site work categories
+                      const materialCategories = [
+                        "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
+                        "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
+                      ];
                       const showMaterialCalc = (unit === "SF" || unit === "LF") && 
-                        ["CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB"].includes(category || "");
+                        materialCategories.includes(category || "");
                       
                       return showMaterialCalc ? (
                         <MaterialCalculator
@@ -1369,6 +1385,11 @@ export default function BidEstimate() {
                                     stoneDepthInches: lineItemAny.stoneDepthInches || "",
                                     stoneWasteFactor: lineItemAny.stoneWasteFactor || "10",
                                     calculatedStoneTons: lineItemAny.calculatedStoneTons || "",
+                                    requiresExcavation: lineItemAny.requiresExcavation || false,
+                                    excavationDepthInches: lineItemAny.excavationDepthInches || "",
+                                    excavationWidthInches: lineItemAny.excavationWidthInches || "",
+                                    excavationSwellFactor: lineItemAny.excavationSwellFactor || "25",
+                                    calculatedExcavationYards: lineItemAny.calculatedExcavationYards || "",
                                   });
                                   setEditLineItemOpen(true);
                                 }}

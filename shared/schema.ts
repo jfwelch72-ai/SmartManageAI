@@ -907,6 +907,13 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   stoneWasteFactor: decimal("stone_waste_factor", { precision: 5, scale: 2 }).default('10'),
   calculatedStoneTons: decimal("calculated_stone_tons", { precision: 10, scale: 2 }),
   
+  // Material Calculator Fields - Excavation
+  requiresExcavation: boolean("requires_excavation").default(false),
+  excavationDepthInches: decimal("excavation_depth_inches", { precision: 6, scale: 2 }),
+  excavationWidthInches: decimal("excavation_width_inches", { precision: 8, scale: 2 }),
+  excavationSwellFactor: decimal("excavation_swell_factor", { precision: 5, scale: 2 }).default('25'),
+  calculatedExcavationYards: decimal("calculated_excavation_yards", { precision: 10, scale: 2 }),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle } from "lucide-react";
+import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle, Shovel } from "lucide-react";
 
 // Stone density constants (tons per cubic yard)
 const STONE_DENSITIES: Record<string, number> = {
@@ -47,6 +47,11 @@ export interface MaterialCalculatorData {
   stoneDepthInches: string;
   stoneWasteFactor: string;
   calculatedStoneTons: string;
+  requiresExcavation: boolean;
+  excavationDepthInches: string;
+  excavationWidthInches: string;
+  excavationSwellFactor: string;
+  calculatedExcavationYards: string;
 }
 
 interface MaterialCalculatorProps {
@@ -130,6 +135,40 @@ export function calculateStoneTons(
   return Math.ceil(tons * wasteMultiplier * 100) / 100;
 }
 
+export function calculateExcavationYards(
+  quantity: number,
+  unit: string,
+  depthInches: number,
+  widthInches?: number,
+  swellFactor: number = 25
+): number {
+  if (!quantity || !depthInches || depthInches <= 0) return 0;
+
+  let cubicFeet: number;
+
+  if (isLinearUnit(unit)) {
+    // For linear items (trenches, utility lines): LF × width × depth
+    const widthFeet = (widthInches || 24) / 12; // default 2' width for trenches
+    const depthFeet = depthInches / 12;
+    cubicFeet = quantity * widthFeet * depthFeet;
+  } else if (isAreaUnit(unit)) {
+    // For area items (parking lots, building pads): SF × depth
+    const depthFeet = depthInches / 12;
+    cubicFeet = quantity * depthFeet;
+  } else {
+    // Default to area calculation
+    const depthFeet = depthInches / 12;
+    cubicFeet = quantity * depthFeet;
+  }
+
+  // Convert to cubic yards (in-ground volume)
+  const cubicYards = cubicFeet / 27;
+
+  // Apply swell factor (soil expands when excavated, typically 20-35%)
+  const swellMultiplier = 1 + (swellFactor / 100);
+  return Math.ceil(cubicYards * swellMultiplier * 100) / 100;
+}
+
 export default function MaterialCalculator({
   unit,
   quantity,
@@ -173,16 +212,37 @@ export default function MaterialCalculator({
     );
   }, [quantity, unit, value.requiresStoneBase, value.stoneDepthInches, value.stoneType, value.dimensionWidthInches, value.stoneWasteFactor]);
 
+  // Calculate excavation yards
+  const excavationYards = useMemo(() => {
+    if (!value.requiresExcavation) return 0;
+    return calculateExcavationYards(
+      quantity,
+      unit,
+      parseFloat(value.excavationDepthInches) || 0,
+      parseFloat(value.excavationWidthInches) || undefined,
+      parseFloat(value.excavationSwellFactor) || 25
+    );
+  }, [quantity, unit, value.requiresExcavation, value.excavationDepthInches, value.excavationWidthInches, value.excavationSwellFactor]);
+
   // Update calculated values when inputs change
   useEffect(() => {
-    if (concreteYards !== parseFloat(value.calculatedConcreteYards) || stoneTons !== parseFloat(value.calculatedStoneTons)) {
+    const newConcreteYards = concreteYards.toString();
+    const newStoneTons = stoneTons.toString();
+    const newExcavationYards = excavationYards.toString();
+    
+    if (
+      newConcreteYards !== value.calculatedConcreteYards ||
+      newStoneTons !== value.calculatedStoneTons ||
+      newExcavationYards !== value.calculatedExcavationYards
+    ) {
       onChange({
         ...value,
-        calculatedConcreteYards: concreteYards.toString(),
-        calculatedStoneTons: stoneTons.toString(),
+        calculatedConcreteYards: newConcreteYards,
+        calculatedStoneTons: newStoneTons,
+        calculatedExcavationYards: newExcavationYards,
       });
     }
-  }, [concreteYards, stoneTons]);
+  }, [concreteYards, stoneTons, excavationYards]);
 
   const updateValue = (field: keyof MaterialCalculatorData, newValue: string | boolean) => {
     onChange({
@@ -200,8 +260,8 @@ export default function MaterialCalculator({
       <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid="button-material-calculator-toggle">
         <Calculator className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Material Calculator</span>
-        {(concreteYards > 0 || stoneTons > 0) && (
-          <div className="flex gap-2 ml-auto mr-2">
+        {(concreteYards > 0 || stoneTons > 0 || excavationYards > 0) && (
+          <div className="flex flex-wrap gap-2 ml-auto mr-2">
             {concreteYards > 0 && (
               <Badge variant="secondary" className="text-xs" data-testid="badge-concrete-yards">
                 {concreteYards.toFixed(2)} CY Concrete
@@ -210,6 +270,11 @@ export default function MaterialCalculator({
             {stoneTons > 0 && (
               <Badge variant="outline" className="text-xs" data-testid="badge-stone-tons">
                 {stoneTons.toFixed(2)} Tons Stone
+              </Badge>
+            )}
+            {excavationYards > 0 && (
+              <Badge variant="outline" className="text-xs bg-orange-500/10 border-orange-500/30" data-testid="badge-excavation-yards">
+                {excavationYards.toFixed(2)} CY Excavation
               </Badge>
             )}
           </div>
@@ -405,18 +470,111 @@ export default function MaterialCalculator({
               </CardContent>
             )}
           </Card>
+
+          {/* Excavation Section */}
+          <Card className="border-orange-500/20">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Shovel className="h-4 w-4" />
+                Excavation / Material Removal
+                <Switch
+                  checked={value.requiresExcavation}
+                  onCheckedChange={(checked) => updateValue("requiresExcavation", checked)}
+                  disabled={readOnly}
+                  data-testid="switch-excavation"
+                />
+              </CardTitle>
+            </CardHeader>
+            {value.requiresExcavation && (
+              <CardContent className="py-2 px-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">Excavation Depth (inches)</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={value.excavationDepthInches}
+                      onChange={(e) => updateValue("excavationDepthInches", e.target.value)}
+                      placeholder="12"
+                      disabled={readOnly}
+                      data-testid="input-excavation-depth"
+                    />
+                    <span className="text-xs text-muted-foreground">Typical: 6"-24"</span>
+                  </div>
+                  
+                  {isLinear && (
+                    <div>
+                      <Label className="text-xs">Trench Width (inches)</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={value.excavationWidthInches}
+                        onChange={(e) => updateValue("excavationWidthInches", e.target.value)}
+                        placeholder="24"
+                        disabled={readOnly}
+                        data-testid="input-excavation-width"
+                      />
+                      <span className="text-xs text-muted-foreground">Typical: 18"-36"</span>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <Label className="text-xs">Swell Factor %</Label>
+                    <Input
+                      type="number"
+                      step="5"
+                      min="0"
+                      max="50"
+                      value={value.excavationSwellFactor}
+                      onChange={(e) => updateValue("excavationSwellFactor", e.target.value)}
+                      placeholder="25"
+                      disabled={readOnly}
+                      data-testid="input-excavation-swell"
+                    />
+                    <span className="text-xs text-muted-foreground">Soil expansion: 20-35%</span>
+                  </div>
+                </div>
+
+                {/* Excavation Calculation Result */}
+                <div className="flex items-center justify-between p-3 bg-orange-500/10 rounded-md border border-orange-500/20">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Material to Remove</p>
+                    <p className="text-lg font-bold text-orange-600 dark:text-orange-400" data-testid="text-excavation-result">
+                      {excavationYards.toFixed(2)} <span className="text-sm font-normal">Cubic Yards</span>
+                    </p>
+                  </div>
+                  {excavationYards > 0 && (
+                    <div className="text-right text-xs text-muted-foreground">
+                      <p>In-ground: {(excavationYards / (1 + parseFloat(value.excavationSwellFactor || "25") / 100)).toFixed(2)} CY</p>
+                      <p>+ {value.excavationSwellFactor || "25"}% swell factor</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Excavation notes */}
+                <div className="flex items-start gap-2 p-2 bg-orange-50 dark:bg-orange-950/30 rounded text-xs text-orange-700 dark:text-orange-300">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <p>Swell factor accounts for soil expansion when excavated. Clay/dense soils swell more (30-35%). Sandy soils swell less (20-25%).</p>
+                </div>
+              </CardContent>
+            )}
+          </Card>
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-// Job totals component for showing aggregate concrete and stone
+// Job totals component for showing aggregate concrete, stone, and excavation
 interface MaterialJobTotalsProps {
   lineItems: Array<{
     calculatedConcreteYards?: string | null;
     calculatedStoneTons?: string | null;
+    calculatedExcavationYards?: string | null;
     requiresStoneBase?: boolean | null;
+    requiresExcavation?: boolean | null;
   }>;
 }
 
@@ -424,12 +582,15 @@ export function MaterialJobTotals({ lineItems }: MaterialJobTotalsProps) {
   const totals = useMemo(() => {
     let totalConcrete = 0;
     let totalStone = 0;
+    let totalExcavation = 0;
     let itemsWithConcrete = 0;
     let itemsWithStone = 0;
+    let itemsWithExcavation = 0;
 
     for (const item of lineItems) {
       const concrete = parseFloat(item.calculatedConcreteYards || "0");
       const stone = parseFloat(item.calculatedStoneTons || "0");
+      const excavation = parseFloat(item.calculatedExcavationYards || "0");
 
       if (concrete > 0) {
         totalConcrete += concrete;
@@ -439,17 +600,23 @@ export function MaterialJobTotals({ lineItems }: MaterialJobTotalsProps) {
         totalStone += stone;
         itemsWithStone++;
       }
+      if (excavation > 0 && item.requiresExcavation) {
+        totalExcavation += excavation;
+        itemsWithExcavation++;
+      }
     }
 
     return {
       totalConcrete: Math.ceil(totalConcrete * 100) / 100,
       totalStone: Math.ceil(totalStone * 100) / 100,
+      totalExcavation: Math.ceil(totalExcavation * 100) / 100,
       itemsWithConcrete,
       itemsWithStone,
+      itemsWithExcavation,
     };
   }, [lineItems]);
 
-  if (totals.totalConcrete === 0 && totals.totalStone === 0) {
+  if (totals.totalConcrete === 0 && totals.totalStone === 0 && totals.totalExcavation === 0) {
     return null;
   }
 
@@ -462,7 +629,7 @@ export function MaterialJobTotals({ lineItems }: MaterialJobTotalsProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="py-2">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {totals.totalConcrete > 0 && (
             <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
               <div className="flex items-center gap-2 mb-2">
@@ -494,6 +661,22 @@ export function MaterialJobTotals({ lineItems }: MaterialJobTotalsProps) {
               </p>
             </div>
           )}
+          
+          {totals.totalExcavation > 0 && (
+            <div className="p-4 bg-orange-500/10 rounded-lg border border-orange-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <Shovel className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                <span className="font-semibold">Total Excavation</span>
+              </div>
+              <p className="text-3xl font-bold text-orange-600 dark:text-orange-400" data-testid="text-total-excavation">
+                {totals.totalExcavation.toFixed(2)}
+              </p>
+              <p className="text-sm text-muted-foreground">Cubic Yards</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                From {totals.itemsWithExcavation} line item{totals.itemsWithExcavation !== 1 ? "s" : ""}
+              </p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -513,5 +696,10 @@ export function getDefaultMaterialCalculatorData(): MaterialCalculatorData {
     stoneDepthInches: "",
     stoneWasteFactor: "10",
     calculatedStoneTons: "0",
+    requiresExcavation: false,
+    excavationDepthInches: "",
+    excavationWidthInches: "",
+    excavationSwellFactor: "25",
+    calculatedExcavationYards: "0",
   };
 }
