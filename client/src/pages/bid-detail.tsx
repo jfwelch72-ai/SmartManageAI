@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
+import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,9 @@ export default function BidDetailPage() {
   // CRM integration state
   const [subcontractorContactId, setSubcontractorContactId] = useState<string | undefined>(undefined);
   const [supplierContactId, setSupplierContactId] = useState<string | undefined>(undefined);
+  
+  // Standardized scope selection state
+  const [scopeSelectionData, setScopeSelectionData] = useState<ScopeSelectionData | undefined>(undefined);
   
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
@@ -190,6 +194,7 @@ export default function BidDetailPage() {
       setShowQuoteDialog(false);
       form.reset();
       setSubcontractorContactId(undefined);
+      setScopeSelectionData(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -219,6 +224,7 @@ export default function BidDetailPage() {
       setEditingQuote(null);
       form.reset();
       setSubcontractorContactId(undefined);
+      setScopeSelectionData(undefined);
     },
     onError: (error: any) => {
       toast({
@@ -448,6 +454,7 @@ export default function BidDetailPage() {
     setEditingQuote(null);
     setUploadedFileData(null);
     form.reset();
+    setScopeSelectionData(undefined);
     setShowQuoteDialog(true);
   };
 
@@ -1402,19 +1409,19 @@ export default function BidDetailPage() {
                   )}
                 />
               </div>
-              <FormField
-                control={form.control}
-                name="scopeOfWork"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Scope of Work</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} placeholder="Describe the work to be performed..." data-testid="input-scope-of-work" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Scope of Work</Label>
+                <StandardizedScopeSelector
+                  value={scopeSelectionData}
+                  onChange={(data) => {
+                    setScopeSelectionData(data);
+                    form.setValue("scopeOfWork", data.canonicalName);
+                  }}
+                />
+                {form.formState.errors.scopeOfWork && (
+                  <p className="text-sm text-destructive">{form.formState.errors.scopeOfWork.message}</p>
                 )}
-              />
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
