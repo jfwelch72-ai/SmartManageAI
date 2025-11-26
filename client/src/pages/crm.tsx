@@ -35,10 +35,20 @@ import {
   AlertCircle,
   X
 } from "lucide-react";
-import type { CrmOrganisation as CrmOrganization, CrmContact } from "@shared/schema";
+import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote } from "@shared/schema";
+import { format, formatDistanceToNow } from "date-fns";
+import { MessageSquare, Clock } from "lucide-react";
 
 type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR";
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
+type NoteType = "CALL" | "EMAIL" | "MEETING" | "HOT_LEAD" | "COLD_LEAD" | "FOLLOW_UP" | "ISSUE" | "GENERAL";
+
+interface OrgNote extends CrmOrganisationNote {
+  createdByFirstName: string | null;
+  createdByLastName: string | null;
+  contactFirstName: string | null;
+  contactLastName: string | null;
+}
 
 interface OrganizationWithContacts extends CrmOrganization {
   contacts: CrmContact[];
@@ -69,6 +79,28 @@ const ROLE_LABELS: Record<ContactRole, string> = {
   GENERAL_MANAGER: "General Manager",
   FOREMAN: "Foreman",
   OTHER: "Other",
+};
+
+const NOTE_TYPE_LABELS: Record<NoteType, string> = {
+  CALL: "Phone Call",
+  EMAIL: "Email",
+  MEETING: "Meeting",
+  HOT_LEAD: "Hot Lead",
+  COLD_LEAD: "Cold Lead",
+  FOLLOW_UP: "Follow Up",
+  ISSUE: "Issue",
+  GENERAL: "General",
+};
+
+const NOTE_TYPE_COLORS: Record<NoteType, string> = {
+  CALL: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  EMAIL: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
+  MEETING: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  HOT_LEAD: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  COLD_LEAD: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200",
+  FOLLOW_UP: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  ISSUE: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  GENERAL: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
 };
 
 export default function CRMPage() {
@@ -114,6 +146,13 @@ export default function CRMPage() {
     isPrimary: false,
     notes: "",
   });
+
+  // Notes state
+  const [newNote, setNewNote] = useState({
+    noteType: "GENERAL" as NoteType,
+    content: "",
+    contactId: undefined as string | undefined,
+  });
   
   const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
     queryKey: ["/api/crm/organisations"],
@@ -121,6 +160,12 @@ export default function CRMPage() {
   
   const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganizationWithContacts>({
     queryKey: ["/api/crm/organisations", selectedOrg?.id],
+    enabled: !!selectedOrg?.id && detailOrgOpen,
+  });
+
+  // Fetch notes for selected organization
+  const { data: orgNotes = [], isLoading: notesLoading } = useQuery<OrgNote[]>({
+    queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
 
@@ -211,6 +256,37 @@ export default function CRMPage() {
       toast({ title: "Failed to delete contact", description: err.message, variant: "destructive" });
     },
   });
+
+  // Create note mutation
+  const createNoteMutation = useMutation({
+    mutationFn: async (data: { noteType: string; content: string; contactId?: string }) => {
+      if (!selectedOrg?.id) throw new Error("No organization selected");
+      return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/notes`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"] });
+      toast({ title: "Note added successfully" });
+      resetNewNote();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add note", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Delete note mutation
+  const deleteNoteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      if (!selectedOrg?.id) throw new Error("No organization selected");
+      return apiRequest("DELETE", `/api/crm/organisations/${selectedOrg.id}/notes/${noteId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"] });
+      toast({ title: "Note deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete note", description: err.message, variant: "destructive" });
+    },
+  });
   
   const resetNewOrg = () => {
     setNewOrg({
@@ -238,6 +314,14 @@ export default function CRMPage() {
       mobile: "",
       isPrimary: false,
       notes: "",
+    });
+  };
+
+  const resetNewNote = () => {
+    setNewNote({
+      noteType: "GENERAL",
+      content: "",
+      contactId: undefined,
     });
   };
   
@@ -784,6 +868,9 @@ export default function CRMPage() {
               <TabsTrigger value="contacts">
                 Contacts ({orgDetail?.contacts?.length || 0})
               </TabsTrigger>
+              <TabsTrigger value="activity" data-testid="tab-activity">
+                Activity ({orgNotes.length})
+              </TabsTrigger>
             </TabsList>
             
             <TabsContent value="info" className="space-y-4 mt-4">
@@ -930,6 +1017,136 @@ export default function CRMPage() {
                   ))}
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-4">
+              <div className="space-y-4">
+                {/* Add Note Form */}
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Add Activity Note</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Type</Label>
+                        <Select 
+                          value={newNote.noteType} 
+                          onValueChange={(v) => setNewNote({ ...newNote, noteType: v as NoteType })}
+                        >
+                          <SelectTrigger data-testid="select-note-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CALL">Phone Call</SelectItem>
+                            <SelectItem value="EMAIL">Email</SelectItem>
+                            <SelectItem value="MEETING">Meeting</SelectItem>
+                            <SelectItem value="HOT_LEAD">Hot Lead</SelectItem>
+                            <SelectItem value="COLD_LEAD">Cold Lead</SelectItem>
+                            <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
+                            <SelectItem value="ISSUE">Issue</SelectItem>
+                            <SelectItem value="GENERAL">General</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Related Contact (Optional)</Label>
+                        <Select 
+                          value={newNote.contactId || "none"} 
+                          onValueChange={(v) => setNewNote({ ...newNote, contactId: v === "none" ? undefined : v })}
+                        >
+                          <SelectTrigger data-testid="select-note-contact">
+                            <SelectValue placeholder="Select contact..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {orgDetail?.contacts?.map((contact) => (
+                              <SelectItem key={contact.id} value={contact.id}>
+                                {contact.firstName} {contact.lastName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Textarea
+                      value={newNote.content}
+                      onChange={(e) => setNewNote({ ...newNote, content: e.target.value })}
+                      placeholder="Enter your note... (e.g., 'Called about upcoming project, they're interested in bidding next month')"
+                      className="min-h-[80px]"
+                      data-testid="input-note-content"
+                    />
+                    <Button 
+                      onClick={() => createNoteMutation.mutate(newNote)}
+                      disabled={!newNote.content.trim() || createNoteMutation.isPending}
+                      className="w-full"
+                      data-testid="button-add-note"
+                    >
+                      {createNoteMutation.isPending ? "Adding..." : "Add Note"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Notes List */}
+                {notesLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
+                  </div>
+                ) : orgNotes.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No activity notes yet</p>
+                    <p className="text-sm">Add notes above to track your interactions</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {orgNotes.map((note) => (
+                      <Card key={note.id} className="relative" data-testid={`card-note-${note.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <Badge className={NOTE_TYPE_COLORS[note.noteType as NoteType]}>
+                                  {NOTE_TYPE_LABELS[note.noteType as NoteType]}
+                                </Badge>
+                                {note.contactFirstName && note.contactLastName && (
+                                  <Badge variant="outline" className="text-xs">
+                                    <User className="w-3 h-3 mr-1" />
+                                    {note.contactFirstName} {note.contactLastName}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm mt-2 whitespace-pre-wrap">{note.content}</p>
+                              <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                                <span>
+                                  {note.createdByFirstName && note.createdByLastName 
+                                    ? `${note.createdByFirstName} ${note.createdByLastName}` 
+                                    : 'Unknown'}
+                                </span>
+                                <span>•</span>
+                                <span title={format(new Date(note.createdAt), 'PPpp')}>
+                                  {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0"
+                              onClick={() => deleteNoteMutation.mutate(note.id)}
+                              disabled={deleteNoteMutation.isPending}
+                              data-testid={`button-delete-note-${note.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </DialogContent>
