@@ -252,7 +252,7 @@ export const projectEmployeeRates = pgTable("project_employee_rates", {
   projectUserUnique: unique().on(table.projectId, table.userId),
 }));
 
-// T&M Daily Sheets table
+// T&M Daily Sheets table (legacy - replaced by tmTickets)
 export const tmDailySheets = pgTable("tm_daily_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -272,6 +272,96 @@ export const tmDailySheets = pgTable("tm_daily_sheets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// T&M Ticket Status Enum
+export const tmTicketStatusEnum = pgEnum("tm_ticket_status", ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]);
+
+// T&M Work Tickets table - comprehensive tracking for time & material work
+export const tmTickets = pgTable("tm_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  ticketNumber: text("ticket_number").notNull(),
+  workDate: date("work_date").notNull(),
+  tfrRepresentativeId: varchar("tfr_representative_id").notNull().references(() => users.id),
+  workOrderReference: text("work_order_reference"),
+  scopeDescription: text("scope_description").notNull(),
+  notes: text("notes"),
+  status: tmTicketStatusEnum("status").notNull().default("DRAFT"),
+  
+  // Totals (calculated from line items)
+  totalLaborHours: decimal("total_labor_hours", { precision: 10, scale: 2 }).default("0"),
+  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).default("0"),
+  totalEquipmentCost: decimal("total_equipment_cost", { precision: 12, scale: 2 }).default("0"),
+  totalMaterialCost: decimal("total_material_cost", { precision: 12, scale: 2 }).default("0"),
+  grandTotal: decimal("grand_total", { precision: 12, scale: 2 }).default("0"),
+  
+  // Approval workflow
+  submittedAt: timestamp("submitted_at"),
+  submittedById: varchar("submitted_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectedById: varchar("rejected_by_id").references(() => users.id),
+  rejectionReason: text("rejection_reason"),
+  
+  // Signed document upload
+  signedDocumentUrl: text("signed_document_url"),
+  signedDocumentFileName: text("signed_document_file_name"),
+  signedDocumentObjectKey: text("signed_document_object_key"),
+  signedDocumentUploadedAt: timestamp("signed_document_uploaded_at"),
+  
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("tm_tickets_project_id_idx").on(table.projectId),
+  statusIdx: index("tm_tickets_status_idx").on(table.status),
+  workDateIdx: index("tm_tickets_work_date_idx").on(table.workDate),
+}));
+
+// T&M Ticket Labor Entries
+export const tmTicketLaborEntries = pgTable("tm_ticket_labor_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
+  employeeName: text("employee_name").notNull(),
+  position: text("position").notNull(),
+  crewMemberCount: integer("crew_member_count").notNull().default(1),
+  hoursWorked: decimal("hours_worked", { precision: 6, scale: 2 }).notNull(),
+  totalHours: decimal("total_hours", { precision: 8, scale: 2 }).notNull(), // hoursWorked * crewMemberCount
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  ticketIdIdx: index("tm_ticket_labor_entries_ticket_id_idx").on(table.ticketId),
+}));
+
+// T&M Ticket Equipment Entries
+export const tmTicketEquipmentEntries = pgTable("tm_ticket_equipment_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
+  equipmentType: text("equipment_type").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  hoursUsed: decimal("hours_used", { precision: 6, scale: 2 }).notNull(),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  ticketIdIdx: index("tm_ticket_equipment_entries_ticket_id_idx").on(table.ticketId),
+}));
+
+// T&M Ticket Material Entries
+export const tmTicketMaterialEntries = pgTable("tm_ticket_material_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
+  materialDescription: text("material_description").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unit: text("unit").notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  ticketIdIdx: index("tm_ticket_material_entries_ticket_id_idx").on(table.ticketId),
+}));
 
 // Receipts table
 export const receipts = pgTable("receipts", {
@@ -986,6 +1076,44 @@ export type ProjectEmployeeRate = typeof projectEmployeeRates.$inferSelect;
 
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
+
+// T&M Ticket schemas and types
+export const insertTMTicketSchema = createInsertSchema(tmTickets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+  approvedAt: true,
+  rejectedAt: true,
+  signedDocumentUploadedAt: true,
+});
+
+export const insertTMTicketLaborEntrySchema = createInsertSchema(tmTicketLaborEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTMTicketEquipmentEntrySchema = createInsertSchema(tmTicketEquipmentEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTMTicketMaterialEntrySchema = createInsertSchema(tmTicketMaterialEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTMTicket = z.infer<typeof insertTMTicketSchema>;
+export type TMTicket = typeof tmTickets.$inferSelect;
+
+export type InsertTMTicketLaborEntry = z.infer<typeof insertTMTicketLaborEntrySchema>;
+export type TMTicketLaborEntry = typeof tmTicketLaborEntries.$inferSelect;
+
+export type InsertTMTicketEquipmentEntry = z.infer<typeof insertTMTicketEquipmentEntrySchema>;
+export type TMTicketEquipmentEntry = typeof tmTicketEquipmentEntries.$inferSelect;
+
+export type InsertTMTicketMaterialEntry = z.infer<typeof insertTMTicketMaterialEntrySchema>;
+export type TMTicketMaterialEntry = typeof tmTicketMaterialEntries.$inferSelect;
 
 export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type Receipt = typeof receipts.$inferSelect;

@@ -47,6 +47,7 @@ import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
 import registerEstimateRoutes from "./estimateRoutes";
+import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -76,6 +77,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register estimate routes
   registerEstimateRoutes(app);
+
+  // Register T&M ticket routes
+  registerTMTicketRoutes(app);
 
   // ====================
   // Auth Routes
