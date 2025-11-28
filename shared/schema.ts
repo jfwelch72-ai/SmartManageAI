@@ -909,6 +909,13 @@ export const estimateCrews = pgTable("estimate_crews", {
 // Stone type enum for sub-base calculations
 export const stoneTypeEnum = pgEnum("stone_type", ["CRUSHED_STONE", "LIMESTONE", "COMPACTED_BASE", "PEA_GRAVEL", "RECYCLED_CONCRETE"]);
 
+// Material calculator enums for reinforcement and additives
+export const wireMeshTypeEnum = pgEnum("wire_mesh_type", ["6X6_W1.4_W1.4", "6X6_W2.9_W2.9", "4X4_W1.4_W1.4", "4X4_W2.9_W2.9"]);
+export const rebarSizeEnum = pgEnum("rebar_size", ["#3", "#4", "#5", "#6"]);
+export const sealerTypeEnum = pgEnum("sealer_type", ["CURE_AND_SEAL", "PENETRATING", "ACRYLIC", "EPOXY"]);
+export const underlaymentTypeEnum = pgEnum("underlayment_type", ["POLY_6MIL", "POLY_10MIL", "VAPOR_BARRIER"]);
+export const dowelSizeEnum = pgEnum("dowel_size", ["3/4_INCH", "1_INCH", "1_1/4_INCH"]);
+
 // Estimate Line Items table (detailed cost breakdown per line)
 export const estimateLineItems = pgTable("estimate_line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -956,6 +963,49 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   excavationWidthInches: decimal("excavation_width_inches", { precision: 8, scale: 2 }),
   excavationSwellFactor: decimal("excavation_swell_factor", { precision: 5, scale: 2 }).default('25'),
   calculatedExcavationYards: decimal("calculated_excavation_yards", { precision: 10, scale: 2 }),
+  
+  // Material Calculator Fields - Wire Mesh Reinforcement
+  requiresWireMesh: boolean("requires_wire_mesh").default(false),
+  wireMeshType: wireMeshTypeEnum("wire_mesh_type"),
+  wireMeshCoverageSF: decimal("wire_mesh_coverage_sf", { precision: 8, scale: 2 }).default('150'),
+  wireMeshWasteFactor: decimal("wire_mesh_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedWireMeshRolls: decimal("calculated_wire_mesh_rolls", { precision: 10, scale: 2 }),
+  
+  // Material Calculator Fields - Rebar Reinforcement
+  requiresRebar: boolean("requires_rebar").default(false),
+  rebarSize: rebarSizeEnum("rebar_size"),
+  rebarSpacingInches: decimal("rebar_spacing_inches", { precision: 6, scale: 2 }).default('12'),
+  rebarLengthFeet: decimal("rebar_length_feet", { precision: 6, scale: 2 }).default('20'),
+  rebarWasteFactor: decimal("rebar_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedRebarCount: decimal("calculated_rebar_count", { precision: 10, scale: 0 }),
+  calculatedRebarLinearFeet: decimal("calculated_rebar_linear_feet", { precision: 12, scale: 2 }),
+  
+  // Material Calculator Fields - Dowels (for joints)
+  requiresDowels: boolean("requires_dowels").default(false),
+  dowelSize: dowelSizeEnum("dowel_size"),
+  dowelSpacingInches: decimal("dowel_spacing_inches", { precision: 6, scale: 2 }).default('12'),
+  dowelLengthInches: decimal("dowel_length_inches", { precision: 6, scale: 2 }).default('18'),
+  jointLengthFeet: decimal("joint_length_feet", { precision: 10, scale: 2 }),
+  calculatedDowelCount: decimal("calculated_dowel_count", { precision: 10, scale: 0 }),
+  
+  // Material Calculator Fields - Sealer
+  requiresSealer: boolean("requires_sealer").default(false),
+  sealerType: sealerTypeEnum("sealer_type"),
+  sealerCoverageSFPerGallon: decimal("sealer_coverage_sf_per_gallon", { precision: 8, scale: 2 }).default('200'),
+  sealerCoats: integer("sealer_coats").default(1),
+  sealerWasteFactor: decimal("sealer_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedSealerGallons: decimal("calculated_sealer_gallons", { precision: 10, scale: 2 }),
+  
+  // Material Calculator Fields - Plastic Underlayment / Vapor Barrier
+  requiresUnderlayment: boolean("requires_underlayment").default(false),
+  underlaymentType: underlaymentTypeEnum("underlayment_type"),
+  underlaymentOverlapInches: decimal("underlayment_overlap_inches", { precision: 6, scale: 2 }).default('6'),
+  underlaymentWasteFactor: decimal("underlayment_waste_factor", { precision: 5, scale: 2 }).default('10'),
+  calculatedUnderlaymentSF: decimal("calculated_underlayment_sf", { precision: 12, scale: 2 }),
+  
+  // Aggregated material requirements JSON for procurement export
+  materialRequirementsJson: text("material_requirements_json"),
+  equipmentRequirementsJson: text("equipment_requirements_json"),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
