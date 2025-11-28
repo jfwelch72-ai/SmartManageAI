@@ -16,7 +16,7 @@ import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
 import TMTicketsSection from "@/components/TMTicketsSection";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -34,10 +34,172 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { ChangeOrder, ScopeItem, DailyScopeProgress } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChangeOrderFiles } from "@/components/ChangeOrderFiles";
 import { ChangeOrderDialog } from "@/components/ChangeOrderDialog";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import { Link } from "wouter";
+
+interface ProjectEquipmentTabProps {
+  projectId: string;
+  projectCode: string;
+  userRole: string;
+}
+
+function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipmentTabProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  const { data: assignedEquipment = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/projects", projectId, "equipment"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}/equipment`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch equipment");
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const canManageEquipment = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "MAINTENANCE_MANAGER";
+
+  const returnEquipment = useMutation({
+    mutationFn: async (equipmentId: string) => {
+      return apiRequest("POST", `/api/equipment/${equipmentId}/return`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Equipment returned" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to return equipment",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          Loading equipment...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-5 w-5" />
+            Assigned Equipment
+          </CardTitle>
+          <CardDescription>
+            Equipment currently assigned to this project
+          </CardDescription>
+        </div>
+        {canManageEquipment && (
+          <Button asChild size="sm" data-testid="button-manage-equipment">
+            <Link href="/equipment">
+              <Settings2 className="h-4 w-4 mr-2" />
+              Manage Equipment
+            </Link>
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        {assignedEquipment.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Truck className="h-12 w-12 mx-auto mb-4 opacity-20" />
+            <p>No equipment currently assigned to this project</p>
+            {canManageEquipment && (
+              <p className="text-sm mt-2">
+                <Link href="/equipment" className="text-primary hover:underline">
+                  Go to Equipment
+                </Link> to assign equipment to this project
+              </p>
+            )}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Equipment</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Make/Model</TableHead>
+                <TableHead>Assigned</TableHead>
+                <TableHead>Expected Return</TableHead>
+                <TableHead>Status</TableHead>
+                {canManageEquipment && <TableHead>Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {assignedEquipment.map((item: any) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <Link href={`/equipment/${item.equipmentCode}`} className="text-primary hover:underline font-medium">
+                      {item.name}
+                    </Link>
+                    <div className="text-xs text-muted-foreground">{item.equipmentCode}</div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{item.type}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    {item.make && item.model 
+                      ? `${item.make} ${item.model}` 
+                      : item.make || item.model || "-"
+                    }
+                    {item.year && <span className="text-muted-foreground ml-1">({item.year})</span>}
+                  </TableCell>
+                  <TableCell>
+                    {item.assignedAt 
+                      ? format(new Date(item.assignedAt), "MMM d, yyyy")
+                      : "-"
+                    }
+                  </TableCell>
+                  <TableCell>
+                    {item.expectedReturnDate
+                      ? format(new Date(item.expectedReturnDate), "MMM d, yyyy")
+                      : "-"
+                    }
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={item.status === "ASSIGNED" ? "default" : "secondary"}>
+                      {item.status}
+                    </Badge>
+                  </TableCell>
+                  {canManageEquipment && (
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => returnEquipment.mutate(item.id)}
+                          disabled={returnEquipment.isPending}
+                          data-testid={`button-return-${item.equipmentCode}`}
+                        >
+                          <Undo2 className="h-4 w-4 mr-1" />
+                          Return
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -1097,6 +1259,12 @@ export default function ProjectDetailPage() {
               <TabsTrigger value="labor-rates" data-testid="tab-labor-rates">Labor Rates</TabsTrigger>
             )}
             <TabsTrigger value="job-info" data-testid="tab-job-info">Job Info</TabsTrigger>
+            {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
+              <TabsTrigger value="equipment" data-testid="tab-equipment">
+                <Truck className="h-4 w-4 mr-1" />
+                Equipment
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -3293,6 +3461,12 @@ export default function ProjectDetailPage() {
           <TabsContent value="job-info">
             <JobInformationForm projectCode={project.code} />
           </TabsContent>
+
+          {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
+            <TabsContent value="equipment">
+              <ProjectEquipmentTab projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            </TabsContent>
+          )}
         </Tabs>
 
         {/* Budget Edit Dialog (Admin Only) */}

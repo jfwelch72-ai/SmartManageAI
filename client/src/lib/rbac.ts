@@ -6,10 +6,11 @@
  * Role Hierarchy:
  * - ADMIN: Full access to everything including user management
  * - MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER: Full access except user management
+ * - MAINTENANCE_MANAGER: Full access to equipment management and receives maintenance/repair requests
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
  */
 
-export type UserRole = "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE";
+export type UserRole = "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER";
 
 /**
  * Check if user is an admin
@@ -37,7 +38,21 @@ export function isHourlyEmployee(role?: string): boolean {
  */
 export function hasManagementAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
-         role === "ESTIMATOR" || role === "OFFICE_MANAGER";
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER";
+}
+
+/**
+ * Check if user is a maintenance manager
+ */
+export function isMaintenanceManager(role?: string): boolean {
+  return role === "MAINTENANCE_MANAGER";
+}
+
+/**
+ * Check if user has equipment access
+ */
+export function hasEquipmentAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
 }
 
 /**
@@ -62,7 +77,7 @@ export const RoutePermissions = {
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
-  EQUIPMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
 
   // Everyone has access
   DASHBOARD: () => true,
@@ -103,6 +118,10 @@ export const FeaturePermissions = {
   VIEW_DOCUMENTS_TAB: () => true,
   VIEW_MEDIA_TAB: () => true,
   VIEW_DAILY_NOTES_TAB: () => true,
+
+  // Equipment management
+  VIEW_EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
+  MANAGE_EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
 
   // User management
   MANAGE_USERS: (role?: string) => isAdmin(role),

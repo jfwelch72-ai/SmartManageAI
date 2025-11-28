@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, useLocation, Link } from "wouter";
+import { useParams, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import AppHeader from "@/components/AppHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,10 +19,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   ArrowLeft, Truck, Wrench, Clock, MapPin, Calendar, DollarSign, 
-  Settings2, AlertTriangle, CheckCircle, Edit, History, FileText
+  Settings2, AlertTriangle, CheckCircle, Edit, History, FileText,
+  Plus, Send, Loader2, Sparkles, Package, ClipboardList, Undo2
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { format } from "date-fns";
+import { format, startOfWeek, endOfWeek } from "date-fns";
 import type { Equipment } from "@shared/schema";
 
 const STATUS_OPTIONS = [
@@ -46,6 +47,13 @@ const EQUIPMENT_TYPES = [
   { value: "OTHER", label: "Other" },
 ];
 
+const REPAIR_STATUS_OPTIONS = [
+  { value: "PENDING", label: "Pending" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
+
 const editEquipmentSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: z.string().min(1, "Type is required"),
@@ -64,17 +72,66 @@ const editEquipmentSchema = z.object({
   notes: z.string().optional(),
 });
 
+const assignmentSchema = z.object({
+  projectId: z.string().min(1, "Project is required"),
+  expectedReturnDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const returnEquipmentSchema = z.object({
+  returnCondition: z.string().optional(),
+  endingHours: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const repairSchema = z.object({
+  description: z.string().min(1, "Description is required"),
+  problemDescription: z.string().min(1, "Problem description is required"),
+  repairLocation: z.string().optional(),
+  estimatedCost: z.string().optional(),
+  estimatedCompletionDate: z.string().optional(),
+});
+
+const hourLogSchema = z.object({
+  projectId: z.string().min(1, "Project is required"),
+  weekStartDate: z.string().min(1, "Week start date is required"),
+  weekEndDate: z.string().min(1, "Week end date is required"),
+  startingHours: z.string().min(1, "Starting hours is required"),
+  endingHours: z.string().min(1, "Ending hours is required"),
+  notes: z.string().optional(),
+  fuelUsed: z.string().optional(),
+});
+
 type EditEquipmentInput = z.infer<typeof editEquipmentSchema>;
+type AssignmentInput = z.infer<typeof assignmentSchema>;
+type ReturnEquipmentInput = z.infer<typeof returnEquipmentSchema>;
+type RepairInput = z.infer<typeof repairSchema>;
+type HourLogInput = z.infer<typeof hourLogSchema>;
+
+interface AIRecommendation {
+  recommendedTasks: { task: string; priority: string; estimatedCost: number; estimatedHours: number }[];
+  recommendedParts: { part: string; quantity: number; estimatedCost: number; supplier: string }[];
+  preventativeSchedule: { interval: string; task: string; description: string }[];
+  urgency: string;
+  estimatedTotalCost: number;
+  summary: string;
+  warningsOrNotes: string[];
+}
 
 export default function EquipmentDetailPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { code } = useParams<{ code: string }>();
-  const [, navigate] = useLocation();
   
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [showReturnDialog, setShowReturnDialog] = useState(false);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
+  const [showHourLogDialog, setShowHourLogDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation | null>(null);
+  const [loadingAI, setLoadingAI] = useState(false);
   
   const { data: equipment, isLoading, error } = useQuery<Equipment>({
     queryKey: ["/api/equipment", code],
@@ -126,6 +183,17 @@ export default function EquipmentDetailPage() {
     },
     enabled: !!equipment?.id,
   });
+
+  const { data: availableProjects = [] } = useQuery<any[]>({
+    queryKey: ["/api/equipment/available-projects"],
+    queryFn: async () => {
+      const response = await fetch("/api/equipment/available-projects", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch projects");
+      return response.json();
+    },
+  });
   
   const form = useForm<EditEquipmentInput>({
     resolver: zodResolver(editEquipmentSchema),
@@ -147,6 +215,48 @@ export default function EquipmentDetailPage() {
       notes: "",
     },
   });
+
+  const assignmentForm = useForm<AssignmentInput>({
+    resolver: zodResolver(assignmentSchema),
+    defaultValues: {
+      projectId: "",
+      expectedReturnDate: "",
+      notes: "",
+    },
+  });
+
+  const returnForm = useForm<ReturnEquipmentInput>({
+    resolver: zodResolver(returnEquipmentSchema),
+    defaultValues: {
+      returnCondition: "",
+      endingHours: equipment?.currentHours || "",
+      notes: "",
+    },
+  });
+
+  const repairForm = useForm<RepairInput>({
+    resolver: zodResolver(repairSchema),
+    defaultValues: {
+      description: "",
+      problemDescription: "",
+      repairLocation: "",
+      estimatedCost: "",
+      estimatedCompletionDate: "",
+    },
+  });
+
+  const hourLogForm = useForm<HourLogInput>({
+    resolver: zodResolver(hourLogSchema),
+    defaultValues: {
+      projectId: "",
+      weekStartDate: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      weekEndDate: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      startingHours: equipment?.currentHours || "0",
+      endingHours: "",
+      notes: "",
+      fuelUsed: "",
+    },
+  });
   
   const updateEquipment = useMutation({
     mutationFn: async (data: EditEquipmentInput) => {
@@ -165,6 +275,135 @@ export default function EquipmentDetailPage() {
       });
     },
   });
+
+  const assignEquipment = useMutation({
+    mutationFn: async (data: AssignmentInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/assign`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Equipment assigned successfully" });
+      setShowAssignDialog(false);
+      assignmentForm.reset();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to assign equipment",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const returnEquipment = useMutation({
+    mutationFn: async (data: ReturnEquipmentInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/return`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Equipment returned successfully" });
+      setShowReturnDialog(false);
+      returnForm.reset();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to return equipment",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const createRepair = useMutation({
+    mutationFn: async (data: RepairInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/repairs`, data);
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Repair request submitted" });
+      setShowRepairDialog(false);
+      repairForm.reset();
+      setAiRecommendations(null);
+      
+      // Notify maintenance managers
+      try {
+        await apiRequest("POST", "/api/equipment/notify-maintenance", {
+          equipmentId: equipment?.id,
+          message: `New repair request for ${equipment?.name} (${equipment?.equipmentCode})`,
+          type: "REPAIR",
+        });
+      } catch (e) {
+        console.error("Failed to send notification:", e);
+      }
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to create repair",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const submitHourLog = useMutation({
+    mutationFn: async (data: HourLogInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/hour-logs`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Hour log submitted" });
+      setShowHourLogDialog(false);
+      hourLogForm.reset();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to submit hour log",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const updateRepairStatus = useMutation({
+    mutationFn: async ({ repairId, status }: { repairId: string; status: string }) => {
+      return apiRequest("PATCH", `/api/equipment/repairs/${repairId}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({ title: "Success", description: "Repair status updated" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to update repair status",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const fetchAIRecommendations = async () => {
+    if (!equipment?.id) return;
+    setLoadingAI(true);
+    try {
+      const response = await fetch(`/api/equipment/${equipment.id}/ai-recommendations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ problemDescription: repairForm.getValues("problemDescription") }),
+      });
+      if (!response.ok) throw new Error("Failed to get AI recommendations");
+      const data = await response.json();
+      setAiRecommendations(data);
+    } catch (error) {
+      toast({
+        title: "AI Error",
+        description: "Failed to fetch AI recommendations",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingAI(false);
+    }
+  };
   
   const handleEdit = () => {
     if (equipment) {
@@ -188,6 +427,49 @@ export default function EquipmentDetailPage() {
       setShowEditDialog(true);
     }
   };
+
+  const handleOpenAssign = () => {
+    assignmentForm.reset({
+      projectId: "",
+      expectedReturnDate: "",
+      notes: "",
+    });
+    setShowAssignDialog(true);
+  };
+
+  const handleOpenReturn = () => {
+    returnForm.reset({
+      returnCondition: "",
+      endingHours: equipment?.currentHours || "",
+      notes: "",
+    });
+    setShowReturnDialog(true);
+  };
+
+  const handleOpenRepair = () => {
+    repairForm.reset({
+      description: "",
+      problemDescription: "",
+      repairLocation: "",
+      estimatedCost: "",
+      estimatedCompletionDate: "",
+    });
+    setAiRecommendations(null);
+    setShowRepairDialog(true);
+  };
+
+  const handleOpenHourLog = () => {
+    hourLogForm.reset({
+      projectId: activeAssignment?.projectId || "",
+      weekStartDate: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      weekEndDate: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      startingHours: equipment?.currentHours || "0",
+      endingHours: "",
+      notes: "",
+      fuelUsed: "",
+    });
+    setShowHourLogDialog(true);
+  };
   
   const handleSubmit = (data: EditEquipmentInput) => {
     updateEquipment.mutate(data);
@@ -207,8 +489,10 @@ export default function EquipmentDetailPage() {
     const typeOption = EQUIPMENT_TYPES.find(t => t.value === type);
     return typeOption ? typeOption.label : type;
   };
-  
-  const canEdit = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT";
+
+  const activeAssignment = assignments.find((a: any) => a.isActive);
+  const canEdit = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "MAINTENANCE_MANAGER";
+  const isAssigned = equipment?.status === "ASSIGNED" && activeAssignment;
   
   if (!user) return null;
   
@@ -249,32 +533,68 @@ export default function EquipmentDetailPage() {
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
             <Link href="/equipment">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold" data-testid="text-equipment-name">{equipment.name}</h1>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold truncate" data-testid="text-equipment-name">{equipment.name}</h1>
               <Badge className={getStatusBadge(equipment.status)}>
                 {getStatusLabel(equipment.status)}
               </Badge>
             </div>
             <p className="text-muted-foreground">
               {equipment.equipmentCode} 
-              {equipment.make && equipment.model && ` • ${equipment.make} ${equipment.model}`}
+              {equipment.make && equipment.model && ` \u2022 ${equipment.make} ${equipment.model}`}
               {equipment.year && ` (${equipment.year})`}
             </p>
           </div>
           {canEdit && (
-            <Button onClick={handleEdit} data-testid="button-edit">
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              {equipment.status === "AVAILABLE" && (
+                <Button onClick={handleOpenAssign} data-testid="button-assign">
+                  <Send className="h-4 w-4 mr-2" />
+                  Assign to Project
+                </Button>
+              )}
+              {isAssigned && (
+                <Button variant="outline" onClick={handleOpenReturn} data-testid="button-return">
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Return
+                </Button>
+              )}
+              <Button variant="outline" onClick={handleEdit} data-testid="button-edit">
+                <Edit className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </div>
           )}
         </div>
+
+        {activeAssignment && (
+          <Card className="border-primary/50 bg-primary/5">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-3">
+                <MapPin className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Currently assigned to</p>
+                  <Link href={`/projects/${activeAssignment.projectCode}`} className="font-medium text-primary hover:underline">
+                    {activeAssignment.projectName}
+                  </Link>
+                </div>
+                {activeAssignment.expectedReturnDate && (
+                  <div className="ml-auto text-right">
+                    <p className="text-sm text-muted-foreground">Expected return</p>
+                    <p className="font-medium">{format(new Date(activeAssignment.expectedReturnDate), "MMM d, yyyy")}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -394,9 +714,17 @@ export default function EquipmentDetailPage() {
           
           <TabsContent value="assignments">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Assignment History</CardTitle>
-                <CardDescription>Track where this equipment has been assigned</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Assignment History</CardTitle>
+                  <CardDescription>Track where this equipment has been assigned</CardDescription>
+                </div>
+                {canEdit && equipment.status === "AVAILABLE" && (
+                  <Button onClick={handleOpenAssign} size="sm" data-testid="button-new-assignment">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Assign
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {assignments.length === 0 ? (
@@ -448,61 +776,97 @@ export default function EquipmentDetailPage() {
           </TabsContent>
           
           <TabsContent value="repairs">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Repair History</CardTitle>
-                <CardDescription>Track repairs and maintenance issues</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {repairs.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No repair history</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Repair #</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Reported</TableHead>
-                        <TableHead>Cost</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {repairs.map((repair: any) => (
-                        <TableRow key={repair.id}>
-                          <TableCell className="font-mono">{repair.repairNumber}</TableCell>
-                          <TableCell>{repair.description}</TableCell>
-                          <TableCell>{format(new Date(repair.problemReportedAt), "MMM d, yyyy")}</TableCell>
-                          <TableCell>
-                            {repair.actualCost 
-                              ? `$${parseFloat(repair.actualCost).toLocaleString()}`
-                              : repair.estimatedCost
-                                ? `~$${parseFloat(repair.estimatedCost).toLocaleString()}`
-                                : "-"
-                            }
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={
-                              repair.status === "COMPLETED" ? "default" :
-                              repair.status === "IN_PROGRESS" ? "secondary" : "outline"
-                            }>
-                              {repair.status}
-                            </Badge>
-                          </TableCell>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg">Repair History</CardTitle>
+                    <CardDescription>Track repairs and maintenance issues</CardDescription>
+                  </div>
+                  {canEdit && (
+                    <Button onClick={handleOpenRepair} size="sm" data-testid="button-new-repair">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Report Issue
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {repairs.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No repair history</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Repair #</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Reported</TableHead>
+                          <TableHead>Cost</TableHead>
+                          <TableHead>Status</TableHead>
+                          {canEdit && <TableHead>Actions</TableHead>}
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {repairs.map((repair: any) => (
+                          <TableRow key={repair.id}>
+                            <TableCell className="font-mono">{repair.repairNumber}</TableCell>
+                            <TableCell>{repair.description}</TableCell>
+                            <TableCell>{format(new Date(repair.problemReportedAt), "MMM d, yyyy")}</TableCell>
+                            <TableCell>
+                              {repair.actualCost 
+                                ? `$${parseFloat(repair.actualCost).toLocaleString()}`
+                                : repair.estimatedCost
+                                  ? `~$${parseFloat(repair.estimatedCost).toLocaleString()}`
+                                  : "-"
+                              }
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={
+                                repair.status === "COMPLETED" ? "default" :
+                                repair.status === "IN_PROGRESS" ? "secondary" : "outline"
+                              }>
+                                {repair.status}
+                              </Badge>
+                            </TableCell>
+                            {canEdit && (
+                              <TableCell>
+                                <Select
+                                  value={repair.status}
+                                  onValueChange={(value) => updateRepairStatus.mutate({ repairId: repair.id, status: value })}
+                                >
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {REPAIR_STATUS_OPTIONS.map(opt => (
+                                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
           
           <TabsContent value="hours">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Hour Logs</CardTitle>
-                <CardDescription>Weekly equipment usage tracking</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Hour Logs</CardTitle>
+                  <CardDescription>Weekly equipment usage tracking</CardDescription>
+                </div>
+                {canEdit && (
+                  <Button onClick={handleOpenHourLog} size="sm" data-testid="button-new-hour-log">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Log Hours
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {hourLogs.length === 0 ? (
@@ -543,6 +907,7 @@ export default function EquipmentDetailPage() {
         </Tabs>
       </main>
       
+      {/* Edit Equipment Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -734,6 +1099,541 @@ export default function EquipmentDetailPage() {
                 </Button>
                 <Button type="submit" disabled={updateEquipment.isPending} data-testid="button-save">
                   {updateEquipment.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Equipment Dialog */}
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Equipment to Project</DialogTitle>
+            <DialogDescription>
+              Select a project to assign this equipment to.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...assignmentForm}>
+            <form onSubmit={assignmentForm.handleSubmit((data) => assignEquipment.mutate(data))} className="space-y-4">
+              <FormField
+                control={assignmentForm.control}
+                name="projectId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-project">
+                          <SelectValue placeholder="Select project" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableProjects.map((project: any) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.code} - {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={assignmentForm.control}
+                name="expectedReturnDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Expected Return Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} data-testid="input-return-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={assignmentForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Any special notes..." />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowAssignDialog(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={assignEquipment.isPending} data-testid="button-confirm-assign">
+                  {assignEquipment.isPending ? "Assigning..." : "Assign Equipment"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Return Equipment Dialog */}
+      <Dialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Return Equipment</DialogTitle>
+            <DialogDescription>
+              Mark this equipment as returned from {activeAssignment?.projectName}.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...returnForm}>
+            <form onSubmit={returnForm.handleSubmit((data) => returnEquipment.mutate(data))} className="space-y-4">
+              <FormField
+                control={returnForm.control}
+                name="endingHours"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ending Hours</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} data-testid="input-ending-hours" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={returnForm.control}
+                name="returnCondition"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Return Condition</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select condition" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="GOOD">Good</SelectItem>
+                        <SelectItem value="FAIR">Fair</SelectItem>
+                        <SelectItem value="NEEDS_REPAIR">Needs Repair</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={returnForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Any issues or observations..." />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowReturnDialog(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={returnEquipment.isPending} data-testid="button-confirm-return">
+                  {returnEquipment.isPending ? "Processing..." : "Return Equipment"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Repair Dialog with AI Recommendations */}
+      <Dialog open={showRepairDialog} onOpenChange={setShowRepairDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Report Equipment Issue</DialogTitle>
+            <DialogDescription>
+              Describe the problem and get AI-powered repair recommendations.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <Form {...repairForm}>
+                <form onSubmit={repairForm.handleSubmit((data) => createRepair.mutate(data))} className="space-y-4">
+                  <FormField
+                    control={repairForm.control}
+                    name="problemDescription"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Problem Description *</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            {...field} 
+                            placeholder="Describe the issue in detail..."
+                            className="min-h-[100px]"
+                            data-testid="input-problem-description"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={fetchAIRecommendations}
+                    disabled={loadingAI || !repairForm.getValues("problemDescription")}
+                    className="w-full"
+                    data-testid="button-get-ai"
+                  >
+                    {loadingAI ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Get AI Recommendations
+                      </>
+                    )}
+                  </Button>
+                  
+                  <FormField
+                    control={repairForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Repair Title *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Brief title for this repair" data-testid="input-repair-title" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={repairForm.control}
+                    name="repairLocation"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Repair Location</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Where will repairs be done?" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={repairForm.control}
+                      name="estimatedCost"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Estimated Cost</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="0.01" {...field} placeholder="$0.00" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={repairForm.control}
+                      name="estimatedCompletionDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Expected Completion</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setShowRepairDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={createRepair.isPending} data-testid="button-submit-repair">
+                      {createRepair.isPending ? "Submitting..." : "Submit Repair Request"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </div>
+            
+            <div className="space-y-4">
+              {aiRecommendations ? (
+                <>
+                  <Card className="border-primary/50">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        <CardTitle className="text-sm">AI Analysis</CardTitle>
+                        <Badge variant={
+                          aiRecommendations.urgency === "CRITICAL" ? "destructive" :
+                          aiRecommendations.urgency === "HIGH" ? "default" : "secondary"
+                        }>
+                          {aiRecommendations.urgency} Priority
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="text-sm">
+                      <p>{aiRecommendations.summary}</p>
+                      {aiRecommendations.estimatedTotalCost > 0 && (
+                        <p className="mt-2 font-medium">
+                          Estimated Total Cost: ${aiRecommendations.estimatedTotalCost.toLocaleString()}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                  
+                  {aiRecommendations.recommendedTasks.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4" />
+                          Recommended Tasks
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="text-sm space-y-2">
+                          {aiRecommendations.recommendedTasks.map((task, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <Badge variant="outline" className="text-xs shrink-0">{task.priority}</Badge>
+                              <span>{task.task}</span>
+                              {task.estimatedCost > 0 && (
+                                <span className="text-muted-foreground ml-auto">${task.estimatedCost}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {aiRecommendations.recommendedParts.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Package className="h-4 w-4" />
+                          Recommended Parts
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="text-sm space-y-2">
+                          {aiRecommendations.recommendedParts.map((part, i) => (
+                            <li key={i} className="flex items-center justify-between gap-2">
+                              <span>{part.part} (x{part.quantity})</span>
+                              <span className="text-muted-foreground">${part.estimatedCost}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {aiRecommendations.preventativeSchedule.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          Preventative Maintenance Schedule
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="text-sm space-y-2">
+                          {aiRecommendations.preventativeSchedule.map((item, i) => (
+                            <li key={i} className="border-l-2 border-muted pl-3">
+                              <div className="font-medium">{item.task}</div>
+                              <div className="text-xs text-muted-foreground">Every {item.interval}</div>
+                              <div className="text-xs">{item.description}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {aiRecommendations.warningsOrNotes.length > 0 && (
+                    <Card className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-900/20">
+                      <CardContent className="pt-4">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-yellow-600 shrink-0 mt-0.5" />
+                          <ul className="text-sm space-y-1">
+                            {aiRecommendations.warningsOrNotes.map((note, i) => (
+                              <li key={i}>{note}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-8">
+                  <Sparkles className="h-12 w-12 mb-4 opacity-20" />
+                  <p className="text-sm">Describe the problem and click "Get AI Recommendations" for intelligent repair suggestions, parts lists, and maintenance schedules.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hour Log Dialog */}
+      <Dialog open={showHourLogDialog} onOpenChange={setShowHourLogDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Log Equipment Hours</DialogTitle>
+            <DialogDescription>
+              Record weekly equipment usage.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...hourLogForm}>
+            <form onSubmit={hourLogForm.handleSubmit((data) => submitHourLog.mutate(data))} className="space-y-4">
+              <FormField
+                control={hourLogForm.control}
+                name="projectId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-hour-log-project">
+                          <SelectValue placeholder="Select project" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {availableProjects.map((project: any) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.code} - {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={hourLogForm.control}
+                  name="weekStartDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Week Start *</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} data-testid="input-week-start" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={hourLogForm.control}
+                  name="weekEndDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Week End *</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} data-testid="input-week-end" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={hourLogForm.control}
+                  name="startingHours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Starting Hours *</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.1" {...field} data-testid="input-starting-hours" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={hourLogForm.control}
+                  name="endingHours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Ending Hours *</FormLabel>
+                      <FormControl>
+                        <Input type="number" step="0.1" {...field} data-testid="input-log-ending-hours" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <FormField
+                control={hourLogForm.control}
+                name="fuelUsed"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Fuel Used (gallons)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.1" {...field} placeholder="Optional" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={hourLogForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Any notes about usage this week..." />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowHourLogDialog(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={submitHourLog.isPending} data-testid="button-submit-hours">
+                  {submitHourLog.isPending ? "Submitting..." : "Submit Hour Log"}
                 </Button>
               </DialogFooter>
             </form>

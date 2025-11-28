@@ -12,7 +12,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
 -   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
 -   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
 -   **Database**: PostgreSQL on Neon, managed with Drizzle ORM. Bid-Estimate-Project integration uses nullable bidId/projectId with a CHECK constraint and ON DELETE SET NULL for bidId (preserves estimates when bids are deleted). Quote preservation system retains ALL bid quotes (selected and non-selected) during bid-to-project conversion, enabling later selection on project pages.
--   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, Role-Based Access Control (RBAC) across six user roles, and self-service registration.
+-   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, Role-Based Access Control (RBAC) across seven user roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, HOURLY_EMPLOYEE, MAINTENANCE_MANAGER), and self-service registration.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS with a focus on intuitive project management workflows.
 -   **Key Features**:
@@ -39,7 +39,14 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Scope Integration**: Estimate line items can pre-populate subcontractor quote forms on bids. Project scope items can be quickly selected when creating T&M tickets. All modules use standardized workTypeCode for unified production tracking.
     -   **Material Calculator**: Integrated into bid estimates for automatic concrete yards and stone tonnage calculations. Supports SF items (area × depth formula) and LF items (linear × width × height for curbs/walls). Features adjustable waste factors (5-15%), stone sub-base toggle with type selection (crushed stone, limestone, compacted base), density-based calculations (1.5 tons/yd³ standard), and job totals summary card displaying aggregate concrete yards and stone tons across all estimate line items.
     -   **Internal Messaging System**: Secure team communication with company-wide channel and direct messages. Features conversation list with search, message composition, unread message badges in navigation, read receipts, and mobile-responsive design. All messaging routes verify participant membership before allowing access (403 for unauthorized users). Company channel auto-created for all users.
-    -   **Equipment Management System**: Comprehensive fleet and tool tracking with equipment catalog (make, model, year, serial number, current hours), project assignment tracking with availability status, repair workflow with vendor tracking and cost monitoring, preventative maintenance scheduling based on hours or calendar intervals, and weekly hour entry reminders for project managers. Equipment types include Heavy Equipment, Vehicles, Power Tools, Hand Tools, Trailers, and specialized categories. RBAC restricts access to ADMIN, MANAGER, and SUPERINTENDENT roles.
+    -   **Equipment Management System**: Comprehensive fleet and tool tracking with equipment catalog (make, model, year, serial number, current hours), project assignment tracking with availability status, repair workflow with vendor tracking and cost monitoring, preventative maintenance scheduling based on hours or calendar intervals, and weekly hour entry reminders for project managers. Equipment types include Heavy Equipment, Vehicles, Power Tools, Hand Tools, Trailers, and specialized categories. RBAC restricts access to ADMIN, MANAGER, SUPERINTENDENT, and MAINTENANCE_MANAGER roles. Features include:
+        - Equipment detail page with Overview, Assignments, Repairs, and Hour Logs tabs
+        - AI-powered maintenance recommendations using GPT-4o for repair tasks, parts suggestions, and preventative maintenance schedules
+        - Equipment assignment to projects with expected return date tracking
+        - Equipment return workflow with condition reporting and hour updates
+        - Weekly hour logging with fuel usage tracking
+        - Equipment tab on project detail page showing all equipment assigned to the project
+        - Maintenance notification system routing repair requests to Maintenance Managers and admins
 
 ## External Dependencies
 -   **PostgreSQL (Neon)**: Primary database.

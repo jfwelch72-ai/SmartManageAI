@@ -9344,7 +9344,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================================
 
   // Get all equipment with optional filters
-  app.get("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { status, type, search } = req.query;
       
@@ -9384,7 +9384,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get single equipment by ID or code
-  app.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { idOrCode } = req.params;
       
@@ -9410,7 +9410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new equipment
-  app.post("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const body = req.body;
       
@@ -9455,7 +9455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update equipment
-  app.patch("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.patch("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const updates = req.body;
@@ -9488,7 +9488,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete equipment
-  app.delete("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.delete("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       
@@ -9519,7 +9519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get equipment assignments for a piece of equipment
-  app.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -9554,7 +9554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assign equipment to project
-  app.post("/api/equipment/:equipmentId/assign", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/assign", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { projectId, expectedReturnDate, notes } = req.body;
@@ -9609,7 +9609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Return equipment from assignment
-  app.post("/api/equipment/:equipmentId/return", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/return", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { returnCondition, endingHours, notes } = req.body;
@@ -9666,7 +9666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get equipment repairs
-  app.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -9700,7 +9700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Report equipment repair
-  app.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { description, problemDescription, repairLocation, estimatedCost, estimatedCompletionDate } = req.body;
@@ -9756,7 +9756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update repair status
-  app.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { repairId } = req.params;
       const updates = req.body;
@@ -9794,7 +9794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get maintenance schedules for equipment
-  app.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -9812,7 +9812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create maintenance schedule
-  app.post("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const body = req.body;
@@ -9848,7 +9848,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Record maintenance completion
-  app.post("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { scheduleId, maintenanceType, description, performedByVendor, laborCost, partsCost, notes, partsUsed } = req.body;
@@ -9919,7 +9919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get maintenance history for equipment
-  app.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -9937,7 +9937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get upcoming maintenance due (for alerts)
-  app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const now = new Date();
       const alertWindow = new Date();
@@ -9981,7 +9981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get equipment assigned to a project
-  app.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       
@@ -10014,7 +10014,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Submit weekly hour log for equipment
-  app.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       const { projectId, weekStartDate, weekEndDate, startingHours, endingHours, notes, fuelUsed } = req.body;
@@ -10063,7 +10063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get hour logs for equipment
-  app.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -10089,6 +10089,210 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(logs);
     } catch (error) {
       console.error("Get hour logs error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // AI-powered equipment maintenance recommendations
+  app.post("/api/equipment/:equipmentId/ai-recommendations", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { problemDescription } = req.body;
+      
+      // Get equipment details
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Get repair history for context
+      const repairHistory = await db
+        .select()
+        .from(equipmentRepairs)
+        .where(eq(equipmentRepairs.equipmentId, equipmentId))
+        .orderBy(desc(equipmentRepairs.problemReportedAt))
+        .limit(10);
+      
+      // Get maintenance history for context
+      const maintenanceHistory = await db
+        .select()
+        .from(equipmentMaintenanceHistory)
+        .where(eq(equipmentMaintenanceHistory.equipmentId, equipmentId))
+        .orderBy(desc(equipmentMaintenanceHistory.performedAt))
+        .limit(10);
+      
+      const { openai } = await import('./ai/openaiClient');
+      
+      const systemPrompt = `You are an expert equipment maintenance advisor for construction equipment. 
+You provide practical, actionable recommendations for repairs and preventative maintenance.
+Always respond in valid JSON format with the following structure:
+{
+  "recommendedTasks": [
+    { "task": "Task description", "priority": "HIGH|MEDIUM|LOW", "estimatedCost": number, "estimatedHours": number }
+  ],
+  "recommendedParts": [
+    { "part": "Part name", "quantity": number, "estimatedCost": number, "supplier": "Suggested supplier or 'OEM Dealer'" }
+  ],
+  "preventativeSchedule": [
+    { "interval": "Hours or calendar interval", "task": "Maintenance task", "description": "Brief description" }
+  ],
+  "urgency": "CRITICAL|HIGH|MEDIUM|LOW",
+  "estimatedTotalCost": number,
+  "summary": "Brief summary of recommendations",
+  "warningsOrNotes": ["Any important warnings or notes"]
+}`;
+
+      const userPrompt = `Equipment Details:
+- Name: ${equipmentItem.name}
+- Type: ${equipmentItem.type}
+- Make: ${equipmentItem.make || 'Unknown'}
+- Model: ${equipmentItem.model || 'Unknown'}
+- Year: ${equipmentItem.year || 'Unknown'}
+- Current Hours: ${equipmentItem.currentHours || 0}
+- Last Maintenance: ${equipmentItem.lastMaintenanceDate ? new Date(equipmentItem.lastMaintenanceDate).toLocaleDateString() : 'Unknown'}
+
+Problem Reported: ${problemDescription || 'General maintenance check requested'}
+
+Recent Repair History (last 10):
+${repairHistory.length > 0 
+  ? repairHistory.map(r => `- ${r.description}: ${r.status} (Cost: ${r.actualCost || r.estimatedCost || 'Unknown'})`).join('\n')
+  : 'No recent repairs'}
+
+Recent Maintenance History (last 10):
+${maintenanceHistory.length > 0
+  ? maintenanceHistory.map(m => `- ${m.maintenanceType}: ${m.description || 'Completed'} at ${m.hoursAtMaintenance || 'Unknown'} hours`).join('\n')
+  : 'No recent maintenance records'}
+
+Please provide:
+1. Recommended repair tasks based on the problem description
+2. Parts that may be needed
+3. Recommended preventative maintenance schedule for this equipment type
+4. Urgency assessment
+5. Cost estimates`;
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 2048,
+      });
+      
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+      
+      const recommendations = JSON.parse(content);
+      res.json(recommendations);
+    } catch (error) {
+      console.error("AI recommendations error:", error);
+      res.status(500).json({ error: "Failed to generate AI recommendations" });
+    }
+  });
+
+  // Get available projects for equipment assignment
+  app.get("/api/equipment/available-projects", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const activeProjects = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+        })
+        .from(projects)
+        .where(eq(projects.status, "ACTIVE"))
+        .orderBy(projects.name);
+      
+      res.json(activeProjects);
+    } catch (error) {
+      console.error("Get available projects error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Notify maintenance managers about new repair/maintenance requests
+  app.post("/api/equipment/notify-maintenance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId, repairId, message, type } = req.body;
+      
+      // Get all maintenance managers
+      const maintenanceManagers = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.role, "MAINTENANCE_MANAGER"),
+          eq(users.isActive, true)
+        ));
+      
+      // Also notify admins and managers with maintenance oversight
+      const adminsAndManagers = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          or(eq(users.role, "ADMIN"), eq(users.role, "MANAGER")),
+          eq(users.isActive, true)
+        ));
+      
+      const allRecipients = [...maintenanceManagers, ...adminsAndManagers];
+      const uniqueRecipients = [...new Set(allRecipients.map(r => r.id))];
+      
+      // Create notifications for all recipients
+      for (const recipientId of uniqueRecipients) {
+        await db.insert(notifications).values({
+          userId: recipientId,
+          type: type === 'REPAIR' ? 'REPAIR_REQUEST' : 'MAINTENANCE_REQUEST',
+          title: type === 'REPAIR' ? 'New Repair Request' : 'Maintenance Required',
+          message,
+          link: `/equipment/${equipmentId}`,
+          createdAt: new Date(),
+        });
+      }
+      
+      res.json({ success: true, notifiedCount: uniqueRecipients.length });
+    } catch (error) {
+      console.error("Notify maintenance error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get equipment assigned to a project (for project detail page)
+  app.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      
+      // Get active assignments for this project
+      const assignedEquipment = await db
+        .select({
+          id: equipment.id,
+          equipmentCode: equipment.equipmentCode,
+          name: equipment.name,
+          type: equipment.type,
+          make: equipment.make,
+          model: equipment.model,
+          year: equipment.year,
+          status: equipment.status,
+          currentHours: equipment.currentHours,
+          assignedAt: equipmentAssignments.assignedAt,
+          expectedReturnDate: equipmentAssignments.expectedReturnDate,
+          assignmentId: equipmentAssignments.id,
+          assignmentNotes: equipmentAssignments.notes,
+        })
+        .from(equipmentAssignments)
+        .innerJoin(equipment, eq(equipmentAssignments.equipmentId, equipment.id))
+        .where(and(
+          eq(equipmentAssignments.projectId, projectId),
+          eq(equipmentAssignments.isActive, true)
+        ))
+        .orderBy(equipment.name);
+      
+      res.json(assignedEquipment);
+    } catch (error) {
+      console.error("Get project equipment error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

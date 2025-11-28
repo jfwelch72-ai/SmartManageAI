@@ -112,8 +112,8 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-// Middleware to require specific roles (all 6 roles supported)
-export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE">) {
+// Middleware to require specific roles (all 7 roles supported)
+export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER">) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });
