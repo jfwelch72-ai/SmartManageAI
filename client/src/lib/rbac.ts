@@ -264,11 +264,5 @@ export const NavigationConfig = {
       testId: "nav-subcontractor-payables",
       visible: (role?: string) => isAdmin(role),
     },
-    {
-      href: "/rental-vendors",
-      label: "Rental Vendors",
-      testId: "nav-rental-vendors",
-      visible: (role?: string) => hasEquipmentAccess(role),
-    },
   ],
 };
