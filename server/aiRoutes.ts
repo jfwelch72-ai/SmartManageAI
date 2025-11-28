@@ -297,6 +297,95 @@ router.get("/cfo/profitability", async (req: AuthRequest, res) => {
   }
 });
 
+router.get("/cfo/equipment-metrics", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!['ADMIN', 'MANAGER'].includes(req.user.role)) {
+      return res.status(403).json({ error: "Admin or Manager access required" });
+    }
+
+    const latestRun = await getLatestAIRun();
+
+    if (!latestRun || !latestRun.snapshotData) {
+      return res.json({
+        summary: {
+          total_owned_equipment: 0,
+          active_rentals: 0,
+          total_rental_cost_mtd: 0,
+          underutilized_count: 0,
+        },
+        rental_vs_owned: [],
+        frequently_rented: [],
+        underutilized: [],
+        project_equipment_costs: [],
+        last_updated: null,
+      });
+    }
+
+    const snapshotData = JSON.parse(latestRun.snapshotData);
+    const equipment = snapshotData.equipment || {};
+    const roiAnalysis = equipment.roi_analysis || {};
+
+    // Calculate summary metrics
+    const fleetSize = equipment.fleet?.length || 0;
+    const activeRentals = equipment.active_rentals?.length || 0;
+    const rentalHistory = equipment.rental_usage_history || [];
+    
+    // Calculate MTD rental costs (approximated from recent rentals)
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const mtdRentals = rentalHistory.filter((r: any) => {
+      const startDate = r.actual_start_date ? new Date(r.actual_start_date) : null;
+      return startDate && startDate >= monthStart;
+    });
+    const totalRentalCostMtd = mtdRentals.reduce((sum: number, r: any) => 
+      sum + (r.actual_total_cost || r.quoted_total_cost || 0), 0
+    );
+
+    // Get underutilized count
+    const underutilizedCount = roiAnalysis.underutilized_owned?.length || 0;
+
+    // Build project equipment costs from projects_with_equipment in snapshot
+    const projectsWithEquipment = equipment.projects_with_equipment || [];
+    const projectCosts = projectsWithEquipment.map((p: any) => {
+      const planned = Number(p.planned_cost) || 0;
+      const actual = Number(p.actual_cost) || 0;
+      // Use actual if available, otherwise use planned
+      const total = actual > 0 ? actual : planned;
+      return {
+        project_code: p.project_code,
+        project_name: p.project_name,
+        planned_cost: planned,
+        actual_cost: actual,
+        total_cost: total,
+      };
+    });
+
+    // Sort project costs by total descending
+    projectCosts.sort((a: any, b: any) => b.total_cost - a.total_cost);
+
+    res.json({
+      summary: {
+        total_owned_equipment: fleetSize,
+        active_rentals: activeRentals,
+        total_rental_cost_mtd: Math.round(totalRentalCostMtd * 100) / 100,
+        underutilized_count: underutilizedCount,
+      },
+      rental_vs_owned: roiAnalysis.rental_vs_owned_comparison || [],
+      frequently_rented: roiAnalysis.frequently_rented_equipment || [],
+      underutilized: roiAnalysis.underutilized_owned || [],
+      project_equipment_costs: projectCosts.slice(0, 10),
+      last_updated: latestRun.createdAt,
+    });
+  } catch (error: any) {
+    console.error("Error fetching equipment metrics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
