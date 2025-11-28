@@ -2173,3 +2173,286 @@ export type EquipmentHourLog = typeof equipmentHourLogs.$inferSelect;
 export const insertEquipmentHourReminderSchema = createInsertSchema(equipmentHourReminders).omit({ id: true, createdAt: true });
 export type InsertEquipmentHourReminder = z.infer<typeof insertEquipmentHourReminderSchema>;
 export type EquipmentHourReminder = typeof equipmentHourReminders.$inferSelect;
+
+// ============================================
+// EQUIPMENT RATES, RENTALS & BID/PROJECT INTEGRATION
+// ============================================
+
+// Equipment Rate Profiles - Internal rates for owned equipment
+export const equipmentRateProfiles = pgTable("equipment_rate_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  
+  // Rate Structure
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(), // Internal charge per hour
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }), // Optional daily rate (8 hours default)
+  weeklyRate: decimal("weekly_rate", { precision: 10, scale: 2 }), // Optional weekly rate
+  monthlyRate: decimal("monthly_rate", { precision: 10, scale: 2 }), // Optional monthly rate
+  
+  // Overhead & Burden
+  fuelCostPerHour: decimal("fuel_cost_per_hour", { precision: 10, scale: 2 }), // Estimated fuel cost
+  maintenanceCostPerHour: decimal("maintenance_cost_per_hour", { precision: 10, scale: 2 }), // Avg maintenance allocation
+  operatorCostPerHour: decimal("operator_cost_per_hour", { precision: 10, scale: 2 }), // If operator included
+  includesOperator: boolean("includes_operator").notNull().default(false),
+  
+  // Validity
+  effectiveDate: timestamp("effective_date").notNull().defaultNow(),
+  expirationDate: timestamp("expiration_date"), // Null = currently active
+  isActive: boolean("is_active").notNull().default(true),
+  
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_rate_profiles_equipment_idx").on(table.equipmentId),
+  activeIdx: index("equipment_rate_profiles_active_idx").on(table.isActive),
+}));
+
+export const insertEquipmentRateProfileSchema = createInsertSchema(equipmentRateProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentRateProfile = z.infer<typeof insertEquipmentRateProfileSchema>;
+export type EquipmentRateProfile = typeof equipmentRateProfiles.$inferSelect;
+
+// Rental Vendors - Track rental companies
+export const rentalVendors = pgTable("rental_vendors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  code: text("code").notNull().unique(), // Short code: "CAT-RENTAL", "SUNBELT"
+  
+  // Contact Info
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  
+  // Relationship
+  accountNumber: text("account_number"), // Our account with them
+  paymentTerms: text("payment_terms"), // NET30, etc.
+  notes: text("notes"),
+  
+  // CRM Link (optional)
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRentalVendorSchema = createInsertSchema(rentalVendors).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRentalVendor = z.infer<typeof insertRentalVendorSchema>;
+export type RentalVendor = typeof rentalVendors.$inferSelect;
+
+// Rental Equipment Catalog - Available rental equipment types from vendors
+export const rentalEquipmentCatalog = pgTable("rental_equipment_catalog", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  vendorId: varchar("vendor_id").notNull().references(() => rentalVendors.id, { onDelete: "cascade" }),
+  
+  // Equipment Details
+  name: text("name").notNull(), // "CAT 320 Excavator"
+  equipmentType: text("equipment_type").notNull(), // Maps to equipmentTypeEnum values
+  make: text("make"),
+  model: text("model"),
+  description: text("description"),
+  
+  // Rental Rates
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  weeklyRate: decimal("weekly_rate", { precision: 10, scale: 2 }),
+  monthlyRate: decimal("monthly_rate", { precision: 10, scale: 2 }),
+  
+  // Additional Costs
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }),
+  pickupFee: decimal("pickup_fee", { precision: 10, scale: 2 }),
+  fuelSurcharge: decimal("fuel_surcharge", { precision: 5, scale: 2 }), // Percentage
+  insurancePerDay: decimal("insurance_per_day", { precision: 10, scale: 2 }),
+  
+  // Availability
+  minimumRentalDays: integer("minimum_rental_days").default(1),
+  leadTimeDays: integer("lead_time_days").default(1), // Days notice needed
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  vendorIdx: index("rental_equipment_catalog_vendor_idx").on(table.vendorId),
+  typeIdx: index("rental_equipment_catalog_type_idx").on(table.equipmentType),
+}));
+
+export const insertRentalEquipmentCatalogSchema = createInsertSchema(rentalEquipmentCatalog).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRentalEquipmentCatalog = z.infer<typeof insertRentalEquipmentCatalogSchema>;
+export type RentalEquipmentCatalog = typeof rentalEquipmentCatalog.$inferSelect;
+
+// Bid Equipment Selection Source Enum
+export const bidEquipmentSourceEnum = pgEnum("bid_equipment_source", [
+  "OWNED",   // Company-owned equipment
+  "RENTAL"  // Rental from vendor
+]);
+
+// Bid Equipment Selections - Equipment planned for bids
+export const bidEquipmentSelections = pgTable("bid_equipment_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  
+  // Equipment Source
+  source: bidEquipmentSourceEnum("source").notNull(),
+  
+  // For OWNED equipment
+  equipmentId: varchar("equipment_id").references(() => equipment.id, { onDelete: "set null" }),
+  
+  // For RENTAL equipment
+  rentalCatalogId: varchar("rental_catalog_id").references(() => rentalEquipmentCatalog.id, { onDelete: "set null" }),
+  rentalVendorId: varchar("rental_vendor_id").references(() => rentalVendors.id, { onDelete: "set null" }),
+  
+  // Common Details (for display/costing even if equipment deleted)
+  equipmentName: text("equipment_name").notNull(),
+  equipmentType: text("equipment_type").notNull(),
+  
+  // Planned Usage
+  plannedHours: decimal("planned_hours", { precision: 10, scale: 1 }),
+  plannedDays: integer("planned_days"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  
+  // Rate Snapshot (captured at selection time)
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  weeklyRate: decimal("weekly_rate", { precision: 10, scale: 2 }),
+  
+  // Calculated Costs
+  estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }),
+  
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  bidIdx: index("bid_equipment_selections_bid_idx").on(table.bidId),
+  equipmentIdx: index("bid_equipment_selections_equipment_idx").on(table.equipmentId),
+  sourceIdx: index("bid_equipment_selections_source_idx").on(table.source),
+}));
+
+export const insertBidEquipmentSelectionSchema = createInsertSchema(bidEquipmentSelections).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBidEquipmentSelection = z.infer<typeof insertBidEquipmentSelectionSchema>;
+export type BidEquipmentSelection = typeof bidEquipmentSelections.$inferSelect;
+
+// Project Equipment Plan Status Enum
+export const projectEquipmentPlanStatusEnum = pgEnum("project_equipment_plan_status", [
+  "PLANNED",           // From bid, not yet assigned
+  "ASSIGNED",          // Owned equipment assigned to project
+  "RENTAL_BOOKED",     // Rental confirmed with vendor
+  "RENTAL_ACTIVE",     // Rental in progress
+  "COMPLETED",         // Equipment work finished
+  "CANCELLED"          // No longer needed
+]);
+
+// Project Equipment Plans - Carryover from bid with planned vs actual tracking
+export const projectEquipmentPlans = pgTable("project_equipment_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Source tracking
+  bidEquipmentSelectionId: varchar("bid_equipment_selection_id").references(() => bidEquipmentSelections.id, { onDelete: "set null" }),
+  source: bidEquipmentSourceEnum("source").notNull(),
+  status: projectEquipmentPlanStatusEnum("status").notNull().default("PLANNED"),
+  
+  // For OWNED equipment - links to actual assignment
+  equipmentId: varchar("equipment_id").references(() => equipment.id, { onDelete: "set null" }),
+  assignmentId: varchar("assignment_id").references(() => equipmentAssignments.id, { onDelete: "set null" }),
+  
+  // For RENTAL equipment
+  rentalCatalogId: varchar("rental_catalog_id").references(() => rentalEquipmentCatalog.id, { onDelete: "set null" }),
+  rentalVendorId: varchar("rental_vendor_id").references(() => rentalVendors.id, { onDelete: "set null" }),
+  
+  // Common Details
+  equipmentName: text("equipment_name").notNull(),
+  equipmentType: text("equipment_type").notNull(),
+  
+  // Planned (from bid)
+  plannedHours: decimal("planned_hours", { precision: 10, scale: 1 }),
+  plannedDays: integer("planned_days"),
+  plannedStartDate: timestamp("planned_start_date"),
+  plannedEndDate: timestamp("planned_end_date"),
+  plannedCost: decimal("planned_cost", { precision: 12, scale: 2 }),
+  
+  // Actual (tracked during project)
+  actualHours: decimal("actual_hours", { precision: 10, scale: 1 }),
+  actualDays: integer("actual_days"),
+  actualStartDate: timestamp("actual_start_date"),
+  actualEndDate: timestamp("actual_end_date"),
+  actualCost: decimal("actual_cost", { precision: 12, scale: 2 }),
+  
+  // Rates used
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_equipment_plans_project_idx").on(table.projectId),
+  statusIdx: index("project_equipment_plans_status_idx").on(table.status),
+  sourceIdx: index("project_equipment_plans_source_idx").on(table.source),
+}));
+
+export const insertProjectEquipmentPlanSchema = createInsertSchema(projectEquipmentPlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectEquipmentPlan = z.infer<typeof insertProjectEquipmentPlanSchema>;
+export type ProjectEquipmentPlan = typeof projectEquipmentPlans.$inferSelect;
+
+// Rental Equipment Usages - Track actual rental usage for billing/reporting
+export const rentalEquipmentUsages = pgTable("rental_equipment_usages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectEquipmentPlanId: varchar("project_equipment_plan_id").notNull().references(() => projectEquipmentPlans.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").notNull().references(() => rentalVendors.id, { onDelete: "restrict" }),
+  
+  // Rental Details
+  rentalCatalogId: varchar("rental_catalog_id").references(() => rentalEquipmentCatalog.id, { onDelete: "set null" }),
+  equipmentName: text("equipment_name").notNull(),
+  equipmentType: text("equipment_type").notNull(),
+  
+  // Rental Period
+  startDate: timestamp("start_date").notNull(),
+  expectedEndDate: timestamp("expected_end_date").notNull(),
+  actualEndDate: timestamp("actual_end_date"),
+  
+  // Status
+  status: text("status").notNull().default("BOOKED"), // BOOKED, ACTIVE, EXTENDED, COMPLETED, CANCELLED
+  
+  // Booking Reference
+  vendorConfirmation: text("vendor_confirmation"),
+  poNumber: text("po_number"),
+  
+  // Costs
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }).notNull(),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }),
+  pickupFee: decimal("pickup_fee", { precision: 10, scale: 2 }),
+  insuranceCost: decimal("insurance_cost", { precision: 10, scale: 2 }),
+  fuelCharges: decimal("fuel_charges", { precision: 10, scale: 2 }),
+  damageCharges: decimal("damage_charges", { precision: 10, scale: 2 }),
+  otherCharges: decimal("other_charges", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  
+  // Invoice tracking
+  invoiceNumber: text("invoice_number"),
+  invoiceDate: timestamp("invoice_date"),
+  isPaid: boolean("is_paid").notNull().default(false),
+  paidDate: timestamp("paid_date"),
+  
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("rental_equipment_usages_project_idx").on(table.projectId),
+  vendorIdx: index("rental_equipment_usages_vendor_idx").on(table.vendorId),
+  statusIdx: index("rental_equipment_usages_status_idx").on(table.status),
+  planIdx: index("rental_equipment_usages_plan_idx").on(table.projectEquipmentPlanId),
+}));
+
+export const insertRentalEquipmentUsageSchema = createInsertSchema(rentalEquipmentUsages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRentalEquipmentUsage = z.infer<typeof insertRentalEquipmentUsageSchema>;
+export type RentalEquipmentUsage = typeof rentalEquipmentUsages.$inferSelect;

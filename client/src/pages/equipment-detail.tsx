@@ -162,6 +162,41 @@ interface MaintenanceHistory {
   performedByName: string;
 }
 
+interface RateProfile {
+  id: string;
+  equipmentId: string;
+  hourlyRate: string;
+  dailyRate: string | null;
+  weeklyRate: string | null;
+  monthlyRate: string | null;
+  fuelCostPerHour: string | null;
+  maintenanceCostPerHour: string | null;
+  operatorCostPerHour: string | null;
+  includesOperator: boolean;
+  effectiveDate: string;
+  expirationDate: string | null;
+  isActive: boolean;
+  notes: string | null;
+  createdAt: string;
+  createdByName?: string;
+}
+
+const rateProfileSchema = z.object({
+  hourlyRate: z.string().min(1, "Hourly rate is required"),
+  dailyRate: z.string().optional(),
+  weeklyRate: z.string().optional(),
+  monthlyRate: z.string().optional(),
+  fuelCostPerHour: z.string().optional(),
+  maintenanceCostPerHour: z.string().optional(),
+  operatorCostPerHour: z.string().optional(),
+  includesOperator: z.boolean().default(false),
+  effectiveDate: z.string().min(1, "Effective date is required"),
+  notes: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+type RateProfileInput = z.infer<typeof rateProfileSchema>;
+
 export default function EquipmentDetailPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -178,6 +213,8 @@ export default function EquipmentDetailPage() {
   const [loadingAI, setLoadingAI] = useState(false);
   const [showCompleteMaintenanceDialog, setShowCompleteMaintenanceDialog] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<MaintenanceSchedule | null>(null);
+  const [showRateDialog, setShowRateDialog] = useState(false);
+  const [editingRate, setEditingRate] = useState<RateProfile | null>(null);
   
   const { data: equipment, isLoading, error } = useQuery<Equipment>({
     queryKey: ["/api/equipment", code],
@@ -268,6 +305,19 @@ export default function EquipmentDetailPage() {
     },
     enabled: !!equipment?.id,
   });
+
+  const { data: rateProfiles = [], isLoading: isLoadingRates } = useQuery<RateProfile[]>({
+    queryKey: ["/api/equipment", equipment?.id, "rate-profiles"],
+    queryFn: async () => {
+      if (!equipment?.id) return [];
+      const response = await fetch(`/api/equipment/${equipment.id}/rate-profiles`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch rate profiles");
+      return response.json();
+    },
+    enabled: !!equipment?.id,
+  });
   
   const form = useForm<EditEquipmentInput>({
     resolver: zodResolver(editEquipmentSchema),
@@ -329,6 +379,23 @@ export default function EquipmentDetailPage() {
       endingHours: "",
       notes: "",
       fuelUsed: "",
+    },
+  });
+
+  const rateForm = useForm<RateProfileInput>({
+    resolver: zodResolver(rateProfileSchema),
+    defaultValues: {
+      hourlyRate: "",
+      dailyRate: "",
+      weeklyRate: "",
+      monthlyRate: "",
+      fuelCostPerHour: "",
+      maintenanceCostPerHour: "",
+      operatorCostPerHour: "",
+      includesOperator: false,
+      effectiveDate: format(new Date(), "yyyy-MM-dd"),
+      notes: "",
+      isActive: true,
     },
   });
   
@@ -501,6 +568,62 @@ export default function EquipmentDetailPage() {
     },
   });
 
+  const createRateMutation = useMutation({
+    mutationFn: async (data: RateProfileInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/rate-profiles`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "rate-profiles"] });
+      toast({ title: "Success", description: "Rate profile created successfully" });
+      setShowRateDialog(false);
+      rateForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create rate profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateRateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: RateProfileInput }) => {
+      return apiRequest("PATCH", `/api/equipment/${equipment?.id}/rate-profiles/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "rate-profiles"] });
+      toast({ title: "Success", description: "Rate profile updated successfully" });
+      setShowRateDialog(false);
+      setEditingRate(null);
+      rateForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update rate profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const activateRateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/rate-profiles/${id}/activate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "rate-profiles"] });
+      toast({ title: "Success", description: "Rate profile activated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to activate rate profile",
+        variant: "destructive",
+      });
+    },
+  });
+
   const fetchAIRecommendations = async () => {
     if (!equipment?.id) return;
     setLoadingAI(true);
@@ -604,6 +727,53 @@ export default function EquipmentDetailPage() {
   const submitCompleteMaintenance = (formData: { notes?: string; laborCost?: string; partsCost?: string; performedByVendor?: string }) => {
     if (!equipment?.id || !selectedSchedule?.id) return;
     completeMaintenance.mutate({ scheduleId: selectedSchedule.id, data: formData });
+  };
+
+  const handleEditRate = (profile: RateProfile) => {
+    setEditingRate(profile);
+    rateForm.reset({
+      hourlyRate: profile.hourlyRate || "",
+      dailyRate: profile.dailyRate || "",
+      weeklyRate: profile.weeklyRate || "",
+      monthlyRate: profile.monthlyRate || "",
+      fuelCostPerHour: profile.fuelCostPerHour || "",
+      maintenanceCostPerHour: profile.maintenanceCostPerHour || "",
+      operatorCostPerHour: profile.operatorCostPerHour || "",
+      includesOperator: profile.includesOperator || false,
+      effectiveDate: profile.effectiveDate ? format(new Date(profile.effectiveDate), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
+      notes: profile.notes || "",
+      isActive: profile.isActive,
+    });
+    setShowRateDialog(true);
+  };
+
+  const handleRateSubmit = (data: RateProfileInput) => {
+    // Convert string values to numbers and empty strings to null for backend
+    const payload = {
+      hourlyRate: data.hourlyRate ? data.hourlyRate : null,
+      dailyRate: data.dailyRate || null,
+      weeklyRate: data.weeklyRate || null,
+      monthlyRate: data.monthlyRate || null,
+      fuelCostPerHour: data.fuelCostPerHour || null,
+      maintenanceCostPerHour: data.maintenanceCostPerHour || null,
+      operatorCostPerHour: data.operatorCostPerHour || null,
+      includesOperator: data.includesOperator,
+      effectiveDate: data.effectiveDate,
+      notes: data.notes || null,
+      isActive: data.isActive,
+    };
+    
+    if (editingRate) {
+      updateRateMutation.mutate({ id: editingRate.id, data: payload as RateProfileInput });
+    } else {
+      createRateMutation.mutate(payload as RateProfileInput);
+    }
+  };
+
+  const handleCloseRateDialog = () => {
+    setShowRateDialog(false);
+    setEditingRate(null);
+    rateForm.reset();
   };
 
   const getMaintenanceStatus = (schedule: MaintenanceSchedule): { status: string; color: string; icon: any } => {
@@ -773,6 +943,10 @@ export default function EquipmentDetailPage() {
             <TabsTrigger value="maintenance" data-testid="tab-maintenance">
               <CalendarClock className="h-4 w-4 mr-1" />
               Preventative Maintenance
+            </TabsTrigger>
+            <TabsTrigger value="rates" data-testid="tab-rates">
+              <DollarSign className="h-4 w-4 mr-1" />
+              Rates
             </TabsTrigger>
           </TabsList>
           
@@ -1272,6 +1446,119 @@ export default function EquipmentDetailPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Rates Tab Content */}
+          <TabsContent value="rates">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-lg">Internal Rate Profiles</CardTitle>
+                  <CardDescription>
+                    Configure hourly, daily, and weekly rates for estimating and project costing
+                  </CardDescription>
+                </div>
+                {canEdit && (
+                  <Button 
+                    onClick={() => setShowRateDialog(true)} 
+                    data-testid="button-add-rate"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Rate Profile
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {isLoadingRates ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Loading rate profiles...</span>
+                  </div>
+                ) : rateProfiles.length === 0 ? (
+                  <div className="text-center py-8">
+                    <DollarSign className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">No rate profiles configured</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Add rate profiles to track equipment costs for bids and projects
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Hourly Rate</TableHead>
+                        <TableHead>Daily Rate</TableHead>
+                        <TableHead>Weekly Rate</TableHead>
+                        <TableHead>Fuel/hr</TableHead>
+                        <TableHead>Effective Date</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rateProfiles.map((profile) => (
+                        <TableRow key={profile.id} data-testid={`row-rate-${profile.id}`}>
+                          <TableCell>
+                            <Badge variant={profile.isActive ? "default" : "secondary"}>
+                              {profile.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            ${parseFloat(profile.hourlyRate || "0").toLocaleString()}/hr
+                          </TableCell>
+                          <TableCell>
+                            {profile.dailyRate 
+                              ? `$${parseFloat(profile.dailyRate).toLocaleString()}/day`
+                              : "-"
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {profile.weeklyRate 
+                              ? `$${parseFloat(profile.weeklyRate).toLocaleString()}/wk`
+                              : "-"
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {profile.fuelCostPerHour 
+                              ? `$${parseFloat(profile.fuelCostPerHour).toLocaleString()}`
+                              : "-"
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {format(new Date(profile.effectiveDate), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell>
+                            {canEdit && (
+                              <div className="flex gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon"
+                                  onClick={() => handleEditRate(profile)}
+                                  data-testid={`button-edit-rate-${profile.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                {!profile.isActive && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => activateRateMutation.mutate(profile.id)}
+                                    disabled={activateRateMutation.isPending}
+                                    data-testid={`button-activate-rate-${profile.id}`}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </main>
@@ -2033,6 +2320,267 @@ export default function EquipmentDetailPage() {
             }}
             isPending={completeMaintenance.isPending}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Rate Profile Dialog */}
+      <Dialog open={showRateDialog} onOpenChange={handleCloseRateDialog}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingRate ? "Edit Rate Profile" : "Add Rate Profile"}
+            </DialogTitle>
+            <DialogDescription>
+              Configure internal hourly, daily, and weekly rates for this equipment
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...rateForm}>
+            <form onSubmit={rateForm.handleSubmit(handleRateSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={rateForm.control}
+                  name="hourlyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hourly Rate *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="$0.00/hr" 
+                          {...field}
+                          data-testid="input-hourly-rate"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={rateForm.control}
+                  name="dailyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Daily Rate</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="$0.00/day" 
+                          {...field}
+                          data-testid="input-daily-rate"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={rateForm.control}
+                  name="weeklyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Weekly Rate</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="$0.00/wk" 
+                          {...field}
+                          data-testid="input-weekly-rate"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={rateForm.control}
+                  name="monthlyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Monthly Rate</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="$0.00/mo" 
+                          {...field}
+                          data-testid="input-monthly-rate"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-3">Operating Costs</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={rateForm.control}
+                    name="fuelCostPerHour"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fuel Cost/hr</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="$0.00" 
+                            {...field}
+                            data-testid="input-fuel-cost"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={rateForm.control}
+                    name="maintenanceCostPerHour"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Maintenance Cost/hr</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="$0.00" 
+                            {...field}
+                            data-testid="input-maintenance-cost"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={rateForm.control}
+                    name="operatorCostPerHour"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Operator Cost/hr</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="$0.00" 
+                            {...field}
+                            data-testid="input-operator-cost"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={rateForm.control}
+                    name="includesOperator"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-2 pt-6">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={field.onChange}
+                            className="h-4 w-4 rounded border-gray-300"
+                            data-testid="checkbox-includes-operator"
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">Rate Includes Operator</FormLabel>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+              
+              <div className="border-t pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={rateForm.control}
+                    name="effectiveDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Effective Date *</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="date" 
+                            {...field}
+                            data-testid="input-effective-date"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={rateForm.control}
+                    name="isActive"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center gap-2 pt-6">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={field.onChange}
+                            className="h-4 w-4 rounded border-gray-300"
+                            data-testid="checkbox-is-active"
+                          />
+                        </FormControl>
+                        <FormLabel className="!mt-0">Active</FormLabel>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+              
+              <FormField
+                control={rateForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Any notes about this rate profile..." 
+                        {...field}
+                        data-testid="input-rate-notes"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={handleCloseRateDialog}>
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={createRateMutation.isPending || updateRateMutation.isPending}
+                  data-testid="button-save-rate"
+                >
+                  {(createRateMutation.isPending || updateRateMutation.isPending) 
+                    ? "Saving..." 
+                    : editingRate ? "Update Rate" : "Add Rate"
+                  }
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>

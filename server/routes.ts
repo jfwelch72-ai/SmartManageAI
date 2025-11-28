@@ -22,7 +22,13 @@ import {
   insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema,
   insertScopeModifierCategorySchema, insertScopeModifierSchema,
   equipmentAssignments, equipmentRepairs, equipmentMaintenanceSchedules,
-  equipmentMaintenanceHistory, equipmentHourLogs, equipmentHourReminders
+  equipmentMaintenanceHistory, equipmentHourLogs, equipmentHourReminders,
+  equipmentRateProfiles, insertEquipmentRateProfileSchema,
+  rentalVendors, insertRentalVendorSchema,
+  rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema,
+  bidEquipmentSelections, insertBidEquipmentSelectionSchema,
+  projectEquipmentPlans, insertProjectEquipmentPlanSchema,
+  rentalEquipmentUsages, insertRentalEquipmentUsageSchema
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -10567,6 +10573,472 @@ If the make/model is unknown, provide general best practices for the equipment t
       res.json(history);
     } catch (error) {
       console.error("Get maintenance history error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // EQUIPMENT RATE PROFILES
+  // ============================================
+
+  // Get rate profiles for equipment
+  app.get("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const profiles = await db
+        .select({
+          id: equipmentRateProfiles.id,
+          equipmentId: equipmentRateProfiles.equipmentId,
+          hourlyRate: equipmentRateProfiles.hourlyRate,
+          dailyRate: equipmentRateProfiles.dailyRate,
+          weeklyRate: equipmentRateProfiles.weeklyRate,
+          monthlyRate: equipmentRateProfiles.monthlyRate,
+          fuelCostPerHour: equipmentRateProfiles.fuelCostPerHour,
+          maintenanceCostPerHour: equipmentRateProfiles.maintenanceCostPerHour,
+          operatorCostPerHour: equipmentRateProfiles.operatorCostPerHour,
+          includesOperator: equipmentRateProfiles.includesOperator,
+          effectiveDate: equipmentRateProfiles.effectiveDate,
+          expirationDate: equipmentRateProfiles.expirationDate,
+          isActive: equipmentRateProfiles.isActive,
+          notes: equipmentRateProfiles.notes,
+          createdAt: equipmentRateProfiles.createdAt,
+          createdByName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'System')`,
+        })
+        .from(equipmentRateProfiles)
+        .leftJoin(users, eq(equipmentRateProfiles.createdById, users.id))
+        .where(eq(equipmentRateProfiles.equipmentId, equipmentId))
+        .orderBy(desc(equipmentRateProfiles.effectiveDate));
+      
+      res.json(profiles);
+    } catch (error) {
+      console.error("Get equipment rate profiles error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get active rate profile for equipment (most recent active)
+  app.get("/api/equipment/:equipmentId/active-rate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const [activeProfile] = await db
+        .select()
+        .from(equipmentRateProfiles)
+        .where(and(
+          eq(equipmentRateProfiles.equipmentId, equipmentId),
+          eq(equipmentRateProfiles.isActive, true)
+        ))
+        .orderBy(desc(equipmentRateProfiles.effectiveDate))
+        .limit(1);
+      
+      if (!activeProfile) {
+        return res.json(null);
+      }
+      
+      res.json(activeProfile);
+    } catch (error) {
+      console.error("Get active rate profile error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create rate profile for equipment
+  app.post("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify equipment exists
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+      
+      const validatedData = insertEquipmentRateProfileSchema.parse({
+        ...req.body,
+        equipmentId,
+        createdById: userId,
+      });
+      
+      // If this is marked as active, deactivate other profiles
+      if (validatedData.isActive) {
+        await db.update(equipmentRateProfiles)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(and(
+            eq(equipmentRateProfiles.equipmentId, equipmentId),
+            eq(equipmentRateProfiles.isActive, true)
+          ));
+      }
+      
+      const [newProfile] = await db.insert(equipmentRateProfiles).values(validatedData).returning();
+      
+      await logCreate("equipment_rate_profiles", newProfile.id, userId!, {
+        equipmentId,
+        hourlyRate: String(validatedData.hourlyRate),
+      });
+      
+      res.status(201).json(newProfile);
+    } catch (error) {
+      console.error("Create equipment rate profile error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid input", details: error.errors });
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update rate profile
+  app.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId, profileId } = req.params;
+      const userId = req.user?.id;
+      
+      const [existingProfile] = await db.select().from(equipmentRateProfiles).where(
+        and(
+          eq(equipmentRateProfiles.id, profileId),
+          eq(equipmentRateProfiles.equipmentId, equipmentId)
+        )
+      );
+      if (!existingProfile) {
+        return res.status(404).json({ error: "Rate profile not found" });
+      }
+      
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date(),
+      };
+      
+      // If activating this profile, deactivate others
+      if (updateData.isActive === true && !existingProfile.isActive) {
+        await db.update(equipmentRateProfiles)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(and(
+            eq(equipmentRateProfiles.equipmentId, equipmentId),
+            eq(equipmentRateProfiles.isActive, true)
+          ));
+      }
+      
+      const [updatedProfile] = await db.update(equipmentRateProfiles)
+        .set(updateData)
+        .where(eq(equipmentRateProfiles.id, profileId))
+        .returning();
+      
+      await logUpdate(userId!, "equipment_rate_profiles", profileId, updateData);
+      
+      res.json(updatedProfile);
+    } catch (error) {
+      console.error("Update equipment rate profile error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Activate rate profile (deactivates others for same equipment)
+  app.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId, profileId } = req.params;
+      const userId = req.user?.id;
+      
+      const [existingProfile] = await db.select().from(equipmentRateProfiles).where(
+        and(
+          eq(equipmentRateProfiles.id, profileId),
+          eq(equipmentRateProfiles.equipmentId, equipmentId)
+        )
+      );
+      if (!existingProfile) {
+        return res.status(404).json({ error: "Rate profile not found" });
+      }
+      
+      // Deactivate all other profiles for this equipment
+      await db.update(equipmentRateProfiles)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(
+          eq(equipmentRateProfiles.equipmentId, equipmentId),
+          eq(equipmentRateProfiles.isActive, true)
+        ));
+      
+      // Activate the selected profile
+      const [updatedProfile] = await db.update(equipmentRateProfiles)
+        .set({ isActive: true, updatedAt: new Date() })
+        .where(eq(equipmentRateProfiles.id, profileId))
+        .returning();
+      
+      await logUpdate(userId!, "equipment_rate_profiles", profileId, { isActive: true });
+      
+      res.json(updatedProfile);
+    } catch (error) {
+      console.error("Activate equipment rate profile error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete rate profile
+  app.delete("/api/equipment/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { profileId } = req.params;
+      const userId = req.user?.id;
+      
+      const [existingProfile] = await db.select().from(equipmentRateProfiles).where(eq(equipmentRateProfiles.id, profileId));
+      if (!existingProfile) {
+        return res.status(404).json({ error: "Rate profile not found" });
+      }
+      
+      await db.delete(equipmentRateProfiles).where(eq(equipmentRateProfiles.id, profileId));
+      
+      await logDelete(userId!, "equipment_rate_profiles", profileId);
+      
+      res.json({ message: "Rate profile deleted successfully" });
+    } catch (error) {
+      console.error("Delete equipment rate profile error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // RENTAL VENDORS
+  // ============================================
+
+  // Get all rental vendors
+  app.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const vendors = await db
+        .select()
+        .from(rentalVendors)
+        .orderBy(rentalVendors.name);
+      
+      res.json(vendors);
+    } catch (error) {
+      console.error("Get rental vendors error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get single rental vendor
+  app.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [vendor] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      
+      if (!vendor) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
+      
+      res.json(vendor);
+    } catch (error) {
+      console.error("Get rental vendor error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create rental vendor
+  app.post("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      const validatedData = insertRentalVendorSchema.parse(req.body);
+      
+      const [newVendor] = await db.insert(rentalVendors).values(validatedData).returning();
+      
+      await logCreate("rental_vendors", newVendor.id, userId!, { name: validatedData.name });
+      
+      res.status(201).json(newVendor);
+    } catch (error) {
+      console.error("Create rental vendor error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid input", details: error.errors });
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update rental vendor
+  app.patch("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      if (!existing) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
+      
+      const [updated] = await db.update(rentalVendors)
+        .set({ ...req.body, updatedAt: new Date() })
+        .where(eq(rentalVendors.id, id))
+        .returning();
+      
+      await logUpdate(userId!, "rental_vendors", id, req.body);
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update rental vendor error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete rental vendor
+  app.delete("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      if (!existing) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
+      
+      await db.delete(rentalVendors).where(eq(rentalVendors.id, id));
+      
+      await logDelete(userId!, "rental_vendors", id);
+      
+      res.json({ message: "Rental vendor deleted successfully" });
+    } catch (error) {
+      console.error("Delete rental vendor error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================
+  // RENTAL EQUIPMENT CATALOG
+  // ============================================
+
+  // Get equipment catalog for a vendor
+  app.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { vendorId } = req.params;
+      
+      const catalog = await db
+        .select()
+        .from(rentalEquipmentCatalog)
+        .where(eq(rentalEquipmentCatalog.vendorId, vendorId))
+        .orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
+      
+      res.json(catalog);
+    } catch (error) {
+      console.error("Get rental equipment catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all rental equipment (across all vendors)
+  app.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { type, vendorId } = req.query;
+      
+      let query = db
+        .select({
+          id: rentalEquipmentCatalog.id,
+          name: rentalEquipmentCatalog.name,
+          equipmentType: rentalEquipmentCatalog.equipmentType,
+          make: rentalEquipmentCatalog.make,
+          model: rentalEquipmentCatalog.model,
+          hourlyRate: rentalEquipmentCatalog.hourlyRate,
+          dailyRate: rentalEquipmentCatalog.dailyRate,
+          weeklyRate: rentalEquipmentCatalog.weeklyRate,
+          monthlyRate: rentalEquipmentCatalog.monthlyRate,
+          deliveryFee: rentalEquipmentCatalog.deliveryFee,
+          vendorId: rentalEquipmentCatalog.vendorId,
+          vendorName: rentalVendors.name,
+          vendorCode: rentalVendors.code,
+          isActive: rentalEquipmentCatalog.isActive,
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
+        .where(eq(rentalEquipmentCatalog.isActive, true));
+      
+      const results = await query.orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
+      
+      // Filter in memory if needed
+      let filtered = results;
+      if (type) {
+        filtered = filtered.filter(r => r.equipmentType === type);
+      }
+      if (vendorId) {
+        filtered = filtered.filter(r => r.vendorId === vendorId);
+      }
+      
+      res.json(filtered);
+    } catch (error) {
+      console.error("Get rental equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Add equipment to vendor catalog
+  app.post("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { vendorId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify vendor exists
+      const [vendor] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, vendorId));
+      if (!vendor) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
+      
+      const validatedData = insertRentalEquipmentCatalogSchema.parse({
+        ...req.body,
+        vendorId,
+      });
+      
+      const [newItem] = await db.insert(rentalEquipmentCatalog).values(validatedData).returning();
+      
+      await logCreate("rental_equipment_catalog", newItem.id, userId!, { name: validatedData.name, vendorId });
+      
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Create rental equipment catalog item error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid input", details: error.errors });
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update catalog item
+  app.patch("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
+      if (!existing) {
+        return res.status(404).json({ error: "Catalog item not found" });
+      }
+      
+      const [updated] = await db.update(rentalEquipmentCatalog)
+        .set({ ...req.body, updatedAt: new Date() })
+        .where(eq(rentalEquipmentCatalog.id, id))
+        .returning();
+      
+      await logUpdate(userId!, "rental_equipment_catalog", id, req.body);
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update rental equipment catalog item error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete catalog item
+  app.delete("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
+      if (!existing) {
+        return res.status(404).json({ error: "Catalog item not found" });
+      }
+      
+      await db.delete(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
+      
+      await logDelete(userId!, "rental_equipment_catalog", id);
+      
+      res.json({ message: "Catalog item deleted successfully" });
+    } catch (error) {
+      console.error("Delete rental equipment catalog item error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
