@@ -33,6 +33,7 @@ import CRMPage from "@/pages/crm";
 import ScopeSettingsPage from "@/pages/scope-settings";
 import MessagesPage from "@/pages/messages";
 import EquipmentPage from "@/pages/equipment";
+import EquipmentDetailPage from "@/pages/equipment-detail";
 
 function ProtectedRoute({ 
   component: Component,
@@ -116,6 +117,7 @@ function Router() {
       <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={ScopeSettingsPage} permission={RoutePermissions.SCOPE_SETTINGS} />} />
+      <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} />} />
       
       <Route component={NotFound} />
