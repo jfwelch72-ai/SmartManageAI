@@ -14,6 +14,12 @@ import {
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import OpenAI from "openai";
+import { 
+  calculateMaterials, 
+  generateMaterialRequirementsJson, 
+  generateEquipmentRequirementsJson,
+  type MaterialCalculationInputs 
+} from "./materialCalculator";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -453,6 +459,42 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
+      // Run material calculator if any material fields are present
+      const materialInputs: MaterialCalculationInputs = {
+        quantity: Number(lineItem.quantity) || 0,
+        unit: lineItem.unit || '',
+        concreteDepthInches: lineItem.concreteDepthInches,
+        dimensionWidthInches: lineItem.dimensionWidthInches,
+        dimensionHeightInches: lineItem.dimensionHeightInches,
+        concreteWasteFactor: lineItem.concreteWasteFactor,
+        requiresStoneBase: lineItem.requiresStoneBase,
+        stoneDepthInches: lineItem.stoneDepthInches,
+        stoneWasteFactor: lineItem.stoneWasteFactor,
+        requiresExcavation: lineItem.requiresExcavation,
+        excavationDepthInches: lineItem.excavationDepthInches,
+        excavationWidthInches: lineItem.excavationWidthInches,
+        excavationSwellFactor: lineItem.excavationSwellFactor,
+        requiresWireMesh: lineItem.requiresWireMesh,
+        wireMeshCoverageSF: lineItem.wireMeshCoverageSF,
+        wireMeshWasteFactor: lineItem.wireMeshWasteFactor,
+        requiresRebar: lineItem.requiresRebar,
+        rebarSpacingInches: lineItem.rebarSpacingInches,
+        rebarLengthFeet: lineItem.rebarLengthFeet,
+        rebarWasteFactor: lineItem.rebarWasteFactor,
+        requiresDowels: lineItem.requiresDowels,
+        dowelSpacingInches: lineItem.dowelSpacingInches,
+        jointLengthFeet: lineItem.jointLengthFeet,
+        requiresSealer: lineItem.requiresSealer,
+        sealerCoverageSFPerGallon: lineItem.sealerCoverageSFPerGallon,
+        sealerCoats: lineItem.sealerCoats,
+        sealerWasteFactor: lineItem.sealerWasteFactor,
+        requiresUnderlayment: lineItem.requiresUnderlayment,
+        underlaymentOverlapInches: lineItem.underlaymentOverlapInches,
+        underlaymentWasteFactor: lineItem.underlaymentWasteFactor,
+      };
+
+      const materialResults = calculateMaterials(materialInputs);
+
       // Calculate totalCost from component costs
       const totalCost = (
         Number(lineItem.materialCost || 0) +
@@ -464,12 +506,23 @@ export function registerEstimateRoutes(app: Express) {
         Number(lineItem.profitAllocation || 0)
       ).toString();
 
-      // Validate and create line item
+      // Validate and create line item with calculated material quantities
       const validatedData = insertEstimateLineItemSchema.parse({
         ...lineItem,
         estimateId,
         source: "MANUAL",
         totalCost,
+        calculatedConcreteYards: materialResults.calculatedConcreteYards?.toString(),
+        calculatedStoneTons: materialResults.calculatedStoneTons?.toString(),
+        calculatedExcavationYards: materialResults.calculatedExcavationYards?.toString(),
+        calculatedWireMeshRolls: materialResults.calculatedWireMeshRolls?.toString(),
+        calculatedRebarCount: materialResults.calculatedRebarCount?.toString(),
+        calculatedRebarLinearFeet: materialResults.calculatedRebarLinearFeet?.toString(),
+        calculatedDowelCount: materialResults.calculatedDowelCount?.toString(),
+        calculatedSealerGallons: materialResults.calculatedSealerGallons?.toString(),
+        calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF?.toString(),
+        materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
+        equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
       });
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
@@ -500,6 +553,42 @@ export function registerEstimateRoutes(app: Express) {
         return res.status(404).json({ error: "Estimate not found" });
       }
 
+      // Run material calculator if any material fields are present
+      const materialInputs: MaterialCalculationInputs = {
+        quantity: Number(updates.quantity) || 0,
+        unit: updates.unit || '',
+        concreteDepthInches: updates.concreteDepthInches,
+        dimensionWidthInches: updates.dimensionWidthInches,
+        dimensionHeightInches: updates.dimensionHeightInches,
+        concreteWasteFactor: updates.concreteWasteFactor,
+        requiresStoneBase: updates.requiresStoneBase,
+        stoneDepthInches: updates.stoneDepthInches,
+        stoneWasteFactor: updates.stoneWasteFactor,
+        requiresExcavation: updates.requiresExcavation,
+        excavationDepthInches: updates.excavationDepthInches,
+        excavationWidthInches: updates.excavationWidthInches,
+        excavationSwellFactor: updates.excavationSwellFactor,
+        requiresWireMesh: updates.requiresWireMesh,
+        wireMeshCoverageSF: updates.wireMeshCoverageSF,
+        wireMeshWasteFactor: updates.wireMeshWasteFactor,
+        requiresRebar: updates.requiresRebar,
+        rebarSpacingInches: updates.rebarSpacingInches,
+        rebarLengthFeet: updates.rebarLengthFeet,
+        rebarWasteFactor: updates.rebarWasteFactor,
+        requiresDowels: updates.requiresDowels,
+        dowelSpacingInches: updates.dowelSpacingInches,
+        jointLengthFeet: updates.jointLengthFeet,
+        requiresSealer: updates.requiresSealer,
+        sealerCoverageSFPerGallon: updates.sealerCoverageSFPerGallon,
+        sealerCoats: updates.sealerCoats,
+        sealerWasteFactor: updates.sealerWasteFactor,
+        requiresUnderlayment: updates.requiresUnderlayment,
+        underlaymentOverlapInches: updates.underlaymentOverlapInches,
+        underlaymentWasteFactor: updates.underlaymentWasteFactor,
+      };
+
+      const materialResults = calculateMaterials(materialInputs);
+
       // Recalculate totalCost from component costs
       const totalCost = (
         Number(updates.materialCost || 0) +
@@ -511,9 +600,25 @@ export function registerEstimateRoutes(app: Express) {
         Number(updates.profitAllocation || 0)
       ).toString();
 
-      // Update line item with recalculated total
+      // Update line item with recalculated total and material quantities
       const [updatedLineItem] = await db.update(estimateLineItems)
-        .set({ ...updates, totalCost, userAdjusted: true, updatedAt: new Date() })
+        .set({ 
+          ...updates, 
+          totalCost, 
+          userAdjusted: true, 
+          updatedAt: new Date(),
+          calculatedConcreteYards: materialResults.calculatedConcreteYards?.toString() || null,
+          calculatedStoneTons: materialResults.calculatedStoneTons?.toString() || null,
+          calculatedExcavationYards: materialResults.calculatedExcavationYards?.toString() || null,
+          calculatedWireMeshRolls: materialResults.calculatedWireMeshRolls?.toString() || null,
+          calculatedRebarCount: materialResults.calculatedRebarCount?.toString() || null,
+          calculatedRebarLinearFeet: materialResults.calculatedRebarLinearFeet?.toString() || null,
+          calculatedDowelCount: materialResults.calculatedDowelCount?.toString() || null,
+          calculatedSealerGallons: materialResults.calculatedSealerGallons?.toString() || null,
+          calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF?.toString() || null,
+          materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
+          equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
+        })
         .where(and(
           eq(estimateLineItems.id, lineItemId),
           eq(estimateLineItems.estimateId, estimateId)
