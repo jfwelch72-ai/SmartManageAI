@@ -34,6 +34,7 @@ import ScopeSettingsPage from "@/pages/scope-settings";
 import MessagesPage from "@/pages/messages";
 import EquipmentPage from "@/pages/equipment";
 import EquipmentDetailPage from "@/pages/equipment-detail";
+import RentalVendorsPage from "@/pages/rental-vendors";
 
 function ProtectedRoute({ 
   component: Component,
@@ -119,6 +120,7 @@ function Router() {
       <Route path="/scope-settings" component={() => <ProtectedRoute component={ScopeSettingsPage} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} />} />
+      <Route path="/rental-vendors" component={() => <ProtectedRoute component={RentalVendorsPage} permission={RoutePermissions.EQUIPMENT} />} />
       
       <Route component={NotFound} />
     </Switch>

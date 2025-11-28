@@ -11043,6 +11043,222 @@ If the make/model is unknown, provide general best practices for the equipment t
     }
   });
 
+  // ============================================
+  // BID EQUIPMENT SELECTIONS
+  // ============================================
+
+  // Get equipment selections for a bid
+  app.get("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { bidId } = req.params;
+      
+      // Verify bid exists
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+      
+      const selections = await db
+        .select()
+        .from(bidEquipmentSelections)
+        .where(eq(bidEquipmentSelections.bidId, bidId))
+        .orderBy(bidEquipmentSelections.createdAt);
+      
+      res.json(selections);
+    } catch (error) {
+      console.error("Get bid equipment selections error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Add equipment selection to bid
+  app.post("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { bidId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify bid exists
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+      
+      // Validate required fields
+      const { source, equipmentName, equipmentType } = req.body;
+      if (!source || !equipmentName || !equipmentType) {
+        return res.status(400).json({ error: "Source, equipment name, and type are required" });
+      }
+      
+      // Convert numeric values to strings for decimal fields (drizzle expects strings for decimal)
+      const insertData = {
+        bidId,
+        source: req.body.source,
+        equipmentId: req.body.equipmentId || null,
+        rentalCatalogId: req.body.rentalCatalogId || null,
+        rentalVendorId: req.body.rentalVendorId || null,
+        equipmentName: req.body.equipmentName,
+        equipmentType: req.body.equipmentType,
+        plannedHours: req.body.plannedHours != null ? String(req.body.plannedHours) : null,
+        plannedDays: req.body.plannedDays != null ? Number(req.body.plannedDays) : null,
+        hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
+        dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
+        weeklyRate: req.body.weeklyRate != null ? String(req.body.weeklyRate) : null,
+        estimatedCost: req.body.estimatedCost != null ? String(req.body.estimatedCost) : null,
+        deliveryFee: req.body.deliveryFee != null ? String(req.body.deliveryFee) : null,
+        notes: req.body.notes || null,
+        createdById: userId,
+      };
+      
+      const [newSelection] = await db.insert(bidEquipmentSelections).values(insertData).returning();
+      
+      await logCreate("bid_equipment_selections", newSelection.id, userId!, { bidId, equipmentName: insertData.equipmentName });
+      
+      res.status(201).json(newSelection);
+    } catch (error) {
+      console.error("Create bid equipment selection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update bid equipment selection
+  app.patch("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { bidId, selectionId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify selection exists and belongs to bid
+      const [existing] = await db.select()
+        .from(bidEquipmentSelections)
+        .where(and(
+          eq(bidEquipmentSelections.id, selectionId),
+          eq(bidEquipmentSelections.bidId, bidId)
+        ));
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment selection not found" });
+      }
+      
+      // Convert numeric values to strings for decimal fields
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (req.body.source !== undefined) updateData.source = req.body.source;
+      if (req.body.equipmentId !== undefined) updateData.equipmentId = req.body.equipmentId || null;
+      if (req.body.rentalCatalogId !== undefined) updateData.rentalCatalogId = req.body.rentalCatalogId || null;
+      if (req.body.rentalVendorId !== undefined) updateData.rentalVendorId = req.body.rentalVendorId || null;
+      if (req.body.equipmentName !== undefined) updateData.equipmentName = req.body.equipmentName;
+      if (req.body.equipmentType !== undefined) updateData.equipmentType = req.body.equipmentType;
+      if (req.body.plannedHours !== undefined) updateData.plannedHours = req.body.plannedHours != null ? String(req.body.plannedHours) : null;
+      if (req.body.plannedDays !== undefined) updateData.plannedDays = req.body.plannedDays != null ? Number(req.body.plannedDays) : null;
+      if (req.body.hourlyRate !== undefined) updateData.hourlyRate = req.body.hourlyRate != null ? String(req.body.hourlyRate) : null;
+      if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
+      if (req.body.weeklyRate !== undefined) updateData.weeklyRate = req.body.weeklyRate != null ? String(req.body.weeklyRate) : null;
+      if (req.body.estimatedCost !== undefined) updateData.estimatedCost = req.body.estimatedCost != null ? String(req.body.estimatedCost) : null;
+      if (req.body.deliveryFee !== undefined) updateData.deliveryFee = req.body.deliveryFee != null ? String(req.body.deliveryFee) : null;
+      if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
+      
+      const [updated] = await db.update(bidEquipmentSelections)
+        .set(updateData)
+        .where(eq(bidEquipmentSelections.id, selectionId))
+        .returning();
+      
+      await logUpdate(userId!, "bid_equipment_selections", selectionId, req.body);
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update bid equipment selection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete bid equipment selection
+  app.delete("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { bidId, selectionId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify selection exists and belongs to bid
+      const [existing] = await db.select()
+        .from(bidEquipmentSelections)
+        .where(and(
+          eq(bidEquipmentSelections.id, selectionId),
+          eq(bidEquipmentSelections.bidId, bidId)
+        ));
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment selection not found" });
+      }
+      
+      await db.delete(bidEquipmentSelections).where(eq(bidEquipmentSelections.id, selectionId));
+      
+      await logDelete(userId!, "bid_equipment_selections", selectionId);
+      
+      res.json({ message: "Equipment selection deleted successfully" });
+    } catch (error) {
+      console.error("Delete bid equipment selection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get available equipment for bid selection (owned + rental catalog)
+  app.get("/api/equipment-for-selection", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      // Get owned equipment with active rate profiles
+      const ownedEquipment = await db
+        .select({
+          id: equipment.id,
+          equipmentCode: equipment.equipmentCode,
+          name: equipment.name,
+          type: equipment.type,
+          make: equipment.make,
+          model: equipment.model,
+          status: equipment.status,
+          hourlyRate: equipmentRateProfiles.hourlyRate,
+          dailyRate: equipmentRateProfiles.dailyRate,
+          weeklyRate: equipmentRateProfiles.weeklyRate,
+          monthlyRate: equipmentRateProfiles.monthlyRate,
+        })
+        .from(equipment)
+        .leftJoin(equipmentRateProfiles, and(
+          eq(equipmentRateProfiles.equipmentId, equipment.id),
+          eq(equipmentRateProfiles.isActive, true)
+        ))
+        .where(eq(equipment.isActive, true))
+        .orderBy(equipment.type, equipment.name);
+      
+      // Get rental equipment catalog (active items)
+      const rentalCatalog = await db
+        .select({
+          id: rentalEquipmentCatalog.id,
+          vendorId: rentalEquipmentCatalog.vendorId,
+          name: rentalEquipmentCatalog.name,
+          equipmentType: rentalEquipmentCatalog.equipmentType,
+          make: rentalEquipmentCatalog.make,
+          model: rentalEquipmentCatalog.model,
+          hourlyRate: rentalEquipmentCatalog.hourlyRate,
+          dailyRate: rentalEquipmentCatalog.dailyRate,
+          weeklyRate: rentalEquipmentCatalog.weeklyRate,
+          monthlyRate: rentalEquipmentCatalog.monthlyRate,
+          deliveryFee: rentalEquipmentCatalog.deliveryFee,
+          vendorName: rentalVendors.name,
+          vendorCode: rentalVendors.code,
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
+        .where(and(
+          eq(rentalEquipmentCatalog.isActive, true),
+          eq(rentalVendors.isActive, true)
+        ))
+        .orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
+      
+      res.json({
+        owned: ownedEquipment,
+        rental: rentalCatalog,
+      });
+    } catch (error) {
+      console.error("Get equipment for selection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

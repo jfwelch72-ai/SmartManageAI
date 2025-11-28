@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2, UserCog } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2, UserCog, Truck, Clock, Wrench } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import JobInformationForm from "@/components/JobInformationForm";
 import { SubcontractorScopeReportDialog } from "@/components/SubcontractorScopeReport";
@@ -24,8 +24,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertBidSubcontractorQuoteSchema, insertBidMaterialQuoteSchema, insertBidSchema } from "@shared/schema";
-import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem, CrmOrganisation, CrmContact } from "@shared/schema";
+import { insertBidSubcontractorQuoteSchema, insertBidMaterialQuoteSchema, insertBidSchema, insertBidEquipmentSelectionSchema } from "@shared/schema";
+import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem, CrmOrganisation, CrmContact, BidEquipmentSelection } from "@shared/schema";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { z } from "zod";
@@ -42,6 +42,24 @@ const materialQuoteFormSchema = insertBidMaterialQuoteSchema.omit({ bidId: true 
   cost: z.string().min(1, "Cost is required"),
 });
 type MaterialQuoteFormValues = z.infer<typeof materialQuoteFormSchema>;
+
+const equipmentSelectionFormSchema = z.object({
+  source: z.enum(["OWNED", "RENTAL"]),
+  equipmentId: z.string().optional(),
+  rentalCatalogId: z.string().optional(),
+  rentalVendorId: z.string().optional(),
+  equipmentName: z.string().min(1, "Equipment name is required"),
+  equipmentType: z.string().min(1, "Equipment type is required"),
+  plannedHours: z.string().optional(),
+  plannedDays: z.string().optional(),
+  hourlyRate: z.string().optional(),
+  dailyRate: z.string().optional(),
+  weeklyRate: z.string().optional(),
+  estimatedCost: z.string().optional(),
+  deliveryFee: z.string().optional(),
+  notes: z.string().optional(),
+});
+type EquipmentSelectionFormValues = z.infer<typeof equipmentSelectionFormSchema>;
 
 // Form schema accepts strings from HTML inputs
 const bidEditFormSchema = z.object({
@@ -101,6 +119,11 @@ export default function BidDetailPage() {
   const [selectedSuperintendentId, setSelectedSuperintendentId] = useState<string>("");
   const [selectedProjectManagerId, setSelectedProjectManagerId] = useState<string>("");
   
+  // Equipment selection state
+  const [showEquipmentDialog, setShowEquipmentDialog] = useState(false);
+  const [editingEquipmentSelection, setEditingEquipmentSelection] = useState<BidEquipmentSelection | null>(null);
+  const [selectedEquipmentSource, setSelectedEquipmentSource] = useState<"OWNED" | "RENTAL">("OWNED");
+  
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
   const convertBid = useConvertBidToProject();
@@ -115,6 +138,45 @@ export default function BidDetailPage() {
   const { data: materialQuotes = [], isLoading: materialQuotesLoading} = useQuery<BidMaterialQuote[]>({
     queryKey: ["/api/bids", bidCode, "material-quotes"],
     enabled: !!bidCode,
+  });
+
+  // Fetch bid equipment selections
+  const { data: equipmentSelections = [], isLoading: equipmentLoading } = useQuery<BidEquipmentSelection[]>({
+    queryKey: ["/api/bids", bid?.id, "equipment"],
+    enabled: !!bid?.id,
+  });
+
+  // Fetch available equipment for selection (owned + rental)
+  interface OwnedEquipment {
+    id: string;
+    equipmentCode: string;
+    name: string;
+    type: string;
+    make: string | null;
+    model: string | null;
+    status: string;
+    hourlyRate: string | null;
+    dailyRate: string | null;
+    weeklyRate: string | null;
+    monthlyRate: string | null;
+  }
+  interface RentalEquipment {
+    id: string;
+    vendorId: string;
+    name: string;
+    equipmentType: string;
+    make: string | null;
+    model: string | null;
+    hourlyRate: string | null;
+    dailyRate: string | null;
+    weeklyRate: string | null;
+    monthlyRate: string | null;
+    deliveryFee: string | null;
+    vendorName: string;
+    vendorCode: string;
+  }
+  const { data: availableEquipment } = useQuery<{ owned: OwnedEquipment[], rental: RentalEquipment[] }>({
+    queryKey: ["/api/equipment-for-selection"],
   });
 
   // Fetch bid estimate
@@ -196,6 +258,24 @@ export default function BidDetailPage() {
       leadTime: "",
       supplierName: "",
       supplierContact: "",
+    },
+  });
+
+  // Equipment selection form
+  const equipmentForm = useForm<EquipmentSelectionFormValues>({
+    resolver: zodResolver(equipmentSelectionFormSchema),
+    defaultValues: {
+      source: "OWNED",
+      equipmentName: "",
+      equipmentType: "",
+      plannedHours: "",
+      plannedDays: "",
+      hourlyRate: "",
+      dailyRate: "",
+      weeklyRate: "",
+      estimatedCost: "",
+      deliveryFee: "",
+      notes: "",
     },
   });
 
@@ -364,6 +444,97 @@ export default function BidDetailPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete material quote",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create equipment selection mutation
+  const createEquipmentSelection = useMutation({
+    mutationFn: async (data: EquipmentSelectionFormValues) => {
+      const payload = {
+        source: data.source,
+        equipmentId: data.equipmentId || null,
+        rentalCatalogId: data.rentalCatalogId || null,
+        rentalVendorId: data.rentalVendorId || null,
+        equipmentName: data.equipmentName,
+        equipmentType: data.equipmentType,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
+        plannedDays: data.plannedDays ? parseInt(data.plannedDays) : null,
+        hourlyRate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
+        dailyRate: data.dailyRate ? parseFloat(data.dailyRate) : null,
+        weeklyRate: data.weeklyRate ? parseFloat(data.weeklyRate) : null,
+        estimatedCost: data.estimatedCost ? parseFloat(data.estimatedCost) : null,
+        deliveryFee: data.deliveryFee ? parseFloat(data.deliveryFee) : null,
+        notes: data.notes || null,
+      };
+      return apiRequest("POST", `/api/bids/${bid?.id}/equipment`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bid?.id, "equipment"] });
+      toast({ title: "Success", description: "Equipment added to bid" });
+      setShowEquipmentDialog(false);
+      equipmentForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add equipment",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update equipment selection mutation
+  const updateEquipmentSelection = useMutation({
+    mutationFn: async ({ selectionId, data }: { selectionId: string; data: EquipmentSelectionFormValues }) => {
+      const payload = {
+        source: data.source,
+        equipmentId: data.equipmentId || null,
+        rentalCatalogId: data.rentalCatalogId || null,
+        rentalVendorId: data.rentalVendorId || null,
+        equipmentName: data.equipmentName,
+        equipmentType: data.equipmentType,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
+        plannedDays: data.plannedDays ? parseInt(data.plannedDays) : null,
+        hourlyRate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
+        dailyRate: data.dailyRate ? parseFloat(data.dailyRate) : null,
+        weeklyRate: data.weeklyRate ? parseFloat(data.weeklyRate) : null,
+        estimatedCost: data.estimatedCost ? parseFloat(data.estimatedCost) : null,
+        deliveryFee: data.deliveryFee ? parseFloat(data.deliveryFee) : null,
+        notes: data.notes || null,
+      };
+      return apiRequest("PATCH", `/api/bids/${bid?.id}/equipment/${selectionId}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bid?.id, "equipment"] });
+      toast({ title: "Success", description: "Equipment updated" });
+      setShowEquipmentDialog(false);
+      setEditingEquipmentSelection(null);
+      equipmentForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update equipment",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete equipment selection mutation
+  const deleteEquipmentSelection = useMutation({
+    mutationFn: async (selectionId: string) => {
+      return apiRequest("DELETE", `/api/bids/${bid?.id}/equipment/${selectionId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bid?.id, "equipment"] });
+      toast({ title: "Success", description: "Equipment removed from bid" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove equipment",
         variant: "destructive",
       });
     },
@@ -549,6 +720,114 @@ export default function BidDetailPage() {
       await deleteMaterialQuote.mutateAsync(quoteId);
     }
   };
+
+  // Equipment selection handlers
+  const handleAddEquipment = () => {
+    setEditingEquipmentSelection(null);
+    setSelectedEquipmentSource("OWNED");
+    equipmentForm.reset({
+      source: "OWNED",
+      equipmentName: "",
+      equipmentType: "",
+      plannedHours: "",
+      plannedDays: "",
+      hourlyRate: "",
+      dailyRate: "",
+      weeklyRate: "",
+      estimatedCost: "",
+      deliveryFee: "",
+      notes: "",
+    });
+    setShowEquipmentDialog(true);
+  };
+
+  const handleEditEquipmentSelection = (selection: BidEquipmentSelection) => {
+    setEditingEquipmentSelection(selection);
+    setSelectedEquipmentSource(selection.source as "OWNED" | "RENTAL");
+    equipmentForm.reset({
+      source: selection.source as "OWNED" | "RENTAL",
+      equipmentId: selection.equipmentId || undefined,
+      rentalCatalogId: selection.rentalCatalogId || undefined,
+      rentalVendorId: selection.rentalVendorId || undefined,
+      equipmentName: selection.equipmentName,
+      equipmentType: selection.equipmentType,
+      plannedHours: selection.plannedHours?.toString() || "",
+      plannedDays: selection.plannedDays?.toString() || "",
+      hourlyRate: selection.hourlyRate?.toString() || "",
+      dailyRate: selection.dailyRate?.toString() || "",
+      weeklyRate: selection.weeklyRate?.toString() || "",
+      estimatedCost: selection.estimatedCost?.toString() || "",
+      deliveryFee: selection.deliveryFee?.toString() || "",
+      notes: selection.notes || "",
+    });
+    setShowEquipmentDialog(true);
+  };
+
+  const handleDeleteEquipmentSelection = async (selectionId: string) => {
+    if (confirm("Are you sure you want to remove this equipment from the bid?")) {
+      await deleteEquipmentSelection.mutateAsync(selectionId);
+    }
+  };
+
+  const onSubmitEquipment = (data: EquipmentSelectionFormValues) => {
+    if (editingEquipmentSelection) {
+      updateEquipmentSelection.mutate({ selectionId: editingEquipmentSelection.id, data });
+    } else {
+      createEquipmentSelection.mutate(data);
+    }
+  };
+
+  const handleSelectOwnedEquipment = (equipmentId: string) => {
+    const selected = availableEquipment?.owned.find(e => e.id === equipmentId);
+    if (selected) {
+      equipmentForm.setValue("equipmentId", selected.id);
+      equipmentForm.setValue("equipmentName", selected.name);
+      equipmentForm.setValue("equipmentType", selected.type);
+      equipmentForm.setValue("hourlyRate", selected.hourlyRate || "");
+      equipmentForm.setValue("dailyRate", selected.dailyRate || "");
+      equipmentForm.setValue("weeklyRate", selected.weeklyRate || "");
+    }
+  };
+
+  const handleSelectRentalEquipment = (catalogId: string) => {
+    const selected = availableEquipment?.rental.find(e => e.id === catalogId);
+    if (selected) {
+      equipmentForm.setValue("rentalCatalogId", selected.id);
+      equipmentForm.setValue("rentalVendorId", selected.vendorId);
+      equipmentForm.setValue("equipmentName", selected.name);
+      equipmentForm.setValue("equipmentType", selected.equipmentType);
+      equipmentForm.setValue("hourlyRate", selected.hourlyRate || "");
+      equipmentForm.setValue("dailyRate", selected.dailyRate || "");
+      equipmentForm.setValue("weeklyRate", selected.weeklyRate || "");
+      equipmentForm.setValue("deliveryFee", selected.deliveryFee || "");
+    }
+  };
+
+  // Calculate estimated cost based on rate and duration
+  const calculateEstimatedCost = () => {
+    const hours = parseFloat(equipmentForm.watch("plannedHours") || "0");
+    const days = parseInt(equipmentForm.watch("plannedDays") || "0");
+    const hourlyRate = parseFloat(equipmentForm.watch("hourlyRate") || "0");
+    const dailyRate = parseFloat(equipmentForm.watch("dailyRate") || "0");
+    const deliveryFee = parseFloat(equipmentForm.watch("deliveryFee") || "0");
+    
+    let cost = 0;
+    if (days > 0 && dailyRate > 0) {
+      cost = days * dailyRate;
+    } else if (hours > 0 && hourlyRate > 0) {
+      cost = hours * hourlyRate;
+    }
+    cost += deliveryFee;
+    
+    if (cost > 0) {
+      equipmentForm.setValue("estimatedCost", cost.toFixed(2));
+    }
+  };
+
+  // Calculate total equipment cost
+  const totalEquipmentCost = equipmentSelections.reduce((sum, sel) => {
+    return sum + parseFloat(sel.estimatedCost || "0");
+  }, 0);
 
   const getUploadParameters = async () => {
     try {
@@ -1337,6 +1616,118 @@ export default function BidDetailPage() {
             </CardContent>
           </Card>
 
+          <Card data-testid="card-equipment-selections">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Truck className="w-5 h-5" />
+                  Equipment Plan
+                </CardTitle>
+                <CardDescription>Select equipment needed for this project (owned or rental)</CardDescription>
+              </div>
+              {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                <Button onClick={handleAddEquipment} size="sm" data-testid="button-add-equipment">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Equipment
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {equipmentLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Loading equipment...</div>
+              ) : equipmentSelections.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No equipment selected for this bid yet
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-muted rounded-md">
+                    <span className="text-sm font-medium">Total Equipment Cost:</span>
+                    <span className="text-lg font-bold font-mono">${totalEquipmentCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {equipmentSelections.map((selection) => (
+                      <div 
+                        key={selection.id} 
+                        className="flex items-start justify-between p-4 border rounded-md"
+                        data-testid={`equipment-selection-${selection.id}`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <h4 className="font-medium">{selection.equipmentName}</h4>
+                            <Badge variant={selection.source === "OWNED" ? "default" : "secondary"}>
+                              {selection.source === "OWNED" ? (
+                                <><Wrench className="w-3 h-3 mr-1" />Owned</>
+                              ) : (
+                                <><Clock className="w-3 h-3 mr-1" />Rental</>
+                              )}
+                            </Badge>
+                            <Badge variant="outline">{selection.equipmentType}</Badge>
+                            {selection.estimatedCost && (
+                              <Badge variant="outline" className="font-mono">
+                                ${parseFloat(selection.estimatedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                            {selection.plannedDays && (
+                              <div>
+                                <span className="font-medium">Days:</span> {selection.plannedDays}
+                              </div>
+                            )}
+                            {selection.plannedHours && (
+                              <div>
+                                <span className="font-medium">Hours:</span> {selection.plannedHours}
+                              </div>
+                            )}
+                            {selection.dailyRate && (
+                              <div>
+                                <span className="font-medium">Daily Rate:</span> ${parseFloat(selection.dailyRate).toLocaleString()}
+                              </div>
+                            )}
+                            {selection.hourlyRate && (
+                              <div>
+                                <span className="font-medium">Hourly Rate:</span> ${parseFloat(selection.hourlyRate).toLocaleString()}
+                              </div>
+                            )}
+                            {selection.deliveryFee && parseFloat(selection.deliveryFee) > 0 && (
+                              <div>
+                                <span className="font-medium">Delivery:</span> ${parseFloat(selection.deliveryFee).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                          {selection.notes && (
+                            <p className="text-xs text-muted-foreground mt-2 italic">{selection.notes}</p>
+                          )}
+                        </div>
+                        {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                          <div className="flex gap-2 ml-4">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleEditEquipmentSelection(selection)}
+                              data-testid={`button-edit-equipment-${selection.id}`}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDeleteEquipmentSelection(selection.id)}
+                              data-testid={`button-delete-equipment-${selection.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <JobInformationForm bidCode={bidCode} />
 
           <Card>
@@ -1798,6 +2189,355 @@ export default function BidDetailPage() {
                 </Button>
                 <Button type="submit" disabled={createMaterialQuote.isPending || updateMaterialQuote.isPending} data-testid="button-submit-material-quote">
                   {createMaterialQuote.isPending || updateMaterialQuote.isPending ? "Saving..." : editingMaterialQuote ? "Update Quote" : "Add Quote"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Equipment Selection Dialog */}
+      <Dialog open={showEquipmentDialog} onOpenChange={setShowEquipmentDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingEquipmentSelection ? "Edit Equipment" : "Add Equipment to Bid"}</DialogTitle>
+            <DialogDescription>
+              {editingEquipmentSelection 
+                ? "Update the equipment details for this bid" 
+                : "Select owned equipment or rental equipment for this project"}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...equipmentForm}>
+            <form onSubmit={equipmentForm.handleSubmit(onSubmitEquipment)} className="space-y-4">
+              <FormField
+                control={equipmentForm.control}
+                name="source"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Equipment Source</FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        setSelectedEquipmentSource(value as "OWNED" | "RENTAL");
+                        equipmentForm.setValue("equipmentId", undefined);
+                        equipmentForm.setValue("rentalCatalogId", undefined);
+                        equipmentForm.setValue("rentalVendorId", undefined);
+                        equipmentForm.setValue("equipmentName", "");
+                        equipmentForm.setValue("equipmentType", "");
+                        equipmentForm.setValue("hourlyRate", "");
+                        equipmentForm.setValue("dailyRate", "");
+                        equipmentForm.setValue("weeklyRate", "");
+                        equipmentForm.setValue("deliveryFee", "");
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-equipment-source">
+                          <SelectValue placeholder="Select source" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="OWNED">Owned Equipment</SelectItem>
+                        <SelectItem value="RENTAL">Rental Equipment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {selectedEquipmentSource === "OWNED" && (
+                <div className="space-y-2">
+                  <Label>Select from Fleet</Label>
+                  <Select
+                    value={equipmentForm.watch("equipmentId") || ""}
+                    onValueChange={handleSelectOwnedEquipment}
+                  >
+                    <SelectTrigger data-testid="select-owned-equipment">
+                      <SelectValue placeholder="Select equipment from fleet..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableEquipment?.owned?.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No owned equipment available
+                        </div>
+                      ) : (
+                        availableEquipment?.owned?.map((eq) => (
+                          <SelectItem key={eq.id} value={eq.id}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs">{eq.equipmentCode}</span>
+                              <span>{eq.name}</span>
+                              <span className="text-xs text-muted-foreground">({eq.type})</span>
+                              {eq.dailyRate && (
+                                <span className="text-xs text-muted-foreground">${eq.dailyRate}/day</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {selectedEquipmentSource === "RENTAL" && (
+                <div className="space-y-2">
+                  <Label>Select from Rental Catalog</Label>
+                  <Select
+                    value={equipmentForm.watch("rentalCatalogId") || ""}
+                    onValueChange={handleSelectRentalEquipment}
+                  >
+                    <SelectTrigger data-testid="select-rental-equipment">
+                      <SelectValue placeholder="Select rental equipment..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableEquipment?.rental?.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No rental equipment available. Add rental vendors and equipment first.
+                        </div>
+                      ) : (
+                        availableEquipment?.rental?.map((eq) => (
+                          <SelectItem key={eq.id} value={eq.id}>
+                            <div className="flex items-center gap-2">
+                              <span>{eq.name}</span>
+                              <span className="text-xs text-muted-foreground">({eq.equipmentType})</span>
+                              <span className="text-xs text-muted-foreground">- {eq.vendorName}</span>
+                              {eq.dailyRate && (
+                                <span className="text-xs text-muted-foreground">${eq.dailyRate}/day</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={equipmentForm.control}
+                  name="equipmentName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Equipment Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., CAT 320 Excavator" data-testid="input-equipment-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={equipmentForm.control}
+                  name="equipmentType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Equipment Type</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Excavator" data-testid="input-equipment-type" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={equipmentForm.control}
+                  name="plannedDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Planned Days</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          type="number" 
+                          placeholder="0" 
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setTimeout(calculateEstimatedCost, 100);
+                          }}
+                          data-testid="input-planned-days" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={equipmentForm.control}
+                  name="plannedHours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Planned Hours (Alternative)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          type="number" 
+                          step="0.5" 
+                          placeholder="0"
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setTimeout(calculateEstimatedCost, 100);
+                          }}
+                          data-testid="input-planned-hours" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={equipmentForm.control}
+                  name="hourlyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hourly Rate ($)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="0.00"
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setTimeout(calculateEstimatedCost, 100);
+                          }}
+                          data-testid="input-hourly-rate" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={equipmentForm.control}
+                  name="dailyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Daily Rate ($)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="0.00"
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setTimeout(calculateEstimatedCost, 100);
+                          }}
+                          data-testid="input-daily-rate" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={equipmentForm.control}
+                  name="weeklyRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Weekly Rate ($)</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-weekly-rate" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {selectedEquipmentSource === "RENTAL" && (
+                <FormField
+                  control={equipmentForm.control}
+                  name="deliveryFee"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Delivery Fee ($)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="0.00"
+                          onChange={(e) => {
+                            field.onChange(e);
+                            setTimeout(calculateEstimatedCost, 100);
+                          }}
+                          data-testid="input-delivery-fee" 
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={equipmentForm.control}
+                name="estimatedCost"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Estimated Total Cost ($)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="0.00"
+                        className="font-mono font-bold"
+                        data-testid="input-estimated-cost" 
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Auto-calculated from days/hours × rate + delivery</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={equipmentForm.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Additional notes about equipment usage..." data-testid="input-equipment-notes" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => { 
+                    setShowEquipmentDialog(false);
+                    setEditingEquipmentSelection(null);
+                    equipmentForm.reset();
+                  }} 
+                  data-testid="button-cancel-equipment"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={createEquipmentSelection.isPending || updateEquipmentSelection.isPending}
+                  data-testid="button-submit-equipment"
+                >
+                  {createEquipmentSelection.isPending || updateEquipmentSelection.isPending 
+                    ? "Saving..." 
+                    : editingEquipmentSelection 
+                      ? "Update Equipment" 
+                      : "Add Equipment"}
                 </Button>
               </DialogFooter>
             </form>
