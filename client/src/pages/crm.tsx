@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
@@ -37,11 +39,136 @@ import {
   DollarSign,
   Truck,
   Package,
-  Calendar
+  Calendar,
+  Check,
+  ChevronsUpDown
 } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog } from "@shared/schema";
 import { format, formatDistanceToNow } from "date-fns";
 import { MessageSquare, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+// Standardized pricing item names aligned with bid estimate categories
+interface StandardPricingItem {
+  name: string;
+  category: string;
+  unit: string;
+}
+
+const STANDARD_PRICING_ITEMS: { category: string; items: StandardPricingItem[] }[] = [
+  {
+    category: "CONCRETE",
+    items: [
+      { name: "Ready Mix Concrete 3000 PSI", category: "CONCRETE", unit: "YARD" },
+      { name: "Ready Mix Concrete 3500 PSI", category: "CONCRETE", unit: "YARD" },
+      { name: "Ready Mix Concrete 4000 PSI", category: "CONCRETE", unit: "YARD" },
+      { name: "Ready Mix Concrete 4500 PSI", category: "CONCRETE", unit: "YARD" },
+      { name: "Ready Mix Concrete 5000 PSI", category: "CONCRETE", unit: "YARD" },
+      { name: "Fiber Mesh Concrete", category: "CONCRETE", unit: "YARD" },
+      { name: "Colored Concrete", category: "CONCRETE", unit: "YARD" },
+      { name: "Pump Truck Fee", category: "CONCRETE", unit: "EA" },
+      { name: "Short Load Fee", category: "CONCRETE", unit: "EA" },
+      { name: "Overtime/Saturday Delivery", category: "CONCRETE", unit: "EA" },
+    ],
+  },
+  {
+    category: "STONE",
+    items: [
+      { name: "Crushed Stone #57", category: "STONE", unit: "TON" },
+      { name: "Crushed Stone #8", category: "STONE", unit: "TON" },
+      { name: "Crushed Limestone", category: "STONE", unit: "TON" },
+      { name: "Compacted Base Material", category: "STONE", unit: "TON" },
+      { name: "Pea Gravel", category: "STONE", unit: "TON" },
+      { name: "Recycled Concrete Aggregate", category: "STONE", unit: "TON" },
+      { name: "Sand - Mason", category: "STONE", unit: "TON" },
+      { name: "Sand - Fill", category: "STONE", unit: "TON" },
+      { name: "Topsoil", category: "STONE", unit: "YARD" },
+    ],
+  },
+  {
+    category: "REBAR",
+    items: [
+      { name: "Rebar #3 (3/8\")", category: "REBAR", unit: "LF" },
+      { name: "Rebar #4 (1/2\")", category: "REBAR", unit: "LF" },
+      { name: "Rebar #5 (5/8\")", category: "REBAR", unit: "LF" },
+      { name: "Rebar #6 (3/4\")", category: "REBAR", unit: "LF" },
+      { name: "Rebar #7 (7/8\")", category: "REBAR", unit: "LF" },
+      { name: "Rebar #8 (1\")", category: "REBAR", unit: "LF" },
+      { name: "Dowel Bars 18\" x 1/2\"", category: "REBAR", unit: "EA" },
+      { name: "Dowel Bars 18\" x 5/8\"", category: "REBAR", unit: "EA" },
+      { name: "Tie Wire", category: "REBAR", unit: "ROLL" },
+      { name: "Rebar Chairs", category: "REBAR", unit: "EA" },
+    ],
+  },
+  {
+    category: "WIRE_MESH",
+    items: [
+      { name: "Wire Mesh 6x6 W1.4/W1.4", category: "WIRE_MESH", unit: "ROLL" },
+      { name: "Wire Mesh 6x6 W2.9/W2.9", category: "WIRE_MESH", unit: "ROLL" },
+      { name: "Wire Mesh 6x6 W4.0/W4.0", category: "WIRE_MESH", unit: "ROLL" },
+      { name: "Fiber Mesh - Synthetic", category: "WIRE_MESH", unit: "BAG" },
+      { name: "Fiber Mesh - Steel", category: "WIRE_MESH", unit: "BAG" },
+    ],
+  },
+  {
+    category: "SEALER",
+    items: [
+      { name: "Cure & Seal Clear", category: "SEALER", unit: "GAL" },
+      { name: "Cure & Seal White Pigmented", category: "SEALER", unit: "GAL" },
+      { name: "Acrylic Sealer", category: "SEALER", unit: "GAL" },
+      { name: "Penetrating Sealer", category: "SEALER", unit: "GAL" },
+      { name: "Polyurethane Sealer", category: "SEALER", unit: "GAL" },
+      { name: "Epoxy Sealer", category: "SEALER", unit: "GAL" },
+      { name: "Joint Sealant", category: "SEALER", unit: "GAL" },
+      { name: "Backer Rod", category: "SEALER", unit: "LF" },
+    ],
+  },
+  {
+    category: "LUMBER",
+    items: [
+      { name: "Form Lumber 2x4", category: "LUMBER", unit: "LF" },
+      { name: "Form Lumber 2x6", category: "LUMBER", unit: "LF" },
+      { name: "Form Lumber 2x8", category: "LUMBER", unit: "LF" },
+      { name: "Form Lumber 2x10", category: "LUMBER", unit: "LF" },
+      { name: "Form Lumber 2x12", category: "LUMBER", unit: "LF" },
+      { name: "Plywood 3/4\" CDX", category: "LUMBER", unit: "EA" },
+      { name: "Stakes - Wood", category: "LUMBER", unit: "EA" },
+      { name: "Stakes - Steel", category: "LUMBER", unit: "EA" },
+    ],
+  },
+  {
+    category: "FILL",
+    items: [
+      { name: "Clean Fill", category: "FILL", unit: "YARD" },
+      { name: "Structural Fill", category: "FILL", unit: "YARD" },
+      { name: "Select Fill", category: "FILL", unit: "YARD" },
+      { name: "Flowable Fill", category: "FILL", unit: "YARD" },
+      { name: "Gravel Fill", category: "FILL", unit: "TON" },
+    ],
+  },
+  {
+    category: "EQUIPMENT",
+    items: [
+      { name: "Concrete Mixer Truck", category: "EQUIPMENT", unit: "EA" },
+      { name: "Concrete Pump - Line", category: "EQUIPMENT", unit: "EA" },
+      { name: "Concrete Pump - Boom", category: "EQUIPMENT", unit: "EA" },
+      { name: "Excavator Rental", category: "EQUIPMENT", unit: "EA" },
+      { name: "Skid Steer Rental", category: "EQUIPMENT", unit: "EA" },
+      { name: "Compactor Rental", category: "EQUIPMENT", unit: "EA" },
+    ],
+  },
+  {
+    category: "OTHER",
+    items: [
+      { name: "Expansion Joint Material", category: "OTHER", unit: "LF" },
+      { name: "Vapor Barrier 6 mil", category: "OTHER", unit: "SF" },
+      { name: "Vapor Barrier 10 mil", category: "OTHER", unit: "SF" },
+      { name: "Form Release Agent", category: "OTHER", unit: "GAL" },
+      { name: "Concrete Blankets", category: "OTHER", unit: "EA" },
+      { name: "Plastic Sheeting", category: "OTHER", unit: "ROLL" },
+    ],
+  },
+];
 
 type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP" | "RENTAL_VENDOR";
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
@@ -194,6 +321,8 @@ export default function CRMPage() {
   // State for new pricing item
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
   const [editingPricing, setEditingPricing] = useState<VendorPricingCatalog | null>(null);
+  const [itemNamePopoverOpen, setItemNamePopoverOpen] = useState(false);
+  const [isCustomItemName, setIsCustomItemName] = useState(false);
   const [newPricing, setNewPricing] = useState({
     itemName: "",
     itemCode: "",
@@ -207,6 +336,30 @@ export default function CRMPage() {
     effectiveDate: new Date().toISOString().split('T')[0],
     leadTimeDays: "",
   });
+  
+  // Flatten all standard items for searching
+  const allStandardItems = useMemo(() => 
+    STANDARD_PRICING_ITEMS.flatMap(group => group.items), 
+    []
+  );
+  
+  // Handler for selecting a standard item
+  const handleStandardItemSelect = (item: StandardPricingItem) => {
+    setNewPricing(prev => ({
+      ...prev,
+      itemName: item.name,
+      category: item.category,
+      unit: item.unit,
+    }));
+    setIsCustomItemName(false);
+    setItemNamePopoverOpen(false);
+  };
+  
+  // Handler for entering a custom item name
+  const handleCustomItemName = (name: string) => {
+    setNewPricing(prev => ({ ...prev, itemName: name }));
+    setIsCustomItemName(true);
+  };
 
   // State for new rental catalog item
   const [rentalDialogOpen, setRentalDialogOpen] = useState(false);
@@ -489,6 +642,7 @@ export default function CRMPage() {
       effectiveDate: now.toISOString().split('T')[0],
       leadTimeDays: "",
     });
+    setIsCustomItemName(false);
   };
 
   const resetNewRental = () => {
@@ -1464,6 +1618,8 @@ export default function CRMPage() {
                                 size="icon"
                                 onClick={() => {
                                   setEditingPricing(item);
+                                  const isStandard = allStandardItems.some(si => si.name === item.itemName);
+                                  setIsCustomItemName(!isStandard);
                                   setNewPricing({
                                     itemName: item.itemName,
                                     itemCode: item.itemCode || "",
@@ -1603,25 +1759,124 @@ export default function CRMPage() {
       </Dialog>
 
       {/* Pricing Dialog */}
-      <Dialog open={pricingDialogOpen} onOpenChange={(open) => { setPricingDialogOpen(open); if (!open) setEditingPricing(null); }}>
+      <Dialog open={pricingDialogOpen} onOpenChange={(open) => { setPricingDialogOpen(open); if (!open) { setEditingPricing(null); setIsCustomItemName(false); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingPricing ? "Edit Pricing Item" : "Add Pricing Item"}</DialogTitle>
             <DialogDescription>
-              {editingPricing ? "Update pricing information" : "Add a new pricing item to the catalog"}
+              {editingPricing ? "Update pricing information" : "Select a standard item or enter a custom name"}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+            {/* Standardized Item Name Selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label>Item Name *</Label>
+                {isCustomItemName && (
+                  <Badge variant="outline" className="text-xs">Custom Item</Badge>
+                )}
+              </div>
+              <Popover open={itemNamePopoverOpen} onOpenChange={setItemNamePopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={itemNamePopoverOpen}
+                    className="w-full justify-between font-normal"
+                    data-testid="button-pricing-item-selector"
+                  >
+                    {newPricing.itemName || "Select or enter item name..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[400px] p-0" align="start">
+                  <Command>
+                    <CommandInput 
+                      placeholder="Search items or type custom name..." 
+                      value={newPricing.itemName}
+                      onValueChange={(value) => handleCustomItemName(value)}
+                      data-testid="input-pricing-item-search"
+                    />
+                    <CommandList className="max-h-[300px]">
+                      <CommandEmpty>
+                        <div className="p-2 text-center">
+                          <p className="text-sm text-muted-foreground mb-2">No matching standard item</p>
+                          {newPricing.itemName && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setIsCustomItemName(true);
+                                setItemNamePopoverOpen(false);
+                              }}
+                              data-testid="button-use-custom-name"
+                            >
+                              Use "{newPricing.itemName}" as custom item
+                            </Button>
+                          )}
+                        </div>
+                      </CommandEmpty>
+                      {STANDARD_PRICING_ITEMS.map((group) => (
+                        <CommandGroup key={group.category} heading={group.category.replace(/_/g, ' ')}>
+                          {group.items.map((item) => (
+                            <CommandItem
+                              key={item.name}
+                              value={item.name}
+                              onSelect={() => handleStandardItemSelect(item)}
+                              data-testid={`item-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  newPricing.itemName === item.name ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <div className="flex flex-col">
+                                <span>{item.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {item.unit === "YARD" ? "Cubic Yard" : 
+                                   item.unit === "TON" ? "Ton" :
+                                   item.unit === "LF" ? "Linear Foot" :
+                                   item.unit === "SF" ? "Square Foot" :
+                                   item.unit === "EA" ? "Each" :
+                                   item.unit === "ROLL" ? "Roll" :
+                                   item.unit === "GAL" ? "Gallon" :
+                                   item.unit === "BAG" ? "Bag" : item.unit}
+                                </span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      ))}
+                      <CommandSeparator />
+                      <CommandGroup heading="Custom">
+                        <CommandItem
+                          onSelect={() => {
+                            setIsCustomItemName(true);
+                            setItemNamePopoverOpen(false);
+                          }}
+                          data-testid="item-custom-entry"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Enter custom item name
+                        </CommandItem>
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {isCustomItemName && (
                 <Input
                   value={newPricing.itemName}
                   onChange={(e) => setNewPricing({ ...newPricing, itemName: e.target.value })}
-                  placeholder="e.g., 4000 PSI Concrete"
-                  data-testid="input-pricing-name"
+                  placeholder="Enter custom item name..."
+                  className="mt-2"
+                  data-testid="input-pricing-custom-name"
                 />
-              </div>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Item Code</Label>
                 <Input
@@ -1631,8 +1886,6 @@ export default function CRMPage() {
                   data-testid="input-pricing-code"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Category</Label>
                 <Select value={newPricing.category} onValueChange={(v) => setNewPricing({ ...newPricing, category: v })}>
@@ -1652,6 +1905,8 @@ export default function CRMPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Unit</Label>
                 <Select value={newPricing.unit} onValueChange={(v) => setNewPricing({ ...newPricing, unit: v })}>
@@ -1671,8 +1926,6 @@ export default function CRMPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Unit Price ($) *</Label>
                 <Input
