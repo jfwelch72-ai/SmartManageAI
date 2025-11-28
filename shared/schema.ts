@@ -2365,6 +2365,7 @@ export const projectEquipmentPlans = pgTable("project_equipment_plans", {
   // For RENTAL equipment
   rentalCatalogId: varchar("rental_catalog_id").references(() => rentalEquipmentCatalog.id, { onDelete: "set null" }),
   rentalVendorId: varchar("rental_vendor_id").references(() => rentalVendors.id, { onDelete: "set null" }),
+  rentalConfirmationNumber: text("rental_confirmation_number"),
   
   // Common Details
   equipmentName: text("equipment_name").notNull(),

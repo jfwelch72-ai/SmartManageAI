@@ -61,6 +61,9 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
   const [showAddPlanDialog, setShowAddPlanDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedPlanForAssignment, setSelectedPlanForAssignment] = useState<any>(null);
+  const [showRentalBookingDialog, setShowRentalBookingDialog] = useState(false);
+  const [showRentalTrackingDialog, setShowRentalTrackingDialog] = useState(false);
+  const [selectedPlanForRental, setSelectedPlanForRental] = useState<any>(null);
   
   const { data: assignedEquipment = [], isLoading: loadingAssigned } = useQuery<any[]>({
     queryKey: ["/api/projects", projectId, "equipment"],
@@ -264,6 +267,34 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
                               Assign
                             </Button>
                           )}
+                          {plan.source === "RENTAL" && plan.status === "PLANNED" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPlanForRental(plan);
+                                setShowRentalBookingDialog(true);
+                              }}
+                              data-testid={`button-book-rental-${plan.id}`}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-1" />
+                              Book
+                            </Button>
+                          )}
+                          {plan.source === "RENTAL" && (plan.status === "RENTAL_BOOKED" || plan.status === "RENTAL_ACTIVE") && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPlanForRental(plan);
+                                setShowRentalTrackingDialog(true);
+                              }}
+                              data-testid={`button-track-rental-${plan.id}`}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Track
+                            </Button>
+                          )}
                           {plan.equipmentId && (
                             <Button
                               variant="ghost"
@@ -453,6 +484,26 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
         }}
         projectId={projectId}
         plan={selectedPlanForAssignment}
+      />
+
+      <RentalBookingDialog
+        open={showRentalBookingDialog}
+        onOpenChange={(open) => {
+          setShowRentalBookingDialog(open);
+          if (!open) setSelectedPlanForRental(null);
+        }}
+        projectId={projectId}
+        plan={selectedPlanForRental}
+      />
+
+      <RentalTrackingDialog
+        open={showRentalTrackingDialog}
+        onOpenChange={(open) => {
+          setShowRentalTrackingDialog(open);
+          if (!open) setSelectedPlanForRental(null);
+        }}
+        projectId={projectId}
+        plan={selectedPlanForRental}
       />
     </div>
   );
@@ -792,6 +843,397 @@ function AssignEquipmentDialog({ open, onOpenChange, projectId, plan }: AssignEq
             data-testid="button-confirm-assign"
           >
             {assignEquipment.isPending ? "Assigning..." : "Assign Equipment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface RentalBookingDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  plan: any;
+}
+
+function RentalBookingDialog({ open, onOpenChange, projectId, plan }: RentalBookingDialogProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedVendorId, setSelectedVendorId] = useState("");
+  const [confirmationNumber, setConfirmationNumber] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [dailyRate, setDailyRate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const { data: rentalVendors = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/rental-vendors"],
+    queryFn: async () => {
+      const response = await fetch("/api/rental-vendors", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch vendors");
+      return response.json();
+    },
+    enabled: open,
+  });
+
+  const bookRental = useMutation({
+    mutationFn: async () => {
+      const days = startDate && endDate 
+        ? Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+        : null;
+      const rate = dailyRate ? Number(dailyRate) : (plan.dailyRate ? Number(plan.dailyRate) : null);
+      const cost = days && rate ? days * rate : null;
+      
+      return apiRequest("PATCH", `/api/projects/${projectId}/equipment-plans/${plan.id}`, {
+        status: "RENTAL_BOOKED",
+        rentalVendorId: selectedVendorId || null,
+        rentalConfirmationNumber: confirmationNumber || null,
+        actualStartDate: startDate || null,
+        actualEndDate: endDate || null,
+        actualDays: days,
+        dailyRate: rate,
+        actualCost: cost,
+        notes: notes || plan.notes,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Rental booked successfully" });
+      resetForm();
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to book rental",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setSelectedVendorId("");
+    setConfirmationNumber("");
+    setStartDate("");
+    setEndDate("");
+    setDailyRate("");
+    setNotes("");
+  };
+
+  useEffect(() => {
+    if (open && plan) {
+      setSelectedVendorId(plan.rentalVendorId || "");
+      setConfirmationNumber(plan.rentalConfirmationNumber || "");
+      setStartDate(plan.plannedStartDate ? format(new Date(plan.plannedStartDate), "yyyy-MM-dd") : "");
+      setEndDate(plan.plannedEndDate ? format(new Date(plan.plannedEndDate), "yyyy-MM-dd") : "");
+      setDailyRate(plan.dailyRate ? String(plan.dailyRate) : "");
+      setNotes(plan.notes || "");
+    } else if (!open) {
+      resetForm();
+    }
+  }, [open, plan]);
+
+  if (!plan) return null;
+
+  const calculatedDays = startDate && endDate 
+    ? Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 0;
+  const rate = dailyRate ? Number(dailyRate) : (plan.dailyRate ? Number(plan.dailyRate) : 0);
+  const calculatedCost = calculatedDays * rate;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Book Rental</DialogTitle>
+          <DialogDescription>
+            Book rental equipment: {plan.equipmentName}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-3 rounded-md bg-muted/50 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-muted-foreground">Equipment:</span>{" "}
+                <span className="font-medium">{plan.equipmentName}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Type:</span>{" "}
+                <span className="font-medium">{plan.equipmentType}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Planned Days:</span>{" "}
+                <span className="font-medium">{plan.plannedDays || "-"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Planned Cost:</span>{" "}
+                <span className="font-medium">
+                  {plan.plannedCost ? `$${Number(plan.plannedCost).toFixed(2)}` : "-"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label>Rental Vendor</Label>
+            {isLoading ? (
+              <div className="text-sm text-muted-foreground py-2">Loading vendors...</div>
+            ) : (
+              <Select value={selectedVendorId} onValueChange={setSelectedVendorId}>
+                <SelectTrigger data-testid="select-rental-vendor">
+                  <SelectValue placeholder="Select vendor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rentalVendors.map((vendor: any) => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div>
+            <Label>Confirmation Number (Optional)</Label>
+            <Input
+              value={confirmationNumber}
+              onChange={(e) => setConfirmationNumber(e.target.value)}
+              placeholder="e.g., RNT-12345"
+              data-testid="input-confirmation-number"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Start Date</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                data-testid="input-rental-start-date"
+              />
+            </div>
+            <div>
+              <Label>End Date</Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                data-testid="input-rental-end-date"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label>Daily Rate ($)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={dailyRate}
+              onChange={(e) => setDailyRate(e.target.value)}
+              placeholder={plan.dailyRate ? String(plan.dailyRate) : "0.00"}
+              data-testid="input-rental-daily-rate"
+            />
+          </div>
+
+          {calculatedCost > 0 && (
+            <div className="p-3 rounded-md bg-muted text-center">
+              <div className="text-sm text-muted-foreground">{calculatedDays} days x ${rate.toFixed(2)}/day</div>
+              <div className="text-lg font-bold">
+                Total: ${calculatedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>Notes (Optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional notes..."
+              data-testid="input-rental-notes"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => bookRental.mutate()}
+            disabled={bookRental.isPending}
+            data-testid="button-confirm-booking"
+          >
+            {bookRental.isPending ? "Booking..." : "Book Rental"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface RentalTrackingDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  plan: any;
+}
+
+function RentalTrackingDialog({ open, onOpenChange, projectId, plan }: RentalTrackingDialogProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<string>("RENTAL_ACTIVE");
+  const [actualDays, setActualDays] = useState("");
+  const [actualCost, setActualCost] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const updateRental = useMutation({
+    mutationFn: async () => {
+      const updateData: Record<string, any> = {
+        status,
+        notes: notes || plan.notes,
+      };
+      
+      if (actualDays) updateData.actualDays = Number(actualDays);
+      if (actualCost) updateData.actualCost = Number(actualCost);
+      
+      if (status === "COMPLETED") {
+        updateData.actualEndDate = new Date().toISOString();
+      }
+      
+      return apiRequest("PATCH", `/api/projects/${projectId}/equipment-plans/${plan.id}`, updateData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Rental updated successfully" });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to update rental",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (open && plan) {
+      setStatus(plan.status);
+      setActualDays(plan.actualDays ? String(plan.actualDays) : "");
+      setActualCost(plan.actualCost ? String(plan.actualCost) : "");
+      setNotes(plan.notes || "");
+    }
+  }, [open, plan]);
+
+  if (!plan) return null;
+
+  const costVariance = plan.plannedCost && actualCost 
+    ? Number(actualCost) - Number(plan.plannedCost) 
+    : null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Track Rental</DialogTitle>
+          <DialogDescription>
+            Update rental status and track costs: {plan.equipmentName}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-3 rounded-md bg-muted/50 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-muted-foreground">Equipment:</span>{" "}
+                <span className="font-medium">{plan.equipmentName}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Vendor:</span>{" "}
+                <span className="font-medium">{plan.vendorName || "-"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Planned Cost:</span>{" "}
+                <span className="font-medium">
+                  {plan.plannedCost ? `$${Number(plan.plannedCost).toFixed(2)}` : "-"}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Confirmation:</span>{" "}
+                <span className="font-medium">{plan.rentalConfirmationNumber || "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label>Status</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger data-testid="select-rental-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="RENTAL_BOOKED">Booked</SelectItem>
+                <SelectItem value="RENTAL_ACTIVE">Active</SelectItem>
+                <SelectItem value="COMPLETED">Completed</SelectItem>
+                <SelectItem value="CANCELLED">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Actual Days</Label>
+              <Input
+                type="number"
+                value={actualDays}
+                onChange={(e) => setActualDays(e.target.value)}
+                placeholder={plan.plannedDays ? String(plan.plannedDays) : "0"}
+                data-testid="input-actual-days"
+              />
+            </div>
+            <div>
+              <Label>Actual Cost ($)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={actualCost}
+                onChange={(e) => setActualCost(e.target.value)}
+                placeholder={plan.plannedCost ? String(plan.plannedCost) : "0.00"}
+                data-testid="input-actual-cost"
+              />
+            </div>
+          </div>
+
+          {costVariance !== null && (
+            <div className={`p-3 rounded-md text-center ${costVariance > 0 ? 'bg-destructive/10' : 'bg-green-500/10'}`}>
+              <div className="text-sm text-muted-foreground">Cost Variance</div>
+              <div className={`text-lg font-bold ${costVariance > 0 ? 'text-destructive' : 'text-green-600'}`}>
+                {costVariance > 0 ? '+' : ''}{costVariance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span className="text-sm ml-1">
+                  ({((costVariance / Number(plan.plannedCost)) * 100).toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>Notes (Optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional notes..."
+              data-testid="input-tracking-notes"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => updateRental.mutate()}
+            disabled={updateRental.isPending}
+            data-testid="button-update-rental"
+          >
+            {updateRental.isPending ? "Updating..." : "Update Rental"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -10177,6 +10177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.body.actualCost !== undefined) updateData.actualCost = req.body.actualCost != null ? String(req.body.actualCost) : null;
       if (req.body.hourlyRate !== undefined) updateData.hourlyRate = req.body.hourlyRate != null ? String(req.body.hourlyRate) : null;
       if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
+      if (req.body.rentalConfirmationNumber !== undefined) updateData.rentalConfirmationNumber = req.body.rentalConfirmationNumber || null;
       if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
       
       const [updated] = await db
