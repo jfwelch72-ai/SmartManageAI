@@ -279,6 +279,191 @@ export function generateInternalBidSummaryPDF(data: BidData): PassThrough {
   return stream;
 }
 
+// Delay Notification PDF data interface
+interface DelayNotificationData {
+  notification: {
+    subject: string;
+    body: string;
+    recipientName: string;
+    recipientCompany: string | null;
+    recipientEmail: string | null;
+    recipientType: string;
+    createdAt: Date;
+  };
+  delay: {
+    delayNumber: string;
+    reason: string;
+    reasonLabel: string;
+    reasonNotes: string | null;
+    startDateTime: Date;
+    endDateTime: Date | null;
+    financiallyResponsible: string;
+    responsibilityLabel: string;
+    changeOrderRequired: boolean;
+    status: string;
+  };
+  project: {
+    name: string;
+    code: string;
+    clientName: string;
+    locationAddress: string | null;
+    city: string | null;
+    state: string | null;
+  };
+  createdBy: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+  };
+}
+
+export function generateDelayNotificationPDF(data: DelayNotificationData): PassThrough {
+  const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+  const stream = new PassThrough();
+  doc.pipe(stream);
+
+  const primaryColor = '#1a365d';
+  const accentColor = '#dc2626';
+
+  // TFR Letterhead
+  doc.fontSize(28).fillColor(primaryColor).text('TFR CONSTRUCTION', { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('LICENSED CONCRETE CONTRACTOR', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(9).text('Phone: (XXX) XXX-XXXX | Email: info@tfrconstruction.com', { align: 'center' });
+  doc.moveDown();
+
+  // Decorative line
+  doc.strokeColor(primaryColor).lineWidth(2)
+    .moveTo(50, doc.y)
+    .lineTo(562, doc.y)
+    .stroke();
+  doc.moveDown();
+
+  // Document Title
+  doc.fontSize(16).fillColor(accentColor).text('PROJECT DELAY NOTIFICATION', { align: 'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(11).fillColor('#374151').text(`Reference: ${data.delay.delayNumber}`, { align: 'center' });
+  doc.moveDown();
+
+  // Date and reference info
+  const formattedDate = new Date(data.notification.createdAt).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  doc.fontSize(11).fillColor('#374151').text(formattedDate, { align: 'right' });
+  doc.moveDown();
+
+  // Recipient block
+  doc.fontSize(12).fillColor(primaryColor).text('TO:');
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(data.notification.recipientName);
+  if (data.notification.recipientCompany) {
+    doc.text(data.notification.recipientCompany);
+  }
+  if (data.notification.recipientEmail) {
+    doc.text(data.notification.recipientEmail);
+  }
+  doc.moveDown();
+
+  // Subject line
+  doc.fontSize(11).fillColor(primaryColor).text('RE: ', { continued: true });
+  doc.fillColor('#374151').text(data.notification.subject);
+  doc.moveDown();
+
+  // Light separator
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y)
+    .lineTo(562, doc.y)
+    .stroke();
+  doc.moveDown();
+
+  // Letter body - split by newlines and render each paragraph
+  doc.fontSize(11).fillColor('#374151');
+  const paragraphs = data.notification.body.split('\n');
+  paragraphs.forEach(paragraph => {
+    if (paragraph.trim()) {
+      doc.text(paragraph.trim(), { align: 'justify', lineGap: 2 });
+      doc.moveDown(0.5);
+    } else {
+      doc.moveDown(0.5);
+    }
+  });
+
+  doc.moveDown();
+
+  // Delay Details Summary Box
+  if (doc.y > 550) doc.addPage();
+  
+  const boxTop = doc.y;
+  doc.rect(50, boxTop, 512, 120).fillAndStroke('#f8fafc', '#e2e8f0');
+  
+  doc.fontSize(11).fillColor(primaryColor).text('DELAY DETAILS', 60, boxTop + 10);
+  
+  const detailsY = boxTop + 30;
+  doc.fontSize(10).fillColor('#374151');
+  
+  // Left column
+  doc.text(`Project: ${data.project.name}`, 60, detailsY);
+  doc.text(`Project Code: ${data.project.code}`, 60, detailsY + 15);
+  doc.text(`Delay Reason: ${data.delay.reasonLabel}`, 60, detailsY + 30);
+  doc.text(`Status: ${data.delay.status}`, 60, detailsY + 45);
+  
+  // Right column
+  const startDate = new Date(data.delay.startDateTime).toLocaleDateString();
+  const endDate = data.delay.endDateTime ? new Date(data.delay.endDateTime).toLocaleDateString() : 'Ongoing';
+  doc.text(`Start Date: ${startDate}`, 300, detailsY);
+  doc.text(`End Date: ${endDate}`, 300, detailsY + 15);
+  doc.text(`Financially Responsible: ${data.delay.responsibilityLabel}`, 300, detailsY + 30);
+  if (data.delay.changeOrderRequired) {
+    doc.fillColor(accentColor).text('Change Order Required: Yes', 300, detailsY + 45);
+  } else {
+    doc.text('Change Order Required: No', 300, detailsY + 45);
+  }
+
+  doc.y = boxTop + 130;
+  doc.moveDown();
+
+  // Signature block
+  if (doc.y > 620) doc.addPage();
+  
+  doc.fontSize(11).fillColor('#374151');
+  doc.text('Please acknowledge receipt of this notification and contact us should you have any questions.');
+  doc.moveDown(2);
+  
+  doc.text('Respectfully,');
+  doc.moveDown(2);
+  
+  // Signature line
+  doc.strokeColor('#374151').lineWidth(0.5)
+    .moveTo(50, doc.y)
+    .lineTo(250, doc.y)
+    .stroke();
+  doc.moveDown(0.3);
+  
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`${data.createdBy.firstName} ${data.createdBy.lastName}`);
+  doc.fontSize(10).fillColor('#6b7280');
+  doc.text('TFR Construction');
+  if (data.createdBy.phone) {
+    doc.text(`Phone: ${data.createdBy.phone}`);
+  }
+  if (data.createdBy.email) {
+    doc.text(`Email: ${data.createdBy.email}`);
+  }
+
+  // Footer
+  doc.moveDown(2);
+  doc.fontSize(8).fillColor('#9ca3af')
+    .text('This document serves as formal notification of project delay for record-keeping and documentation purposes.', { align: 'center' })
+    .text(`Generated on ${new Date().toLocaleString()} | Reference: ${data.delay.delayNumber}`, { align: 'center' });
+
+  doc.end();
+  return stream;
+}
+
 export function generateCustomerQuotePDF(data: BidData): PassThrough {
   const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
   const stream = new PassThrough();

@@ -49,6 +49,8 @@ export const delayReasonEnum = pgEnum("delay_reason", [
 ]);
 export const delayStatusEnum = pgEnum("delay_status", ["DRAFT", "SUBMITTED", "ACKNOWLEDGED", "RESOLVED"]);
 export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", "GC", "SUBCONTRACTOR", "TFR", "FORCE_MAJEURE"]);
+export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
+export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -698,6 +700,24 @@ export const projectDelays = pgTable("project_delays", {
   statusIdx: index("project_delays_status_idx").on(table.status),
   reasonIdx: index("project_delays_reason_idx").on(table.reason),
   startDateIdx: index("project_delays_start_date_idx").on(table.startDateTime),
+}));
+
+// Delay Notifications table - for generating professional notification letters/emails
+export const delayNotifications = pgTable("delay_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  delayId: varchar("delay_id").notNull().references(() => projectDelays.id, { onDelete: "cascade" }),
+  recipientType: delayNotificationRecipientTypeEnum("recipient_type").notNull(),
+  recipientName: text("recipient_name").notNull(),
+  recipientCompany: text("recipient_company"),
+  recipientEmail: text("recipient_email"),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(), // The full letter content
+  status: delayNotificationStatusEnum("status").notNull().default("DRAFT"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  delayIdIdx: index("delay_notifications_delay_id_idx").on(table.delayId),
 }));
 
 // Calendar Events table
@@ -1418,6 +1438,14 @@ export const insertProjectDelaySchema = createInsertSchema(projectDelays).omit({
 
 export type InsertProjectDelay = z.infer<typeof insertProjectDelaySchema>;
 export type ProjectDelay = typeof projectDelays.$inferSelect;
+
+export const insertDelayNotificationSchema = createInsertSchema(delayNotifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDelayNotification = z.infer<typeof insertDelayNotificationSchema>;
+export type DelayNotification = typeof delayNotifications.$inferSelect;
 
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;

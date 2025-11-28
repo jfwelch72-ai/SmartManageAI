@@ -1,14 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { 
-  projectDelays, projects, changeOrders, users, notifications,
-  insertProjectDelaySchema, type ProjectDelay
+  projectDelays, projects, changeOrders, users, notifications, delayNotifications,
+  insertProjectDelaySchema, insertDelayNotificationSchema, type ProjectDelay
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
+import { generateDelayNotificationPDF } from "./pdf-service";
 
 const router = Router();
 
@@ -685,6 +686,373 @@ router.get("/delays/dashboard/summary", requireAuth, async (req: AuthRequest, re
   } catch (error) {
     console.error("Error fetching delay dashboard summary:", error);
     res.status(500).json({ error: "Failed to fetch delay summary" });
+  }
+});
+
+// ==================== DELAY NOTIFICATION ROUTES ====================
+
+function generateNotificationEmailContent(
+  delay: any,
+  project: any,
+  recipientType: "OWNER_REP" | "GC_REP" | "OTHER"
+): { subject: string; body: string } {
+  const reasonLabel = DELAY_REASON_LABELS[delay.reason] || delay.reason;
+  const responsibilityLabel = RESPONSIBILITY_LABELS[delay.financiallyResponsible] || delay.financiallyResponsible;
+  const startDate = new Date(delay.startDateTime).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  const endDate = delay.endDateTime 
+    ? new Date(delay.endDateTime).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+    : null;
+
+  const subject = `Project Delay Notification - ${project.name} (${delay.delayNumber})`;
+
+  const recipientRole = recipientType === "OWNER_REP" ? "Owner's Representative" 
+    : recipientType === "GC_REP" ? "General Contractor" 
+    : "Responsible Party";
+
+  let body = `Dear ${recipientRole},
+
+This letter serves as formal notification of a project delay affecting the ${project.name} project (Project Code: ${project.code}).
+
+DELAY SUMMARY:
+Reference Number: ${delay.delayNumber}
+Reason for Delay: ${reasonLabel}
+Start Date: ${startDate}${endDate ? `\nEnd Date: ${endDate}` : '\nStatus: Ongoing'}
+Financially Responsible Party: ${responsibilityLabel}${delay.changeOrderRequired ? '\n\nIMPORTANT: This delay will require a Change Order for associated costs.' : ''}
+
+${delay.reasonNotes ? `DETAILS:\n${delay.reasonNotes}\n` : ''}
+PROJECT INFORMATION:
+Project Name: ${project.name}
+Project Code: ${project.code}
+Location: ${[project.locationAddress, project.city, project.state].filter(Boolean).join(', ') || 'N/A'}
+Client: ${project.clientName}
+
+We are documenting this delay in accordance with contract requirements and industry best practices. This notification is intended to preserve all parties' rights and to maintain clear communication regarding project timeline impacts.
+
+Please acknowledge receipt of this notification at your earliest convenience. Should you have any questions or require additional information regarding this delay, please do not hesitate to contact our office.
+
+We appreciate your understanding and cooperation in addressing this matter. We remain committed to minimizing the impact of this delay and completing the project to the highest standards.`;
+
+  return { subject, body };
+}
+
+router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+    const { recipientType, recipientName, recipientCompany, recipientEmail } = req.body;
+
+    if (!recipientType || !["OWNER_REP", "GC_REP", "OTHER"].includes(recipientType)) {
+      res.status(400).json({ error: "Invalid recipient type" });
+      return;
+    }
+
+    if (!recipientName || typeof recipientName !== "string" || recipientName.trim().length === 0) {
+      res.status(400).json({ error: "Recipient name is required" });
+      return;
+    }
+
+    const delay = await getDelayById(id);
+    if (!delay) {
+      res.status(404).json({ error: "Delay not found" });
+      return;
+    }
+
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, delay.projectId))
+      .limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const { subject, body } = generateNotificationEmailContent(delay, project, recipientType);
+
+    const [notification] = await db
+      .insert(delayNotifications)
+      .values({
+        delayId: id,
+        recipientType,
+        recipientName: sanitizeShortText(recipientName),
+        recipientCompany: recipientCompany ? sanitizeShortText(recipientCompany) : null,
+        recipientEmail: recipientEmail ? sanitizeShortText(recipientEmail) : null,
+        subject,
+        body,
+        status: "DRAFT",
+        createdById: userId,
+      })
+      .returning();
+
+    await logAudit({
+      userId,
+      action: "CREATE",
+      entityType: "delayNotification",
+      entityId: notification.id,
+      newValue: JSON.stringify({ delayId: id, recipientType, recipientName }),
+    }, req);
+
+    res.status(201).json(notification);
+  } catch (error) {
+    console.error("Error generating delay notification:", error);
+    res.status(500).json({ error: "Failed to generate notification" });
+  }
+});
+
+router.get("/delays/:id/notifications", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const delay = await getDelayById(id);
+    if (!delay) {
+      res.status(404).json({ error: "Delay not found" });
+      return;
+    }
+
+    const notificationsList = await db
+      .select()
+      .from(delayNotifications)
+      .where(eq(delayNotifications.delayId, id))
+      .orderBy(desc(delayNotifications.createdAt));
+
+    res.json(notificationsList);
+  } catch (error) {
+    console.error("Error fetching delay notifications:", error);
+    res.status(500).json({ error: "Failed to fetch notifications" });
+  }
+});
+
+router.get("/delays/:delayId/notifications/:notificationId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { delayId, notificationId } = req.params;
+
+    const [notification] = await db
+      .select()
+      .from(delayNotifications)
+      .where(and(
+        eq(delayNotifications.id, notificationId),
+        eq(delayNotifications.delayId, delayId)
+      ))
+      .limit(1);
+
+    if (!notification) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    res.json(notification);
+  } catch (error) {
+    console.error("Error fetching notification:", error);
+    res.status(500).json({ error: "Failed to fetch notification" });
+  }
+});
+
+router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { delayId, notificationId } = req.params;
+    const userId = req.user!.id;
+
+    const [notification] = await db
+      .select()
+      .from(delayNotifications)
+      .where(and(
+        eq(delayNotifications.id, notificationId),
+        eq(delayNotifications.delayId, delayId)
+      ))
+      .limit(1);
+
+    if (!notification) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    if (notification.status === "FINALIZED") {
+      res.status(400).json({ error: "Cannot edit a finalized notification" });
+      return;
+    }
+
+    const updateData: any = {
+      updatedAt: new Date(),
+    };
+
+    if (req.body.recipientName) {
+      updateData.recipientName = sanitizeShortText(req.body.recipientName);
+    }
+    if (req.body.recipientCompany !== undefined) {
+      updateData.recipientCompany = req.body.recipientCompany ? sanitizeShortText(req.body.recipientCompany) : null;
+    }
+    if (req.body.recipientEmail !== undefined) {
+      updateData.recipientEmail = req.body.recipientEmail ? sanitizeShortText(req.body.recipientEmail) : null;
+    }
+    if (req.body.subject) {
+      updateData.subject = sanitizeShortText(req.body.subject);
+    }
+    if (req.body.body) {
+      updateData.body = sanitizeText(req.body.body);
+    }
+    if (req.body.status === "FINALIZED") {
+      updateData.status = "FINALIZED";
+    }
+
+    const [updated] = await db
+      .update(delayNotifications)
+      .set(updateData)
+      .where(eq(delayNotifications.id, notificationId))
+      .returning();
+
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      entityType: "delayNotification",
+      entityId: notificationId,
+      oldValue: JSON.stringify({ subject: notification.subject }),
+      newValue: JSON.stringify(updateData),
+    }, req);
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating notification:", error);
+    res.status(500).json({ error: "Failed to update notification" });
+  }
+});
+
+router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { delayId, notificationId } = req.params;
+
+    const [notification] = await db
+      .select()
+      .from(delayNotifications)
+      .where(and(
+        eq(delayNotifications.id, notificationId),
+        eq(delayNotifications.delayId, delayId)
+      ))
+      .limit(1);
+
+    if (!notification) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    const delay = await getDelayById(delayId);
+    if (!delay) {
+      res.status(404).json({ error: "Delay not found" });
+      return;
+    }
+
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, delay.projectId))
+      .limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const [createdByUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, notification.createdById))
+      .limit(1);
+
+    const pdfData = {
+      notification: {
+        subject: notification.subject,
+        body: notification.body,
+        recipientName: notification.recipientName,
+        recipientCompany: notification.recipientCompany,
+        recipientEmail: notification.recipientEmail,
+        recipientType: notification.recipientType,
+        createdAt: notification.createdAt,
+      },
+      delay: {
+        delayNumber: delay.delayNumber,
+        reason: delay.reason,
+        reasonLabel: DELAY_REASON_LABELS[delay.reason] || delay.reason,
+        reasonNotes: delay.reasonNotes,
+        startDateTime: delay.startDateTime,
+        endDateTime: delay.endDateTime,
+        financiallyResponsible: delay.financiallyResponsible,
+        responsibilityLabel: RESPONSIBILITY_LABELS[delay.financiallyResponsible] || delay.financiallyResponsible,
+        changeOrderRequired: delay.changeOrderRequired,
+        status: delay.status,
+      },
+      project: {
+        name: project.name,
+        code: project.code,
+        clientName: project.clientName,
+        locationAddress: project.locationAddress,
+        city: project.city,
+        state: project.state,
+      },
+      createdBy: {
+        firstName: createdByUser?.firstName || "TFR",
+        lastName: createdByUser?.lastName || "Construction",
+        email: createdByUser?.email || null,
+        phone: createdByUser?.phone || null,
+      },
+    };
+
+    const pdfStream = generateDelayNotificationPDF(pdfData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Delay-Notification-${delay.delayNumber}.pdf"`);
+
+    pdfStream.pipe(res);
+  } catch (error) {
+    console.error("Error generating notification PDF:", error);
+    res.status(500).json({ error: "Failed to generate PDF" });
+  }
+});
+
+router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { delayId, notificationId } = req.params;
+    const userId = req.user!.id;
+
+    const [notification] = await db
+      .select()
+      .from(delayNotifications)
+      .where(and(
+        eq(delayNotifications.id, notificationId),
+        eq(delayNotifications.delayId, delayId)
+      ))
+      .limit(1);
+
+    if (!notification) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    await db
+      .delete(delayNotifications)
+      .where(eq(delayNotifications.id, notificationId));
+
+    await logAudit({
+      userId,
+      action: "DELETE",
+      entityType: "delayNotification",
+      entityId: notificationId,
+      oldValue: JSON.stringify({ subject: notification.subject }),
+    }, req);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting notification:", error);
+    res.status(500).json({ error: "Failed to delete notification" });
   }
 });
 
