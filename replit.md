@@ -16,6 +16,7 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **UI/UX**: Clean, functional interface built with shadcn/ui components and Tailwind CSS with a focus on intuitive project management workflows.
 -   **Key Features**:
+    -   **Personalized Dashboard**: Welcoming landing page with time-based greetings (Good morning/afternoon/evening/night), user avatar with initials, role badge, and current date display. Features a three-column layout with: (Left) unread messages preview and notifications, (Center) upcoming calendar events and AI tasks, (Right) active projects and bids overview. Quick stat cards provide one-click navigation to Active Projects, Active Bids, Unread Messages, and Upcoming Events. Role-based sections show outstanding items for managers and crew overview for superintendents.
     -   **Authentication & Authorization**: Secure JWT with RBAC.
     -   **User Management**: Admin tools for managing accounts, roles, and user activation.
     -   **Time-Clock System**: Native time-clock with GPS, shift management, and approval workflows.
