@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import AppHeader from "@/components/AppHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,7 +16,7 @@ import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
 import TMTicketsSection from "@/components/TMTicketsSection";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2 } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -59,6 +59,8 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showAddPlanDialog, setShowAddPlanDialog] = useState(false);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedPlanForAssignment, setSelectedPlanForAssignment] = useState<any>(null);
   
   const { data: assignedEquipment = [], isLoading: loadingAssigned } = useQuery<any[]>({
     queryKey: ["/api/projects", projectId, "equipment"],
@@ -247,27 +249,55 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
                     </TableCell>
                     {canManagePlans && (
                       <TableCell>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-delete-plan-${plan.id}`}>
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                        <div className="flex items-center gap-1">
+                          {plan.source === "OWNED" && plan.status === "PLANNED" && !plan.equipmentId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPlanForAssignment(plan);
+                                setShowAssignDialog(true);
+                              }}
+                              data-testid={`button-assign-plan-${plan.id}`}
+                            >
+                              <Link2 className="h-4 w-4 mr-1" />
+                              Assign
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                          )}
+                          {plan.equipmentId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              asChild
+                              data-testid={`button-view-equipment-${plan.id}`}
+                            >
+                              <Link href={`/equipment/${plan.equipmentCode || plan.equipmentId}`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" data-testid={`button-delete-plan-${plan.id}`}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -413,6 +443,16 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
         open={showAddPlanDialog}
         onOpenChange={setShowAddPlanDialog}
         projectId={projectId}
+      />
+
+      <AssignEquipmentDialog
+        open={showAssignDialog}
+        onOpenChange={(open) => {
+          setShowAssignDialog(open);
+          if (!open) setSelectedPlanForAssignment(null);
+        }}
+        projectId={projectId}
+        plan={selectedPlanForAssignment}
       />
     </div>
   );
@@ -585,6 +625,173 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: AddEquipmentP
             data-testid="button-submit-plan"
           >
             {createPlan.isPending ? "Adding..." : "Add to Plan"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface AssignEquipmentDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  plan: any;
+}
+
+function AssignEquipmentDialog({ open, onOpenChange, projectId, plan }: AssignEquipmentDialogProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState("");
+  const [expectedDays, setExpectedDays] = useState("");
+
+  const { data: availableEquipment = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/equipment", "available", plan?.equipmentType],
+    queryFn: async () => {
+      const response = await fetch(`/api/equipment?status=AVAILABLE&type=${encodeURIComponent(plan?.equipmentType || "")}`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch available equipment");
+      const data = await response.json();
+      return data.data || data;
+    },
+    enabled: open && !!plan,
+  });
+
+  const assignEquipment = useMutation({
+    mutationFn: async () => {
+      const today = new Date();
+      const endDate = expectedDays ? new Date(today.getTime() + Number(expectedDays) * 24 * 60 * 60 * 1000) : null;
+      
+      await apiRequest("POST", `/api/equipment/${selectedEquipmentId}/assign`, {
+        projectId: projectId,
+        expectedReturnDate: endDate?.toISOString().split('T')[0] || null,
+      });
+      
+      try {
+        await apiRequest("PATCH", `/api/projects/${projectId}/equipment-plans/${plan.id}`, {
+          equipmentId: selectedEquipmentId,
+          status: "ASSIGNED",
+          actualStartDate: today.toISOString(),
+          actualDays: expectedDays ? Number(expectedDays) : null,
+        });
+      } catch (planError) {
+        console.error("Failed to update plan after equipment assignment:", planError);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", "available"] });
+      toast({ title: "Success", description: "Equipment assigned to project" });
+      resetForm();
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to assign equipment",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setSelectedEquipmentId("");
+    setExpectedDays("");
+  };
+
+  useEffect(() => {
+    if (open && plan) {
+      setExpectedDays(plan.plannedDays ? String(plan.plannedDays) : "");
+      setSelectedEquipmentId("");
+    } else if (!open) {
+      resetForm();
+    }
+  }, [open, plan]);
+
+  if (!plan) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Assign Equipment to Plan</DialogTitle>
+          <DialogDescription>
+            Select equipment from your fleet to fulfill: {plan.equipmentName}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-3 rounded-md bg-muted/50 text-sm">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-muted-foreground">Plan:</span>{" "}
+                <span className="font-medium">{plan.equipmentName}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Type:</span>{" "}
+                <span className="font-medium">{plan.equipmentType}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Planned Days:</span>{" "}
+                <span className="font-medium">{plan.plannedDays || "-"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Planned Cost:</span>{" "}
+                <span className="font-medium">
+                  {plan.plannedCost ? `$${Number(plan.plannedCost).toFixed(2)}` : "-"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <Label>Select Equipment from Fleet</Label>
+            {isLoading ? (
+              <div className="text-sm text-muted-foreground py-2">Loading available equipment...</div>
+            ) : availableEquipment.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">
+                No available equipment of type "{plan.equipmentType}" found in your fleet.
+              </div>
+            ) : (
+              <Select value={selectedEquipmentId} onValueChange={setSelectedEquipmentId}>
+                <SelectTrigger data-testid="select-equipment-assign">
+                  <SelectValue placeholder="Select equipment" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableEquipment.map((eq: any) => (
+                    <SelectItem key={eq.id} value={eq.id}>
+                      {eq.name} - {eq.make} {eq.model} ({eq.equipmentCode})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div>
+            <Label>Expected Duration (Days)</Label>
+            <Input
+              type="number"
+              value={expectedDays}
+              onChange={(e) => setExpectedDays(e.target.value)}
+              placeholder={plan.plannedDays ? String(plan.plannedDays) : "0"}
+              data-testid="input-expected-days"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Used to calculate expected return date
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => assignEquipment.mutate()}
+            disabled={!selectedEquipmentId || assignEquipment.isPending}
+            data-testid="button-confirm-assign"
+          >
+            {assignEquipment.isPending ? "Assigning..." : "Assign Equipment"}
           </Button>
         </DialogFooter>
       </DialogContent>
