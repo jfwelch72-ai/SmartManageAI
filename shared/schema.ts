@@ -617,6 +617,42 @@ export const changeOrders = pgTable("change_orders", {
   workTypeCodeIdx: index("change_orders_work_type_code_idx").on(table.workTypeCode),
 }));
 
+// Change Order Line Items - Labor Entries
+export const changeOrderLaborEntries = pgTable("change_order_labor_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  employeeName: text("employee_name").notNull(),
+  position: text("position"),
+  hoursWorked: decimal("hours_worked", { precision: 8, scale: 2 }).notNull(),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+});
+
+// Change Order Line Items - Equipment Entries
+export const changeOrderEquipmentEntries = pgTable("change_order_equipment_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  equipmentType: text("equipment_type").notNull(),
+  description: text("description"),
+  quantity: integer("quantity").notNull().default(1),
+  hoursUsed: decimal("hours_used", { precision: 8, scale: 2 }).notNull(),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+});
+
+// Change Order Line Items - Material Entries (with vendor pricing integration)
+export const changeOrderMaterialEntries = pgTable("change_order_material_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  materialDescription: text("material_description").notNull(),
+  category: text("category"), // For vendor catalog lookup (CONCRETE, STONE, REBAR, etc.)
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unit: text("unit"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  vendorPricingId: varchar("vendor_pricing_id"), // Reference to catalog item if applied
+});
+
 // Calendar Events table
 export const calendarEvents = pgTable("calendar_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1302,6 +1338,26 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
 export type ChangeOrder = typeof changeOrders.$inferSelect;
+
+// Change Order Line Item schemas
+export const insertChangeOrderLaborEntrySchema = createInsertSchema(changeOrderLaborEntries).omit({
+  id: true,
+});
+export const insertChangeOrderEquipmentEntrySchema = createInsertSchema(changeOrderEquipmentEntries).omit({
+  id: true,
+});
+export const insertChangeOrderMaterialEntrySchema = createInsertSchema(changeOrderMaterialEntries).omit({
+  id: true,
+});
+
+export type InsertChangeOrderLaborEntry = z.infer<typeof insertChangeOrderLaborEntrySchema>;
+export type ChangeOrderLaborEntry = typeof changeOrderLaborEntries.$inferSelect;
+
+export type InsertChangeOrderEquipmentEntry = z.infer<typeof insertChangeOrderEquipmentEntrySchema>;
+export type ChangeOrderEquipmentEntry = typeof changeOrderEquipmentEntries.$inferSelect;
+
+export type InsertChangeOrderMaterialEntry = z.infer<typeof insertChangeOrderMaterialEntrySchema>;
+export type ChangeOrderMaterialEntry = typeof changeOrderMaterialEntries.$inferSelect;
 
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;

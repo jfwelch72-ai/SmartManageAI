@@ -5,7 +5,8 @@ import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, bi
 import { 
   projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
-  changeOrders, calendarEvents, notifications, filePermissions,
+  changeOrders, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries,
+  calendarEvents, notifications, filePermissions,
   insertProjectSchema, insertBidSchema, insertEstimateSchema,
   insertProcurementItemSchema, insertPlanDocumentSchema, insertTimeEntrySchema,
   insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
@@ -7365,6 +7366,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Approve/reject endpoints moved to changeOrderRoutes.ts for state machine logic
+
+  // ====================
+  // Change Order Line Items Routes
+  // ====================
+
+  // Get line items for a change order
+  app.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [laborEntries, equipmentEntries, materialEntries] = await Promise.all([
+        db.select().from(changeOrderLaborEntries).where(eq(changeOrderLaborEntries.changeOrderId, id)),
+        db.select().from(changeOrderEquipmentEntries).where(eq(changeOrderEquipmentEntries.changeOrderId, id)),
+        db.select().from(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
+      ]);
+      
+      res.json({ laborEntries, equipmentEntries, materialEntries });
+    } catch (error) {
+      console.error("Get change order line items error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update line items for a change order (replaces all)
+  app.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { laborEntries, equipmentEntries, materialEntries } = req.body;
+      
+      // Verify change order exists and is in DRAFT status
+      const [existingOrder] = await db.select().from(changeOrders).where(eq(changeOrders.id, id));
+      if (!existingOrder) {
+        res.status(404).json({ error: "Change order not found" });
+        return;
+      }
+      if (existingOrder.status !== "DRAFT") {
+        res.status(400).json({ error: "Can only update line items for draft change orders" });
+        return;
+      }
+
+      // Delete existing entries
+      await Promise.all([
+        db.delete(changeOrderLaborEntries).where(eq(changeOrderLaborEntries.changeOrderId, id)),
+        db.delete(changeOrderEquipmentEntries).where(eq(changeOrderEquipmentEntries.changeOrderId, id)),
+        db.delete(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
+      ]);
+
+      // Helper to safely parse numbers with NaN protection
+      const safeParseFloat = (val: any): number => {
+        const parsed = parseFloat(val);
+        return isNaN(parsed) ? 0 : parsed;
+      };
+
+      // Insert new entries with validation
+      if (laborEntries && laborEntries.length > 0) {
+        const validLaborEntries = laborEntries.filter((entry: any) => 
+          entry.employeeName && entry.employeeName.trim() !== ""
+        );
+        if (validLaborEntries.length > 0) {
+          await db.insert(changeOrderLaborEntries).values(
+            validLaborEntries.map((entry: any) => {
+              const hours = safeParseFloat(entry.hoursWorked);
+              const rate = safeParseFloat(entry.hourlyRate);
+              return {
+                changeOrderId: id,
+                employeeName: entry.employeeName,
+                position: entry.position || null,
+                hoursWorked: String(hours),
+                hourlyRate: String(rate),
+                totalCost: String(hours * rate),
+              };
+            })
+          );
+        }
+      }
+
+      if (equipmentEntries && equipmentEntries.length > 0) {
+        const validEquipmentEntries = equipmentEntries.filter((entry: any) =>
+          entry.equipmentType && entry.equipmentType.trim() !== ""
+        );
+        if (validEquipmentEntries.length > 0) {
+          await db.insert(changeOrderEquipmentEntries).values(
+            validEquipmentEntries.map((entry: any) => {
+              const qty = Math.max(1, parseInt(entry.quantity) || 1);
+              const hours = safeParseFloat(entry.hoursUsed);
+              const rate = safeParseFloat(entry.hourlyRate);
+              return {
+                changeOrderId: id,
+                equipmentType: entry.equipmentType,
+                description: entry.description || null,
+                quantity: qty,
+                hoursUsed: String(hours),
+                hourlyRate: String(rate),
+                totalCost: String(qty * hours * rate),
+              };
+            })
+          );
+        }
+      }
+
+      if (materialEntries && materialEntries.length > 0) {
+        const validMaterialEntries = materialEntries.filter((entry: any) =>
+          entry.materialDescription && entry.materialDescription.trim() !== ""
+        );
+        if (validMaterialEntries.length > 0) {
+          await db.insert(changeOrderMaterialEntries).values(
+            validMaterialEntries.map((entry: any) => {
+              const qty = safeParseFloat(entry.quantity);
+              const cost = safeParseFloat(entry.unitCost);
+              return {
+                changeOrderId: id,
+                materialDescription: entry.materialDescription,
+                category: entry.category || null,
+                quantity: String(qty),
+                unit: entry.unit || null,
+                unitCost: String(cost),
+                totalCost: String(qty * cost),
+                vendorPricingId: entry.vendorPricingId || null,
+              };
+            })
+          );
+        }
+      }
+
+      // Calculate new total from line items
+      const [newLaborEntries, newEquipmentEntries, newMaterialEntries] = await Promise.all([
+        db.select().from(changeOrderLaborEntries).where(eq(changeOrderLaborEntries.changeOrderId, id)),
+        db.select().from(changeOrderEquipmentEntries).where(eq(changeOrderEquipmentEntries.changeOrderId, id)),
+        db.select().from(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
+      ]);
+
+      const totalLabor = newLaborEntries.reduce((sum, e) => sum + Number(e.totalCost || 0), 0);
+      const totalEquipment = newEquipmentEntries.reduce((sum, e) => sum + Number(e.totalCost || 0), 0);
+      const totalMaterial = newMaterialEntries.reduce((sum, e) => sum + Number(e.totalCost || 0), 0);
+      const grandTotal = totalLabor + totalEquipment + totalMaterial;
+
+      // Update change order total
+      await db.update(changeOrders)
+        .set({ amount: String(grandTotal), updatedAt: new Date() })
+        .where(eq(changeOrders.id, id));
+
+      res.json({ 
+        laborEntries: newLaborEntries, 
+        equipmentEntries: newEquipmentEntries, 
+        materialEntries: newMaterialEntries,
+        total: grandTotal
+      });
+    } catch (error) {
+      console.error("Update change order line items error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
   // ====================
   // Calendar Events Routes

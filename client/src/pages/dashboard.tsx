@@ -177,17 +177,11 @@ export default function DashboardPage() {
               </div>
             </div>
             
-            {/* Quick Actions */}
+            {/* Quick Actions - All new jobs start as bids and follow proper workflow to be awarded */}
             <div className="flex gap-2">
-              {FeaturePermissions.CREATE_PROJECT(user?.role) && (
-                <Button onClick={() => setLocation('/projects?new=true')} data-testid="button-new-project">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Project
-                </Button>
-              )}
               {hasManagementAccess(user?.role) && (
-                <Button variant="outline" onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid">
-                  <FileText className="w-4 h-4 mr-2" />
+                <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid">
+                  <Plus className="w-4 h-4 mr-2" />
                   New Bid
                 </Button>
               )}

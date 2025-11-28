@@ -13,10 +13,38 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import { useTMTickets, useCreateTMTicket, useSubmitTMTicket, useApproveTMTicket, useRejectTMTicket, useDeleteTMTicket, type TMTicket, type TMTicketLaborEntry, type TMTicketEquipmentEntry, type TMTicketMaterialEntry } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler, ListChecks } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler, ListChecks, Search } from "lucide-react";
 import { format } from "date-fns";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import type { ScopeItem } from "@shared/schema";
+
+// Vendor pricing catalog types
+interface VendorPricingCatalog {
+  id: string;
+  organizationId: string;
+  organizationName?: string;
+  itemName: string;
+  itemCode?: string;
+  category: string;
+  unit: string;
+  unitPrice: string;
+  effectiveQuarter: string;
+  leadTimeDays?: number;
+  deliveryFee?: string;
+}
+
+// Material categories matching bid estimates for uniformity
+const MATERIAL_CATEGORIES = [
+  { value: "CONCRETE", label: "Concrete" },
+  { value: "STONE", label: "Stone/Aggregate" },
+  { value: "REBAR", label: "Rebar/Steel" },
+  { value: "WIRE_MESH", label: "Wire Mesh" },
+  { value: "FORMS", label: "Forms" },
+  { value: "SEALERS", label: "Sealers/Cure" },
+  { value: "JOINTS", label: "Joints/Caulk" },
+  { value: "OTHER", label: "Other Materials" },
+];
 
 interface TMTicketsSectionProps {
   projectId: string;
@@ -47,6 +75,7 @@ interface MaterialEntry {
   quantity: string;
   unit: string;
   unitCost: string;
+  category?: string;  // For vendor pricing catalog lookup
 }
 
 const emptyLaborEntry = (): LaborEntry => ({
@@ -72,6 +101,7 @@ const emptyMaterialEntry = (): MaterialEntry => ({
   quantity: "1",
   unit: "",
   unitCost: "0",
+  category: "",
 });
 
 function TMStatusBadge({ status }: { status: TMTicket["status"] }) {
@@ -119,6 +149,15 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
   // Standardized scope of work selection (matches estimating sheets)
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
+  
+  // Vendor pricing catalog for materials (uniformity with bid estimates)
+  const [selectedMaterialCategory, setSelectedMaterialCategory] = useState<string>("");
+  
+  // Fetch vendor pricing catalog when category is selected
+  const { data: catalogPrices = [] } = useQuery<VendorPricingCatalog[]>({
+    queryKey: ["/api/vendor-pricing/search", { category: selectedMaterialCategory }],
+    enabled: !!selectedMaterialCategory,
+  });
 
   const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
   const canApprove = ["ADMIN", "MANAGER"].includes(userRole);
@@ -143,6 +182,20 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
     setActiveEntryTab("labor");
     setScopeSelection(null);
     setScopeQuantity("");
+    setSelectedMaterialCategory("");
+  };
+  
+  // Apply vendor catalog pricing to a material entry
+  const applyCatalogPrice = (catalogItem: VendorPricingCatalog) => {
+    const newEntry: MaterialEntry = {
+      description: catalogItem.itemName,
+      quantity: "1",
+      unit: catalogItem.unit,
+      unitCost: catalogItem.unitPrice,
+      category: catalogItem.category,
+    };
+    setMaterialEntries([...materialEntries, newEntry]);
+    toast({ title: "Catalog price applied", description: `Added ${catalogItem.itemName} at $${catalogItem.unitPrice}/${catalogItem.unit}` });
   };
 
   const handleCreate = async () => {
@@ -623,8 +676,78 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                   </TabsContent>
 
                   <TabsContent value="materials" className="space-y-3">
+                    {/* Vendor Pricing Catalog Lookup - same as bid estimates */}
+                    <Card className="p-4 bg-muted/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Search className="w-4 h-4 text-muted-foreground" />
+                        <h4 className="text-sm font-medium">Vendor Pricing Catalog</h4>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <Label className="text-xs">Material Category</Label>
+                          <Select 
+                            value={selectedMaterialCategory} 
+                            onValueChange={setSelectedMaterialCategory}
+                          >
+                            <SelectTrigger data-testid="select-material-category">
+                              <SelectValue placeholder="Select category to search catalog..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MATERIAL_CATEGORIES.map((cat) => (
+                                <SelectItem key={cat.value} value={cat.value}>
+                                  {cat.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      {selectedMaterialCategory && catalogPrices.length > 0 && (
+                        <div className="mt-3 border rounded-md p-3 bg-background max-h-40 overflow-y-auto">
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Click to add from vendor catalog:
+                          </p>
+                          <div className="space-y-1">
+                            {catalogPrices.slice(0, 8).map((item) => (
+                              <div 
+                                key={item.id}
+                                onClick={() => applyCatalogPrice(item)}
+                                className="flex items-center justify-between p-2 hover-elevate cursor-pointer rounded text-sm"
+                                data-testid={`catalog-item-${item.id}`}
+                              >
+                                <div className="flex-1">
+                                  <span className="font-medium">{item.itemName}</span>
+                                  {item.organizationName && (
+                                    <span className="text-xs text-muted-foreground ml-2">
+                                      ({item.organizationName})
+                                    </span>
+                                  )}
+                                </div>
+                                <Badge variant="secondary" className="font-mono">
+                                  ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                          {catalogPrices.length > 8 && (
+                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                              +{catalogPrices.length - 8} more items
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
+                      {selectedMaterialCategory && catalogPrices.length === 0 && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          No vendor pricing found for this category. Add items manually below.
+                        </p>
+                      )}
+                    </Card>
+                    
+                    {/* Material entries list */}
                     {materialEntries.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-4 text-center">No material entries. Click below to add.</p>
+                      <p className="text-sm text-muted-foreground py-4 text-center">No material entries. Select from catalog above or add manually below.</p>
                     ) : (
                       materialEntries.map((entry, index) => (
                         <Card key={index} className="p-3">
@@ -685,7 +808,7 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                     )}
                     <Button variant="outline" size="sm" onClick={addMaterialEntry} data-testid="button-add-material">
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Material Entry
+                      Add Material Manually
                     </Button>
                   </TabsContent>
                 </Tabs>
