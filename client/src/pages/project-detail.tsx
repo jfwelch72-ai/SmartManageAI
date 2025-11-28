@@ -20,7 +20,7 @@ import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCir
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { FeaturePermissions } from "@/lib/rbac";
+import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts, useCreateProcurementItem, useCreateSubcontractorPayment, useProjectLaborRates, useProjectEmployeeRates, useUpdateProjectLaborRates, useUpdateProjectEmployeeRate, useDeleteProjectEmployeeRate } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -319,12 +319,16 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
                         <ChangeOrderFiles changeOrderId={co.id} />
                       </div>
                       <div className="text-right">
-                        <p className={`text-xl font-bold font-mono ${parseFloat(co.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
-                          {parseFloat(co.amount) >= 0 ? '+' : ''}${parseFloat(co.amount).toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {parseFloat(co.amount) >= 0 ? 'Addition' : 'Deduction'}
-                        </p>
+                        {hasManagementAccess(userRole) && (
+                          <>
+                            <p className={`text-xl font-bold font-mono ${parseFloat(co.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
+                              {parseFloat(co.amount) >= 0 ? '+' : ''}${parseFloat(co.amount).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {parseFloat(co.amount) >= 0 ? 'Addition' : 'Deduction'}
+                            </p>
+                          </>
+                        )}
                         {canManage && co.status === "DRAFT" && (
                           <div className="flex gap-2 mt-2">
                             <Button
@@ -1606,11 +1610,13 @@ export default function ProjectDetailPage() {
                             Created {format(new Date(co.createdAt), "MMM d, yyyy")}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold font-mono">
-                            ${parseFloat(co.amount).toLocaleString()}
-                          </p>
-                        </div>
+                        {hasManagementAccess(user?.role) && (
+                          <div className="text-right">
+                            <p className="text-lg font-bold font-mono">
+                              ${parseFloat(co.amount).toLocaleString()}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ))}
                     {changeOrders.length > 5 && (
@@ -1618,23 +1624,25 @@ export default function ProjectDetailPage() {
                         + {changeOrders.length - 5} more change order{changeOrders.length - 5 !== 1 ? 's' : ''}
                       </p>
                     )}
-                    <div className="pt-3 border-t mt-3 grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Total Value</p>
-                        <p className="text-xl font-bold font-mono">
-                          ${changeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
-                        </p>
+                    {hasManagementAccess(user?.role) && (
+                      <div className="pt-3 border-t mt-3 grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Total Value</p>
+                          <p className="text-xl font-bold font-mono">
+                            ${changeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Approved Value</p>
+                          <p className="text-xl font-bold font-mono text-green-600">
+                            ${changeOrders
+                              .filter(co => co.status === "APPROVED")
+                              .reduce((sum, co) => sum + parseFloat(co.amount), 0)
+                              .toLocaleString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Approved Value</p>
-                        <p className="text-xl font-bold font-mono text-green-600">
-                          ${changeOrders
-                            .filter(co => co.status === "APPROVED")
-                            .reduce((sum, co) => sum + parseFloat(co.amount), 0)
-                            .toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </CardContent>
