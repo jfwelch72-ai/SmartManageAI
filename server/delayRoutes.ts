@@ -198,6 +198,9 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       proceedToWorkNotes: req.body.proceedToWorkNotes ? sanitizeText(req.body.proceedToWorkNotes) : null,
       ownerRepName: req.body.ownerRepName ? sanitizeShortText(req.body.ownerRepName) : null,
       gcRepName: req.body.gcRepName ? sanitizeShortText(req.body.gcRepName) : null,
+      startDateTime: req.body.startDateTime ? new Date(req.body.startDateTime) : undefined,
+      endDateTime: req.body.endDateTime ? new Date(req.body.endDateTime) : null,
+      proceedToWorkDate: req.body.proceedToWorkDate ? new Date(req.body.proceedToWorkDate) : null,
     };
 
     const validationResult = insertProjectDelaySchema.safeParse(sanitizedBody);

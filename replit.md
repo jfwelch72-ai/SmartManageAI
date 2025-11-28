@@ -15,8 +15,16 @@ The platform utilizes a modern web stack with a client-server architecture, prio
 -   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across seven distinct user roles.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **Key Features**:
-    -   **Personalized Dashboard**: Role-based landing page with quick navigation and overview of active projects, bids, messages, and events.
+    -   **Personalized Dashboard**: Role-based landing page with quick navigation and overview of active projects, bids, messages, events, and delay alerts.
     -   **Comprehensive Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material (T&M) Tracking with advanced workflows, attachment management, and billing status tracking.
+    -   **Project Delay Tracking System**: Track project delays with comprehensive documentation including:
+        - Delay Reasons: Weather, GC Scheduling, Other Contractors, Material Delivery, Permit Issues, Inspection Delay, Owner Directive, Design Changes, Site Conditions, Labor Shortage
+        - Status Workflow: DRAFT → SUBMITTED → ACKNOWLEDGED → RESOLVED
+        - Financial Responsibility Tracking: Owner, GC, Subcontractor, TFR, Force Majeure
+        - Proof Documentation: File uploads for evidence (emails, photos, reports)
+        - Change Order Integration: Auto-link delays to change orders for cost recovery
+        - CRM Integration: Link Owner Rep and GC Rep contacts from CRM
+        - RBAC: SUPERINTENDENT+ can create/edit delays, ADMIN/MANAGER can acknowledge
     -   **AI Integration**: AI Senior PM + CFO System for task generation, profitability analysis, scheduling, and billing automation, including Lead Time Intelligence. AI-powered maintenance recommendations for equipment.
     -   **Takeoff & Estimating Engine**: Interactive drawing tools for linear, area, volume, and count measurements, supporting multi-page PDF rendering and a comprehensive material calculator.
     -   **CRM System**: Management for various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
