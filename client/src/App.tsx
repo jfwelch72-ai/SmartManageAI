@@ -31,6 +31,7 @@ import TasksPage from "@/pages/tasks";
 import ProductionRatesPage from "@/pages/production-rates";
 import CRMPage from "@/pages/crm";
 import ScopeSettingsPage from "@/pages/scope-settings";
+import MessagesPage from "@/pages/messages";
 
 function ProtectedRoute({ 
   component: Component,
@@ -93,6 +94,7 @@ function Router() {
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
+      <Route path="/messages" component={() => <ProtectedRoute component={MessagesPage} />} />
       
       {/* Admin-only routes */}
       <Route path="/users" component={() => <ProtectedRoute component={UsersPage} permission={RoutePermissions.USERS} />} />

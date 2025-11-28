@@ -22,9 +22,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
-import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount } from "@/hooks/use-data";
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -53,8 +53,10 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
   const { data: notifications = [] } = useNotifications();
   const markAsRead = useMarkNotificationRead();
   const markAllAsRead = useMarkAllNotificationsRead();
+  const { data: messageCountData = { unreadCount: 0 } } = useUnreadMessageCount();
 
   const unreadCount = notificationsData.count || 0;
+  const unreadMessageCount = messageCountData.unreadCount || 0;
   const unreadNotifications = notifications.filter(n => !n.isRead);
 
   const handleMarkAsRead = (id: string) => {
@@ -92,11 +94,12 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
     { href: "/projects", icon: Briefcase, label: "Projects" },
     { href: "/calendar", icon: Calendar, label: "Calendar" },
     { href: "/communications", icon: MessageSquare, label: "Communications" },
+    { href: "/messages", icon: MessageCircle, label: "Messages", badge: unreadMessageCount },
     { href: "/bids", icon: Gavel, label: "Bids" },
   ];
 
   // Mobile navigation link component
-  const MobileNavLink = ({ href, icon: Icon, label }: { href: string; icon: any; label: string }) => (
+  const MobileNavLink = ({ href, icon: Icon, label, badge }: { href: string; icon: any; label: string; badge?: number }) => (
     <Link href={href} onClick={closeMobileMenu}>
       <div
         className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -107,7 +110,12 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
         data-testid={`mobile-nav-${label.toLowerCase()}`}
       >
         <Icon className="w-5 h-5" />
-        <span>{label}</span>
+        <span className="flex-1">{label}</span>
+        {badge !== undefined && badge > 0 && (
+          <Badge variant="default" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs">
+            {badge}
+          </Badge>
+        )}
       </div>
     </Link>
   );
@@ -384,6 +392,22 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Messages Icon */}
+          <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
+            <Link href="/messages">
+              <MessageSquare className="w-5 h-5" />
+              {unreadMessageCount > 0 && (
+                <Badge 
+                  variant="default" 
+                  className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-xs"
+                  data-testid="badge-unread-messages"
+                >
+                  {unreadMessageCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">

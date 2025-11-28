@@ -15,7 +15,11 @@ export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT"]);
+
+// Messaging enums
+export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
+export const messageStatusEnum = pgEnum("message_status", ["SENT", "DELIVERED", "READ"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
 export const auditActionEnum = pgEnum("audit_action", [
   "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
@@ -77,6 +81,7 @@ export const projects = pgTable("projects", {
   drawDayOfMonth: integer("draw_day_of_month"),
   estimatorId: varchar("estimator_id").references(() => users.id),
   superintendentId: varchar("superintendent_id").references(() => users.id),
+  projectManagerId: varchar("project_manager_id").references(() => users.id),
   gcOrganizationId: varchar("gc_organization_id"),
   ownerRepOrganizationId: varchar("owner_rep_organization_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1798,3 +1803,81 @@ export type ScopeModifierCategory = typeof scopeModifierCategories.$inferSelect;
 export const insertScopeModifierSchema = createInsertSchema(scopeModifiers).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertScopeModifier = z.infer<typeof insertScopeModifierSchema>;
 export type ScopeModifier = typeof scopeModifiers.$inferSelect;
+
+// ============================================================
+// INTERNAL MESSAGING SYSTEM
+// Company-wide chat, group channels, and direct messages
+// ============================================================
+
+// Conversations table (channels and direct messages)
+export const conversations = pgTable("conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: conversationTypeEnum("type").notNull(), // DIRECT, GROUP, COMPANY
+  name: text("name"), // null for direct messages, required for groups/company
+  description: text("description"),
+  isCompanyChannel: boolean("is_company_channel").notNull().default(false), // The main company-wide channel
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  typeIdx: index("conversations_type_idx").on(table.type),
+}));
+
+// Conversation Participants table
+export const conversationParticipants = pgTable("conversation_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  lastReadAt: timestamp("last_read_at"),
+  isAdmin: boolean("is_admin").notNull().default(false), // For group channels
+}, (table) => ({
+  conversationUserIdx: index("conversation_participants_conv_user_idx").on(table.conversationId, table.userId),
+  userIdx: index("conversation_participants_user_idx").on(table.userId),
+  uniqueParticipant: unique("conversation_participants_unique").on(table.conversationId, table.userId),
+}));
+
+// Messages table
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  attachmentUrl: text("attachment_url"),
+  attachmentName: text("attachment_name"),
+  attachmentType: text("attachment_type"),
+  isEdited: boolean("is_edited").notNull().default(false),
+  editedAt: timestamp("edited_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  conversationIdx: index("messages_conversation_idx").on(table.conversationId),
+  senderIdx: index("messages_sender_idx").on(table.senderId),
+  createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
+}));
+
+// Message Read Receipts (for tracking who's read each message)
+export const messageReadReceipts = pgTable("message_read_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  readAt: timestamp("read_at").notNull().defaultNow(),
+}, (table) => ({
+  messageUserIdx: unique("message_read_receipts_unique").on(table.messageId, table.userId),
+}));
+
+// Insert/Select Schemas for Messaging System
+export const insertConversationSchema = createInsertSchema(conversations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Conversation = typeof conversations.$inferSelect;
+
+export const insertConversationParticipantSchema = createInsertSchema(conversationParticipants).omit({ id: true, joinedAt: true });
+export type InsertConversationParticipant = z.infer<typeof insertConversationParticipantSchema>;
+export type ConversationParticipant = typeof conversationParticipants.$inferSelect;
+
+export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+
+export const insertMessageReadReceiptSchema = createInsertSchema(messageReadReceipts).omit({ id: true, readAt: true });
+export type InsertMessageReadReceipt = z.infer<typeof insertMessageReadReceiptSchema>;
+export type MessageReadReceipt = typeof messageReadReceipts.$inferSelect;

@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2 } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2, UserCog } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import JobInformationForm from "@/components/JobInformationForm";
 import { SubcontractorScopeReportDialog } from "@/components/SubcontractorScopeReport";
 import { useLocation, useRoute } from "wouter";
@@ -95,6 +96,11 @@ export default function BidDetailPage() {
   // Standardized scope selection state
   const [scopeSelectionData, setScopeSelectionData] = useState<ScopeSelectionData | undefined>(undefined);
   
+  // Award dialog state
+  const [showAwardDialog, setShowAwardDialog] = useState(false);
+  const [selectedSuperintendentId, setSelectedSuperintendentId] = useState<string>("");
+  const [selectedProjectManagerId, setSelectedProjectManagerId] = useState<string>("");
+  
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
   const convertBid = useConvertBidToProject();
@@ -118,6 +124,26 @@ export default function BidDetailPage() {
     queryKey: bidEstimateKey(bid?.id),
     enabled: !!bid?.id,
   });
+
+  // Fetch users for project assignment
+  interface UserOption {
+    id: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    isActive: boolean;
+  }
+  const { data: usersData } = useQuery<{ users: UserOption[] }>({
+    queryKey: ["/api/users"],
+  });
+  
+  // Filter active superintendents and managers for assignment dropdowns
+  const superintendents = usersData?.users?.filter(u => 
+    u.isActive && (u.role === "SUPERINTENDENT" || u.role === "MANAGER" || u.role === "ADMIN")
+  ) || [];
+  const managers = usersData?.users?.filter(u => 
+    u.isActive && (u.role === "MANAGER" || u.role === "ADMIN")
+  ) || [];
 
   // Quote form
   const form = useForm<QuoteFormValues>({
@@ -666,24 +692,32 @@ export default function BidDetailPage() {
     },
   });
 
-  const handleMarkAsAwarded = async () => {
+  const handleMarkAsAwarded = () => {
+    if (!bid) return;
+    setShowAwardDialog(true);
+  };
+
+  const handleConfirmAward = async () => {
     if (!bid) return;
     
-    if (confirm(`Mark bid ${bid.code} as awarded and convert to active project?`)) {
-      try {
-        await convertBid.mutateAsync(bid.code);
-        toast({
-          title: "Success",
-          description: "Bid has been awarded and moved to Active Projects!",
-        });
-        setLocation('/projects');
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to convert bid to project",
-          variant: "destructive",
-        });
-      }
+    try {
+      await convertBid.mutateAsync({
+        code: bid.code,
+        superintendentId: selectedSuperintendentId || undefined,
+        projectManagerId: selectedProjectManagerId || undefined,
+      });
+      toast({
+        title: "Success",
+        description: "Bid has been awarded and moved to Active Projects!",
+      });
+      setShowAwardDialog(false);
+      setLocation('/projects');
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to convert bid to project",
+        variant: "destructive",
+      });
     }
   };
 
@@ -2079,6 +2113,92 @@ export default function BidDetailPage() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAwardDialog} onOpenChange={setShowAwardDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="h-5 w-5" />
+              Award Bid & Assign Team
+            </DialogTitle>
+            <DialogDescription>
+              Convert this bid to an active project and assign the team members who will be responsible for it.
+              They will receive a notification on their dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="text-sm font-medium">Project: {bid?.name}</p>
+              <p className="text-xs text-muted-foreground">Code: {bid?.code}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="superintendent">Superintendent</Label>
+              <Select 
+                value={selectedSuperintendentId} 
+                onValueChange={setSelectedSuperintendentId}
+              >
+                <SelectTrigger id="superintendent" data-testid="select-superintendent">
+                  <SelectValue placeholder="Select superintendent (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {superintendents.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.firstName} {user.lastName} ({user.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The superintendent will oversee field operations.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="projectManager">Project Manager</Label>
+              <Select 
+                value={selectedProjectManagerId} 
+                onValueChange={setSelectedProjectManagerId}
+              >
+                <SelectTrigger id="projectManager" data-testid="select-project-manager">
+                  <SelectValue placeholder="Select project manager (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {managers.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.firstName} {user.lastName} ({user.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The project manager will oversee scheduling and coordination.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setShowAwardDialog(false)} 
+              data-testid="button-cancel-award"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleConfirmAward}
+              disabled={convertBid.isPending}
+              data-testid="button-confirm-award"
+            >
+              {convertBid.isPending ? "Converting..." : "Award & Convert to Project"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

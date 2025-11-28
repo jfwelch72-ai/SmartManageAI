@@ -229,6 +229,14 @@ export function useMarkAllNotificationsRead() {
   });
 }
 
+// Messages
+export function useUnreadMessageCount() {
+  return useQuery<{ unreadCount: number }>({
+    queryKey: ["/api/messages/unread-count"],
+    refetchInterval: 30000, // Poll every 30 seconds
+  });
+}
+
 // Time Entries
 export function useTimeEntries() {
   return useQuery<{ data: TimeEntry[]; pagination: any }>({
@@ -543,15 +551,26 @@ export function useDeleteBid() {
   });
 }
 
+export interface ConvertBidData {
+  code: string;
+  superintendentId?: string;
+  projectManagerId?: string;
+}
+
 export function useConvertBidToProject() {
   return useMutation({
-    mutationFn: async (code: string) => {
-      const response = await apiRequest("POST", `/api/bids/${code}/convert`);
+    mutationFn: async (data: ConvertBidData) => {
+      const { code, superintendentId, projectManagerId } = data;
+      const response = await apiRequest("POST", `/api/bids/${code}/convert`, {
+        superintendentId,
+        projectManagerId,
+      });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 }

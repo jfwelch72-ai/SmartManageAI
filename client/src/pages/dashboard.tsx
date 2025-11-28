@@ -1,15 +1,17 @@
 import AppHeader from "@/components/AppHeader";
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
-import { Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, AlertTriangle, Users } from "lucide-react";
+import { Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, AlertTriangle, Users, Bell, HardHat, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Notification } from "@shared/schema";
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
@@ -27,6 +29,26 @@ export default function DashboardPage() {
   const { data: crews = [] } = useQuery<import("@shared/schema").Crew[]>({
     queryKey: ["/api/crews"],
     enabled: user?.role === "SUPERINTENDENT",
+  });
+
+  // Fetch project assignment notifications
+  const { data: notifications = [] } = useQuery<Notification[]>({
+    queryKey: ["/api/notifications"],
+  });
+  
+  const projectAssignmentNotifications = notifications.filter(
+    n => n.type === "PROJECT_ASSIGNMENT" && !n.isRead
+  );
+
+  // Mark notification as read mutation
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await apiRequest("PATCH", `/api/notifications/${notificationId}/read`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
   });
 
   const activeProjects = projects.filter(p => p.status === 'ACTIVE');
@@ -105,6 +127,67 @@ export default function DashboardPage() {
                   />
                 )}
               </div>
+
+              {/* Project Assignment Notifications */}
+              {projectAssignmentNotifications.length > 0 && (
+                <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950/20" data-testid="card-project-assignments">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <HardHat className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      New Project Assignments
+                      <Badge variant="default" className="ml-2">
+                        {projectAssignmentNotifications.length}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      You have been assigned to new projects. Click to view details.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {projectAssignmentNotifications.map((notification) => (
+                        <div 
+                          key={notification.id}
+                          className="flex items-center justify-between p-3 bg-background rounded-md"
+                          data-testid={`notification-${notification.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Bell className="w-4 h-4 text-blue-500" />
+                            <div>
+                              <p className="text-sm font-medium">{notification.title}</p>
+                              <p className="text-xs text-muted-foreground">{notification.message}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {notification.relatedEntityId && (
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  markAsReadMutation.mutate(notification.id);
+                                  setLocation(`/projects/${notification.relatedEntityId}`);
+                                }}
+                                data-testid={`button-view-project-${notification.id}`}
+                              >
+                                View Project
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => markAsReadMutation.mutate(notification.id)}
+                              disabled={markAsReadMutation.isPending}
+                              data-testid={`button-dismiss-${notification.id}`}
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Budget Data Warning Alert - Only for management */}
               {FeaturePermissions.VIEW_BUDGET_METRICS(user?.role) && projectsMissingBudget.length > 0 && (
