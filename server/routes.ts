@@ -10839,8 +10839,15 @@ If the make/model is unknown, provide general best practices for the equipment t
         return res.status(404).json({ error: "Equipment not found" });
       }
       
-      const validatedData = insertEquipmentRateProfileSchema.parse({
+      // Parse date strings to Date objects
+      const bodyWithDates = {
         ...req.body,
+        effectiveDate: req.body.effectiveDate ? new Date(req.body.effectiveDate) : undefined,
+        endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
+      };
+      
+      const validatedData = insertEquipmentRateProfileSchema.parse({
+        ...bodyWithDates,
         equipmentId,
         createdById: userId,
       });
