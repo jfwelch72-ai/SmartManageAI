@@ -57,6 +57,7 @@ import taskRoutes from "./taskRoutes";
 import registerEstimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
+import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -2145,6 +2146,229 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (error) {
       console.error("Update project handoff packet error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Bid PDF Generation Routes
+  // ====================
+
+  // Generate Internal Bid Summary PDF
+  app.get("/api/bids/:code/pdf/internal-summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // Get estimate and line items
+      const [estimate] = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bid.id))
+        .limit(1);
+
+      let lineItems: any[] = [];
+      if (estimate) {
+        lineItems = await db
+          .select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimate.id));
+      }
+
+      // Get quotes
+      const subQuotes = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.bidId, bid.id));
+
+      const materialQuotes = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.bidId, bid.id));
+
+      const equipmentSelections = await db
+        .select()
+        .from(bidEquipmentSelections)
+        .where(eq(bidEquipmentSelections.bidId, bid.id));
+
+      // Transform data for PDF
+      const scopeItems = lineItems.map(item => ({
+        description: item.description,
+        category: item.category,
+        quantity: parseFloat(item.quantity) || 0,
+        unit: item.unit,
+        totalCost: parseFloat(item.totalCost) || 0,
+        laborCost: parseFloat(item.laborCost) || 0,
+        materialCost: parseFloat(item.materialCost) || 0,
+        equipmentCost: parseFloat(item.equipmentCost) || 0,
+        subcontractCost: parseFloat(item.subcontractCost) || 0,
+      }));
+
+      // Calculate totals
+      const totalDirectCost = scopeItems.reduce((sum, item) => sum + item.totalCost, 0);
+      const selectedMaterialCost = materialQuotes
+        .filter(q => q.isSelected)
+        .reduce((sum, q) => sum + parseFloat(q.cost as any), 0);
+      const selectedSubCost = subQuotes
+        .filter(q => q.isSelected)
+        .reduce((sum, q) => sum + parseFloat(q.quoteAmount as any), 0);
+      const equipmentCost = equipmentSelections.reduce((sum, eq) => sum + (parseFloat(eq.estimatedCost as any) || 0), 0);
+
+      const baseCost = totalDirectCost + selectedMaterialCost + selectedSubCost + equipmentCost;
+      const overheadPercent = 15;
+      const profitPercent = 10;
+      const overheadAmount = baseCost * (overheadPercent / 100);
+      const profitAmount = baseCost * (profitPercent / 100);
+      const finalBidAmount = baseCost + overheadAmount + profitAmount;
+
+      const pdfData = {
+        bid: {
+          id: bid.id,
+          name: bid.name,
+          code: bid.code,
+          clientName: bid.clientName,
+          clientContactName: bid.clientContactName,
+          clientContactEmail: bid.clientContactEmail,
+          clientContactPhone: bid.clientContactPhone,
+          locationAddress: bid.locationAddress,
+          city: bid.city,
+          state: bid.state,
+          description: bid.description,
+          bidAmount: parseFloat(bid.bidAmount as any) || null,
+          dueDate: bid.dueDate,
+        },
+        scopeItems,
+        subQuotes: subQuotes.map(q => ({
+          subcontractorName: q.subcontractorName,
+          scopeOfWork: q.scopeOfWork,
+          quoteAmount: parseFloat(q.quoteAmount as any),
+          isSelected: q.isSelected,
+        })),
+        materialQuotes: materialQuotes.map(q => ({
+          materialName: q.materialName,
+          description: q.description,
+          cost: parseFloat(q.cost as any),
+          supplierName: q.supplierName,
+          isSelected: q.isSelected,
+        })),
+        equipmentSelections: equipmentSelections.map(eq => ({
+          equipmentName: eq.equipmentName,
+          equipmentType: eq.equipmentType,
+          source: eq.source,
+          plannedDays: eq.plannedDays,
+          plannedHours: parseFloat(eq.plannedHours as any) || null,
+          estimatedCost: parseFloat(eq.estimatedCost as any) || null,
+        })),
+        summary: {
+          totalDirectCost: baseCost,
+          overheadPercent,
+          overheadAmount,
+          profitPercent,
+          profitAmount,
+          finalBidAmount,
+        },
+      };
+
+      const pdfStream = generateInternalBidSummaryPDF(pdfData);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="TFR-Internal-Summary-${bid.code}.pdf"`);
+
+      pdfStream.pipe(res);
+    } catch (error) {
+      console.error("Generate internal bid summary PDF error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Generate Customer Quote PDF
+  app.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+      if (!bid) {
+        res.status(404).json({ error: "Bid not found" });
+        return;
+      }
+
+      // Get estimate and line items
+      const [estimate] = await db
+        .select()
+        .from(estimates)
+        .where(eq(estimates.bidId, bid.id))
+        .limit(1);
+
+      let lineItems: any[] = [];
+      if (estimate) {
+        lineItems = await db
+          .select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimate.id));
+      }
+
+      // Transform scope items for customer quote (simplified view)
+      const scopeItems = lineItems.map(item => ({
+        description: item.description,
+        category: item.category,
+        quantity: parseFloat(item.quantity) || 0,
+        unit: item.unit,
+        totalCost: parseFloat(item.totalCost) || 0,
+        laborCost: parseFloat(item.laborCost) || 0,
+        materialCost: parseFloat(item.materialCost) || 0,
+        equipmentCost: parseFloat(item.equipmentCost) || 0,
+        subcontractCost: parseFloat(item.subcontractCost) || 0,
+      }));
+
+      // Calculate totals
+      const totalDirectCost = scopeItems.reduce((sum, item) => sum + item.totalCost, 0);
+      const overheadPercent = 15;
+      const profitPercent = 10;
+      const overheadAmount = totalDirectCost * (overheadPercent / 100);
+      const profitAmount = totalDirectCost * (profitPercent / 100);
+      const finalBidAmount = parseFloat(bid.bidAmount as any) || (totalDirectCost + overheadAmount + profitAmount);
+
+      const pdfData = {
+        bid: {
+          id: bid.id,
+          name: bid.name,
+          code: bid.code,
+          clientName: bid.clientName,
+          clientContactName: bid.clientContactName,
+          clientContactEmail: bid.clientContactEmail,
+          clientContactPhone: bid.clientContactPhone,
+          locationAddress: bid.locationAddress,
+          city: bid.city,
+          state: bid.state,
+          description: bid.description,
+          bidAmount: parseFloat(bid.bidAmount as any) || null,
+          dueDate: bid.dueDate,
+        },
+        scopeItems,
+        subQuotes: [],
+        materialQuotes: [],
+        equipmentSelections: [],
+        summary: {
+          totalDirectCost,
+          overheadPercent,
+          overheadAmount,
+          profitPercent,
+          profitAmount,
+          finalBidAmount,
+          taxRate: 0,
+          taxAmount: 0,
+        },
+      };
+
+      const pdfStream = generateCustomerQuotePDF(pdfData);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="TFR-Quote-${bid.code}.pdf"`);
+
+      pdfStream.pipe(res);
+    } catch (error) {
+      console.error("Generate customer quote PDF error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

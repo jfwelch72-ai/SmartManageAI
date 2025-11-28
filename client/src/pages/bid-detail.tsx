@@ -1085,12 +1085,47 @@ export default function BidDetailPage() {
 
   // Step definitions
   const steps = [
-    { id: 1, name: "Materials & Supplies", icon: Package, cost: totalMaterialCost },
-    { id: 2, name: "Equipment", icon: Truck, cost: totalEquipmentCostCalc },
-    { id: 3, name: "Scope of Work", icon: FileText, cost: estimateTotals.laborCost + estimateTotals.materialCost },
+    { id: 1, name: "Scope of Work", icon: FileText, cost: estimateTotals.laborCost + estimateTotals.materialCost },
+    { id: 2, name: "Materials & Supplies", icon: Package, cost: totalMaterialCost },
+    { id: 3, name: "Equipment", icon: Truck, cost: totalEquipmentCostCalc },
     { id: 4, name: "Subcontractors", icon: Users, cost: totalSubcontractorCost },
     { id: 5, name: "Bid Summary", icon: Calculator, cost: finalBidAmount },
   ];
+
+  // Derive material requirements from SOW estimate line items
+  const derivedMaterialRequirements = estimate?.lineItems?.filter(item => 
+    Number(item.materialCost) > 0 || ["CONCRETE", "FLATWORK", "EXCAVATION", "GRADING", "STONE", "REBAR", "WIRE_MESH"].includes(item.category)
+  ).map(item => ({
+    id: item.id,
+    category: item.category,
+    description: item.description,
+    unit: item.unit,
+    quantity: Number(item.quantity),
+    materialCost: Number(item.materialCost),
+    needsVendorSelection: !materialQuotes.some(mq => mq.materialName?.toLowerCase().includes(item.description.toLowerCase())),
+  })) || [];
+
+  // Derive equipment requirements from SOW estimate line items  
+  const derivedEquipmentRequirements = estimate?.lineItems?.filter(item => 
+    Number(item.equipmentCost) > 0 || ["EXCAVATION", "GRADING", "DEMOLITION", "HAULING"].includes(item.category)
+  ).map(item => ({
+    id: item.id,
+    category: item.category,
+    description: item.description,
+    equipmentCost: Number(item.equipmentCost),
+    needsEquipmentSelection: !equipmentSelections.some(eq => eq.notes?.toLowerCase().includes(item.description.toLowerCase())),
+  })) || [];
+
+  // Derive subcontractor requirements from SOW estimate line items
+  const derivedSubRequirements = estimate?.lineItems?.filter(item => 
+    Number(item.subcontractCost) > 0 || ["PLUMBING", "ELECTRICAL", "HVAC", "LANDSCAPING", "FENCING", "MASONRY"].includes(item.category)
+  ).map(item => ({
+    id: item.id,
+    category: item.category,
+    description: item.description,
+    subcontractCost: Number(item.subcontractCost),
+    needsSubSelection: !quotes.some(q => q.scopeOfWork?.toLowerCase().includes(item.description.toLowerCase())),
+  })) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -1215,16 +1250,16 @@ export default function BidDetailPage() {
           {/* Right Content - Active Step */}
           <div className="flex-1 min-w-0 space-y-6">
             
-            {/* Step 1: Materials & Supplies */}
-            {currentStep === 1 && (
+            {/* Step 2: Materials & Supplies */}
+            {currentStep === 2 && (
               <Card data-testid="card-material-quotes">
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Package className="w-5 h-5" />
-                      Step 1: Material & Supply Quotes
+                      Step 2: Material & Supply Quotes
                     </CardTitle>
-                    <CardDescription>Get quotes from suppliers for materials and supplies needed for the project</CardDescription>
+                    <CardDescription>Get quotes from suppliers for materials identified in the Scope of Work</CardDescription>
                   </div>
                   {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                     <Button onClick={handleAddMaterialQuote} size="sm" data-testid="button-add-material-quote">
@@ -1234,13 +1269,47 @@ export default function BidDetailPage() {
                   )}
                 </CardHeader>
                 <CardContent>
+                  {/* Derived Material Requirements from SOW */}
+                  {derivedMaterialRequirements.length > 0 && (
+                    <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Material Requirements from SOW ({derivedMaterialRequirements.length} items)
+                      </h4>
+                      <div className="space-y-2">
+                        {derivedMaterialRequirements.map((req) => (
+                          <div key={req.id} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">{req.category}</Badge>
+                              <span className="text-muted-foreground">{req.description}</span>
+                              <span className="text-muted-foreground">({req.quantity} {req.unit})</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono">${req.materialCost.toLocaleString()}</span>
+                              {req.needsVendorSelection ? (
+                                <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Quote</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-green-600 border-green-300">Quote Added</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {materialQuotesLoading ? (
                     <div className="text-center py-8 text-muted-foreground">Loading material quotes...</div>
-                  ) : materialQuotes.length === 0 ? (
+                  ) : materialQuotes.length === 0 && derivedMaterialRequirements.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                       <Package className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                      <p className="font-medium mb-1">No material quotes added yet</p>
-                      <p className="text-sm mb-4">Add quotes from suppliers to track material costs</p>
+                      <p className="font-medium mb-1">No material requirements yet</p>
+                      <p className="text-sm mb-4">Add scope items with material costs in Step 1 to see requirements here</p>
+                    </div>
+                  ) : materialQuotes.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p className="font-medium mb-1">No supplier quotes added yet</p>
+                      <p className="text-sm mb-4">Add quotes from suppliers to finalize material costs</p>
                       {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                         <Button onClick={handleAddMaterialQuote} variant="outline" data-testid="button-add-first-material-quote">
                           <Plus className="w-4 h-4 mr-2" />
@@ -1326,8 +1395,11 @@ export default function BidDetailPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="flex justify-end pt-4">
-                        <Button onClick={() => setCurrentStep(2)} data-testid="button-next-step-1">
+                      <div className="flex justify-between pt-4">
+                        <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-prev-step-2">
+                          Back to Scope of Work
+                        </Button>
+                        <Button onClick={() => setCurrentStep(3)} data-testid="button-next-step-2">
                           Continue to Equipment
                           <ChevronRight className="w-4 h-4 ml-2" />
                         </Button>
@@ -1338,16 +1410,16 @@ export default function BidDetailPage() {
               </Card>
             )}
 
-            {/* Step 2: Equipment */}
-            {currentStep === 2 && (
+            {/* Step 3: Equipment */}
+            {currentStep === 3 && (
               <Card data-testid="card-equipment-selections">
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Truck className="w-5 h-5" />
-                      Step 2: Equipment Selection
+                      Step 3: Equipment Selection
                     </CardTitle>
-                    <CardDescription>Select equipment from your fleet or add rentals for this project</CardDescription>
+                    <CardDescription>Select equipment identified in the Scope of Work from your fleet or rentals</CardDescription>
                   </div>
                   {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                     <Button onClick={handleAddEquipment} size="sm" data-testid="button-add-equipment">
@@ -1357,13 +1429,46 @@ export default function BidDetailPage() {
                   )}
                 </CardHeader>
                 <CardContent>
+                  {/* Derived Equipment Requirements from SOW */}
+                  {derivedEquipmentRequirements.length > 0 && (
+                    <div className="mb-6 p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                      <h4 className="text-sm font-semibold text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Equipment Requirements from SOW ({derivedEquipmentRequirements.length} items)
+                      </h4>
+                      <div className="space-y-2">
+                        {derivedEquipmentRequirements.map((req) => (
+                          <div key={req.id} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">{req.category}</Badge>
+                              <span className="text-muted-foreground">{req.description}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono">${req.equipmentCost.toLocaleString()}</span>
+                              {req.needsEquipmentSelection ? (
+                                <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Selection</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-green-600 border-green-300">Selected</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {equipmentLoading ? (
                     <div className="text-center py-8 text-muted-foreground">Loading equipment...</div>
-                  ) : equipmentSelections.length === 0 ? (
+                  ) : equipmentSelections.length === 0 && derivedEquipmentRequirements.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                       <Truck className="w-12 h-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No equipment requirements yet</p>
+                      <p className="text-sm mb-4">Add scope items with equipment costs in Step 1 to see requirements here</p>
+                    </div>
+                  ) : equipmentSelections.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
                       <p className="font-medium mb-1">No equipment selected yet</p>
-                      <p className="text-sm mb-4">Add equipment from your fleet or include rentals</p>
+                      <p className="text-sm mb-4">Select equipment from your fleet or add rentals</p>
                       {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
                         <Button onClick={handleAddEquipment} variant="outline" data-testid="button-add-first-equipment">
                           <Plus className="w-4 h-4 mr-2" />
@@ -1427,11 +1532,11 @@ export default function BidDetailPage() {
                         ))}
                       </div>
                       <div className="flex justify-between pt-4">
-                        <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-prev-step-2">
+                        <Button variant="outline" onClick={() => setCurrentStep(2)} data-testid="button-prev-step-3">
                           Back to Materials
                         </Button>
-                        <Button onClick={() => setCurrentStep(3)} data-testid="button-next-step-2">
-                          Continue to Scope of Work
+                        <Button onClick={() => setCurrentStep(4)} data-testid="button-next-step-3">
+                          Continue to Subcontractors
                           <ChevronRight className="w-4 h-4 ml-2" />
                         </Button>
                       </div>
@@ -1441,16 +1546,16 @@ export default function BidDetailPage() {
               </Card>
             )}
 
-            {/* Step 3: Scope of Work / Estimate */}
-            {currentStep === 3 && (
+            {/* Step 1: Scope of Work / Estimate */}
+            {currentStep === 1 && (
               <Card data-testid="card-bid-estimate">
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Calculator className="w-5 h-5" />
-                      Step 3: Scope of Work
+                      Step 1: Scope of Work
                     </CardTitle>
-                    <CardDescription>Define quantities and create your estimate line items</CardDescription>
+                    <CardDescription>Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
                   </div>
                   <div className="flex gap-2">
                     {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
@@ -1538,12 +1643,9 @@ export default function BidDetailPage() {
                         Edit Estimate Line Items
                       </Button>
                       
-                      <div className="flex justify-between pt-4">
-                        <Button variant="outline" onClick={() => setCurrentStep(2)} data-testid="button-prev-step-3">
-                          Back to Equipment
-                        </Button>
-                        <Button onClick={() => setCurrentStep(4)} data-testid="button-next-step-3">
-                          Continue to Subcontractors
+                      <div className="flex justify-end pt-4">
+                        <Button onClick={() => setCurrentStep(2)} data-testid="button-next-step-1">
+                          Continue to Materials
                           <ChevronRight className="w-4 h-4 ml-2" />
                         </Button>
                       </div>
@@ -1572,11 +1674,44 @@ export default function BidDetailPage() {
                   )}
                 </CardHeader>
                 <CardContent>
+                  {/* Derived Subcontractor Requirements from SOW */}
+                  {derivedSubRequirements.length > 0 && (
+                    <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Subcontractor Requirements from SOW ({derivedSubRequirements.length} items)
+                      </h4>
+                      <div className="space-y-2">
+                        {derivedSubRequirements.map((req) => (
+                          <div key={req.id} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">{req.category}</Badge>
+                              <span className="text-muted-foreground">{req.description}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono">${req.subcontractCost.toLocaleString()}</span>
+                              {req.needsSubSelection ? (
+                                <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Quote</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-green-600 border-green-300">Quote Added</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {quotesLoading ? (
                     <div className="text-center py-8 text-muted-foreground">Loading quotes...</div>
-                  ) : quotes.length === 0 ? (
+                  ) : quotes.length === 0 && derivedSubRequirements.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                       <Users className="w-12 h-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No subcontractor requirements yet</p>
+                      <p className="text-sm mb-4">Add scope items with subcontract costs in Step 1 to see requirements here</p>
+                    </div>
+                  ) : quotes.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
                       <p className="font-medium mb-1">No subcontractor quotes added yet</p>
                       <p className="text-sm mb-4">Add quotes from subs for specialized scope items</p>
                       {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
@@ -1651,7 +1786,7 @@ export default function BidDetailPage() {
                       </div>
                       <div className="flex justify-between pt-4">
                         <Button variant="outline" onClick={() => setCurrentStep(3)} data-testid="button-prev-step-4">
-                          Back to Scope of Work
+                          Back to Equipment
                         </Button>
                         <Button onClick={() => setCurrentStep(5)} data-testid="button-next-step-4">
                           Continue to Bid Summary
@@ -1769,6 +1904,35 @@ export default function BidDetailPage() {
                           ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
+                    </div>
+
+                    {/* PDF Generation Buttons */}
+                    <div className="p-4 bg-muted/30 rounded-md border">
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Generate Documents
+                      </h4>
+                      <div className="flex flex-wrap gap-3">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => window.open(`/api/bids/${bidCode}/pdf/internal-summary`, '_blank')}
+                          data-testid="button-download-internal-pdf"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Internal Bid Summary (PDF)
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => window.open(`/api/bids/${bidCode}/pdf/customer-quote`, '_blank')}
+                          data-testid="button-download-customer-pdf"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Customer Quote (PDF)
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing.
+                      </p>
                     </div>
 
                     <div className="flex justify-between pt-4">
