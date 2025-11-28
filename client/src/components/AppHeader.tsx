@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
@@ -153,6 +153,11 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
                 {/* CRM - conditional */}
                 {hasManagementAccess(userRole) && (
                   <MobileNavLink href="/crm" icon={UsersIcon} label="CRM" />
+                )}
+
+                {/* Equipment - conditional */}
+                {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+                  <MobileNavLink href="/equipment" icon={Truck} label="Equipment" />
                 )}
 
                 {/* Time Clock - collapsible */}
@@ -309,6 +314,14 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
               <Link href="/crm">
                 <UsersIcon className="w-4 h-4" />
                 CRM
+              </Link>
+            </Button>
+          )}
+          {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+            <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-equipment">
+              <Link href="/equipment">
+                <Truck className="w-4 h-4" />
+                Equipment
               </Link>
             </Button>
           )}

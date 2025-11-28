@@ -1378,22 +1378,58 @@ export const insertUserSkillSchema = createInsertSchema(userSkills).omit({ id: t
 export type InsertUserSkill = z.infer<typeof insertUserSkillSchema>;
 export type UserSkill = typeof userSkills.$inferSelect;
 
-// Equipment table
+// Equipment table - comprehensive equipment and tool management
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  type: text("type").notNull(),
+  // Identification
+  name: text("name").notNull(), // Display name: "CAT 320 Excavator #1"
+  equipmentCode: text("equipment_code").notNull().unique(), // Internal code: "EQ-001"
+  type: text("type").notNull(), // Equipment type (HEAVY_EQUIPMENT, VEHICLE, etc.)
+  status: text("status").notNull().default("AVAILABLE"), // AVAILABLE, ASSIGNED, IN_REPAIR, OUT_OF_SERVICE, RETIRED
+  
+  // Specifications
+  make: text("make"), // e.g., "Caterpillar", "DeWalt"
+  model: text("model"), // e.g., "320D L", "DW735"
+  year: integer("year"),
   serialNumber: text("serial_number"),
-  status: text("status").notNull().default("AVAILABLE"),
+  vinNumber: text("vin_number"), // For vehicles
+  licensePlate: text("license_plate"), // For road-legal vehicles
+  
+  // Usage Tracking
+  currentHours: decimal("current_hours", { precision: 10, scale: 1 }).default("0"), // Equipment meter hours
+  purchaseDate: timestamp("purchase_date"),
+  purchasePrice: decimal("purchase_price", { precision: 12, scale: 2 }),
+  warrantyExpirationDate: date("warranty_expiration_date"),
+  
+  // Legacy assignment fields (kept for backwards compatibility)
   assignedToCrewId: varchar("assigned_to_crew_id").references(() => crews.id),
   assignedToProjectId: varchar("assigned_to_project_id").references(() => projects.id),
-  purchaseDate: timestamp("purchase_date"),
+  
+  // Maintenance tracking
   lastMaintenanceDate: timestamp("last_maintenance_date"),
   nextMaintenanceDate: timestamp("next_maintenance_date"),
+  
+  // Description and Notes
+  description: text("description"),
+  specifications: text("specifications"), // JSON or detailed specs
   notes: text("notes"),
+  
+  // Current Location (when not assigned to project)
+  homeLocation: text("home_location"), // Default storage location
+  currentLocation: text("current_location"), // Current whereabouts
+  
+  // Image/Documentation
+  imageUrl: text("image_url"),
+  manualUrl: text("manual_url"),
+  
+  // Tracking
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  statusIdx: index("equipment_status_idx").on(table.status),
+  typeIdx: index("equipment_type_idx").on(table.type),
+  codeIdx: index("equipment_code_idx").on(table.equipmentCode),
+}));
 
 export const insertEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
@@ -1881,3 +1917,259 @@ export type Message = typeof messages.$inferSelect;
 export const insertMessageReadReceiptSchema = createInsertSchema(messageReadReceipts).omit({ id: true, readAt: true });
 export type InsertMessageReadReceipt = z.infer<typeof insertMessageReadReceiptSchema>;
 export type MessageReadReceipt = typeof messageReadReceipts.$inferSelect;
+
+// ============================================================
+// EQUIPMENT & TOOL MANAGEMENT SYSTEM
+// Comprehensive tracking for construction equipment and tools
+// ============================================================
+
+// Equipment Status Enum
+export const equipmentStatusEnum = pgEnum("equipment_status", [
+  "AVAILABLE",      // Ready for assignment
+  "ASSIGNED",       // Currently on a job
+  "IN_REPAIR",      // Being repaired
+  "OUT_OF_SERVICE", // Temporarily unavailable
+  "RETIRED"         // No longer in use
+]);
+
+// Equipment Type Enum
+export const equipmentTypeEnum = pgEnum("equipment_type", [
+  "HEAVY_EQUIPMENT",  // Excavators, loaders, dozers
+  "POWER_TOOL",       // Drills, saws, grinders
+  "HAND_TOOL",        // Hammers, wrenches, etc.
+  "VEHICLE",          // Trucks, vans
+  "TRAILER",          // Flatbeds, enclosed trailers
+  "CONCRETE",         // Mixers, vibrators, screeds
+  "COMPACTION",       // Rollers, plate compactors
+  "SURVEYING",        // Levels, total stations
+  "SAFETY",           // Safety equipment
+  "OTHER"
+]);
+
+// Repair Status Enum
+export const repairStatusEnum = pgEnum("repair_status", [
+  "PENDING",      // Waiting to be started
+  "IN_PROGRESS",  // Currently being repaired
+  "COMPLETED",    // Repair finished
+  "CANCELLED"     // Repair cancelled
+]);
+
+// Maintenance Type Enum
+export const maintenanceTypeEnum = pgEnum("maintenance_type", [
+  "PREVENTATIVE",      // Scheduled PM (oil changes, filters, etc.)
+  "SCHEDULED_SERVICE", // Major service intervals
+  "WEAR_ITEM",         // Tracks, tires, blades, etc.
+  "INSPECTION",        // Safety inspections
+  "CALIBRATION"        // For precision equipment
+]);
+
+// Equipment Assignments (link equipment to projects)
+export const equipmentAssignments = pgTable("equipment_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Assignment Details
+  assignedById: varchar("assigned_by_id").notNull().references(() => users.id),
+  assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  expectedReturnDate: date("expected_return_date"),
+  
+  // Return Details
+  returnedAt: timestamp("returned_at"),
+  returnedById: varchar("returned_by_id").references(() => users.id),
+  returnCondition: text("return_condition"),
+  hoursAtAssignment: decimal("hours_at_assignment", { precision: 10, scale: 1 }),
+  hoursAtReturn: decimal("hours_at_return", { precision: 10, scale: 1 }),
+  
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true), // false when returned
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_assignments_equipment_idx").on(table.equipmentId),
+  projectIdx: index("equipment_assignments_project_idx").on(table.projectId),
+  activeIdx: index("equipment_assignments_active_idx").on(table.isActive),
+}));
+
+// Equipment Repairs
+export const equipmentRepairs = pgTable("equipment_repairs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  
+  // Repair Details
+  repairNumber: text("repair_number").notNull(), // e.g., "REP-001"
+  description: text("description").notNull(),
+  status: repairStatusEnum("status").notNull().default("PENDING"),
+  
+  // Problem Info
+  problemReportedAt: timestamp("problem_reported_at").notNull().defaultNow(),
+  problemReportedById: varchar("problem_reported_by_id").notNull().references(() => users.id),
+  problemDescription: text("problem_description"),
+  hoursAtReport: decimal("hours_at_report", { precision: 10, scale: 1 }),
+  
+  // Repair Location
+  repairLocation: text("repair_location"), // "In-house", "ABC Equipment", etc.
+  repairVendorId: varchar("repair_vendor_id"), // Link to CRM organization if external
+  
+  // Costs
+  estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
+  actualCost: decimal("actual_cost", { precision: 12, scale: 2 }),
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
+  partsCost: decimal("parts_cost", { precision: 12, scale: 2 }),
+  
+  // Timeline
+  estimatedCompletionDate: date("estimated_completion_date"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id").references(() => users.id),
+  
+  // Resolution
+  repairNotes: text("repair_notes"),
+  partsUsed: text("parts_used"), // JSON array of parts
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_repairs_equipment_idx").on(table.equipmentId),
+  statusIdx: index("equipment_repairs_status_idx").on(table.status),
+}));
+
+// Equipment Maintenance Schedules (PM schedules)
+export const equipmentMaintenanceSchedules = pgTable("equipment_maintenance_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  
+  // Schedule Details
+  maintenanceType: maintenanceTypeEnum("maintenance_type").notNull(),
+  name: text("name").notNull(), // e.g., "Oil Change", "Annual Inspection"
+  description: text("description"),
+  
+  // Interval (can be hours-based OR calendar-based OR both)
+  intervalHours: integer("interval_hours"), // e.g., 250 hours
+  intervalDays: integer("interval_days"), // e.g., 90 days (quarterly)
+  
+  // Tracking
+  lastPerformedAt: timestamp("last_performed_at"),
+  lastPerformedHours: decimal("last_performed_hours", { precision: 10, scale: 1 }),
+  nextDueAt: timestamp("next_due_at"), // Calculated based on interval
+  nextDueHours: decimal("next_due_hours", { precision: 10, scale: 1 }), // Calculated based on hours
+  
+  // Alert Settings
+  alertDaysBefore: integer("alert_days_before").default(7), // Days before due to alert
+  alertHoursBefore: integer("alert_hours_before").default(25), // Hours before due to alert
+  
+  isActive: boolean("is_active").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_maintenance_equipment_idx").on(table.equipmentId),
+  nextDueIdx: index("equipment_maintenance_next_due_idx").on(table.nextDueAt),
+}));
+
+// Equipment Maintenance History (completed maintenance records)
+export const equipmentMaintenanceHistory = pgTable("equipment_maintenance_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  scheduleId: varchar("schedule_id").references(() => equipmentMaintenanceSchedules.id, { onDelete: "set null" }),
+  
+  // Maintenance Details
+  maintenanceType: maintenanceTypeEnum("maintenance_type").notNull(),
+  description: text("description").notNull(),
+  performedAt: timestamp("performed_at").notNull(),
+  hoursAtMaintenance: decimal("hours_at_maintenance", { precision: 10, scale: 1 }),
+  
+  // Who performed it
+  performedById: varchar("performed_by_id").references(() => users.id),
+  performedByVendor: text("performed_by_vendor"), // If external
+  
+  // Costs
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
+  partsCost: decimal("parts_cost", { precision: 12, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  
+  notes: text("notes"),
+  partsUsed: text("parts_used"), // JSON array
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_maintenance_history_equipment_idx").on(table.equipmentId),
+  performedAtIdx: index("equipment_maintenance_history_performed_idx").on(table.performedAt),
+}));
+
+// Equipment Hour Logs (weekly hour entries for machines on jobs)
+export const equipmentHourLogs = pgTable("equipment_hour_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  assignmentId: varchar("assignment_id").references(() => equipmentAssignments.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Week/Period
+  weekStartDate: date("week_start_date").notNull(), // Monday of the week
+  weekEndDate: date("week_end_date").notNull(), // Sunday of the week
+  
+  // Hours
+  startingHours: decimal("starting_hours", { precision: 10, scale: 1 }).notNull(),
+  endingHours: decimal("ending_hours", { precision: 10, scale: 1 }).notNull(),
+  hoursUsed: decimal("hours_used", { precision: 10, scale: 1 }).notNull(), // Calculated: ending - starting
+  
+  // Submitted by
+  submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+  
+  notes: text("notes"),
+  fuelUsed: decimal("fuel_used", { precision: 10, scale: 2 }), // Gallons
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_hour_logs_equipment_idx").on(table.equipmentId),
+  projectIdx: index("equipment_hour_logs_project_idx").on(table.projectId),
+  weekIdx: index("equipment_hour_logs_week_idx").on(table.weekStartDate),
+  uniqueWeekEntry: unique("equipment_hour_logs_unique_week").on(table.equipmentId, table.weekStartDate),
+}));
+
+// Equipment Hour Entry Reminders (track which managers need to submit hours)
+export const equipmentHourReminders = pgTable("equipment_hour_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  assignmentId: varchar("assignment_id").notNull().references(() => equipmentAssignments.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  managerId: varchar("manager_id").notNull().references(() => users.id), // Project manager to remind
+  
+  weekStartDate: date("week_start_date").notNull(),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  managerIdx: index("equipment_hour_reminders_manager_idx").on(table.managerId),
+  weekIdx: index("equipment_hour_reminders_week_idx").on(table.weekStartDate),
+}));
+
+// Insert/Select Schemas for Equipment System
+export const insertEquipmentAssignmentSchema = createInsertSchema(equipmentAssignments).omit({ id: true, createdAt: true, updatedAt: true, assignedAt: true });
+export type InsertEquipmentAssignment = z.infer<typeof insertEquipmentAssignmentSchema>;
+export type EquipmentAssignment = typeof equipmentAssignments.$inferSelect;
+
+export const insertEquipmentRepairSchema = createInsertSchema(equipmentRepairs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentRepair = z.infer<typeof insertEquipmentRepairSchema>;
+export type EquipmentRepair = typeof equipmentRepairs.$inferSelect;
+
+export const insertEquipmentMaintenanceScheduleSchema = createInsertSchema(equipmentMaintenanceSchedules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentMaintenanceSchedule = z.infer<typeof insertEquipmentMaintenanceScheduleSchema>;
+export type EquipmentMaintenanceSchedule = typeof equipmentMaintenanceSchedules.$inferSelect;
+
+export const insertEquipmentMaintenanceHistorySchema = createInsertSchema(equipmentMaintenanceHistory).omit({ id: true, createdAt: true });
+export type InsertEquipmentMaintenanceHistory = z.infer<typeof insertEquipmentMaintenanceHistorySchema>;
+export type EquipmentMaintenanceHistory = typeof equipmentMaintenanceHistory.$inferSelect;
+
+export const insertEquipmentHourLogSchema = createInsertSchema(equipmentHourLogs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentHourLog = z.infer<typeof insertEquipmentHourLogSchema>;
+export type EquipmentHourLog = typeof equipmentHourLogs.$inferSelect;
+
+export const insertEquipmentHourReminderSchema = createInsertSchema(equipmentHourReminders).omit({ id: true, createdAt: true });
+export type InsertEquipmentHourReminder = z.infer<typeof insertEquipmentHourReminderSchema>;
+export type EquipmentHourReminder = typeof equipmentHourReminders.$inferSelect;

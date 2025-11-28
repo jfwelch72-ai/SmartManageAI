@@ -20,7 +20,9 @@ import {
   quantityCategories, tasks, dailyScopeProgress, tmTickets,
   scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers,
   insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema,
-  insertScopeModifierCategorySchema, insertScopeModifierSchema
+  insertScopeModifierCategorySchema, insertScopeModifierSchema,
+  equipmentAssignments, equipmentRepairs, equipmentMaintenanceSchedules,
+  equipmentMaintenanceHistory, equipmentHourLogs, equipmentHourReminders
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -974,7 +976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingProject) {
         res.status(409).json({ 
           error: "Cannot delete converted bid",
-          details: `This bid has been converted to project ${bid.code}. Delete the project first if needed.`
+          newValue: `This bid has been converted to project ${bid.code}. Delete the project first if needed.`
         });
         return;
       }
@@ -1171,7 +1173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingProject) {
         res.status(409).json({ 
           error: "Project with this code already exists",
-          details: `A project with code ${bid.code} already exists. Cannot convert bid.`
+          newValue: `A project with code ${bid.code} already exists. Cannot convert bid.`
         });
         return;
       }
@@ -9333,6 +9335,760 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(availableUsers);
     } catch (error) {
       console.error("Get messaging users error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================================
+  // EQUIPMENT & TOOL MANAGEMENT ROUTES
+  // ============================================================
+
+  // Get all equipment with optional filters
+  app.get("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { status, type, search } = req.query;
+      
+      let query = db.select().from(equipment);
+      const conditions: any[] = [];
+      
+      if (status && status !== "ALL") {
+        conditions.push(eq(equipment.status, status as string));
+      }
+      
+      if (type && type !== "ALL") {
+        conditions.push(eq(equipment.type, type as string));
+      }
+      
+      if (search) {
+        const searchTerm = `%${String(search).toLowerCase()}%`;
+        conditions.push(
+          or(
+            sql`LOWER(${equipment.name}) LIKE ${searchTerm}`,
+            sql`LOWER(${equipment.equipmentCode}) LIKE ${searchTerm}`,
+            sql`LOWER(${equipment.make}) LIKE ${searchTerm}`,
+            sql`LOWER(${equipment.model}) LIKE ${searchTerm}`,
+            sql`LOWER(${equipment.serialNumber}) LIKE ${searchTerm}`
+          )
+        );
+      }
+      
+      const result = conditions.length > 0
+        ? await db.select().from(equipment).where(and(...conditions)).orderBy(equipment.name)
+        : await db.select().from(equipment).orderBy(equipment.name);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Get equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get single equipment by ID or code
+  app.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { idOrCode } = req.params;
+      
+      const result = await db
+        .select()
+        .from(equipment)
+        .where(or(
+          eq(equipment.id, idOrCode),
+          eq(equipment.equipmentCode, idOrCode)
+        ))
+        .limit(1);
+      
+      if (result.length === 0) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      res.json(result[0]);
+    } catch (error) {
+      console.error("Get equipment by ID error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create new equipment
+  app.post("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const body = req.body;
+      
+      // Generate equipment code if not provided
+      if (!body.equipmentCode) {
+        const lastEquipment = await db
+          .select({ equipmentCode: equipment.equipmentCode })
+          .from(equipment)
+          .orderBy(desc(equipment.equipmentCode))
+          .limit(1);
+        
+        let nextNumber = 1;
+        if (lastEquipment.length > 0) {
+          const match = lastEquipment[0].equipmentCode.match(/EQ-(\d+)/);
+          if (match) {
+            nextNumber = parseInt(match[1], 10) + 1;
+          }
+        }
+        body.equipmentCode = `EQ-${String(nextNumber).padStart(4, '0')}`;
+      }
+      
+      const [newEquipment] = await db.insert(equipment).values(body).returning();
+      
+      // Audit log
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "equipment",
+        entityId: newEquipment.id,
+        newValue: `Created equipment: ${newEquipment.name} (${newEquipment.equipmentCode})`,
+      });
+      
+      res.status(201).json(newEquipment);
+    } catch (error: any) {
+      console.error("Create equipment error:", error);
+      if (error.constraint === "equipment_equipment_code_unique") {
+        res.status(400).json({ error: "Equipment code already exists" });
+        return;
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update equipment
+  app.patch("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      
+      const [updated] = await db
+        .update(equipment)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(equipment.id, id))
+        .returning();
+      
+      if (!updated) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Audit log
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "equipment",
+        entityId: id,
+        newValue: `Updated equipment: ${updated.name}`,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete equipment
+  app.delete("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      
+      const [deleted] = await db
+        .delete(equipment)
+        .where(eq(equipment.id, id))
+        .returning();
+      
+      if (!deleted) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Audit log
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "DELETE",
+        entityType: "equipment",
+        entityId: id,
+        newValue: `Deleted equipment: ${deleted.name} (${deleted.equipmentCode})`,
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get equipment assignments for a piece of equipment
+  app.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const assignments = await db
+        .select({
+          id: equipmentAssignments.id,
+          equipmentId: equipmentAssignments.equipmentId,
+          projectId: equipmentAssignments.projectId,
+          projectName: projects.name,
+          projectCode: projects.code,
+          assignedById: equipmentAssignments.assignedById,
+          assignedByName: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+          assignedAt: equipmentAssignments.assignedAt,
+          expectedReturnDate: equipmentAssignments.expectedReturnDate,
+          returnedAt: equipmentAssignments.returnedAt,
+          hoursAtAssignment: equipmentAssignments.hoursAtAssignment,
+          hoursAtReturn: equipmentAssignments.hoursAtReturn,
+          notes: equipmentAssignments.notes,
+          isActive: equipmentAssignments.isActive,
+        })
+        .from(equipmentAssignments)
+        .innerJoin(projects, eq(equipmentAssignments.projectId, projects.id))
+        .innerJoin(users, eq(equipmentAssignments.assignedById, users.id))
+        .where(eq(equipmentAssignments.equipmentId, equipmentId))
+        .orderBy(desc(equipmentAssignments.assignedAt));
+      
+      res.json(assignments);
+    } catch (error) {
+      console.error("Get equipment assignments error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Assign equipment to project
+  app.post("/api/equipment/:equipmentId/assign", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { projectId, expectedReturnDate, notes } = req.body;
+      
+      // Check if equipment exists
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Check if equipment is available
+      if (equipmentItem.status !== "AVAILABLE") {
+        res.status(400).json({ error: `Equipment is not available (current status: ${equipmentItem.status})` });
+        return;
+      }
+      
+      // Create assignment
+      const [assignment] = await db.insert(equipmentAssignments).values({
+        equipmentId,
+        projectId,
+        assignedById: req.user!.id,
+        expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+        hoursAtAssignment: equipmentItem.currentHours,
+        notes,
+        isActive: true,
+      }).returning();
+      
+      // Update equipment status
+      await db.update(equipment).set({
+        status: "ASSIGNED",
+        assignedToProjectId: projectId,
+        currentLocation: null, // Will be at project site
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+      
+      // Audit log
+      const [project] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, projectId));
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "equipment_assignment",
+        entityId: assignment.id,
+        newValue: `Assigned ${equipmentItem.name} to ${project?.name || projectId}`,
+      });
+      
+      res.status(201).json(assignment);
+    } catch (error) {
+      console.error("Assign equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Return equipment from assignment
+  app.post("/api/equipment/:equipmentId/return", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { returnCondition, endingHours, notes } = req.body;
+      
+      // Find active assignment
+      const [activeAssignment] = await db
+        .select()
+        .from(equipmentAssignments)
+        .where(and(
+          eq(equipmentAssignments.equipmentId, equipmentId),
+          eq(equipmentAssignments.isActive, true)
+        ))
+        .limit(1);
+      
+      if (!activeAssignment) {
+        res.status(400).json({ error: "No active assignment found for this equipment" });
+        return;
+      }
+      
+      // Update assignment
+      const [updated] = await db.update(equipmentAssignments).set({
+        returnedAt: new Date(),
+        returnedById: req.user!.id,
+        returnCondition,
+        hoursAtReturn: endingHours,
+        notes: notes || activeAssignment.notes,
+        isActive: false,
+        updatedAt: new Date(),
+      }).where(eq(equipmentAssignments.id, activeAssignment.id)).returning();
+      
+      // Update equipment status and hours
+      await db.update(equipment).set({
+        status: "AVAILABLE",
+        assignedToProjectId: null,
+        currentHours: endingHours || undefined,
+        currentLocation: null,
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+      
+      // Audit log
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "equipment_assignment",
+        entityId: activeAssignment.id,
+        newValue: `Returned equipment from assignment`,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Return equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get equipment repairs
+  app.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const repairs = await db
+        .select({
+          id: equipmentRepairs.id,
+          repairNumber: equipmentRepairs.repairNumber,
+          description: equipmentRepairs.description,
+          status: equipmentRepairs.status,
+          problemReportedAt: equipmentRepairs.problemReportedAt,
+          problemDescription: equipmentRepairs.problemDescription,
+          repairLocation: equipmentRepairs.repairLocation,
+          estimatedCost: equipmentRepairs.estimatedCost,
+          actualCost: equipmentRepairs.actualCost,
+          estimatedCompletionDate: equipmentRepairs.estimatedCompletionDate,
+          completedAt: equipmentRepairs.completedAt,
+          repairNotes: equipmentRepairs.repairNotes,
+          createdAt: equipmentRepairs.createdAt,
+          reportedByName: sql<string>`reporter.first_name || ' ' || reporter.last_name`,
+        })
+        .from(equipmentRepairs)
+        .innerJoin(sql`users as reporter`, sql`${equipmentRepairs.problemReportedById} = reporter.id`)
+        .where(eq(equipmentRepairs.equipmentId, equipmentId))
+        .orderBy(desc(equipmentRepairs.problemReportedAt));
+      
+      res.json(repairs);
+    } catch (error) {
+      console.error("Get equipment repairs error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Report equipment repair
+  app.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { description, problemDescription, repairLocation, estimatedCost, estimatedCompletionDate } = req.body;
+      
+      // Check if equipment exists
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Generate repair number
+      const lastRepair = await db
+        .select({ repairNumber: equipmentRepairs.repairNumber })
+        .from(equipmentRepairs)
+        .orderBy(desc(equipmentRepairs.createdAt))
+        .limit(1);
+      
+      let nextNumber = 1;
+      if (lastRepair.length > 0) {
+        const match = lastRepair[0].repairNumber.match(/REP-(\d+)/);
+        if (match) {
+          nextNumber = parseInt(match[1], 10) + 1;
+        }
+      }
+      const repairNumber = `REP-${String(nextNumber).padStart(4, '0')}`;
+      
+      // Create repair record
+      const [repair] = await db.insert(equipmentRepairs).values({
+        equipmentId,
+        repairNumber,
+        description,
+        status: "PENDING",
+        problemReportedById: req.user!.id,
+        problemDescription,
+        hoursAtReport: equipmentItem.currentHours,
+        repairLocation,
+        estimatedCost,
+        estimatedCompletionDate: estimatedCompletionDate ? new Date(estimatedCompletionDate) : null,
+      }).returning();
+      
+      // Update equipment status
+      await db.update(equipment).set({
+        status: "IN_REPAIR",
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+      
+      res.status(201).json(repair);
+    } catch (error) {
+      console.error("Create repair error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update repair status
+  app.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { repairId } = req.params;
+      const updates = req.body;
+      
+      // Get repair to find equipment
+      const [repair] = await db.select().from(equipmentRepairs).where(eq(equipmentRepairs.id, repairId));
+      if (!repair) {
+        res.status(404).json({ error: "Repair not found" });
+        return;
+      }
+      
+      // Handle status change to COMPLETED
+      if (updates.status === "COMPLETED" && repair.status !== "COMPLETED") {
+        updates.completedAt = new Date();
+        updates.completedById = req.user!.id;
+        
+        // Update equipment status back to AVAILABLE
+        await db.update(equipment).set({
+          status: "AVAILABLE",
+          updatedAt: new Date(),
+        }).where(eq(equipment.id, repair.equipmentId));
+      }
+      
+      const [updated] = await db
+        .update(equipmentRepairs)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(equipmentRepairs.id, repairId))
+        .returning();
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update repair error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get maintenance schedules for equipment
+  app.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const schedules = await db
+        .select()
+        .from(equipmentMaintenanceSchedules)
+        .where(eq(equipmentMaintenanceSchedules.equipmentId, equipmentId))
+        .orderBy(equipmentMaintenanceSchedules.name);
+      
+      res.json(schedules);
+    } catch (error) {
+      console.error("Get maintenance schedules error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create maintenance schedule
+  app.post("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const body = req.body;
+      
+      // Calculate next due date based on interval
+      let nextDueAt = null;
+      let nextDueHours = null;
+      
+      if (body.intervalDays) {
+        nextDueAt = new Date();
+        nextDueAt.setDate(nextDueAt.getDate() + body.intervalDays);
+      }
+      
+      if (body.intervalHours) {
+        const [equipmentItem] = await db.select({ currentHours: equipment.currentHours }).from(equipment).where(eq(equipment.id, equipmentId));
+        if (equipmentItem) {
+          nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + body.intervalHours).toString();
+        }
+      }
+      
+      const [schedule] = await db.insert(equipmentMaintenanceSchedules).values({
+        equipmentId,
+        ...body,
+        nextDueAt,
+        nextDueHours,
+      }).returning();
+      
+      res.status(201).json(schedule);
+    } catch (error) {
+      console.error("Create maintenance schedule error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Record maintenance completion
+  app.post("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { scheduleId, maintenanceType, description, performedByVendor, laborCost, partsCost, notes, partsUsed } = req.body;
+      
+      // Get current equipment hours
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      const totalCost = (parseFloat(laborCost || "0") + parseFloat(partsCost || "0")).toString();
+      
+      // Create maintenance history record
+      const [history] = await db.insert(equipmentMaintenanceHistory).values({
+        equipmentId,
+        scheduleId,
+        maintenanceType,
+        description,
+        performedAt: new Date(),
+        hoursAtMaintenance: equipmentItem.currentHours,
+        performedById: req.user!.id,
+        performedByVendor,
+        laborCost,
+        partsCost,
+        totalCost,
+        notes,
+        partsUsed,
+      }).returning();
+      
+      // Update schedule if provided
+      if (scheduleId) {
+        const [schedule] = await db.select().from(equipmentMaintenanceSchedules).where(eq(equipmentMaintenanceSchedules.id, scheduleId));
+        if (schedule) {
+          let nextDueAt = null;
+          let nextDueHours = null;
+          
+          if (schedule.intervalDays) {
+            nextDueAt = new Date();
+            nextDueAt.setDate(nextDueAt.getDate() + schedule.intervalDays);
+          }
+          
+          if (schedule.intervalHours) {
+            nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + schedule.intervalHours).toString();
+          }
+          
+          await db.update(equipmentMaintenanceSchedules).set({
+            lastPerformedAt: new Date(),
+            lastPerformedHours: equipmentItem.currentHours,
+            nextDueAt,
+            nextDueHours,
+            updatedAt: new Date(),
+          }).where(eq(equipmentMaintenanceSchedules.id, scheduleId));
+        }
+      }
+      
+      // Update equipment maintenance dates
+      await db.update(equipment).set({
+        lastMaintenanceDate: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+      
+      res.status(201).json(history);
+    } catch (error) {
+      console.error("Record maintenance error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get maintenance history for equipment
+  app.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const history = await db
+        .select()
+        .from(equipmentMaintenanceHistory)
+        .where(eq(equipmentMaintenanceHistory.equipmentId, equipmentId))
+        .orderBy(desc(equipmentMaintenanceHistory.performedAt));
+      
+      res.json(history);
+    } catch (error) {
+      console.error("Get maintenance history error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get upcoming maintenance due (for alerts)
+  app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const now = new Date();
+      const alertWindow = new Date();
+      alertWindow.setDate(alertWindow.getDate() + 14); // 2 weeks ahead
+      
+      const upcomingMaintenance = await db
+        .select({
+          scheduleId: equipmentMaintenanceSchedules.id,
+          equipmentId: equipmentMaintenanceSchedules.equipmentId,
+          equipmentName: equipment.name,
+          equipmentCode: equipment.equipmentCode,
+          maintenanceName: equipmentMaintenanceSchedules.name,
+          maintenanceType: equipmentMaintenanceSchedules.maintenanceType,
+          nextDueAt: equipmentMaintenanceSchedules.nextDueAt,
+          nextDueHours: equipmentMaintenanceSchedules.nextDueHours,
+          currentHours: equipment.currentHours,
+        })
+        .from(equipmentMaintenanceSchedules)
+        .innerJoin(equipment, eq(equipmentMaintenanceSchedules.equipmentId, equipment.id))
+        .where(
+          and(
+            eq(equipmentMaintenanceSchedules.isActive, true),
+            or(
+              // Date-based maintenance due within window
+              and(
+                sql`${equipmentMaintenanceSchedules.nextDueAt} IS NOT NULL`,
+                sql`${equipmentMaintenanceSchedules.nextDueAt} <= ${alertWindow}`
+              ),
+              // Hours-based maintenance due (within 50 hours)
+              sql`(${equipmentMaintenanceSchedules.nextDueHours}::numeric - COALESCE(${equipment.currentHours}::numeric, 0)) <= 50`
+            )
+          )
+        )
+        .orderBy(equipmentMaintenanceSchedules.nextDueAt);
+      
+      res.json(upcomingMaintenance);
+    } catch (error) {
+      console.error("Get upcoming maintenance error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get equipment assigned to a project
+  app.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      
+      const projectEquipment = await db
+        .select({
+          assignmentId: equipmentAssignments.id,
+          equipmentId: equipment.id,
+          equipmentCode: equipment.equipmentCode,
+          name: equipment.name,
+          type: equipment.type,
+          make: equipment.make,
+          model: equipment.model,
+          currentHours: equipment.currentHours,
+          status: equipment.status,
+          assignedAt: equipmentAssignments.assignedAt,
+          expectedReturnDate: equipmentAssignments.expectedReturnDate,
+          hoursAtAssignment: equipmentAssignments.hoursAtAssignment,
+          isActive: equipmentAssignments.isActive,
+        })
+        .from(equipmentAssignments)
+        .innerJoin(equipment, eq(equipmentAssignments.equipmentId, equipment.id))
+        .where(eq(equipmentAssignments.projectId, projectId))
+        .orderBy(desc(equipmentAssignments.assignedAt));
+      
+      res.json(projectEquipment);
+    } catch (error) {
+      console.error("Get project equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Submit weekly hour log for equipment
+  app.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const { projectId, weekStartDate, weekEndDate, startingHours, endingHours, notes, fuelUsed } = req.body;
+      
+      const hoursUsed = (parseFloat(endingHours) - parseFloat(startingHours)).toString();
+      
+      // Find active assignment
+      const [assignment] = await db
+        .select()
+        .from(equipmentAssignments)
+        .where(and(
+          eq(equipmentAssignments.equipmentId, equipmentId),
+          eq(equipmentAssignments.projectId, projectId),
+          eq(equipmentAssignments.isActive, true)
+        ));
+      
+      const [log] = await db.insert(equipmentHourLogs).values({
+        equipmentId,
+        assignmentId: assignment?.id,
+        projectId,
+        weekStartDate: new Date(weekStartDate),
+        weekEndDate: new Date(weekEndDate),
+        startingHours,
+        endingHours,
+        hoursUsed,
+        submittedById: req.user!.id,
+        notes,
+        fuelUsed,
+      }).returning();
+      
+      // Update equipment current hours
+      await db.update(equipment).set({
+        currentHours: endingHours,
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+      
+      res.status(201).json(log);
+    } catch (error: any) {
+      console.error("Submit hour log error:", error);
+      if (error.constraint === "equipment_hour_logs_unique_week") {
+        res.status(400).json({ error: "Hour log already exists for this week" });
+        return;
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get hour logs for equipment
+  app.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const logs = await db
+        .select({
+          id: equipmentHourLogs.id,
+          weekStartDate: equipmentHourLogs.weekStartDate,
+          weekEndDate: equipmentHourLogs.weekEndDate,
+          startingHours: equipmentHourLogs.startingHours,
+          endingHours: equipmentHourLogs.endingHours,
+          hoursUsed: equipmentHourLogs.hoursUsed,
+          notes: equipmentHourLogs.notes,
+          fuelUsed: equipmentHourLogs.fuelUsed,
+          submittedAt: equipmentHourLogs.submittedAt,
+          projectName: projects.name,
+          projectCode: projects.code,
+        })
+        .from(equipmentHourLogs)
+        .innerJoin(projects, eq(equipmentHourLogs.projectId, projects.id))
+        .where(eq(equipmentHourLogs.equipmentId, equipmentId))
+        .orderBy(desc(equipmentHourLogs.weekStartDate));
+      
+      res.json(logs);
+    } catch (error) {
+      console.error("Get hour logs error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

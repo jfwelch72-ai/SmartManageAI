@@ -62,6 +62,7 @@ export const RoutePermissions = {
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
+  EQUIPMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
 
   // Everyone has access
   DASHBOARD: () => true,
