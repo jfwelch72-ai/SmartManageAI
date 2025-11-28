@@ -14,7 +14,10 @@ import {
   crewMembers,
   userSkills,
   subcontractorContracts,
-  aiDataQuality
+  aiDataQuality,
+  projectEquipmentPlans,
+  equipment,
+  equipmentAssignments
 } from "@shared/schema";
 import { sql, desc, eq } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
@@ -159,6 +162,40 @@ export interface DataSnapshot {
     count: number;
     project_codes: string[];
   };
+  equipment: {
+    total_fleet_count: number;
+    assigned_to_projects: number;
+    available_count: number;
+    equipment_plans_summary: {
+      total_planned_items: number;
+      owned_count: number;
+      rental_count: number;
+      total_planned_cost: number;
+      total_actual_cost: number;
+      cost_variance: number;
+    };
+    projects_with_equipment: {
+      project_code: string;
+      project_name: string;
+      equipment_count: number;
+      planned_cost: number;
+      actual_cost: number;
+      cost_variance: number;
+    }[];
+    rentals_pending_booking: {
+      project_code: string;
+      equipment_name: string;
+      planned_cost: number;
+      planned_start: string | null;
+    }[];
+    equipment_cost_alerts: {
+      project_code: string;
+      equipment_name: string;
+      planned_cost: number;
+      actual_cost: number;
+      variance_percent: number;
+    }[];
+  };
 }
 
 export async function buildDataSnapshot(): Promise<DataSnapshot> {
@@ -264,10 +301,11 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
   });
   
   // Also fetch all projects (not just active) to get complete mapping
+  // Using higher limit to ensure all equipment plan project IDs can be resolved
   const allProjectsForMapping = await db
     .select({ id: projects.id, code: projects.code, name: projects.name })
     .from(projects)
-    .limit(200);
+    .limit(1000);
   
   allProjectsForMapping.forEach(p => {
     projectIdToCode.set(p.id, p.code);
@@ -480,6 +518,85 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     p => !p.budget || Number(p.budget) === 0 || !p.contractAmount || Number(p.contractAmount) === 0
   );
 
+  // Equipment data
+  const allEquipment = await db
+    .select()
+    .from(equipment)
+    .limit(500);
+
+  const activeAssignments = await db
+    .select()
+    .from(equipmentAssignments)
+    .where(sql`${equipmentAssignments.returnedAt} IS NULL`)
+    .limit(500);
+
+  const allEquipmentPlans = await db
+    .select()
+    .from(projectEquipmentPlans)
+    .limit(1000);
+
+  const ownedPlans = allEquipmentPlans.filter(p => p.source === 'OWNED');
+  const rentalPlans = allEquipmentPlans.filter(p => p.source === 'RENTAL');
+
+  const totalPlannedCost = allEquipmentPlans.reduce((sum, p) => sum + Number(p.plannedCost || 0), 0);
+  const totalActualEquipmentCost = allEquipmentPlans.reduce((sum, p) => sum + Number(p.actualCost || 0), 0);
+
+  // Group equipment by project
+  const equipmentByProject = new Map<string, typeof allEquipmentPlans>();
+  for (const plan of allEquipmentPlans) {
+    const projectId = plan.projectId;
+    if (!equipmentByProject.has(projectId)) {
+      equipmentByProject.set(projectId, []);
+    }
+    equipmentByProject.get(projectId)!.push(plan);
+  }
+
+  const projectsWithEquipment = Array.from(equipmentByProject.entries())
+    .map(([projectId, plans]) => {
+      const projectCode = projectIdToCode.get(projectId) || projectId;
+      const projectName = projectIdToName.get(projectId) || 'Unknown';
+      const plannedCost = plans.reduce((sum, p) => sum + Number(p.plannedCost || 0), 0);
+      const actualCost = plans.reduce((sum, p) => sum + Number(p.actualCost || 0), 0);
+      return {
+        project_code: projectCode,
+        project_name: projectName,
+        equipment_count: plans.length,
+        planned_cost: Math.round(plannedCost * 100) / 100,
+        actual_cost: Math.round(actualCost * 100) / 100,
+        cost_variance: Math.round((plannedCost - actualCost) * 100) / 100,
+      };
+    })
+    .filter(p => p.equipment_count > 0);
+
+  // Rentals pending booking (RENTAL source with PLANNED status)
+  const rentalsPendingBooking = allEquipmentPlans
+    .filter(p => p.source === 'RENTAL' && p.status === 'PLANNED')
+    .map(p => ({
+      project_code: projectIdToCode.get(p.projectId) || p.projectId,
+      equipment_name: p.equipmentName,
+      planned_cost: Number(p.plannedCost || 0),
+      planned_start: p.plannedStartDate?.toISOString().split('T')[0] || null,
+    }));
+
+  // Equipment cost alerts (>20% over budget)
+  const equipmentCostAlerts = allEquipmentPlans
+    .filter(p => {
+      const planned = Number(p.plannedCost || 0);
+      const actual = Number(p.actualCost || 0);
+      return planned > 0 && actual > 0 && actual > planned * 1.2;
+    })
+    .map(p => {
+      const planned = Number(p.plannedCost || 0);
+      const actual = Number(p.actualCost || 0);
+      return {
+        project_code: projectIdToCode.get(p.projectId) || p.projectId,
+        equipment_name: p.equipmentName,
+        planned_cost: Math.round(planned * 100) / 100,
+        actual_cost: Math.round(actual * 100) / 100,
+        variance_percent: Math.round(((actual - planned) / planned) * 100),
+      };
+    });
+
   return {
     generated_at: now.toISOString(),
     projects: {
@@ -568,6 +685,22 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     missing_financials: {
       count: projectsMissingFinancials.length,
       project_codes: projectsMissingFinancials.map(p => p.code),
+    },
+    equipment: {
+      total_fleet_count: allEquipment.length,
+      assigned_to_projects: activeAssignments.length,
+      available_count: allEquipment.filter(e => e.status === 'AVAILABLE').length,
+      equipment_plans_summary: {
+        total_planned_items: allEquipmentPlans.length,
+        owned_count: ownedPlans.length,
+        rental_count: rentalPlans.length,
+        total_planned_cost: Math.round(totalPlannedCost * 100) / 100,
+        total_actual_cost: Math.round(totalActualEquipmentCost * 100) / 100,
+        cost_variance: Math.round((totalPlannedCost - totalActualEquipmentCost) * 100) / 100,
+      },
+      projects_with_equipment: projectsWithEquipment,
+      rentals_pending_booking: rentalsPendingBooking,
+      equipment_cost_alerts: equipmentCostAlerts,
     },
   };
 }

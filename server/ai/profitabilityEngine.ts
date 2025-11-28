@@ -8,7 +8,8 @@ import {
   users,
   subcontractorContracts,
   subcontractorPayments,
-  tmTickets
+  tmTickets,
+  projectEquipmentPlans
 } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 
@@ -19,6 +20,7 @@ export interface ProjectProfitability {
   total_labor_cost: number;
   total_material_cost: number;
   total_subcontractor_cost: number;
+  total_equipment_cost: number;
   total_other_expenses: number;
   total_tm_cost: number;
   approved_change_orders_value: number;
@@ -42,6 +44,11 @@ export interface ProjectProfitability {
     pending_tm_value: number;
     subcontractor_count: number;
     tm_ticket_count: number;
+    equipment_planned_cost: number;
+    equipment_actual_cost: number;
+    equipment_cost_variance: number;
+    owned_equipment_count: number;
+    rental_equipment_count: number;
   };
 }
 
@@ -133,6 +140,38 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const subcontractorCount = Number(subcontractorContractsData[0]?.count || 0);
 
+  // Calculate equipment costs from project equipment plans
+  const equipmentPlans = await db
+    .select({
+      source: projectEquipmentPlans.source,
+      plannedCost: projectEquipmentPlans.plannedCost,
+      actualCost: projectEquipmentPlans.actualCost,
+      status: projectEquipmentPlans.status,
+    })
+    .from(projectEquipmentPlans)
+    .where(eq(projectEquipmentPlans.projectId, project.id))
+    .limit(500);
+
+  const ownedEquipmentPlans = equipmentPlans.filter(p => p.source === 'OWNED');
+  const rentalEquipmentPlans = equipmentPlans.filter(p => p.source === 'RENTAL');
+
+  const equipmentPlannedCost = equipmentPlans.reduce(
+    (sum, p) => sum + Number(p.plannedCost || 0), 0
+  );
+  const equipmentActualCost = equipmentPlans.reduce(
+    (sum, p) => sum + Number(p.actualCost || 0), 0
+  );
+  
+  // For equipment, use actual cost if available, otherwise use planned
+  const totalEquipmentCost = equipmentPlans.reduce((sum, p) => {
+    const cost = Number(p.actualCost || 0) > 0 
+      ? Number(p.actualCost) 
+      : Number(p.plannedCost || 0);
+    return sum + cost;
+  }, 0);
+
+  const equipmentCostVariance = equipmentPlannedCost - equipmentActualCost;
+
   // Calculate change orders
   const projectChangeOrders = await db
     .select({
@@ -179,7 +218,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   // Adjusted budget includes approved change orders AND approved T&M tickets (billable extra work)
   const baseBudget = Number(project.contractAmount || project.budget || 0);
   const adjustedBudget = baseBudget + approvedCOValue + approvedTMValue;
-  const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalOtherExpenses;
+  const totalActualCost = totalLaborCost + totalMaterialCost + totalSubcontractorCost + totalEquipmentCost + totalOtherExpenses;
   const variance = adjustedBudget - totalActualCost;
   const variancePercent = adjustedBudget > 0 ? (variance / adjustedBudget) * 100 : 0;
 
@@ -294,6 +333,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     total_labor_cost: Math.round(totalLaborCost * 100) / 100,
     total_material_cost: Math.round(totalMaterialCost * 100) / 100,
     total_subcontractor_cost: Math.round(totalSubcontractorCost * 100) / 100,
+    total_equipment_cost: Math.round(totalEquipmentCost * 100) / 100,
     total_other_expenses: Math.round(totalOtherExpenses * 100) / 100,
     total_tm_cost: Math.round(totalTMCost * 100) / 100,
     approved_change_orders_value: Math.round(approvedCOValue * 100) / 100,
@@ -317,6 +357,11 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       pending_tm_value: Math.round(pendingTMValue * 100) / 100,
       subcontractor_count: subcontractorCount,
       tm_ticket_count: projectTMTickets.length,
+      equipment_planned_cost: Math.round(equipmentPlannedCost * 100) / 100,
+      equipment_actual_cost: Math.round(equipmentActualCost * 100) / 100,
+      equipment_cost_variance: Math.round(equipmentCostVariance * 100) / 100,
+      owned_equipment_count: ownedEquipmentPlans.length,
+      rental_equipment_count: rentalEquipmentPlans.length,
     },
   };
 }
