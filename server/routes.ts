@@ -9383,6 +9383,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get available projects for equipment assignment (must be before :idOrCode route)
+  app.get("/api/equipment/available-projects", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const activeProjects = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+        })
+        .from(projects)
+        .where(eq(projects.status, "ACTIVE"))
+        .orderBy(projects.name);
+      
+      res.json(activeProjects);
+    } catch (error) {
+      console.error("Get available projects error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get single equipment by ID or code
   app.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
@@ -10192,26 +10212,6 @@ Please provide:
     } catch (error) {
       console.error("AI recommendations error:", error);
       res.status(500).json({ error: "Failed to generate AI recommendations" });
-    }
-  });
-
-  // Get available projects for equipment assignment
-  app.get("/api/equipment/available-projects", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
-    try {
-      const activeProjects = await db
-        .select({
-          id: projects.id,
-          name: projects.name,
-          code: projects.code,
-        })
-        .from(projects)
-        .where(eq(projects.status, "ACTIVE"))
-        .orderBy(projects.name);
-      
-      res.json(activeProjects);
-    } catch (error) {
-      console.error("Get available projects error:", error);
-      res.status(500).json({ error: "Internal server error" });
     }
   });
 
