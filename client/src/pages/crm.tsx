@@ -1949,11 +1949,13 @@ export default function CRMPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Minimum Order</Label>
+                <Label>Minimum Order (qty)</Label>
                 <Input
+                  type="number"
+                  step="0.01"
                   value={newPricing.minimumOrder}
                   onChange={(e) => setNewPricing({ ...newPricing, minimumOrder: e.target.value })}
-                  placeholder="e.g., 5 yards"
+                  placeholder="e.g., 5"
                   data-testid="input-pricing-minimum"
                 />
               </div>
