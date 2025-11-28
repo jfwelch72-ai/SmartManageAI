@@ -17,7 +17,10 @@ import {
   aiDataQuality,
   projectEquipmentPlans,
   equipment,
-  equipmentAssignments
+  equipmentAssignments,
+  equipmentRateProfiles,
+  rentalEquipmentCatalog,
+  rentalEquipmentUsages,
 } from "@shared/schema";
 import { sql, desc, eq } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
@@ -195,6 +198,29 @@ export interface DataSnapshot {
       actual_cost: number;
       variance_percent: number;
     }[];
+    roi_analysis: {
+      rental_vs_owned_comparison: {
+        equipment_type: string;
+        avg_rental_daily_rate: number;
+        avg_owned_daily_rate: number;
+        break_even_days: number;
+        recommendation: string;
+      }[];
+      frequently_rented_equipment: {
+        equipment_type: string;
+        rental_count: number;
+        total_rental_cost: number;
+        avg_rental_duration_days: number;
+        purchase_recommendation: string;
+      }[];
+      underutilized_owned: {
+        equipment_code: string;
+        equipment_name: string;
+        days_since_last_assignment: number;
+        purchase_price: number;
+        monthly_carrying_cost: number;
+      }[];
+    };
   };
 }
 
@@ -597,6 +623,291 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       };
     });
 
+  // ROI Analysis: Rental vs Purchase Comparison
+  
+  // Get owned equipment rate profiles for daily rate comparison
+  const ownedRateProfiles = await db
+    .select({
+      equipmentId: equipmentRateProfiles.equipmentId,
+      dailyRate: equipmentRateProfiles.dailyRate,
+      hourlyRate: equipmentRateProfiles.hourlyRate,
+      fuelCostPerHour: equipmentRateProfiles.fuelCostPerHour,
+      maintenanceCostPerHour: equipmentRateProfiles.maintenanceCostPerHour,
+    })
+    .from(equipmentRateProfiles)
+    .where(eq(equipmentRateProfiles.isActive, true))
+    .limit(500);
+
+  // Get rental catalog for rate comparison
+  const rentalCatalogItems = await db
+    .select({
+      equipmentType: rentalEquipmentCatalog.equipmentType,
+      dailyRate: rentalEquipmentCatalog.dailyRate,
+      weeklyRate: rentalEquipmentCatalog.weeklyRate,
+      monthlyRate: rentalEquipmentCatalog.monthlyRate,
+    })
+    .from(rentalEquipmentCatalog)
+    .where(eq(rentalEquipmentCatalog.isActive, true))
+    .limit(500);
+
+  // Get rental usage history for frequency analysis
+  const rentalUsageHistory = await db
+    .select({
+      equipmentType: rentalEquipmentUsages.equipmentType,
+      dailyRate: rentalEquipmentUsages.dailyRate,
+      startDate: rentalEquipmentUsages.startDate,
+      actualEndDate: rentalEquipmentUsages.actualEndDate,
+      expectedEndDate: rentalEquipmentUsages.expectedEndDate,
+      totalCost: rentalEquipmentUsages.totalCost,
+      status: rentalEquipmentUsages.status,
+    })
+    .from(rentalEquipmentUsages)
+    .limit(1000);
+
+  // Group rental catalog by equipment type for avg rates
+  const rentalRatesByType = new Map<string, { dailyRates: number[], weeklyRates: number[], monthlyRates: number[] }>();
+  for (const item of rentalCatalogItems) {
+    const type = item.equipmentType;
+    if (!rentalRatesByType.has(type)) {
+      rentalRatesByType.set(type, { dailyRates: [], weeklyRates: [], monthlyRates: [] });
+    }
+    const rates = rentalRatesByType.get(type)!;
+    if (item.dailyRate) rates.dailyRates.push(Number(item.dailyRate));
+    if (item.weeklyRate) rates.weeklyRates.push(Number(item.weeklyRate));
+    if (item.monthlyRate) rates.monthlyRates.push(Number(item.monthlyRate));
+  }
+
+  // Group owned equipment by type and get average daily rates
+  const ownedEquipmentByType = new Map<string, number[]>();
+  for (const equip of allEquipment) {
+    const type = equip.type;
+    // Find rate profile for this equipment
+    const rateProfile = ownedRateProfiles.find(r => r.equipmentId === equip.id);
+    if (rateProfile && rateProfile.dailyRate) {
+      if (!ownedEquipmentByType.has(type)) {
+        ownedEquipmentByType.set(type, []);
+      }
+      // Daily rate + estimated operating costs (fuel + maintenance for 8 hours)
+      const operatingCost = (Number(rateProfile.fuelCostPerHour || 0) + Number(rateProfile.maintenanceCostPerHour || 0)) * 8;
+      ownedEquipmentByType.get(type)!.push(Number(rateProfile.dailyRate) + operatingCost);
+    }
+  }
+
+  // Create rental vs owned comparison
+  const rentalVsOwnedComparison: {
+    equipment_type: string;
+    avg_rental_daily_rate: number;
+    avg_owned_daily_rate: number;
+    break_even_days: number;
+    recommendation: string;
+  }[] = [];
+
+  for (const [type, rentalRates] of rentalRatesByType.entries()) {
+    const ownedRates = ownedEquipmentByType.get(type);
+    if (!ownedRates || ownedRates.length === 0) continue;
+    if (rentalRates.dailyRates.length === 0) continue;
+
+    const avgRentalDaily = rentalRates.dailyRates.reduce((a, b) => a + b, 0) / rentalRates.dailyRates.length;
+    const avgOwnedDaily = ownedRates.reduce((a, b) => a + b, 0) / ownedRates.length;
+
+    // Find an example owned equipment of this type for purchase price
+    const exampleEquip = allEquipment.find(e => e.type === type && e.purchasePrice);
+    const avgPurchasePrice = exampleEquip ? Number(exampleEquip.purchasePrice) : 0;
+    
+    // Skip if no valid purchase price available
+    if (avgPurchasePrice <= 0) continue;
+
+    // Break-even: days where rental cost savings would equal purchase price
+    // Only calculate if renting costs more than owning (positive savings)
+    const dailySavings = avgRentalDaily - avgOwnedDaily;
+    
+    let breakEvenDays: number;
+    let recommendation: string;
+    
+    if (dailySavings <= 0) {
+      // Owning costs more or equal to renting - no break-even benefit
+      breakEvenDays = -1; // Indicates renting is more economical
+      recommendation = "Continue renting - owned daily rate (incl. operating costs) equals or exceeds rental rate";
+    } else {
+      // Break-even assumes daily usage; actual ROI depends on utilization
+      breakEvenDays = Math.round(avgPurchasePrice / dailySavings);
+      
+      if (breakEvenDays < 365) {
+        recommendation = `EVALUATE: ~${breakEvenDays} days to break-even (assumes daily use, verify utilization)`;
+      } else if (breakEvenDays < 730) {
+        recommendation = `MONITOR: ~${Math.round(breakEvenDays / 30)} months to break-even at daily use`;
+      } else {
+        recommendation = `RENT: ${Math.round(breakEvenDays / 365)}+ year break-even makes ownership less attractive`;
+      }
+    }
+
+    rentalVsOwnedComparison.push({
+      equipment_type: type,
+      avg_rental_daily_rate: Math.round(avgRentalDaily * 100) / 100,
+      avg_owned_daily_rate: Math.round(avgOwnedDaily * 100) / 100,
+      break_even_days: breakEvenDays,
+      recommendation,
+    });
+  }
+
+  // Analyze frequently rented equipment types - only count completed rentals with valid data
+  const rentalFrequencyByType = new Map<string, { count: number, totalCost: number, totalDays: number, validDurationCount: number }>();
+  for (const usage of rentalUsageHistory) {
+    // Only count completed or active rentals (skip cancelled/invalid)
+    if (!usage.status || usage.status === 'CANCELLED') continue;
+    
+    const type = usage.equipmentType;
+    if (!type) continue;
+    
+    if (!rentalFrequencyByType.has(type)) {
+      rentalFrequencyByType.set(type, { count: 0, totalCost: 0, totalDays: 0, validDurationCount: 0 });
+    }
+    const data = rentalFrequencyByType.get(type)!;
+    data.count++;
+    data.totalCost += Number(usage.totalCost || 0);
+    
+    // Calculate rental duration only when we have valid dates
+    const endDate = usage.actualEndDate || (usage.status === 'COMPLETED' ? usage.expectedEndDate : null);
+    if (endDate && usage.startDate) {
+      const startTime = new Date(usage.startDate).getTime();
+      const endTime = new Date(endDate).getTime();
+      if (!isNaN(startTime) && !isNaN(endTime) && endTime >= startTime) {
+        const days = Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24));
+        data.totalDays += Math.max(1, days);
+        data.validDurationCount++;
+      }
+    }
+  }
+
+  const frequentlyRentedEquipment: {
+    equipment_type: string;
+    rental_count: number;
+    total_rental_cost: number;
+    avg_rental_duration_days: number;
+    purchase_recommendation: string;
+  }[] = Array.from(rentalFrequencyByType.entries())
+    .filter(([, data]) => data.count >= 2) // At least 2 rentals
+    .map(([type, data]) => {
+      // Only calculate average if we have valid duration data
+      const avgDuration = data.validDurationCount > 0 
+        ? Math.round(data.totalDays / data.validDurationCount) 
+        : 0;
+      
+      // Get typical purchase price for this equipment type
+      const exampleEquip = allEquipment.find(e => e.type === type && e.purchasePrice);
+      const typicalPrice = exampleEquip ? Number(exampleEquip.purchasePrice) : 0;
+      
+      let recommendation: string;
+      
+      if (typicalPrice <= 0) {
+        recommendation = "INSUFFICIENT DATA: No purchase price available for comparison";
+      } else if (data.totalDays > 0 && data.totalCost > 0) {
+        // Calculate annualized rental cost based on historical usage pattern
+        // Note: This extrapolates current spending; seasonal patterns may affect accuracy
+        const annualProjected = data.totalCost * (365 / data.totalDays);
+        const yearsToPayoff = annualProjected > 0 ? typicalPrice / annualProjected : 999;
+        const totalSpent = Math.round(data.totalCost);
+        
+        if (yearsToPayoff < 1.5) {
+          recommendation = `REVIEW: $${totalSpent} spent, ~${Math.round(yearsToPayoff * 12)}mo payoff at current rate`;
+        } else if (yearsToPayoff < 3) {
+          recommendation = `MONITOR: $${totalSpent} spent, ~${Math.round(yearsToPayoff * 10) / 10}yr payoff`;
+        } else {
+          recommendation = `CONTINUE RENTING: $${totalSpent} spent, ${Math.round(yearsToPayoff)}+yr payoff`;
+        }
+      } else {
+        recommendation = "REVIEW NEEDED: Rental cost/duration data incomplete";
+      }
+      
+      return {
+        equipment_type: type,
+        rental_count: data.count,
+        total_rental_cost: Math.round(data.totalCost * 100) / 100,
+        avg_rental_duration_days: avgDuration,
+        purchase_recommendation: recommendation,
+      };
+    })
+    .filter(item => item.total_rental_cost > 0) // Only include items with actual costs
+    .sort((a, b) => b.total_rental_cost - a.total_rental_cost)
+    .slice(0, 10);
+
+  // Find underutilized owned equipment
+  // First, get all assignments (not just active) to find last assignment date
+  const allAssignmentsForAnalysis = await db
+    .select({
+      equipmentId: equipmentAssignments.equipmentId,
+      assignedAt: equipmentAssignments.assignedAt,
+      returnedAt: equipmentAssignments.returnedAt,
+    })
+    .from(equipmentAssignments)
+    .limit(2000);
+
+  // Group assignments by equipment to find most recent
+  const lastAssignmentByEquipment = new Map<string, Date>();
+  for (const assignment of allAssignmentsForAnalysis) {
+    const existing = lastAssignmentByEquipment.get(assignment.equipmentId);
+    const assignedDate = assignment.assignedAt ? new Date(assignment.assignedAt) : null;
+    
+    if (assignedDate && !isNaN(assignedDate.getTime())) {
+      if (!existing || assignedDate > existing) {
+        lastAssignmentByEquipment.set(assignment.equipmentId, assignedDate);
+      }
+    }
+  }
+
+  const underutilizedOwned: {
+    equipment_code: string;
+    equipment_name: string;
+    days_since_last_assignment: number;
+    purchase_price: number;
+    monthly_carrying_cost: number;
+  }[] = allEquipment
+    .filter(e => e.status === 'AVAILABLE' && e.purchasePrice && Number(e.purchasePrice) > 0)
+    .map(e => {
+      // Find last assignment for this equipment
+      const lastAssignmentDate = lastAssignmentByEquipment.get(e.id);
+      
+      let daysSinceLast: number;
+      if (lastAssignmentDate) {
+        daysSinceLast = Math.ceil((now.getTime() - lastAssignmentDate.getTime()) / (1000 * 60 * 60 * 24));
+        // Guard against invalid dates producing negative or NaN values
+        if (isNaN(daysSinceLast) || daysSinceLast < 0) {
+          daysSinceLast = 0;
+        }
+      } else {
+        // Never assigned - check how long since purchase
+        const purchaseDate = e.purchaseDate ? new Date(e.purchaseDate) : null;
+        if (purchaseDate && !isNaN(purchaseDate.getTime())) {
+          daysSinceLast = Math.ceil((now.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (isNaN(daysSinceLast) || daysSinceLast < 0) daysSinceLast = 0;
+        } else {
+          // No purchase date or assignment history - exclude from underutilized list
+          // by setting to 0 (will be filtered out below)
+          daysSinceLast = 0;
+        }
+      }
+
+      // Estimate monthly carrying cost using standard construction equipment assumptions:
+      // - Depreciation: 5-year straight-line (typical for heavy equipment)
+      // - Insurance/storage: ~1% of value per month
+      // Note: Actual costs may vary based on equipment type and company policies
+      const purchasePrice = Number(e.purchasePrice || 0);
+      const monthlyDepreciation = purchasePrice / (5 * 12); // 5-year depreciation
+      const monthlyInsuranceStorage = purchasePrice * 0.01; // ~1% for insurance/storage
+      const monthlyCarryingCost = monthlyDepreciation + monthlyInsuranceStorage;
+
+      return {
+        equipment_code: e.equipmentCode,
+        equipment_name: e.name,
+        days_since_last_assignment: daysSinceLast,
+        purchase_price: purchasePrice,
+        monthly_carrying_cost: Math.round(monthlyCarryingCost * 100) / 100,
+      };
+    })
+    .filter(e => e.days_since_last_assignment > 60 && e.purchase_price > 0) // Idle for over 60 days with valid price
+    .sort((a, b) => b.monthly_carrying_cost - a.monthly_carrying_cost)
+    .slice(0, 10);
+
   return {
     generated_at: now.toISOString(),
     projects: {
@@ -701,6 +1012,11 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       projects_with_equipment: projectsWithEquipment,
       rentals_pending_booking: rentalsPendingBooking,
       equipment_cost_alerts: equipmentCostAlerts,
+      roi_analysis: {
+        rental_vs_owned_comparison: rentalVsOwnedComparison,
+        frequently_rented_equipment: frequentlyRentedEquipment,
+        underutilized_owned: underutilizedOwned,
+      },
     },
   };
 }
