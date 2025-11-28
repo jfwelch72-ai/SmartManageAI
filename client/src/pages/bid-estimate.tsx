@@ -272,6 +272,35 @@ export default function BidEstimate() {
         excavationWidthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationWidthInches || undefined) : undefined,
         excavationSwellFactor: materialCalcData.requiresExcavation ? (materialCalcData.excavationSwellFactor || "25") : undefined,
         calculatedExcavationYards: materialCalcData.requiresExcavation ? (materialCalcData.calculatedExcavationYards || undefined) : undefined,
+        // Wire mesh fields
+        requiresWireMesh: materialCalcData.requiresWireMesh || false,
+        wireMeshType: materialCalcData.requiresWireMesh ? (materialCalcData.wireMeshType || "6x6_W1.4") : undefined,
+        wireMeshWasteFactor: materialCalcData.requiresWireMesh ? (materialCalcData.wireMeshWasteFactor || "10") : undefined,
+        calculatedWireMeshRolls: materialCalcData.requiresWireMesh ? (materialCalcData.calculatedWireMeshRolls || undefined) : undefined,
+        // Rebar fields
+        requiresRebar: materialCalcData.requiresRebar || false,
+        rebarSize: materialCalcData.requiresRebar ? (materialCalcData.rebarSize || "#4") : undefined,
+        rebarSpacingInches: materialCalcData.requiresRebar ? (materialCalcData.rebarSpacingInches || "12") : undefined,
+        rebarWasteFactor: materialCalcData.requiresRebar ? (materialCalcData.rebarWasteFactor || "10") : undefined,
+        calculatedRebarCount: materialCalcData.requiresRebar ? (materialCalcData.calculatedRebarCount || undefined) : undefined,
+        calculatedRebarLinearFeet: materialCalcData.requiresRebar ? (materialCalcData.calculatedRebarLinearFeet || undefined) : undefined,
+        // Dowel fields
+        requiresDowels: materialCalcData.requiresDowels || false,
+        dowelSpacingInches: materialCalcData.requiresDowels ? (materialCalcData.dowelSpacingInches || "12") : undefined,
+        jointLengthFeet: materialCalcData.requiresDowels ? (materialCalcData.jointLengthFeet || undefined) : undefined,
+        calculatedDowelCount: materialCalcData.requiresDowels ? (materialCalcData.calculatedDowelCount || undefined) : undefined,
+        // Sealer fields
+        requiresSealer: materialCalcData.requiresSealer || false,
+        sealerType: materialCalcData.requiresSealer ? (materialCalcData.sealerType || "CURE_SEAL") : undefined,
+        sealerCoats: materialCalcData.requiresSealer ? (materialCalcData.sealerCoats || "1") : undefined,
+        sealerWasteFactor: materialCalcData.requiresSealer ? (materialCalcData.sealerWasteFactor || "10") : undefined,
+        calculatedSealerGallons: materialCalcData.requiresSealer ? (materialCalcData.calculatedSealerGallons || undefined) : undefined,
+        // Underlayment fields
+        requiresUnderlayment: materialCalcData.requiresUnderlayment || false,
+        underlaymentType: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentType || "6MIL_POLY") : undefined,
+        underlaymentOverlapInches: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentOverlapInches || "6") : undefined,
+        underlaymentWasteFactor: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentWasteFactor || "10") : undefined,
+        calculatedUnderlaymentSF: materialCalcData.requiresUnderlayment ? (materialCalcData.calculatedUnderlaymentSF || undefined) : undefined,
       };
       
       editLineItemMutation.mutate({
@@ -317,6 +346,35 @@ export default function BidEstimate() {
         excavationWidthInches: materialCalcData.requiresExcavation ? (materialCalcData.excavationWidthInches || undefined) : undefined,
         excavationSwellFactor: materialCalcData.requiresExcavation ? (materialCalcData.excavationSwellFactor || "25") : undefined,
         calculatedExcavationYards: materialCalcData.requiresExcavation ? (materialCalcData.calculatedExcavationYards || undefined) : undefined,
+        // Wire mesh fields
+        requiresWireMesh: materialCalcData.requiresWireMesh || false,
+        wireMeshType: materialCalcData.requiresWireMesh ? (materialCalcData.wireMeshType || "6x6_W1.4") : undefined,
+        wireMeshWasteFactor: materialCalcData.requiresWireMesh ? (materialCalcData.wireMeshWasteFactor || "10") : undefined,
+        calculatedWireMeshRolls: materialCalcData.requiresWireMesh ? (materialCalcData.calculatedWireMeshRolls || undefined) : undefined,
+        // Rebar fields
+        requiresRebar: materialCalcData.requiresRebar || false,
+        rebarSize: materialCalcData.requiresRebar ? (materialCalcData.rebarSize || "#4") : undefined,
+        rebarSpacingInches: materialCalcData.requiresRebar ? (materialCalcData.rebarSpacingInches || "12") : undefined,
+        rebarWasteFactor: materialCalcData.requiresRebar ? (materialCalcData.rebarWasteFactor || "10") : undefined,
+        calculatedRebarCount: materialCalcData.requiresRebar ? (materialCalcData.calculatedRebarCount || undefined) : undefined,
+        calculatedRebarLinearFeet: materialCalcData.requiresRebar ? (materialCalcData.calculatedRebarLinearFeet || undefined) : undefined,
+        // Dowel fields
+        requiresDowels: materialCalcData.requiresDowels || false,
+        dowelSpacingInches: materialCalcData.requiresDowels ? (materialCalcData.dowelSpacingInches || "12") : undefined,
+        jointLengthFeet: materialCalcData.requiresDowels ? (materialCalcData.jointLengthFeet || undefined) : undefined,
+        calculatedDowelCount: materialCalcData.requiresDowels ? (materialCalcData.calculatedDowelCount || undefined) : undefined,
+        // Sealer fields
+        requiresSealer: materialCalcData.requiresSealer || false,
+        sealerType: materialCalcData.requiresSealer ? (materialCalcData.sealerType || "CURE_SEAL") : undefined,
+        sealerCoats: materialCalcData.requiresSealer ? (materialCalcData.sealerCoats || "1") : undefined,
+        sealerWasteFactor: materialCalcData.requiresSealer ? (materialCalcData.sealerWasteFactor || "10") : undefined,
+        calculatedSealerGallons: materialCalcData.requiresSealer ? (materialCalcData.calculatedSealerGallons || undefined) : undefined,
+        // Underlayment fields
+        requiresUnderlayment: materialCalcData.requiresUnderlayment || false,
+        underlaymentType: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentType || "6MIL_POLY") : undefined,
+        underlaymentOverlapInches: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentOverlapInches || "6") : undefined,
+        underlaymentWasteFactor: materialCalcData.requiresUnderlayment ? (materialCalcData.underlaymentWasteFactor || "10") : undefined,
+        calculatedUnderlaymentSF: materialCalcData.requiresUnderlayment ? (materialCalcData.calculatedUnderlaymentSF || undefined) : undefined,
       };
       
       addLineItemMutation.mutate(addPayload as any);
@@ -1226,6 +1284,32 @@ export default function BidEstimate() {
                       />
                     </div>
 
+                    {/* Material Calculator for Edit Dialog */}
+                    {(() => {
+                      const watchedValues = form.watch();
+                      const unit = watchedValues.unit || "";
+                      const quantity = Number(watchedValues.quantity) || 0;
+                      const category = watchedValues.category || "";
+                      const description = watchedValues.description || "";
+                      
+                      const materialCategories = [
+                        "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
+                        "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
+                      ];
+                      const showMaterialCalc = (unit === "SF" || unit === "LF") && 
+                        materialCategories.includes(category || "");
+                      
+                      return showMaterialCalc ? (
+                        <MaterialCalculator
+                          unit={unit}
+                          quantity={quantity}
+                          description={description}
+                          value={materialCalcData}
+                          onChange={setMaterialCalcData}
+                        />
+                      ) : null;
+                    })()}
+
                     {/* Cost Per Unit Preview */}
                     {(() => {
                       const watchedValues = form.watch();
@@ -1465,6 +1549,30 @@ export default function BidEstimate() {
                                     excavationWidthInches: lineItemAny.excavationWidthInches || "",
                                     excavationSwellFactor: lineItemAny.excavationSwellFactor || "25",
                                     calculatedExcavationYards: lineItemAny.calculatedExcavationYards || "",
+                                    requiresWireMesh: lineItemAny.requiresWireMesh || false,
+                                    wireMeshType: lineItemAny.wireMeshType || "6x6_W1.4",
+                                    wireMeshWasteFactor: lineItemAny.wireMeshWasteFactor || "10",
+                                    calculatedWireMeshRolls: lineItemAny.calculatedWireMeshRolls || "0",
+                                    requiresRebar: lineItemAny.requiresRebar || false,
+                                    rebarSize: lineItemAny.rebarSize || "#4",
+                                    rebarSpacingInches: lineItemAny.rebarSpacingInches || "12",
+                                    rebarWasteFactor: lineItemAny.rebarWasteFactor || "10",
+                                    calculatedRebarCount: lineItemAny.calculatedRebarCount || "0",
+                                    calculatedRebarLinearFeet: lineItemAny.calculatedRebarLinearFeet || "0",
+                                    requiresDowels: lineItemAny.requiresDowels || false,
+                                    dowelSpacingInches: lineItemAny.dowelSpacingInches || "12",
+                                    jointLengthFeet: lineItemAny.jointLengthFeet || "",
+                                    calculatedDowelCount: lineItemAny.calculatedDowelCount || "0",
+                                    requiresSealer: lineItemAny.requiresSealer || false,
+                                    sealerType: lineItemAny.sealerType || "CURE_SEAL",
+                                    sealerCoats: lineItemAny.sealerCoats || "1",
+                                    sealerWasteFactor: lineItemAny.sealerWasteFactor || "10",
+                                    calculatedSealerGallons: lineItemAny.calculatedSealerGallons || "0",
+                                    requiresUnderlayment: lineItemAny.requiresUnderlayment || false,
+                                    underlaymentType: lineItemAny.underlaymentType || "6MIL_POLY",
+                                    underlaymentOverlapInches: lineItemAny.underlaymentOverlapInches || "6",
+                                    underlaymentWasteFactor: lineItemAny.underlaymentWasteFactor || "10",
+                                    calculatedUnderlaymentSF: lineItemAny.calculatedUnderlaymentSF || "0",
                                   });
                                   setEditLineItemOpen(true);
                                 }}

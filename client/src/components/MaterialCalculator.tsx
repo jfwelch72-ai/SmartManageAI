@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle, Shovel } from "lucide-react";
+import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle, Shovel, Grid3X3, Ruler, Droplets, Square } from "lucide-react";
 
 // Stone density constants (tons per cubic yard)
 const STONE_DENSITIES: Record<string, number> = {
@@ -23,6 +23,37 @@ const STONE_TYPE_LABELS: Record<string, string> = {
   COMPACTED_BASE: "Compacted Base",
   PEA_GRAVEL: "Pea Gravel",
   RECYCLED_CONCRETE: "Recycled Concrete",
+};
+
+// Wire mesh constants
+const WIRE_MESH_TYPES: Record<string, { label: string; coverageSF: number }> = {
+  "6x6_W1.4": { label: "6x6 W1.4/W1.4 (Light)", coverageSF: 100 },
+  "6x6_W2.9": { label: "6x6 W2.9/W2.9 (Medium)", coverageSF: 100 },
+  "6x6_W4": { label: "6x6 W4/W4 (Heavy)", coverageSF: 100 },
+  "4x4_W2.9": { label: "4x4 W2.9/W2.9 (Extra Heavy)", coverageSF: 100 },
+};
+
+// Rebar sizes and properties
+const REBAR_SIZES: Record<string, { label: string; lengthFt: number }> = {
+  "#3": { label: "#3 (3/8\")", lengthFt: 20 },
+  "#4": { label: "#4 (1/2\")", lengthFt: 20 },
+  "#5": { label: "#5 (5/8\")", lengthFt: 20 },
+  "#6": { label: "#6 (3/4\")", lengthFt: 20 },
+};
+
+// Sealer types and coverage rates
+const SEALER_TYPES: Record<string, { label: string; coverageSFPerGallon: number }> = {
+  CURE_SEAL: { label: "Cure & Seal", coverageSFPerGallon: 200 },
+  ACRYLIC: { label: "Acrylic Sealer", coverageSFPerGallon: 250 },
+  PENETRATING: { label: "Penetrating Sealer", coverageSFPerGallon: 150 },
+  EPOXY: { label: "Epoxy Sealer", coverageSFPerGallon: 100 },
+};
+
+// Underlayment types
+const UNDERLAYMENT_TYPES: Record<string, { label: string; rollWidthFt: number; rollLengthFt: number }> = {
+  "6MIL_POLY": { label: "6 mil Poly (Vapor Barrier)", rollWidthFt: 10, rollLengthFt: 100 },
+  "10MIL_POLY": { label: "10 mil Poly (Heavy Duty)", rollWidthFt: 10, rollLengthFt: 100 },
+  VISQUEEN: { label: "Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
 };
 
 // Determine if a unit is linear (LF) or area-based (SF)
@@ -52,6 +83,30 @@ export interface MaterialCalculatorData {
   excavationWidthInches: string;
   excavationSwellFactor: string;
   calculatedExcavationYards: string;
+  requiresWireMesh: boolean;
+  wireMeshType: string;
+  wireMeshWasteFactor: string;
+  calculatedWireMeshRolls: string;
+  requiresRebar: boolean;
+  rebarSize: string;
+  rebarSpacingInches: string;
+  rebarWasteFactor: string;
+  calculatedRebarCount: string;
+  calculatedRebarLinearFeet: string;
+  requiresDowels: boolean;
+  dowelSpacingInches: string;
+  jointLengthFeet: string;
+  calculatedDowelCount: string;
+  requiresSealer: boolean;
+  sealerType: string;
+  sealerCoats: string;
+  sealerWasteFactor: string;
+  calculatedSealerGallons: string;
+  requiresUnderlayment: boolean;
+  underlaymentType: string;
+  underlaymentOverlapInches: string;
+  underlaymentWasteFactor: string;
+  calculatedUnderlaymentSF: string;
 }
 
 interface MaterialCalculatorProps {
@@ -169,6 +224,136 @@ export function calculateExcavationYards(
   return Math.ceil(cubicYards * swellMultiplier * 100) / 100;
 }
 
+// Calculate wire mesh rolls needed
+export function calculateWireMeshRolls(
+  quantity: number,
+  unit: string,
+  wasteFactor: number = 10,
+  coverageSF: number = 100
+): number {
+  if (!quantity) return 0;
+  
+  let areaSF: number;
+  if (isAreaUnit(unit)) {
+    areaSF = quantity;
+  } else {
+    return 0; // Wire mesh only applies to area-based items
+  }
+  
+  // Apply waste factor
+  const wasteMultiplier = 1 + (wasteFactor / 100);
+  const totalSF = areaSF * wasteMultiplier;
+  
+  // Calculate rolls needed (standard rolls are 100 SF)
+  return Math.ceil(totalSF / coverageSF);
+}
+
+// Calculate rebar count and linear feet
+export function calculateRebar(
+  quantity: number,
+  unit: string,
+  spacingInches: number = 12,
+  rebarLengthFeet: number = 20,
+  wasteFactor: number = 10
+): { count: number; linearFeet: number } {
+  if (!quantity || !spacingInches) return { count: 0, linearFeet: 0 };
+  
+  let areaSF: number;
+  if (isAreaUnit(unit)) {
+    areaSF = quantity;
+  } else if (isLinearUnit(unit)) {
+    // For linear items, assume width and calculate area
+    areaSF = quantity * 2; // Assume 2' width average
+  } else {
+    return { count: 0, linearFeet: 0 };
+  }
+  
+  // Calculate grid spacing in feet
+  const spacingFeet = spacingInches / 12;
+  
+  // Calculate side length (assuming square area)
+  const sideLength = Math.sqrt(areaSF);
+  
+  // Calculate number of bars in each direction
+  const barsPerDirection = Math.ceil(sideLength / spacingFeet) + 1;
+  
+  // Total linear feet of rebar (both directions)
+  const linearFeetPerDirection = barsPerDirection * sideLength;
+  const totalLinearFeet = linearFeetPerDirection * 2;
+  
+  // Apply waste factor
+  const wasteMultiplier = 1 + (wasteFactor / 100);
+  const adjustedLinearFeet = totalLinearFeet * wasteMultiplier;
+  
+  // Calculate number of bars needed
+  const count = Math.ceil(adjustedLinearFeet / rebarLengthFeet);
+  
+  return {
+    count,
+    linearFeet: Math.ceil(adjustedLinearFeet * 100) / 100,
+  };
+}
+
+// Calculate dowel count
+export function calculateDowelCount(
+  jointLengthFeet: number,
+  spacingInches: number = 12
+): number {
+  if (!jointLengthFeet || !spacingInches) return 0;
+  
+  const spacingFeet = spacingInches / 12;
+  return Math.ceil(jointLengthFeet / spacingFeet) + 1;
+}
+
+// Calculate sealer gallons
+export function calculateSealerGallons(
+  quantity: number,
+  unit: string,
+  coverageSFPerGallon: number = 200,
+  coats: number = 1,
+  wasteFactor: number = 10
+): number {
+  if (!quantity) return 0;
+  
+  let areaSF: number;
+  if (isAreaUnit(unit)) {
+    areaSF = quantity;
+  } else {
+    return 0; // Sealer only applies to area-based items
+  }
+  
+  // Apply waste factor
+  const wasteMultiplier = 1 + (wasteFactor / 100);
+  const totalSF = areaSF * wasteMultiplier * coats;
+  
+  return Math.ceil((totalSF / coverageSFPerGallon) * 100) / 100;
+}
+
+// Calculate underlayment SF
+export function calculateUnderlaymentSF(
+  quantity: number,
+  unit: string,
+  overlapInches: number = 6,
+  wasteFactor: number = 10
+): number {
+  if (!quantity) return 0;
+  
+  let areaSF: number;
+  if (isAreaUnit(unit)) {
+    areaSF = quantity;
+  } else {
+    return 0; // Underlayment only applies to area-based items
+  }
+  
+  // Calculate overlap factor (typically adds 5-10% for 6" overlap on 10' rolls)
+  const overlapFactor = 1 + ((overlapInches / 12) / 10); // ~5% for 6" overlap
+  
+  // Apply waste factor
+  const wasteMultiplier = 1 + (wasteFactor / 100);
+  
+  return Math.ceil(areaSF * overlapFactor * wasteMultiplier);
+}
+
 export default function MaterialCalculator({
   unit,
   quantity,
@@ -224,25 +409,101 @@ export default function MaterialCalculator({
     );
   }, [quantity, unit, value.requiresExcavation, value.excavationDepthInches, value.excavationWidthInches, value.excavationSwellFactor]);
 
+  // Calculate wire mesh rolls
+  const wireMeshRolls = useMemo(() => {
+    if (!value.requiresWireMesh) return 0;
+    const meshType = WIRE_MESH_TYPES[value.wireMeshType] || WIRE_MESH_TYPES["6x6_W1.4"];
+    return calculateWireMeshRolls(
+      quantity,
+      unit,
+      parseFloat(value.wireMeshWasteFactor) || 10,
+      meshType.coverageSF
+    );
+  }, [quantity, unit, value.requiresWireMesh, value.wireMeshType, value.wireMeshWasteFactor]);
+
+  // Calculate rebar
+  const rebarCalc = useMemo(() => {
+    if (!value.requiresRebar) return { count: 0, linearFeet: 0 };
+    const rebarSize = REBAR_SIZES[value.rebarSize] || REBAR_SIZES["#4"];
+    return calculateRebar(
+      quantity,
+      unit,
+      parseFloat(value.rebarSpacingInches) || 12,
+      rebarSize.lengthFt,
+      parseFloat(value.rebarWasteFactor) || 10
+    );
+  }, [quantity, unit, value.requiresRebar, value.rebarSize, value.rebarSpacingInches, value.rebarWasteFactor]);
+
+  // Calculate dowels
+  const dowelCount = useMemo(() => {
+    if (!value.requiresDowels) return 0;
+    return calculateDowelCount(
+      parseFloat(value.jointLengthFeet) || 0,
+      parseFloat(value.dowelSpacingInches) || 12
+    );
+  }, [value.requiresDowels, value.jointLengthFeet, value.dowelSpacingInches]);
+
+  // Calculate sealer
+  const sealerGallons = useMemo(() => {
+    if (!value.requiresSealer) return 0;
+    const sealerType = SEALER_TYPES[value.sealerType] || SEALER_TYPES["CURE_SEAL"];
+    return calculateSealerGallons(
+      quantity,
+      unit,
+      sealerType.coverageSFPerGallon,
+      parseFloat(value.sealerCoats) || 1,
+      parseFloat(value.sealerWasteFactor) || 10
+    );
+  }, [quantity, unit, value.requiresSealer, value.sealerType, value.sealerCoats, value.sealerWasteFactor]);
+
+  // Calculate underlayment
+  const underlaymentSF = useMemo(() => {
+    if (!value.requiresUnderlayment) return 0;
+    return calculateUnderlaymentSF(
+      quantity,
+      unit,
+      parseFloat(value.underlaymentOverlapInches) || 6,
+      parseFloat(value.underlaymentWasteFactor) || 10
+    );
+  }, [quantity, unit, value.requiresUnderlayment, value.underlaymentOverlapInches, value.underlaymentWasteFactor]);
+
   // Update calculated values when inputs change
   useEffect(() => {
     const newConcreteYards = concreteYards.toString();
     const newStoneTons = stoneTons.toString();
     const newExcavationYards = excavationYards.toString();
+    const newWireMeshRolls = wireMeshRolls.toString();
+    const newRebarCount = rebarCalc.count.toString();
+    const newRebarLinearFeet = rebarCalc.linearFeet.toString();
+    const newDowelCount = dowelCount.toString();
+    const newSealerGallons = sealerGallons.toString();
+    const newUnderlaymentSF = underlaymentSF.toString();
     
     if (
       newConcreteYards !== value.calculatedConcreteYards ||
       newStoneTons !== value.calculatedStoneTons ||
-      newExcavationYards !== value.calculatedExcavationYards
+      newExcavationYards !== value.calculatedExcavationYards ||
+      newWireMeshRolls !== value.calculatedWireMeshRolls ||
+      newRebarCount !== value.calculatedRebarCount ||
+      newRebarLinearFeet !== value.calculatedRebarLinearFeet ||
+      newDowelCount !== value.calculatedDowelCount ||
+      newSealerGallons !== value.calculatedSealerGallons ||
+      newUnderlaymentSF !== value.calculatedUnderlaymentSF
     ) {
       onChange({
         ...value,
         calculatedConcreteYards: newConcreteYards,
         calculatedStoneTons: newStoneTons,
         calculatedExcavationYards: newExcavationYards,
+        calculatedWireMeshRolls: newWireMeshRolls,
+        calculatedRebarCount: newRebarCount,
+        calculatedRebarLinearFeet: newRebarLinearFeet,
+        calculatedDowelCount: newDowelCount,
+        calculatedSealerGallons: newSealerGallons,
+        calculatedUnderlaymentSF: newUnderlaymentSF,
       });
     }
-  }, [concreteYards, stoneTons, excavationYards]);
+  }, [concreteYards, stoneTons, excavationYards, wireMeshRolls, rebarCalc, dowelCount, sealerGallons, underlaymentSF]);
 
   const updateValue = (field: keyof MaterialCalculatorData, newValue: string | boolean) => {
     onChange({
@@ -255,26 +516,56 @@ export default function MaterialCalculator({
     return null;
   }
 
+  // Check if any materials are calculated
+  const hasMaterials = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
+    wireMeshRolls > 0 || rebarCalc.count > 0 || dowelCount > 0 || 
+    sealerGallons > 0 || underlaymentSF > 0;
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-muted/50 transition-colors" data-testid="button-material-calculator-toggle">
         <Calculator className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Material Calculator</span>
-        {(concreteYards > 0 || stoneTons > 0 || excavationYards > 0) && (
-          <div className="flex flex-wrap gap-2 ml-auto mr-2">
+        {hasMaterials && (
+          <div className="flex flex-wrap gap-1 ml-auto mr-2">
             {concreteYards > 0 && (
               <Badge variant="secondary" className="text-xs" data-testid="badge-concrete-yards">
-                {concreteYards.toFixed(2)} CY Concrete
+                {concreteYards.toFixed(1)} CY
               </Badge>
             )}
             {stoneTons > 0 && (
               <Badge variant="outline" className="text-xs" data-testid="badge-stone-tons">
-                {stoneTons.toFixed(2)} Tons Stone
+                {stoneTons.toFixed(1)}T Stone
               </Badge>
             )}
             {excavationYards > 0 && (
               <Badge variant="outline" className="text-xs bg-orange-500/10 border-orange-500/30" data-testid="badge-excavation-yards">
-                {excavationYards.toFixed(2)} CY Excavation
+                {excavationYards.toFixed(1)} CY Exc
+              </Badge>
+            )}
+            {wireMeshRolls > 0 && (
+              <Badge variant="outline" className="text-xs bg-blue-500/10 border-blue-500/30" data-testid="badge-wire-mesh">
+                {wireMeshRolls} Mesh
+              </Badge>
+            )}
+            {rebarCalc.count > 0 && (
+              <Badge variant="outline" className="text-xs bg-purple-500/10 border-purple-500/30" data-testid="badge-rebar">
+                {rebarCalc.count} Rebar
+              </Badge>
+            )}
+            {dowelCount > 0 && (
+              <Badge variant="outline" className="text-xs bg-gray-500/10 border-gray-500/30" data-testid="badge-dowels">
+                {dowelCount} Dowels
+              </Badge>
+            )}
+            {sealerGallons > 0 && (
+              <Badge variant="outline" className="text-xs bg-green-500/10 border-green-500/30" data-testid="badge-sealer">
+                {sealerGallons.toFixed(1)}gal Seal
+              </Badge>
+            )}
+            {underlaymentSF > 0 && (
+              <Badge variant="outline" className="text-xs bg-teal-500/10 border-teal-500/30" data-testid="badge-underlayment">
+                {underlaymentSF} SF Poly
               </Badge>
             )}
           </div>
@@ -561,6 +852,403 @@ export default function MaterialCalculator({
               </CardContent>
             )}
           </Card>
+
+          {/* Wire Mesh Section - only for area items */}
+          {isArea && (
+            <Card className="border-blue-500/20">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Grid3X3 className="h-4 w-4" />
+                  Wire Mesh Reinforcement
+                  <Switch
+                    checked={value.requiresWireMesh}
+                    onCheckedChange={(checked) => updateValue("requiresWireMesh", checked)}
+                    disabled={readOnly}
+                    data-testid="switch-wire-mesh"
+                  />
+                </CardTitle>
+              </CardHeader>
+              {value.requiresWireMesh && (
+                <CardContent className="py-2 px-4 space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs">Mesh Type</Label>
+                      <Select
+                        value={value.wireMeshType || "6x6_W1.4"}
+                        onValueChange={(val) => updateValue("wireMeshType", val)}
+                        disabled={readOnly}
+                      >
+                        <SelectTrigger data-testid="select-wire-mesh-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(WIRE_MESH_TYPES).map(([key, config]) => (
+                            <SelectItem key={key} value={key}>
+                              {config.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs">Waste Factor %</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="30"
+                        value={value.wireMeshWasteFactor}
+                        onChange={(e) => updateValue("wireMeshWasteFactor", e.target.value)}
+                        placeholder="10"
+                        disabled={readOnly}
+                        data-testid="input-wire-mesh-waste"
+                      />
+                      <span className="text-xs text-muted-foreground">Typical: 10%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-blue-500/10 rounded-md border border-blue-500/20">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Wire Mesh Needed</p>
+                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400" data-testid="text-wire-mesh-result">
+                        {wireMeshRolls} <span className="text-sm font-normal">Rolls (100 SF each)</span>
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <p>Total SF: {(quantity * (1 + parseFloat(value.wireMeshWasteFactor || "10") / 100)).toFixed(0)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {/* Rebar Section */}
+          <Card className="border-purple-500/20">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Ruler className="h-4 w-4" />
+                Rebar Reinforcement
+                <Switch
+                  checked={value.requiresRebar}
+                  onCheckedChange={(checked) => updateValue("requiresRebar", checked)}
+                  disabled={readOnly}
+                  data-testid="switch-rebar"
+                />
+              </CardTitle>
+            </CardHeader>
+            {value.requiresRebar && (
+              <CardContent className="py-2 px-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs">Rebar Size</Label>
+                    <Select
+                      value={value.rebarSize || "#4"}
+                      onValueChange={(val) => updateValue("rebarSize", val)}
+                      disabled={readOnly}
+                    >
+                      <SelectTrigger data-testid="select-rebar-size">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(REBAR_SIZES).map(([key, config]) => (
+                          <SelectItem key={key} value={key}>
+                            {config.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-xs">Spacing (inches)</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="4"
+                      max="24"
+                      value={value.rebarSpacingInches}
+                      onChange={(e) => updateValue("rebarSpacingInches", e.target.value)}
+                      placeholder="12"
+                      disabled={readOnly}
+                      data-testid="input-rebar-spacing"
+                    />
+                    <span className="text-xs text-muted-foreground">Common: 12", 18"</span>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-xs">Waste Factor %</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="30"
+                      value={value.rebarWasteFactor}
+                      onChange={(e) => updateValue("rebarWasteFactor", e.target.value)}
+                      placeholder="10"
+                      disabled={readOnly}
+                      data-testid="input-rebar-waste"
+                    />
+                    <span className="text-xs text-muted-foreground">Typical: 10%</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-purple-500/10 rounded-md border border-purple-500/20">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Rebar Needed</p>
+                    <p className="text-lg font-bold text-purple-600 dark:text-purple-400" data-testid="text-rebar-result">
+                      {rebarCalc.count} <span className="text-sm font-normal">Bars ({value.rebarSize || "#4"})</span>
+                    </p>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground">
+                    <p>Linear Feet: {rebarCalc.linearFeet.toFixed(0)} LF</p>
+                    <p>20' bars each</p>
+                  </div>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Dowels Section */}
+          <Card className="border-gray-500/20">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Ruler className="h-4 w-4" />
+                Expansion Joint Dowels
+                <Switch
+                  checked={value.requiresDowels}
+                  onCheckedChange={(checked) => updateValue("requiresDowels", checked)}
+                  disabled={readOnly}
+                  data-testid="switch-dowels"
+                />
+              </CardTitle>
+            </CardHeader>
+            {value.requiresDowels && (
+              <CardContent className="py-2 px-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">Joint Length (feet)</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={value.jointLengthFeet}
+                      onChange={(e) => updateValue("jointLengthFeet", e.target.value)}
+                      placeholder="100"
+                      disabled={readOnly}
+                      data-testid="input-joint-length"
+                    />
+                    <span className="text-xs text-muted-foreground">Total joint LF</span>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-xs">Dowel Spacing (inches)</Label>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="6"
+                      max="24"
+                      value={value.dowelSpacingInches}
+                      onChange={(e) => updateValue("dowelSpacingInches", e.target.value)}
+                      placeholder="12"
+                      disabled={readOnly}
+                      data-testid="input-dowel-spacing"
+                    />
+                    <span className="text-xs text-muted-foreground">Common: 12"</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-gray-500/10 rounded-md border border-gray-500/20">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Dowels Needed</p>
+                    <p className="text-lg font-bold text-gray-600 dark:text-gray-400" data-testid="text-dowel-result">
+                      {dowelCount} <span className="text-sm font-normal">Dowels</span>
+                    </p>
+                  </div>
+                  <div className="text-right text-xs text-muted-foreground">
+                    <p>@ {value.dowelSpacingInches || "12"}" spacing</p>
+                  </div>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Sealer Section - only for area items */}
+          {isArea && (
+            <Card className="border-green-500/20">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Droplets className="h-4 w-4" />
+                  Sealer / Cure & Seal
+                  <Switch
+                    checked={value.requiresSealer}
+                    onCheckedChange={(checked) => updateValue("requiresSealer", checked)}
+                    disabled={readOnly}
+                    data-testid="switch-sealer"
+                  />
+                </CardTitle>
+              </CardHeader>
+              {value.requiresSealer && (
+                <CardContent className="py-2 px-4 space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <Label className="text-xs">Sealer Type</Label>
+                      <Select
+                        value={value.sealerType || "CURE_SEAL"}
+                        onValueChange={(val) => updateValue("sealerType", val)}
+                        disabled={readOnly}
+                      >
+                        <SelectTrigger data-testid="select-sealer-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(SEALER_TYPES).map(([key, config]) => (
+                            <SelectItem key={key} value={key}>
+                              {config.label} ({config.coverageSFPerGallon} SF/gal)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs">Number of Coats</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="3"
+                        value={value.sealerCoats}
+                        onChange={(e) => updateValue("sealerCoats", e.target.value)}
+                        placeholder="1"
+                        disabled={readOnly}
+                        data-testid="input-sealer-coats"
+                      />
+                      <span className="text-xs text-muted-foreground">1-2 typical</span>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs">Waste Factor %</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="30"
+                        value={value.sealerWasteFactor}
+                        onChange={(e) => updateValue("sealerWasteFactor", e.target.value)}
+                        placeholder="10"
+                        disabled={readOnly}
+                        data-testid="input-sealer-waste"
+                      />
+                      <span className="text-xs text-muted-foreground">Typical: 10%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-green-500/10 rounded-md border border-green-500/20">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Sealer Needed</p>
+                      <p className="text-lg font-bold text-green-600 dark:text-green-400" data-testid="text-sealer-result">
+                        {sealerGallons.toFixed(1)} <span className="text-sm font-normal">Gallons</span>
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <p>{value.sealerCoats || "1"} coat(s)</p>
+                      <p>+ {value.sealerWasteFactor || "10"}% waste</p>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {/* Underlayment Section - only for area items */}
+          {isArea && (
+            <Card className="border-teal-500/20">
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Square className="h-4 w-4" />
+                  Plastic Underlayment / Vapor Barrier
+                  <Switch
+                    checked={value.requiresUnderlayment}
+                    onCheckedChange={(checked) => updateValue("requiresUnderlayment", checked)}
+                    disabled={readOnly}
+                    data-testid="switch-underlayment"
+                  />
+                </CardTitle>
+              </CardHeader>
+              {value.requiresUnderlayment && (
+                <CardContent className="py-2 px-4 space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs">Material Type</Label>
+                      <Select
+                        value={value.underlaymentType || "6MIL_POLY"}
+                        onValueChange={(val) => updateValue("underlaymentType", val)}
+                        disabled={readOnly}
+                      >
+                        <SelectTrigger data-testid="select-underlayment-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(UNDERLAYMENT_TYPES).map(([key, config]) => (
+                            <SelectItem key={key} value={key}>
+                              {config.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs">Overlap (inches)</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="12"
+                        value={value.underlaymentOverlapInches}
+                        onChange={(e) => updateValue("underlaymentOverlapInches", e.target.value)}
+                        placeholder="6"
+                        disabled={readOnly}
+                        data-testid="input-underlayment-overlap"
+                      />
+                      <span className="text-xs text-muted-foreground">Typical: 6"</span>
+                    </div>
+                    
+                    <div>
+                      <Label className="text-xs">Waste Factor %</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="30"
+                        value={value.underlaymentWasteFactor}
+                        onChange={(e) => updateValue("underlaymentWasteFactor", e.target.value)}
+                        placeholder="10"
+                        disabled={readOnly}
+                        data-testid="input-underlayment-waste"
+                      />
+                      <span className="text-xs text-muted-foreground">Typical: 10%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-teal-500/10 rounded-md border border-teal-500/20">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Underlayment Needed</p>
+                      <p className="text-lg font-bold text-teal-600 dark:text-teal-400" data-testid="text-underlayment-result">
+                        {underlaymentSF} <span className="text-sm font-normal">Square Feet</span>
+                      </p>
+                    </div>
+                    <div className="text-right text-xs text-muted-foreground">
+                      <p>Base: {quantity} SF</p>
+                      <p>+ overlap & waste</p>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -701,5 +1389,29 @@ export function getDefaultMaterialCalculatorData(): MaterialCalculatorData {
     excavationWidthInches: "",
     excavationSwellFactor: "25",
     calculatedExcavationYards: "0",
+    requiresWireMesh: false,
+    wireMeshType: "6x6_W1.4",
+    wireMeshWasteFactor: "10",
+    calculatedWireMeshRolls: "0",
+    requiresRebar: false,
+    rebarSize: "#4",
+    rebarSpacingInches: "12",
+    rebarWasteFactor: "10",
+    calculatedRebarCount: "0",
+    calculatedRebarLinearFeet: "0",
+    requiresDowels: false,
+    dowelSpacingInches: "12",
+    jointLengthFeet: "",
+    calculatedDowelCount: "0",
+    requiresSealer: false,
+    sealerType: "CURE_SEAL",
+    sealerCoats: "1",
+    sealerWasteFactor: "10",
+    calculatedSealerGallons: "0",
+    requiresUnderlayment: false,
+    underlaymentType: "6MIL_POLY",
+    underlaymentOverlapInches: "6",
+    underlaymentWasteFactor: "10",
+    calculatedUnderlaymentSF: "0",
   };
 }
