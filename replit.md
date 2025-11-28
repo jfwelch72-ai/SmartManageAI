@@ -6,6 +6,8 @@ The TFR Construction Management Platform is an internal tool designed to manage 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
 
+**Testing Credentials**: For development and testing, use manager2@tfr.com with password TFR2025!
+
 ## System Architecture
 The platform utilizes a modern web stack with a client-server architecture, prioritizing security, scalability, and user experience.
 
