@@ -46,11 +46,21 @@ interface ProjectEquipmentTabProps {
   userRole: string;
 }
 
+const PLAN_STATUS_COLORS: Record<string, string> = {
+  PLANNED: "secondary",
+  ASSIGNED: "default",
+  RENTAL_BOOKED: "default",
+  RENTAL_ACTIVE: "default",
+  COMPLETED: "secondary",
+  CANCELLED: "outline",
+};
+
 function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipmentTabProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showAddPlanDialog, setShowAddPlanDialog] = useState(false);
   
-  const { data: assignedEquipment = [], isLoading } = useQuery<any[]>({
+  const { data: assignedEquipment = [], isLoading: loadingAssigned } = useQuery<any[]>({
     queryKey: ["/api/projects", projectId, "equipment"],
     queryFn: async () => {
       const response = await fetch(`/api/projects/${projectId}/equipment`, {
@@ -62,7 +72,20 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
     enabled: !!projectId,
   });
 
+  const { data: equipmentPlans = [], isLoading: loadingPlans } = useQuery<any[]>({
+    queryKey: ["/api/projects", projectId, "equipment-plans"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}/equipment-plans`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch equipment plans");
+      return response.json();
+    },
+    enabled: !!projectId,
+  });
+
   const canManageEquipment = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "MAINTENANCE_MANAGER";
+  const canManagePlans = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT" || userRole === "ESTIMATOR";
 
   const returnEquipment = useMutation({
     mutationFn: async (equipmentId: string) => {
@@ -82,6 +105,46 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
     },
   });
 
+  const updatePlanStatus = useMutation({
+    mutationFn: async ({ planId, status }: { planId: string; status: string }) => {
+      return apiRequest("PATCH", `/api/projects/${projectId}/equipment-plans/${planId}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Equipment plan updated" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to update plan",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const deletePlan = useMutation({
+    mutationFn: async (planId: string) => {
+      return apiRequest("DELETE", `/api/projects/${projectId}/equipment-plans/${planId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Equipment plan removed" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to remove plan",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const isLoading = loadingAssigned || loadingPlans;
+
+  const totalPlannedCost = equipmentPlans.reduce((sum: number, plan: any) => sum + Number(plan.plannedCost || 0), 0);
+  const ownedPlans = equipmentPlans.filter((p: any) => p.source === "OWNED");
+  const rentalPlans = equipmentPlans.filter((p: any) => p.source === "RENTAL");
+
   if (isLoading) {
     return (
       <Card>
@@ -93,111 +156,439 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Assigned Equipment
-          </CardTitle>
-          <CardDescription>
-            Equipment currently assigned to this project
-          </CardDescription>
-        </div>
-        {canManageEquipment && (
-          <Button asChild size="sm" data-testid="button-manage-equipment">
-            <Link href="/equipment">
-              <Settings2 className="h-4 w-4 mr-2" />
-              Manage Equipment
-            </Link>
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        {assignedEquipment.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Truck className="h-12 w-12 mx-auto mb-4 opacity-20" />
-            <p>No equipment currently assigned to this project</p>
-            {canManageEquipment && (
-              <p className="text-sm mt-2">
-                <Link href="/equipment" className="text-primary hover:underline">
-                  Go to Equipment
-                </Link> to assign equipment to this project
-              </p>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Ruler className="h-5 w-5" />
+              Equipment Plan
+            </CardTitle>
+            <CardDescription>
+              Planned equipment for this project (from bid or manually added)
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {totalPlannedCost > 0 && (
+              <Badge variant="secondary" className="text-base">
+                Total: ${totalPlannedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Badge>
+            )}
+            {canManagePlans && (
+              <Button size="sm" onClick={() => setShowAddPlanDialog(true)} data-testid="button-add-equipment-plan">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Equipment
+              </Button>
             )}
           </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Equipment</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Make/Model</TableHead>
-                <TableHead>Assigned</TableHead>
-                <TableHead>Expected Return</TableHead>
-                <TableHead>Status</TableHead>
-                {canManageEquipment && <TableHead>Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {assignedEquipment.map((item: any) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <Link href={`/equipment/${item.equipmentCode}`} className="text-primary hover:underline font-medium">
-                      {item.name}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">{item.equipmentCode}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{item.type}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {item.make && item.model 
-                      ? `${item.make} ${item.model}` 
-                      : item.make || item.model || "-"
-                    }
-                    {item.year && <span className="text-muted-foreground ml-1">({item.year})</span>}
-                  </TableCell>
-                  <TableCell>
-                    {item.assignedAt 
-                      ? format(new Date(item.assignedAt), "MMM d, yyyy")
-                      : "-"
-                    }
-                  </TableCell>
-                  <TableCell>
-                    {item.expectedReturnDate
-                      ? format(new Date(item.expectedReturnDate), "MMM d, yyyy")
-                      : "-"
-                    }
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={item.status === "ASSIGNED" ? "default" : "secondary"}>
-                      {item.status}
-                    </Badge>
-                  </TableCell>
-                  {canManageEquipment && (
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => returnEquipment.mutate(item.id)}
-                          disabled={returnEquipment.isPending}
-                          data-testid={`button-return-${item.equipmentCode}`}
-                        >
-                          <Undo2 className="h-4 w-4 mr-1" />
-                          Return
-                        </Button>
-                      </div>
-                    </TableCell>
-                  )}
+        </CardHeader>
+        <CardContent>
+          {equipmentPlans.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Ruler className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p>No equipment planned for this project</p>
+              {canManagePlans && (
+                <p className="text-sm mt-2">
+                  Equipment plans are carried over when converting a bid to a project
+                </p>
+              )}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Equipment</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Planned Days</TableHead>
+                  <TableHead>Rate</TableHead>
+                  <TableHead>Planned Cost</TableHead>
+                  <TableHead>Status</TableHead>
+                  {canManagePlans && <TableHead>Actions</TableHead>}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {equipmentPlans.map((plan: any) => (
+                  <TableRow key={plan.id}>
+                    <TableCell className="font-medium">{plan.equipmentName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{plan.equipmentType}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={plan.source === "OWNED" ? "default" : "secondary"}>
+                        {plan.source}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{plan.plannedDays || plan.plannedHours ? `${plan.plannedDays || "-"} days / ${plan.plannedHours || "-"} hrs` : "-"}</TableCell>
+                    <TableCell>
+                      {plan.dailyRate ? `$${Number(plan.dailyRate).toFixed(2)}/day` : plan.hourlyRate ? `$${Number(plan.hourlyRate).toFixed(2)}/hr` : "-"}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={plan.status}
+                        onValueChange={(value) => updatePlanStatus.mutate({ planId: plan.id, status: value })}
+                        disabled={!canManagePlans || updatePlanStatus.isPending}
+                      >
+                        <SelectTrigger className="w-32" data-testid={`select-plan-status-${plan.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PLANNED">Planned</SelectItem>
+                          <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                          <SelectItem value="RENTAL_BOOKED">Rental Booked</SelectItem>
+                          <SelectItem value="RENTAL_ACTIVE">Rental Active</SelectItem>
+                          <SelectItem value="COMPLETED">Completed</SelectItem>
+                          <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    {canManagePlans && (
+                      <TableCell>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" data-testid={`button-delete-plan-${plan.id}`}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {equipmentPlans.length > 0 && (
+            <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
+              <div className="p-3 rounded-md bg-muted/50">
+                <div className="text-muted-foreground">Owned Equipment</div>
+                <div className="text-lg font-semibold">{ownedPlans.length} items</div>
+                <div className="text-muted-foreground">
+                  ${ownedPlans.reduce((sum: number, p: any) => sum + Number(p.plannedCost || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-muted/50">
+                <div className="text-muted-foreground">Rental Equipment</div>
+                <div className="text-lg font-semibold">{rentalPlans.length} items</div>
+                <div className="text-muted-foreground">
+                  ${rentalPlans.reduce((sum: number, p: any) => sum + Number(p.plannedCost || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-muted/50">
+                <div className="text-muted-foreground">Total Planned Cost</div>
+                <div className="text-lg font-semibold">
+                  ${totalPlannedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5" />
+              Assigned Equipment
+            </CardTitle>
+            <CardDescription>
+              Equipment currently assigned to this project
+            </CardDescription>
+          </div>
+          {canManageEquipment && (
+            <Button asChild size="sm" data-testid="button-manage-equipment">
+              <Link href="/equipment">
+                <Settings2 className="h-4 w-4 mr-2" />
+                Manage Equipment
+              </Link>
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {assignedEquipment.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Truck className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p>No equipment currently assigned to this project</p>
+              {canManageEquipment && (
+                <p className="text-sm mt-2">
+                  <Link href="/equipment" className="text-primary hover:underline">
+                    Go to Equipment
+                  </Link> to assign equipment to this project
+                </p>
+              )}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Equipment</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Make/Model</TableHead>
+                  <TableHead>Assigned</TableHead>
+                  <TableHead>Expected Return</TableHead>
+                  <TableHead>Status</TableHead>
+                  {canManageEquipment && <TableHead>Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assignedEquipment.map((item: any) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Link href={`/equipment/${item.equipmentCode}`} className="text-primary hover:underline font-medium">
+                        {item.name}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">{item.equipmentCode}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{item.type}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {item.make && item.model 
+                        ? `${item.make} ${item.model}` 
+                        : item.make || item.model || "-"
+                      }
+                      {item.year && <span className="text-muted-foreground ml-1">({item.year})</span>}
+                    </TableCell>
+                    <TableCell>
+                      {item.assignedAt 
+                        ? format(new Date(item.assignedAt), "MMM d, yyyy")
+                        : "-"
+                      }
+                    </TableCell>
+                    <TableCell>
+                      {item.expectedReturnDate
+                        ? format(new Date(item.expectedReturnDate), "MMM d, yyyy")
+                        : "-"
+                      }
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={item.status === "ASSIGNED" ? "default" : "secondary"}>
+                        {item.status}
+                      </Badge>
+                    </TableCell>
+                    {canManageEquipment && (
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => returnEquipment.mutate(item.id)}
+                            disabled={returnEquipment.isPending}
+                            data-testid={`button-return-${item.equipmentCode}`}
+                          >
+                            <Undo2 className="h-4 w-4 mr-1" />
+                            Return
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <AddEquipmentPlanDialog
+        open={showAddPlanDialog}
+        onOpenChange={setShowAddPlanDialog}
+        projectId={projectId}
+      />
+    </div>
+  );
+}
+
+interface AddEquipmentPlanDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+}
+
+function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: AddEquipmentPlanDialogProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [source, setSource] = useState<"OWNED" | "RENTAL">("OWNED");
+  const [equipmentName, setEquipmentName] = useState("");
+  const [equipmentType, setEquipmentType] = useState("");
+  const [plannedDays, setPlannedDays] = useState("");
+  const [dailyRate, setDailyRate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const createPlan = useMutation({
+    mutationFn: async () => {
+      const days = plannedDays ? Number(plannedDays) : null;
+      const rate = dailyRate ? Number(dailyRate) : null;
+      const cost = days && rate ? days * rate : null;
+      
+      return apiRequest("POST", `/api/projects/${projectId}/equipment-plans`, {
+        source,
+        equipmentName,
+        equipmentType,
+        plannedDays: days,
+        dailyRate: rate,
+        plannedCost: cost,
+        notes: notes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Equipment added to plan" });
+      onOpenChange(false);
+      resetForm();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to add equipment",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setSource("OWNED");
+    setEquipmentName("");
+    setEquipmentType("");
+    setPlannedDays("");
+    setDailyRate("");
+    setNotes("");
+  };
+
+  const calculatedCost = plannedDays && dailyRate ? Number(plannedDays) * Number(dailyRate) : 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Equipment to Plan</DialogTitle>
+          <DialogDescription>Add planned equipment for this project</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Button
+              type="button"
+              variant={source === "OWNED" ? "default" : "outline"}
+              onClick={() => setSource("OWNED")}
+              data-testid="button-source-owned"
+            >
+              <Truck className="h-4 w-4 mr-2" />
+              Owned
+            </Button>
+            <Button
+              type="button"
+              variant={source === "RENTAL" ? "default" : "outline"}
+              onClick={() => setSource("RENTAL")}
+              data-testid="button-source-rental"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Rental
+            </Button>
+          </div>
+
+          <div>
+            <Label>Equipment Name</Label>
+            <Input
+              value={equipmentName}
+              onChange={(e) => setEquipmentName(e.target.value)}
+              placeholder="e.g., CAT 320 Excavator"
+              data-testid="input-plan-equipment-name"
+            />
+          </div>
+
+          <div>
+            <Label>Equipment Type</Label>
+            <Select value={equipmentType} onValueChange={setEquipmentType}>
+              <SelectTrigger data-testid="select-plan-equipment-type">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Heavy Equipment">Heavy Equipment</SelectItem>
+                <SelectItem value="Vehicles">Vehicles</SelectItem>
+                <SelectItem value="Power Tools">Power Tools</SelectItem>
+                <SelectItem value="Hand Tools">Hand Tools</SelectItem>
+                <SelectItem value="Trailers">Trailers</SelectItem>
+                <SelectItem value="Concrete Equipment">Concrete Equipment</SelectItem>
+                <SelectItem value="Excavation Equipment">Excavation Equipment</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Planned Days</Label>
+              <Input
+                type="number"
+                value={plannedDays}
+                onChange={(e) => setPlannedDays(e.target.value)}
+                placeholder="0"
+                data-testid="input-plan-days"
+              />
+            </div>
+            <div>
+              <Label>Daily Rate ($)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={dailyRate}
+                onChange={(e) => setDailyRate(e.target.value)}
+                placeholder="0.00"
+                data-testid="input-plan-daily-rate"
+              />
+            </div>
+          </div>
+
+          {calculatedCost > 0 && (
+            <div className="p-3 rounded-md bg-muted text-center">
+              <div className="text-sm text-muted-foreground">Estimated Cost</div>
+              <div className="text-lg font-bold">
+                ${calculatedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label>Notes (Optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Additional notes..."
+              data-testid="input-plan-notes"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => createPlan.mutate()}
+            disabled={!equipmentName || !equipmentType || createPlan.isPending}
+            data-testid="button-submit-plan"
+          >
+            {createPlan.isPending ? "Adding..." : "Add to Plan"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

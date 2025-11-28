@@ -1485,6 +1485,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[Bid Conversion] Transferred handoff packet to project`);
       }
 
+      // Transfer equipment selections to project equipment plans
+      const { bidEquipmentSelections: equipSelectionsTable, projectEquipmentPlans: equipPlansTable } = await import("@shared/schema");
+      
+      const bidEquipmentSelections = await db
+        .select()
+        .from(equipSelectionsTable)
+        .where(eq(equipSelectionsTable.bidId, bid.id));
+      
+      if (bidEquipmentSelections.length > 0) {
+        for (const selection of bidEquipmentSelections) {
+          await db.insert(equipPlansTable).values({
+            projectId: newProject.id,
+            bidEquipmentSelectionId: selection.id,
+            source: selection.source,
+            status: "PLANNED",
+            equipmentId: selection.equipmentId,
+            rentalCatalogId: selection.rentalCatalogId,
+            rentalVendorId: selection.rentalVendorId,
+            equipmentName: selection.equipmentName,
+            equipmentType: selection.equipmentType,
+            plannedHours: selection.plannedHours,
+            plannedDays: selection.plannedDays,
+            plannedStartDate: selection.startDate,
+            plannedEndDate: selection.endDate,
+            plannedCost: selection.estimatedCost,
+            hourlyRate: selection.hourlyRate,
+            dailyRate: selection.dailyRate,
+            notes: selection.notes,
+            createdById: req.user!.id,
+          });
+        }
+        console.log(`[Bid Conversion] Transferred ${bidEquipmentSelections.length} equipment selections to project equipment plans`);
+      }
+
       // Delete the bid after converting (SET NULL on estimates.bidId preserves traceability)
       await db.delete(bids).where(eq(bids.code, req.params.code));
 
@@ -1521,7 +1555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "CREATE",
         entityType: "project",
         entityId: newProject.id,
-        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, and ${matQuotes.length} selected material quotes`,
+        newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, ${matQuotes.length} selected material quotes, and ${bidEquipmentSelections.length} equipment plans`,
       }, req);
 
       res.status(201).json(newProject);
@@ -10035,6 +10069,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(projectEquipment);
     } catch (error) {
       console.error("Get project equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get project equipment plans (from bid or manually added)
+  app.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      
+      const plans = await db
+        .select()
+        .from(projectEquipmentPlans)
+        .where(eq(projectEquipmentPlans.projectId, projectId))
+        .orderBy(projectEquipmentPlans.createdAt);
+      
+      res.json(plans);
+    } catch (error) {
+      console.error("Get project equipment plans error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Add equipment plan to project
+  app.post("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const userId = req.user?.id;
+      
+      // Verify project exists
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const { source, equipmentName, equipmentType } = req.body;
+      if (!source || !equipmentName || !equipmentType) {
+        return res.status(400).json({ error: "Source, equipment name, and type are required" });
+      }
+      
+      const insertData = {
+        projectId,
+        source: req.body.source,
+        status: "PLANNED",
+        equipmentId: req.body.equipmentId || null,
+        rentalCatalogId: req.body.rentalCatalogId || null,
+        rentalVendorId: req.body.rentalVendorId || null,
+        equipmentName: req.body.equipmentName,
+        equipmentType: req.body.equipmentType,
+        plannedHours: req.body.plannedHours != null ? String(req.body.plannedHours) : null,
+        plannedDays: req.body.plannedDays != null ? Number(req.body.plannedDays) : null,
+        plannedStartDate: req.body.plannedStartDate ? new Date(req.body.plannedStartDate) : null,
+        plannedEndDate: req.body.plannedEndDate ? new Date(req.body.plannedEndDate) : null,
+        plannedCost: req.body.plannedCost != null ? String(req.body.plannedCost) : null,
+        hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
+        dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
+        notes: req.body.notes || null,
+        createdById: userId,
+      };
+      
+      const [newPlan] = await db.insert(projectEquipmentPlans).values(insertData).returning();
+      
+      await logCreate("project_equipment_plans", newPlan.id, userId!, { projectId, equipmentName: insertData.equipmentName });
+      
+      res.status(201).json(newPlan);
+    } catch (error) {
+      console.error("Create project equipment plan error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update project equipment plan
+  app.patch("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId, planId } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select()
+        .from(projectEquipmentPlans)
+        .where(and(
+          eq(projectEquipmentPlans.id, planId),
+          eq(projectEquipmentPlans.projectId, projectId)
+        ));
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment plan not found" });
+      }
+      
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (req.body.source !== undefined) updateData.source = req.body.source;
+      if (req.body.status !== undefined) updateData.status = req.body.status;
+      if (req.body.equipmentId !== undefined) updateData.equipmentId = req.body.equipmentId || null;
+      if (req.body.assignmentId !== undefined) updateData.assignmentId = req.body.assignmentId || null;
+      if (req.body.rentalCatalogId !== undefined) updateData.rentalCatalogId = req.body.rentalCatalogId || null;
+      if (req.body.rentalVendorId !== undefined) updateData.rentalVendorId = req.body.rentalVendorId || null;
+      if (req.body.equipmentName !== undefined) updateData.equipmentName = req.body.equipmentName;
+      if (req.body.equipmentType !== undefined) updateData.equipmentType = req.body.equipmentType;
+      if (req.body.plannedHours !== undefined) updateData.plannedHours = req.body.plannedHours != null ? String(req.body.plannedHours) : null;
+      if (req.body.plannedDays !== undefined) updateData.plannedDays = req.body.plannedDays != null ? Number(req.body.plannedDays) : null;
+      if (req.body.plannedStartDate !== undefined) updateData.plannedStartDate = req.body.plannedStartDate ? new Date(req.body.plannedStartDate) : null;
+      if (req.body.plannedEndDate !== undefined) updateData.plannedEndDate = req.body.plannedEndDate ? new Date(req.body.plannedEndDate) : null;
+      if (req.body.plannedCost !== undefined) updateData.plannedCost = req.body.plannedCost != null ? String(req.body.plannedCost) : null;
+      if (req.body.actualHours !== undefined) updateData.actualHours = req.body.actualHours != null ? String(req.body.actualHours) : null;
+      if (req.body.actualDays !== undefined) updateData.actualDays = req.body.actualDays != null ? Number(req.body.actualDays) : null;
+      if (req.body.actualStartDate !== undefined) updateData.actualStartDate = req.body.actualStartDate ? new Date(req.body.actualStartDate) : null;
+      if (req.body.actualEndDate !== undefined) updateData.actualEndDate = req.body.actualEndDate ? new Date(req.body.actualEndDate) : null;
+      if (req.body.actualCost !== undefined) updateData.actualCost = req.body.actualCost != null ? String(req.body.actualCost) : null;
+      if (req.body.hourlyRate !== undefined) updateData.hourlyRate = req.body.hourlyRate != null ? String(req.body.hourlyRate) : null;
+      if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
+      if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
+      
+      const [updated] = await db
+        .update(projectEquipmentPlans)
+        .set(updateData)
+        .where(eq(projectEquipmentPlans.id, planId))
+        .returning();
+      
+      await logUpdate("project_equipment_plans", planId, userId!, JSON.stringify(existing), JSON.stringify(updated));
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Update project equipment plan error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete project equipment plan
+  app.delete("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { projectId, planId } = req.params;
+      const userId = req.user?.id;
+      
+      const [existing] = await db.select()
+        .from(projectEquipmentPlans)
+        .where(and(
+          eq(projectEquipmentPlans.id, planId),
+          eq(projectEquipmentPlans.projectId, projectId)
+        ));
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment plan not found" });
+      }
+      
+      await db.delete(projectEquipmentPlans).where(eq(projectEquipmentPlans.id, planId));
+      
+      await logDelete("project_equipment_plans", planId, userId!, { equipmentName: existing.equipmentName });
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete project equipment plan error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
