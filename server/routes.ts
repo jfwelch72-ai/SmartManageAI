@@ -42,7 +42,7 @@ import {
   revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, desc, sql, and, or, isNull, inArray } from "drizzle-orm";
+import { eq, ne, desc, sql, and, or, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
@@ -11385,7 +11385,7 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get available equipment for bid selection (owned + rental catalog)
   app.get("/api/equipment-for-selection", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
-      // Get owned equipment with active rate profiles
+      // Get owned equipment with active rate profiles (exclude RETIRED status)
       const ownedEquipment = await db
         .select({
           id: equipment.id,
@@ -11405,7 +11405,7 @@ If the make/model is unknown, provide general best practices for the equipment t
           eq(equipmentRateProfiles.equipmentId, equipment.id),
           eq(equipmentRateProfiles.isActive, true)
         ))
-        .where(eq(equipment.isActive, true))
+        .where(ne(equipment.status, "RETIRED"))
         .orderBy(equipment.type, equipment.name);
       
       // Get rental equipment catalog (active items)
