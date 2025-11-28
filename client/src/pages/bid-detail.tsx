@@ -3,6 +3,7 @@ import AppHeader from "@/components/AppHeader";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import FileUploadZone from "@/components/FileUploadZone";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2, UserCog, Truck, Clock, Wrench } from "lucide-react";
+import { Building2, MapPin, Mail, Phone, Calendar, DollarSign, Plus, Edit, Trash2, Users, FileText, Download, Calculator, TrendingUp, Package, CheckCircle2, UserCog, Truck, Clock, Wrench, ChevronRight, Check, CircleDot } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import JobInformationForm from "@/components/JobInformationForm";
 import { SubcontractorScopeReportDialog } from "@/components/SubcontractorScopeReport";
@@ -123,6 +124,12 @@ export default function BidDetailPage() {
   const [showEquipmentDialog, setShowEquipmentDialog] = useState(false);
   const [editingEquipmentSelection, setEditingEquipmentSelection] = useState<BidEquipmentSelection | null>(null);
   const [selectedEquipmentSource, setSelectedEquipmentSource] = useState<"OWNED" | "RENTAL">("OWNED");
+  
+  // Cost Builder step state
+  type CostBuilderStep = 1 | 2 | 3 | 4 | 5;
+  const [currentStep, setCurrentStep] = useState<CostBuilderStep>(1);
+  const [overheadPercent, setOverheadPercent] = useState<number>(10);
+  const [profitPercent, setProfitPercent] = useState<number>(15);
   
   const bidCode = params?.code || "";
   const { data: bid, isLoading } = useBid(bidCode);
@@ -648,6 +655,10 @@ export default function BidDetailPage() {
     setShowEditBidDialog(true);
   };
 
+  const onSubmitEditBid = (data: BidEditFormValues) => {
+    updateBidMutation.mutate(data);
+  };
+
   const handleAddQuote = () => {
     setEditingQuote(null);
     setUploadedFileData(null);
@@ -1034,6 +1045,53 @@ export default function BidDetailPage() {
     .filter(Boolean)
     .join(', ') || 'No location specified';
 
+  // Cost aggregation for all sections
+  const totalMaterialCost = materialQuotes
+    .filter((q: any) => q.isSelected)
+    .reduce((sum, q) => sum + Number(q.cost || 0), 0);
+  
+  const totalEquipmentCostCalc = equipmentSelections.reduce((sum, sel) => 
+    sum + parseFloat(sel.estimatedCost || "0"), 0);
+  
+  const estimateTotals = estimateData?.estimate?.totals || {
+    laborCost: 0,
+    materialCost: 0,
+    equipmentCost: 0,
+    consumablesCost: 0,
+    subcontractCost: 0,
+    totalCost: 0,
+    laborHours: 0,
+  };
+  
+  const totalSubcontractorCost = quotes
+    .filter((q: any) => q.isSelected)
+    .reduce((sum, q) => sum + Number(q.quoteAmount || 0), 0);
+
+  // Direct cost is the sum of all cost categories
+  const directCost = totalMaterialCost + totalEquipmentCostCalc + estimateTotals.laborCost + totalSubcontractorCost;
+  const overheadAmount = directCost * (overheadPercent / 100);
+  const subtotalWithOverhead = directCost + overheadAmount;
+  const profitAmount = subtotalWithOverhead * (profitPercent / 100);
+  const finalBidAmount = subtotalWithOverhead + profitAmount;
+
+  // Step completion status
+  const stepStatus = {
+    1: materialQuotes.length > 0,
+    2: equipmentSelections.length > 0,
+    3: (estimateData?.estimate?.lineItems?.length || 0) > 0,
+    4: quotes.length > 0,
+    5: true, // Summary is always accessible
+  };
+
+  // Step definitions
+  const steps = [
+    { id: 1, name: "Materials & Supplies", icon: Package, cost: totalMaterialCost },
+    { id: 2, name: "Equipment", icon: Truck, cost: totalEquipmentCostCalc },
+    { id: 3, name: "Scope of Work", icon: FileText, cost: estimateTotals.laborCost + estimateTotals.materialCost },
+    { id: 4, name: "Subcontractors", icon: Users, cost: totalSubcontractorCost },
+    { id: 5, name: "Bid Summary", icon: Calculator, cost: finalBidAmount },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
@@ -1060,689 +1118,846 @@ export default function BidDetailPage() {
               </Badge>
             </div>
             <h1 className="text-2xl font-bold text-foreground mb-2">{bid.name}</h1>
+            <p className="text-sm text-muted-foreground">{bid.clientName} • {locationString}</p>
           </div>
-          <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
-            Mark as Awarded
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleEditBid} data-testid="button-edit-bid-header">
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Bid Info
+            </Button>
+            <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
+              Mark as Awarded
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <CardTitle>Bid Information</CardTitle>
-                {(user?.role === "ADMIN" || user?.role === "MANAGER") && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={handleEditBid}
-                    data-testid="button-edit-bid"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                )}
+        {/* Cost Builder Stepper Layout */}
+        <div className="flex gap-6">
+          {/* Left Sidebar - Stepper Navigation */}
+          <div className="w-72 flex-shrink-0">
+            <Card className="sticky top-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Cost Builder</CardTitle>
+                <CardDescription>Build your bid step by step</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Bid Amount</p>
-                    <p className="text-lg font-bold font-mono">
-                      {bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : 'TBD'}
-                    </p>
+              <CardContent className="p-0">
+                <nav className="flex flex-col">
+                  {steps.map((step, index) => {
+                    const StepIcon = step.icon;
+                    const isActive = currentStep === step.id;
+                    const isCompleted = stepStatus[step.id as keyof typeof stepStatus];
+                    
+                    return (
+                      <button
+                        key={step.id}
+                        onClick={() => setCurrentStep(step.id as CostBuilderStep)}
+                        className={`flex items-center gap-3 px-4 py-3 text-left border-l-2 transition-colors ${
+                          isActive 
+                            ? 'border-l-primary bg-primary/5 text-foreground' 
+                            : 'border-l-transparent hover:bg-muted/50 text-muted-foreground'
+                        }`}
+                        data-testid={`step-${step.id}`}
+                      >
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                          isActive 
+                            ? 'bg-primary text-primary-foreground' 
+                            : isCompleted 
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                              : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {isCompleted && !isActive ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <StepIcon className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isActive ? 'text-foreground' : ''}`}>
+                            {step.name}
+                          </p>
+                          {step.cost > 0 && (
+                            <p className="text-xs font-mono text-muted-foreground">
+                              ${step.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </p>
+                          )}
+                        </div>
+                        {isActive && (
+                          <ChevronRight className="w-4 h-4 text-primary" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
+                
+                {/* Running Total */}
+                <div className="p-4 border-t bg-muted/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Direct Cost</span>
+                    <span className="font-mono text-sm">${directCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">+ Overhead ({overheadPercent}%)</span>
+                    <span className="font-mono text-sm">${overheadAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">+ Profit ({profitPercent}%)</span>
+                    <span className="font-mono text-sm text-green-600 dark:text-green-400">${profitAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <span className="text-sm font-semibold">Final Bid</span>
+                    <span className="font-mono font-bold text-lg">${finalBidAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                   </div>
                 </div>
-                <div className="flex items-start gap-3">
-                  <Calendar className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Due Date</p>
-                    <p className="text-sm text-muted-foreground">
-                      {bid.dueDate ? format(new Date(bid.dueDate), 'PPP') : 'Not set'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Building2 className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Client</p>
-                    <p className="text-sm text-muted-foreground">{bid.clientName}</p>
-                  </div>
-                </div>
-                {bid.clientContactEmail && (
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-muted-foreground mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium">Contact Email</p>
-                      <p className="text-sm text-muted-foreground">{bid.clientContactEmail}</p>
-                    </div>
-                  </div>
-                )}
-                {bid.clientContactPhone && (
-                  <div className="flex items-start gap-3">
-                    <Phone className="w-5 h-5 text-muted-foreground mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium">Contact Phone</p>
-                      <p className="text-sm text-muted-foreground">{bid.clientContactPhone}</p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium">Location</p>
-                    <p className="text-sm text-muted-foreground">{locationString}</p>
-                  </div>
-                </div>
-                {bid.estimatorId && (
-                  <div>
-                    <p className="text-sm font-medium mb-1">Estimator</p>
-                    <p className="text-sm text-muted-foreground">Estimator ID: {bid.estimatorId}</p>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
 
-          {bid.description && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Description</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">{bid.description}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card data-testid="card-bid-estimate">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Calculator className="w-5 h-5" />
-                  Bid Estimate
-                </CardTitle>
-                <CardDescription>Cost breakdown and profit analysis for this bid</CardDescription>
-              </div>
-              {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                <Button 
-                  onClick={() => createEstimateMutation.mutate()} 
-                  disabled={createEstimateMutation.isPending}
-                  size="sm" 
-                  data-testid="button-create-estimate"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Estimate
-                </Button>
-              )}
-              {estimate && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
-                  data-testid="button-view-estimate"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  View Details
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {estimateLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
-              ) : !estimate ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No estimate created yet</p>
-                  <p className="text-sm mt-2">Create an estimate to track costs and profit margins</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <DollarSign className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Total Estimate</p>
-                      </div>
-                      <p className="text-xl font-bold font-mono" data-testid="text-estimate-total">
-                        ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.lineItems.length} line items
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Labor Cost</p>
-                      </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <FileText className="w-4 h-4 text-muted-foreground" />
-                        <p className="text-sm font-medium">Material Cost</p>
-                      </div>
-                      <p className="text-lg font-bold font-mono">
-                        ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {estimate.totals.totalCost > 0 
-                          ? `${((estimate.totals.materialCost / estimate.totals.totalCost) * 100).toFixed(1)}% of total`
-                          : "0% of total"}
-                      </p>
-                    </div>
-                    <div className="p-4 bg-muted rounded-md">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
-                          {estimate.status}
-                        </Badge>
-                      </div>
-                      {(() => {
-                        // Calculate profit based on formula: directCost -> overhead -> profit
-                        const directCost = estimate.totals.materialCost + 
-                                          estimate.totals.laborCost + 
-                                          estimate.totals.equipmentCost + 
-                                          estimate.totals.consumablesCost + 
-                                          estimate.totals.subcontractCost;
-                        const overheadPercent = 10; // Default overhead percentage
-                        const profitMarginPercent = 15; // Default profit margin percentage
-                        const totalOverhead = directCost * (overheadPercent / 100);
-                        const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
-                        return (
-                          <>
-                            <p className="text-lg font-bold font-mono text-green-600 dark:text-green-400" data-testid="text-profit-margin">
-                              ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Profit margin ({profitMarginPercent}%)
-                            </p>
-                          </>
-                        );
-                      })()}
-                    </div>
+          {/* Right Content - Active Step */}
+          <div className="flex-1 min-w-0 space-y-6">
+            
+            {/* Step 1: Materials & Supplies */}
+            {currentStep === 1 && (
+              <Card data-testid="card-material-quotes">
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Package className="w-5 h-5" />
+                      Step 1: Material & Supply Quotes
+                    </CardTitle>
+                    <CardDescription>Get quotes from suppliers for materials and supplies needed for the project</CardDescription>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-primary/10 rounded-md border border-primary/20">
-                    <span className="text-sm font-medium">Base Bid Amount:</span>
-                    <span className="text-lg font-bold font-mono">
-                      ${(estimate.baseBidAmount || estimate.totals.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-subcontractor-quotes">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Subcontractor Quotes
-                </CardTitle>
-                <CardDescription>Track quotes from subcontractors for cost estimation</CardDescription>
-              </div>
-              {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                <Button onClick={handleAddQuote} size="sm" data-testid="button-add-quote">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Quote
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {quotesLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading quotes...</div>
-              ) : quotes.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No subcontractor quotes added yet
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-muted rounded-md">
-                    <span className="text-sm font-medium">Total from Quotes:</span>
-                    <span className="text-lg font-bold font-mono">${totalQuotes.toLocaleString()}</span>
-                  </div>
-                  <div className="space-y-3">
-                    {quotes.map((quote) => (
-                      <div 
-                        key={quote.id} 
-                        className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
-                          (quote as any).isSelected 
-                            ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
-                            : ''
-                        }`} 
-                        data-testid={`quote-${quote.id}`}
-                      >
-                        <div className="flex gap-3 flex-1">
-                          <div className="pt-1">
-                            <Checkbox
-                              checked={(quote as any).isSelected || false}
-                              onCheckedChange={(checked) => {
-                                toggleQuoteSelection.mutate({ 
-                                  quoteId: quote.id, 
-                                  isSelected: !!checked 
-                                });
-                              }}
-                              disabled={toggleQuoteSelection.isPending}
-                              data-testid={`checkbox-quote-${quote.id}`}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-medium">{quote.subcontractorName}</h4>
-                              <Badge variant="outline" className="font-mono">
-                                ${Number(quote.quoteAmount).toLocaleString()}
-                              </Badge>
-                              {(quote as any).isSelected && (
-                                <Badge variant="default" className="gap-1 bg-green-600">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Selected
-                                </Badge>
-                              )}
-                              {quote.fileUrl && (
-                                <Badge variant="secondary" className="gap-1">
-                                  <FileText className="w-3 h-3" />
-                                  Document
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-2">{quote.scopeOfWork}</p>
-                            {(quote.leadTime || quote.estimatedCompletionTime) && (
-                              <div className="flex gap-4 mb-2">
-                                {quote.leadTime && (
-                                  <div className="text-xs">
-                                    <span className="font-medium">Lead Time:</span>{' '}
-                                    <span className="text-muted-foreground">{quote.leadTime}</span>
-                                  </div>
-                                )}
-                                {quote.estimatedCompletionTime && (
-                                  <div className="text-xs">
-                                    <span className="font-medium">Est. Completion:</span>{' '}
-                                    <span className="text-muted-foreground">{quote.estimatedCompletionTime}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {(quote.contactName || quote.contactEmail || quote.contactPhone) && (
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                {quote.contactName && <p>Contact: {quote.contactName}</p>}
-                                {quote.contactEmail && <p>Email: {quote.contactEmail}</p>}
-                                {quote.contactPhone && <p>Phone: {quote.contactPhone}</p>}
-                              </div>
-                            )}
-                            {quote.notes && (
-                              <p className="text-xs text-muted-foreground mt-2 italic">{quote.notes}</p>
-                            )}
-                            {quote.fileUrl && (
-                              <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                                <FileText className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground flex-1 truncate">
-                                  {quote.fileName || "Quote document"}
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    try {
-                                      const response = await apiRequest("POST", "/api/objects/download", {
-                                        fileUrl: quote.fileUrl,
-                                      });
-                                      const data = await response.json();
-                                      window.open(data.downloadURL, '_blank');
-                                    } catch (error) {
-                                      toast({ 
-                                        title: "Error", 
-                                        description: "Failed to download document", 
-                                        variant: "destructive" 
-                                      });
-                                    }
+                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                    <Button onClick={handleAddMaterialQuote} size="sm" data-testid="button-add-material-quote">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Quote
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {materialQuotesLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading material quotes...</div>
+                  ) : materialQuotes.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Package className="w-12 h-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No material quotes added yet</p>
+                      <p className="text-sm mb-4">Add quotes from suppliers to track material costs</p>
+                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                        <Button onClick={handleAddMaterialQuote} variant="outline" data-testid="button-add-first-material-quote">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Your First Quote
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-muted rounded-md">
+                        <span className="text-sm font-medium">Selected Material Cost:</span>
+                        <span className="text-lg font-bold font-mono">${totalMaterialCost.toLocaleString()}</span>
+                      </div>
+                      <div className="space-y-3">
+                        {materialQuotes.map((quote) => (
+                          <div 
+                            key={quote.id} 
+                            className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                              (quote as any).isSelected 
+                                ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
+                                : ''
+                            }`}
+                            data-testid={`material-quote-${quote.id}`}
+                          >
+                            <div className="flex gap-3 flex-1">
+                              <div className="pt-1">
+                                <Checkbox
+                                  checked={(quote as any).isSelected || false}
+                                  onCheckedChange={(checked) => {
+                                    toggleMaterialQuoteSelection.mutate({ 
+                                      quoteId: quote.id, 
+                                      isSelected: !!checked 
+                                    });
                                   }}
-                                  data-testid={`button-download-quote-${quote.id}`}
+                                  disabled={toggleMaterialQuoteSelection.isPending}
+                                  data-testid={`checkbox-material-quote-${quote.id}`}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                  <h4 className="font-medium">{quote.materialName}</h4>
+                                  <Badge variant="outline" className="font-mono">
+                                    ${Number(quote.cost).toLocaleString()}
+                                  </Badge>
+                                  {(quote as any).isSelected && (
+                                    <Badge variant="default" className="gap-1 bg-green-600">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Selected
+                                    </Badge>
+                                  )}
+                                </div>
+                                {quote.description && (
+                                  <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
+                                )}
+                                {quote.supplierName && (
+                                  <p className="text-xs text-muted-foreground">Supplier: {quote.supplierName}</p>
+                                )}
+                                {quote.leadTime && (
+                                  <p className="text-xs text-muted-foreground">Lead Time: {quote.leadTime}</p>
+                                )}
+                              </div>
+                            </div>
+                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                              <div className="flex gap-2 ml-4">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleEditMaterialQuote(quote)}
+                                  data-testid={`button-edit-material-quote-${quote.id}`}
                                 >
-                                  <Download className="w-3 h-3 mr-1" />
-                                  Download
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleDeleteMaterialQuote(quote.id)}
+                                  data-testid={`button-delete-material-quote-${quote.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
                               </div>
                             )}
                           </div>
-                        </div>
-                        <div className="flex gap-2 ml-4">
-                          {estimateData?.estimate && (
-                            <SubcontractorScopeReportDialog
-                              quote={quote}
-                              estimate={estimateData.estimate}
-                              lineItems={estimateData.estimate.lineItems || []}
-                              bidName={bid?.name || ""}
-                              bidCode={String(bid?.code || "")}
-                            />
-                          )}
-                          {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                            <>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleEditQuote(quote)}
-                                data-testid={`button-edit-quote-${quote.id}`}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => handleDeleteQuote(quote.id)}
-                                data-testid={`button-delete-quote-${quote.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      <div className="flex justify-end pt-4">
+                        <Button onClick={() => setCurrentStep(2)} data-testid="button-next-step-1">
+                          Continue to Equipment
+                          <ChevronRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-          <Card data-testid="card-material-quotes">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="w-5 h-5" />
-                  Material Quotes
-                </CardTitle>
-                <CardDescription>Track material quotes and supplier information</CardDescription>
-              </div>
-              {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                <Button onClick={handleAddMaterialQuote} size="sm" data-testid="button-add-material-quote">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Quote
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {materialQuotesLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading material quotes...</div>
-              ) : materialQuotes.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No material quotes added yet
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-muted rounded-md">
-                    <span className="text-sm font-medium">Total from Material Quotes:</span>
-                    <span className="text-lg font-bold font-mono">${totalMaterialQuotes.toLocaleString()}</span>
+            {/* Step 2: Equipment */}
+            {currentStep === 2 && (
+              <Card data-testid="card-equipment-selections">
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Truck className="w-5 h-5" />
+                      Step 2: Equipment Selection
+                    </CardTitle>
+                    <CardDescription>Select equipment from your fleet or add rentals for this project</CardDescription>
                   </div>
-                  <div className="space-y-3">
-                    {materialQuotes.map((quote) => (
-                      <div 
-                        key={quote.id} 
-                        className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
-                          (quote as any).isSelected 
-                            ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
-                            : ''
-                        }`}
-                        data-testid={`material-quote-${quote.id}`}
-                      >
-                        <div className="flex gap-3 flex-1">
-                          <div className="pt-1">
-                            <Checkbox
-                              checked={(quote as any).isSelected || false}
-                              onCheckedChange={(checked) => {
-                                toggleMaterialQuoteSelection.mutate({ 
-                                  quoteId: quote.id, 
-                                  isSelected: !!checked 
-                                });
-                              }}
-                              disabled={toggleMaterialQuoteSelection.isPending}
-                              data-testid={`checkbox-material-quote-${quote.id}`}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-medium">{quote.materialName}</h4>
-                              <Badge variant="outline" className="font-mono">
-                                ${Number(quote.cost).toLocaleString()}
-                              </Badge>
-                              {(quote as any).isSelected && (
-                                <Badge variant="default" className="gap-1 bg-green-600">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Selected
+                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                    <Button onClick={handleAddEquipment} size="sm" data-testid="button-add-equipment">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Equipment
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {equipmentLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading equipment...</div>
+                  ) : equipmentSelections.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Truck className="w-12 h-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No equipment selected yet</p>
+                      <p className="text-sm mb-4">Add equipment from your fleet or include rentals</p>
+                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                        <Button onClick={handleAddEquipment} variant="outline" data-testid="button-add-first-equipment">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Equipment
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-muted rounded-md">
+                        <span className="text-sm font-medium">Total Equipment Cost:</span>
+                        <span className="text-lg font-bold font-mono">${totalEquipmentCostCalc.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="space-y-3">
+                        {equipmentSelections.map((selection) => (
+                          <div 
+                            key={selection.id} 
+                            className="flex items-start justify-between p-4 border rounded-md"
+                            data-testid={`equipment-selection-${selection.id}`}
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                <h4 className="font-medium">{selection.equipmentName}</h4>
+                                <Badge variant={selection.source === "OWNED" ? "default" : "secondary"}>
+                                  {selection.source === "OWNED" ? (
+                                    <><Wrench className="w-3 h-3 mr-1" />Owned</>
+                                  ) : (
+                                    <><Clock className="w-3 h-3 mr-1" />Rental</>
+                                  )}
                                 </Badge>
-                              )}
-                              {quote.fileUrl && (
-                                <Badge variant="secondary" className="gap-1">
-                                  <FileText className="w-3 h-3" />
-                                  Document
-                                </Badge>
-                              )}
+                                <Badge variant="outline">{selection.equipmentType}</Badge>
+                                {selection.estimatedCost && (
+                                  <Badge variant="outline" className="font-mono">
+                                    ${parseFloat(selection.estimatedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                                {selection.plannedDays && (
+                                  <div><span className="font-medium">Days:</span> {selection.plannedDays}</div>
+                                )}
+                                {selection.plannedHours && (
+                                  <div><span className="font-medium">Hours:</span> {selection.plannedHours}</div>
+                                )}
+                                {selection.dailyRate && (
+                                  <div><span className="font-medium">Daily Rate:</span> ${parseFloat(selection.dailyRate).toLocaleString()}</div>
+                                )}
+                              </div>
                             </div>
-                            {quote.description && (
-                              <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
-                            )}
-                            {(quote.specs || quote.leadTime) && (
-                              <div className="flex gap-4 mb-2">
-                                {quote.specs && (
-                                  <div className="text-xs">
-                                    <span className="font-medium">Specs:</span>{' '}
-                                    <span className="text-muted-foreground">{quote.specs}</span>
-                                  </div>
-                                )}
-                                {quote.leadTime && (
-                                  <div className="text-xs">
-                                    <span className="font-medium">Lead Time:</span>{' '}
-                                    <span className="text-muted-foreground">{quote.leadTime}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                            {(quote.supplierName || quote.supplierContact) && (
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                {quote.supplierName && <p>Supplier: {quote.supplierName}</p>}
-                                {quote.supplierContact && <p>Contact: {quote.supplierContact}</p>}
-                              </div>
-                            )}
-                            {quote.fileUrl && (
-                              <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                                <FileText className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground flex-1 truncate">
-                                  {quote.fileName || "Material quote document"}
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    try {
-                                      const response = await apiRequest("POST", "/api/objects/download", {
-                                        fileUrl: quote.fileUrl,
-                                      });
-                                      const data = await response.json();
-                                      window.open(data.downloadURL, '_blank');
-                                    } catch (error) {
-                                      toast({ 
-                                        title: "Error", 
-                                        description: "Failed to download document", 
-                                        variant: "destructive" 
-                                      });
-                                    }
-                                  }}
-                                  data-testid={`button-download-material-quote-${quote.id}`}
-                                >
-                                  <Download className="w-3 h-3 mr-1" />
-                                  Download
+                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                              <div className="flex gap-2 ml-4">
+                                <Button size="icon" variant="ghost" onClick={() => handleEditEquipmentSelection(selection)}>
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => handleDeleteEquipmentSelection(selection.id)}>
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
                               </div>
                             )}
                           </div>
-                        </div>
-                        {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                          <div className="flex gap-2 ml-4">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditMaterialQuote(quote)}
-                              data-testid={`button-edit-material-quote-${quote.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteMaterialQuote(quote.id)}
-                              data-testid={`button-delete-material-quote-${quote.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      <div className="flex justify-between pt-4">
+                        <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-prev-step-2">
+                          Back to Materials
+                        </Button>
+                        <Button onClick={() => setCurrentStep(3)} data-testid="button-next-step-2">
+                          Continue to Scope of Work
+                          <ChevronRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
-          <Card data-testid="card-equipment-selections">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Truck className="w-5 h-5" />
-                  Equipment Plan
-                </CardTitle>
-                <CardDescription>Select equipment needed for this project (owned or rental)</CardDescription>
-              </div>
-              {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                <Button onClick={handleAddEquipment} size="sm" data-testid="button-add-equipment">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Equipment
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
-              {equipmentLoading ? (
-                <div className="text-center py-8 text-muted-foreground">Loading equipment...</div>
-              ) : equipmentSelections.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No equipment selected for this bid yet
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-muted rounded-md">
-                    <span className="text-sm font-medium">Total Equipment Cost:</span>
-                    <span className="text-lg font-bold font-mono">${totalEquipmentCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            {/* Step 3: Scope of Work / Estimate */}
+            {currentStep === 3 && (
+              <Card data-testid="card-bid-estimate">
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calculator className="w-5 h-5" />
+                      Step 3: Scope of Work
+                    </CardTitle>
+                    <CardDescription>Define quantities and create your estimate line items</CardDescription>
                   </div>
-                  <div className="space-y-3">
-                    {equipmentSelections.map((selection) => (
-                      <div 
-                        key={selection.id} 
-                        className="flex items-start justify-between p-4 border rounded-md"
-                        data-testid={`equipment-selection-${selection.id}`}
+                  <div className="flex gap-2">
+                    {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                      <Button 
+                        onClick={() => createEstimateMutation.mutate()} 
+                        disabled={createEstimateMutation.isPending}
+                        size="sm" 
+                        data-testid="button-create-estimate"
                       >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2 flex-wrap">
-                            <h4 className="font-medium">{selection.equipmentName}</h4>
-                            <Badge variant={selection.source === "OWNED" ? "default" : "secondary"}>
-                              {selection.source === "OWNED" ? (
-                                <><Wrench className="w-3 h-3 mr-1" />Owned</>
-                              ) : (
-                                <><Clock className="w-3 h-3 mr-1" />Rental</>
-                              )}
-                            </Badge>
-                            <Badge variant="outline">{selection.equipmentType}</Badge>
-                            {selection.estimatedCost && (
-                              <Badge variant="outline" className="font-mono">
-                                ${parseFloat(selection.estimatedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
-                            {selection.plannedDays && (
-                              <div>
-                                <span className="font-medium">Days:</span> {selection.plannedDays}
-                              </div>
-                            )}
-                            {selection.plannedHours && (
-                              <div>
-                                <span className="font-medium">Hours:</span> {selection.plannedHours}
-                              </div>
-                            )}
-                            {selection.dailyRate && (
-                              <div>
-                                <span className="font-medium">Daily Rate:</span> ${parseFloat(selection.dailyRate).toLocaleString()}
-                              </div>
-                            )}
-                            {selection.hourlyRate && (
-                              <div>
-                                <span className="font-medium">Hourly Rate:</span> ${parseFloat(selection.hourlyRate).toLocaleString()}
-                              </div>
-                            )}
-                            {selection.deliveryFee && parseFloat(selection.deliveryFee) > 0 && (
-                              <div>
-                                <span className="font-medium">Delivery:</span> ${parseFloat(selection.deliveryFee).toLocaleString()}
-                              </div>
-                            )}
-                          </div>
-                          {selection.notes && (
-                            <p className="text-xs text-muted-foreground mt-2 italic">{selection.notes}</p>
-                          )}
-                        </div>
-                        {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
-                          <div className="flex gap-2 ml-4">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleEditEquipmentSelection(selection)}
-                              data-testid={`button-edit-equipment-${selection.id}`}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteEquipmentSelection(selection.id)}
-                              data-testid={`button-delete-equipment-${selection.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create Estimate
+                      </Button>
+                    )}
+                    {estimate && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
+                        data-testid="button-view-estimate"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Open Full Estimate
+                      </Button>
+                    )}
                   </div>
+                </CardHeader>
+                <CardContent>
+                  {estimateLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
+                  ) : !estimate ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Calculator className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No estimate created yet</p>
+                      <p className="text-sm mb-4">Create an estimate to define scope quantities and track labor costs</p>
+                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                        <Button 
+                          onClick={() => createEstimateMutation.mutate()} 
+                          disabled={createEstimateMutation.isPending}
+                          variant="outline"
+                          data-testid="button-create-first-estimate"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Create Estimate
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="p-4 bg-muted rounded-md">
+                          <p className="text-sm font-medium mb-1">Total Estimate</p>
+                          <p className="text-xl font-bold font-mono" data-testid="text-estimate-total">
+                            ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">{estimate.lineItems.length} line items</p>
+                        </div>
+                        <div className="p-4 bg-muted rounded-md">
+                          <p className="text-sm font-medium mb-1">Labor Cost</p>
+                          <p className="text-lg font-bold font-mono">
+                            ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">{estimate.totals.laborHours.toFixed(1)} hours</p>
+                        </div>
+                        <div className="p-4 bg-muted rounded-md">
+                          <p className="text-sm font-medium mb-1">Material Cost</p>
+                          <p className="text-lg font-bold font-mono">
+                            ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div className="p-4 bg-muted rounded-md">
+                          <p className="text-sm font-medium mb-1">Status</p>
+                          <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
+                            {estimate.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
+                        data-testid="button-edit-estimate-items"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Edit Estimate Line Items
+                      </Button>
+                      
+                      <div className="flex justify-between pt-4">
+                        <Button variant="outline" onClick={() => setCurrentStep(2)} data-testid="button-prev-step-3">
+                          Back to Equipment
+                        </Button>
+                        <Button onClick={() => setCurrentStep(4)} data-testid="button-next-step-3">
+                          Continue to Subcontractors
+                          <ChevronRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 4: Subcontractors */}
+            {currentStep === 4 && (
+              <Card data-testid="card-subcontractor-quotes">
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      Step 4: Subcontractor Quotes
+                    </CardTitle>
+                    <CardDescription>Get quotes from subcontractors for specialized work</CardDescription>
+                  </div>
+                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                    <Button onClick={handleAddQuote} size="sm" data-testid="button-add-quote">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Quote
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {quotesLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading quotes...</div>
+                  ) : quotes.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Users className="w-12 h-12 mx-auto mb-4 opacity-40" />
+                      <p className="font-medium mb-1">No subcontractor quotes added yet</p>
+                      <p className="text-sm mb-4">Add quotes from subs for specialized scope items</p>
+                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                        <Button onClick={handleAddQuote} variant="outline" data-testid="button-add-first-quote">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Subcontractor Quote
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-muted rounded-md">
+                        <span className="text-sm font-medium">Selected Subcontractor Cost:</span>
+                        <span className="text-lg font-bold font-mono">${totalSubcontractorCost.toLocaleString()}</span>
+                      </div>
+                      <div className="space-y-3">
+                        {quotes.map((quote) => (
+                          <div 
+                            key={quote.id} 
+                            className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                              (quote as any).isSelected 
+                                ? 'border-green-500 bg-green-50 dark:bg-green-950/20' 
+                                : ''
+                            }`}
+                            data-testid={`quote-${quote.id}`}
+                          >
+                            <div className="flex gap-3 flex-1">
+                              <div className="pt-1">
+                                <Checkbox
+                                  checked={(quote as any).isSelected || false}
+                                  onCheckedChange={(checked) => {
+                                    toggleQuoteSelection.mutate({ 
+                                      quoteId: quote.id, 
+                                      isSelected: !!checked 
+                                    });
+                                  }}
+                                  disabled={toggleQuoteSelection.isPending}
+                                  data-testid={`checkbox-quote-${quote.id}`}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                  <h4 className="font-medium">{quote.subcontractorName}</h4>
+                                  <Badge variant="outline" className="font-mono">
+                                    ${Number(quote.quoteAmount).toLocaleString()}
+                                  </Badge>
+                                  {(quote as any).isSelected && (
+                                    <Badge variant="default" className="gap-1 bg-green-600">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Selected
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm text-muted-foreground mb-1">{quote.scopeOfWork}</p>
+                                {quote.contactName && (
+                                  <p className="text-xs text-muted-foreground">Contact: {quote.contactName}</p>
+                                )}
+                              </div>
+                            </div>
+                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                              <div className="flex gap-2 ml-4">
+                                <Button size="icon" variant="ghost" onClick={() => handleEditQuote(quote)}>
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => handleDeleteQuote(quote.id)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between pt-4">
+                        <Button variant="outline" onClick={() => setCurrentStep(3)} data-testid="button-prev-step-4">
+                          Back to Scope of Work
+                        </Button>
+                        <Button onClick={() => setCurrentStep(5)} data-testid="button-next-step-4">
+                          Continue to Bid Summary
+                          <ChevronRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Step 5: Bid Summary */}
+            {currentStep === 5 && (
+              <div className="space-y-6">
+                <Card data-testid="card-bid-summary">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calculator className="w-5 h-5" />
+                      Step 5: Bid Summary & Pricing
+                    </CardTitle>
+                    <CardDescription>Review costs and set your overhead and profit margins</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Cost Breakdown */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="p-4 bg-muted rounded-md">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Package className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-sm font-medium">Materials</p>
+                        </div>
+                        <p className="text-lg font-bold font-mono">${totalMaterialCost.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-muted rounded-md">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Truck className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-sm font-medium">Equipment</p>
+                        </div>
+                        <p className="text-lg font-bold font-mono">${totalEquipmentCostCalc.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-muted rounded-md">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Clock className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-sm font-medium">Labor</p>
+                        </div>
+                        <p className="text-lg font-bold font-mono">${estimateTotals.laborCost.toLocaleString()}</p>
+                      </div>
+                      <div className="p-4 bg-muted rounded-md">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Users className="w-4 h-4 text-muted-foreground" />
+                          <p className="text-sm font-medium">Subcontractors</p>
+                        </div>
+                        <p className="text-lg font-bold font-mono">${totalSubcontractorCost.toLocaleString()}</p>
+                      </div>
+                    </div>
+
+                    {/* Direct Cost */}
+                    <div className="p-4 border rounded-md bg-muted/30">
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-semibold">Direct Cost (Total)</span>
+                        <span className="text-xl font-bold font-mono">${directCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+
+                    {/* Overhead Slider */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-semibold">Overhead</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-lg">{overheadPercent}%</span>
+                          <span className="text-muted-foreground">= ${overheadAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                      <Slider
+                        value={[overheadPercent]}
+                        onValueChange={(value) => setOverheadPercent(value[0])}
+                        min={0}
+                        max={30}
+                        step={1}
+                        className="w-full"
+                        data-testid="slider-overhead"
+                      />
+                      <p className="text-xs text-muted-foreground">Covers administrative costs, office expenses, insurance, etc.</p>
+                    </div>
+
+                    {/* Profit Slider */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-base font-semibold">Profit Margin</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-lg text-green-600 dark:text-green-400">{profitPercent}%</span>
+                          <span className="text-green-600 dark:text-green-400">= ${profitAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                      <Slider
+                        value={[profitPercent]}
+                        onValueChange={(value) => setProfitPercent(value[0])}
+                        min={0}
+                        max={40}
+                        step={1}
+                        className="w-full"
+                        data-testid="slider-profit"
+                      />
+                      <p className="text-xs text-muted-foreground">Your target profit margin on this project</p>
+                    </div>
+
+                    {/* Final Bid Amount */}
+                    <div className="p-6 bg-primary/10 rounded-md border border-primary/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xl font-bold">Final Bid Amount</span>
+                          <p className="text-sm text-muted-foreground mt-1">Direct Cost + Overhead + Profit</p>
+                        </div>
+                        <span className="text-3xl font-bold font-mono" data-testid="text-final-bid-amount">
+                          ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between pt-4">
+                      <Button variant="outline" onClick={() => setCurrentStep(4)} data-testid="button-prev-step-5">
+                        Back to Subcontractors
+                      </Button>
+                      <Button onClick={handleMarkAsAwarded} data-testid="button-award-bid">
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Award Bid & Create Project
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Additional Info Cards */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Bid Information</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium">Current Bid Amount</p>
+                          <p className="text-lg font-bold font-mono">
+                            {bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : 'Not Set'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Calendar className="w-5 h-5 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium">Due Date</p>
+                          <p className="text-sm text-muted-foreground">
+                            {bid.dueDate ? format(new Date(bid.dueDate), 'PPP') : 'Not set'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Building2 className="w-5 h-5 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium">Client</p>
+                          <p className="text-sm text-muted-foreground">{bid.clientName}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Documents & Handoff</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <Button
+                        className="w-full justify-start"
+                        variant="outline"
+                        onClick={() => setLocation(`/bids/${bidCode}/estimate`)}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        View Full Estimate
+                      </Button>
+                      <JobInformationForm bidCode={bidCode} />
+                    </CardContent>
+                  </Card>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
 
-          <JobInformationForm bidCode={bidCode} />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Bid Documents</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FileUploadZone
-                onFileSelect={(files) => console.log('Bid documents uploaded:', files)}
-                accept=".pdf,.xlsx,.docx"
-              />
-            </CardContent>
-          </Card>
+          </div>
         </div>
       </main>
+
+      {/* Dialogs remain below */}
+      <Dialog open={showEditBidDialog} onOpenChange={setShowEditBidDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Bid</DialogTitle>
+            <DialogDescription>Update the bid details</DialogDescription>
+          </DialogHeader>
+          <Form {...bidEditForm}>
+            <form onSubmit={bidEditForm.handleSubmit(onSubmitEditBid)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={bidEditForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Project name" data-testid="input-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="bidAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bid Amount</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} type="number" step="0.01" placeholder="0.00" data-testid="input-bid-amount" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={bidEditForm.control}
+                name="dueDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Due Date</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} type="date" data-testid="input-due-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={bidEditForm.control}
+                  name="locationAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="123 Main St" data-testid="input-location-address" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={bidEditForm.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={bidEditForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Project details..." rows={3} data-testid="input-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowEditBidDialog(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateBidMutation.isPending}>
+                  {updateBidMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showQuoteDialog} onOpenChange={setShowQuoteDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1786,9 +2001,6 @@ export default function BidDetailPage() {
                     }
                   }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Select from CRM or type manually below
-                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1798,7 +2010,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Subcontractor Name</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="ABC Construction" data-testid="input-subcontractor-name" />
+                        <Input {...field} placeholder="Company name" data-testid="input-subcontractor-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1809,93 +2021,44 @@ export default function BidDetailPage() {
                   name="quoteAmount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quote Amount</FormLabel>
+                      <FormLabel>Quote Amount ($)</FormLabel>
                       <FormControl>
-                        <Input {...field} type="number" step="0.01" placeholder="25000.00" data-testid="input-quote-amount" />
+                        <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-quote-amount" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="leadTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Lead Time (Optional)</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="e.g., 2 weeks, 30 days" data-testid="input-lead-time" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="estimatedCompletionTime"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estimated Completion Time (Optional)</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="e.g., 3 months, 45 days" data-testid="input-estimated-completion" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Scope of Work</Label>
-                {/* Quick selection from estimate line items if estimate exists */}
-                {estimateData?.estimate?.lineItems && estimateData.estimate.lineItems.length > 0 && (
-                  <div className="space-y-2 p-3 bg-muted/50 rounded-md border">
-                    <Label className="text-xs text-muted-foreground">Select from Estimate Scope Items</Label>
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                      {estimateData.estimate.lineItems.map((item) => (
-                        <Button
-                          key={item.id}
-                          type="button"
-                          variant={form.watch("scopeOfWork") === item.description ? "default" : "outline"}
-                          size="sm"
-                          className="text-xs h-auto py-1 px-2"
-                          onClick={() => {
-                            const scopeData: ScopeSelectionData = {
-                              workTypeId: "",
-                              workTypeName: item.description,
-                              workTypeCode: item.workTypeCode || "",
-                              categoryName: "",
-                              unit: item.unit,
-                              modifierIds: [],
-                              modifierNames: [],
-                              canonicalName: item.description,
-                            };
-                            setScopeSelectionData(scopeData);
-                            form.setValue("scopeOfWork", item.description);
-                          }}
-                          data-testid={`button-estimate-scope-${item.id}`}
-                        >
-                          {item.description} ({item.quantity} {item.unit})
-                        </Button>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Or use the standardized scope selector below for custom scope
-                    </p>
-                  </div>
+              {estimateData?.estimate && (
+                <div className="space-y-2">
+                  <Label>Link to Scope Item</Label>
+                  <StandardizedScopeSelector
+                    value={scopeSelectionData}
+                    onChange={(data) => {
+                      setScopeSelectionData(data);
+                      if (data) {
+                        form.setValue("scopeOfWork", data.description);
+                      }
+                    }}
+                    estimateLineItems={estimateData.estimate.lineItems}
+                    placeholder="Link to estimate scope item..."
+                  />
+                </div>
+              )}
+              <FormField
+                control={form.control}
+                name="scopeOfWork"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Scope of Work</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} placeholder="Describe the work to be performed..." rows={3} data-testid="input-scope-of-work" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-                <StandardizedScopeSelector
-                  value={scopeSelectionData}
-                  onChange={(data) => {
-                    setScopeSelectionData(data);
-                    form.setValue("scopeOfWork", data.canonicalName);
-                  }}
-                />
-                {form.formState.errors.scopeOfWork && (
-                  <p className="text-sm text-destructive">{form.formState.errors.scopeOfWork.message}</p>
-                )}
-              </div>
+              />
               <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
@@ -1904,7 +2067,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Contact Name</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-contact-name" />
+                        <Input {...field} value={field.value || ""} placeholder="Contact person" data-testid="input-contact-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1917,7 +2080,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} type="email" placeholder="john@abc.com" data-testid="input-contact-email" />
+                        <Input {...field} value={field.value || ""} type="email" placeholder="email@example.com" data-testid="input-contact-email" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1942,60 +2105,41 @@ export default function BidDetailPage() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." data-testid="input-notes" />
+                      <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." rows={2} data-testid="input-notes" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
               <div className="space-y-2">
-                <FormLabel>Quote Document (Optional)</FormLabel>
-                <div className="flex items-center gap-3">
-                  {uploadedFileData ? (
-                    <div className="flex items-center gap-2 p-3 bg-muted rounded-md flex-1">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-medium flex-1 truncate">{uploadedFileData.fileName}</span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setUploadedFileData(null)}
-                        data-testid="button-remove-file"
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <ObjectUploader
-                      maxNumberOfFiles={1}
-                      maxFileSize={104857600}
-                      allowedFileTypes={["application/pdf", "image/*", ".doc", ".docx", ".xls", ".xlsx"]}
-                      onGetUploadParameters={getUploadParameters}
-                      onComplete={(result) => {
-                        setIsUploadingFile(true);
-                        handleFileUploadComplete(result);
-                      }}
-                      buttonVariant="outline"
-                      testId="button-upload-quote-document"
-                    >
-                      {isUploadingFile ? "Uploading..." : "Upload Document"}
-                    </ObjectUploader>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  PDF, images, or Office documents (max 100MB)
-                </p>
+                <Label>Quote Document</Label>
+                {uploadedFileData ? (
+                  <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                    <FileText className="w-4 h-4" />
+                    <span className="text-sm flex-1 truncate">{uploadedFileData.fileName}</span>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setUploadedFileData(null)}>
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <ObjectUploader
+                    getUploadParameters={getUploadParameters}
+                    onUploadStart={() => setIsUploadingFile(true)}
+                    onComplete={handleFileUploadComplete}
+                    onError={() => setIsUploadingFile(false)}
+                    allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
+                    maxFileSize={10 * 1024 * 1024}
+                  />
+                )}
               </div>
-
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setShowQuoteDialog(false); setSubcontractorContactId(undefined); }} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => { setShowQuoteDialog(false); setUploadedFileData(null); }}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createQuote.isPending || updateQuote.isPending} data-testid="button-submit-quote">
-                  {createQuote.isPending || updateQuote.isPending ? "Saving..." : editingQuote ? "Update Quote" : "Add Quote"}
+                <Button type="submit" disabled={createQuote.isPending || updateQuote.isPending || isUploadingFile}>
+                  {editingQuote ? (updateQuote.isPending ? "Saving..." : "Save Changes") : (createQuote.isPending ? "Adding..." : "Add Quote")}
                 </Button>
               </DialogFooter>
             </form>
@@ -2008,83 +2152,16 @@ export default function BidDetailPage() {
           <DialogHeader>
             <DialogTitle>{editingMaterialQuote ? "Edit Material Quote" : "Add Material Quote"}</DialogTitle>
             <DialogDescription>
-              {editingMaterialQuote ? "Update the material quote details" : "Add a new quote for materials and supplies"}
+              {editingMaterialQuote ? "Update the material quote details" : "Add a new material or supply quote"}
             </DialogDescription>
           </DialogHeader>
           <Form {...materialForm}>
             <form onSubmit={materialForm.handleSubmit(onSubmitMaterialQuote)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={materialForm.control}
-                  name="materialName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Material Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Concrete, Rebar, etc." data-testid="input-material-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={materialForm.control}
-                  name="cost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cost</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="number" step="0.01" placeholder="5000.00" data-testid="input-material-cost" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={materialForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} value={field.value || ""} placeholder="Describe the material specifications and usage..." data-testid="input-material-description" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={materialForm.control}
-                name="specs"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Specs (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} value={field.value || ""} placeholder="Technical specifications, grade, dimensions, etc." data-testid="input-material-specs" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={materialForm.control}
-                name="leadTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Lead Time (Optional)</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} placeholder="e.g., 2 weeks, 30 days" data-testid="input-material-lead-time" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <div className="space-y-2">
-                <Label>Select Supplier from CRM (Optional)</Label>
+                <Label>Select Supplier from CRM</Label>
                 <CrmOrganizationSelector
                   value={materialForm.watch("supplierName") || ""}
-                  filterTypes={["SUPPLIER", "VENDOR"]}
+                  filterTypes={["SUPPLIER"]}
                   placeholder="Select or search for a supplier..."
                   selectedContactId={supplierContactId}
                   onSelect={(org) => {
@@ -2098,22 +2175,83 @@ export default function BidDetailPage() {
                   }}
                   onContactSelect={(contact) => {
                     if (contact) {
-                      setSupplierContactId(contact.id);
-                      const contactInfo = [
-                        `${contact.firstName} ${contact.lastName}`,
-                        contact.email,
-                        contact.phone || contact.mobile,
-                      ].filter(Boolean).join(" | ");
-                      materialForm.setValue("supplierContact", contactInfo);
+                      setSupplierContactId(String(contact.id));
+                      materialForm.setValue("supplierContact", `${contact.firstName} ${contact.lastName}`);
                     } else {
                       setSupplierContactId(undefined);
                       materialForm.setValue("supplierContact", "");
                     }
                   }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Select from CRM or type manually below
-                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={materialForm.control}
+                  name="materialName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Material Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Concrete, Rebar, etc." data-testid="input-material-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={materialForm.control}
+                  name="cost"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cost ($)</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-material-cost" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={materialForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="Material description..." rows={2} data-testid="input-material-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={materialForm.control}
+                  name="specs"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Specifications</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="Size, grade, etc." data-testid="input-material-specs" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={materialForm.control}
+                  name="leadTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Lead Time</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="e.g., 2 weeks" data-testid="input-material-lead-time" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -2121,9 +2259,9 @@ export default function BidDetailPage() {
                   name="supplierName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Supplier Name (Optional)</FormLabel>
+                      <FormLabel>Supplier Name</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="ABC Suppliers" data-testid="input-supplier-name" />
+                        <Input {...field} value={field.value || ""} placeholder="Supplier company" data-testid="input-supplier-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2134,61 +2272,42 @@ export default function BidDetailPage() {
                   name="supplierContact"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Supplier Contact (Optional)</FormLabel>
+                      <FormLabel>Supplier Contact</FormLabel>
                       <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="Phone or Email" data-testid="input-supplier-contact" />
+                        <Input {...field} value={field.value || ""} placeholder="Contact person" data-testid="input-supplier-contact" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-              
               <div className="space-y-2">
-                <FormLabel>Material Quote Document (Optional)</FormLabel>
-                <div className="flex items-center gap-3">
-                  {uploadedMaterialFileData ? (
-                    <div className="flex items-center gap-2 p-3 bg-muted rounded-md flex-1">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-medium flex-1 truncate">{uploadedMaterialFileData.fileName}</span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setUploadedMaterialFileData(null)}
-                        data-testid="button-remove-material-file"
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <ObjectUploader
-                      maxNumberOfFiles={1}
-                      maxFileSize={104857600}
-                      allowedFileTypes={["application/pdf", "image/*", ".doc", ".docx", ".xls", ".xlsx"]}
-                      onGetUploadParameters={getUploadParametersMaterial}
-                      onComplete={(result) => {
-                        setIsUploadingMaterialFile(true);
-                        handleMaterialFileUploadComplete(result);
-                      }}
-                      buttonVariant="outline"
-                      testId="button-upload-material-document"
-                    >
-                      {isUploadingMaterialFile ? "Uploading..." : "Upload Document"}
-                    </ObjectUploader>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  PDF, images, or Office documents (max 100MB)
-                </p>
+                <Label>Quote Document</Label>
+                {uploadedMaterialFileData ? (
+                  <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                    <FileText className="w-4 h-4" />
+                    <span className="text-sm flex-1 truncate">{uploadedMaterialFileData.fileName}</span>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setUploadedMaterialFileData(null)}>
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <ObjectUploader
+                    getUploadParameters={getUploadParametersMaterial}
+                    onUploadStart={() => setIsUploadingMaterialFile(true)}
+                    onComplete={handleMaterialFileUploadComplete}
+                    onError={() => setIsUploadingMaterialFile(false)}
+                    allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
+                    maxFileSize={10 * 1024 * 1024}
+                  />
+                )}
               </div>
-
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setShowMaterialQuoteDialog(false); setSupplierContactId(undefined); }} data-testid="button-cancel">
+                <Button type="button" variant="outline" onClick={() => { setShowMaterialQuoteDialog(false); setUploadedMaterialFileData(null); }}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createMaterialQuote.isPending || updateMaterialQuote.isPending} data-testid="button-submit-material-quote">
-                  {createMaterialQuote.isPending || updateMaterialQuote.isPending ? "Saving..." : editingMaterialQuote ? "Update Quote" : "Add Quote"}
+                <Button type="submit" disabled={createMaterialQuote.isPending || updateMaterialQuote.isPending || isUploadingMaterialFile}>
+                  {editingMaterialQuote ? (updateMaterialQuote.isPending ? "Saving..." : "Save Changes") : (createMaterialQuote.isPending ? "Adding..." : "Add Quote")}
                 </Button>
               </DialogFooter>
             </form>
@@ -2196,15 +2315,12 @@ export default function BidDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Equipment Selection Dialog */}
       <Dialog open={showEquipmentDialog} onOpenChange={setShowEquipmentDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEquipmentSelection ? "Edit Equipment" : "Add Equipment to Bid"}</DialogTitle>
+            <DialogTitle>{editingEquipmentSelection ? "Edit Equipment" : "Add Equipment"}</DialogTitle>
             <DialogDescription>
-              {editingEquipmentSelection 
-                ? "Update the equipment details for this bid" 
-                : "Select owned equipment or rental equipment for this project"}
+              {editingEquipmentSelection ? "Update the equipment selection" : "Add equipment needed for this bid"}
             </DialogDescription>
           </DialogHeader>
           <Form {...equipmentForm}>
@@ -2215,11 +2331,11 @@ export default function BidDetailPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Equipment Source</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={(value) => {
+                    <Select 
+                      value={field.value} 
+                      onValueChange={(value: "OWNED" | "RENTAL") => {
                         field.onChange(value);
-                        setSelectedEquipmentSource(value as "OWNED" | "RENTAL");
+                        setSelectedEquipmentSource(value);
                         equipmentForm.setValue("equipmentId", undefined);
                         equipmentForm.setValue("rentalCatalogId", undefined);
                         equipmentForm.setValue("rentalVendorId", undefined);
@@ -2231,11 +2347,9 @@ export default function BidDetailPage() {
                         equipmentForm.setValue("deliveryFee", "");
                       }}
                     >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-equipment-source">
-                          <SelectValue placeholder="Select source" />
-                        </SelectTrigger>
-                      </FormControl>
+                      <SelectTrigger data-testid="select-equipment-source">
+                        <SelectValue placeholder="Select source..." />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="OWNED">Owned Equipment</SelectItem>
                         <SelectItem value="RENTAL">Rental Equipment</SelectItem>
@@ -2249,10 +2363,7 @@ export default function BidDetailPage() {
               {selectedEquipmentSource === "OWNED" && (
                 <div className="space-y-2">
                   <Label>Select from Fleet</Label>
-                  <Select
-                    value={equipmentForm.watch("equipmentId") || ""}
-                    onValueChange={handleSelectOwnedEquipment}
-                  >
+                  <Select onValueChange={handleSelectOwnedEquipment}>
                     <SelectTrigger data-testid="select-owned-equipment">
                       <SelectValue placeholder="Select equipment from fleet..." />
                     </SelectTrigger>
@@ -2268,9 +2379,6 @@ export default function BidDetailPage() {
                               <span className="font-mono text-xs">{eq.equipmentCode}</span>
                               <span>{eq.name}</span>
                               <span className="text-xs text-muted-foreground">({eq.type})</span>
-                              {eq.dailyRate && (
-                                <span className="text-xs text-muted-foreground">${eq.dailyRate}/day</span>
-                              )}
                             </div>
                           </SelectItem>
                         ))
@@ -2283,10 +2391,7 @@ export default function BidDetailPage() {
               {selectedEquipmentSource === "RENTAL" && (
                 <div className="space-y-2">
                   <Label>Select from Rental Catalog</Label>
-                  <Select
-                    value={equipmentForm.watch("rentalCatalogId") || ""}
-                    onValueChange={handleSelectRentalEquipment}
-                  >
+                  <Select onValueChange={handleSelectRentalEquipment}>
                     <SelectTrigger data-testid="select-rental-equipment">
                       <SelectValue placeholder="Select rental equipment..." />
                     </SelectTrigger>
@@ -2302,9 +2407,6 @@ export default function BidDetailPage() {
                               <span>{eq.name}</span>
                               <span className="text-xs text-muted-foreground">({eq.equipmentType})</span>
                               <span className="text-xs text-muted-foreground">- {eq.vendorName}</span>
-                              {eq.dailyRate && (
-                                <span className="text-xs text-muted-foreground">${eq.dailyRate}/day</span>
-                              )}
                             </div>
                           </SelectItem>
                         ))
@@ -2322,7 +2424,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Equipment Name</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="e.g., CAT 320 Excavator" data-testid="input-equipment-name" />
+                        <Input {...field} placeholder="Equipment name" data-testid="input-equipment-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2333,57 +2435,9 @@ export default function BidDetailPage() {
                   name="equipmentType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Equipment Type</FormLabel>
+                      <FormLabel>Type</FormLabel>
                       <FormControl>
                         <Input {...field} placeholder="e.g., Excavator" data-testid="input-equipment-type" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={equipmentForm.control}
-                  name="plannedDays"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Planned Days</FormLabel>
-                      <FormControl>
-                        <Input 
-                          {...field} 
-                          type="number" 
-                          placeholder="0" 
-                          onChange={(e) => {
-                            field.onChange(e);
-                            setTimeout(calculateEstimatedCost, 100);
-                          }}
-                          data-testid="input-planned-days" 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={equipmentForm.control}
-                  name="plannedHours"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Planned Hours (Alternative)</FormLabel>
-                      <FormControl>
-                        <Input 
-                          {...field} 
-                          type="number" 
-                          step="0.5" 
-                          placeholder="0"
-                          onChange={(e) => {
-                            field.onChange(e);
-                            setTimeout(calculateEstimatedCost, 100);
-                          }}
-                          data-testid="input-planned-hours" 
-                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2394,22 +2448,25 @@ export default function BidDetailPage() {
               <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={equipmentForm.control}
-                  name="hourlyRate"
+                  name="plannedDays"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Hourly Rate ($)</FormLabel>
+                      <FormLabel>Planned Days</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          type="number" 
-                          step="0.01" 
-                          placeholder="0.00"
-                          onChange={(e) => {
-                            field.onChange(e);
-                            setTimeout(calculateEstimatedCost, 100);
-                          }}
-                          data-testid="input-hourly-rate" 
-                        />
+                        <Input {...field} type="number" placeholder="0" onBlur={calculateEstimatedCost} data-testid="input-planned-days" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={equipmentForm.control}
+                  name="plannedHours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Planned Hours</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" step="0.5" placeholder="0" onBlur={calculateEstimatedCost} data-testid="input-planned-hours" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2422,30 +2479,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Daily Rate ($)</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          type="number" 
-                          step="0.01" 
-                          placeholder="0.00"
-                          onChange={(e) => {
-                            field.onChange(e);
-                            setTimeout(calculateEstimatedCost, 100);
-                          }}
-                          data-testid="input-daily-rate" 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={equipmentForm.control}
-                  name="weeklyRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Weekly Rate ($)</FormLabel>
-                      <FormControl>
-                        <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-weekly-rate" />
+                        <Input {...field} type="number" step="0.01" placeholder="0.00" onBlur={calculateEstimatedCost} data-testid="input-daily-rate" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2461,17 +2495,7 @@ export default function BidDetailPage() {
                     <FormItem>
                       <FormLabel>Delivery Fee ($)</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          type="number" 
-                          step="0.01" 
-                          placeholder="0.00"
-                          onChange={(e) => {
-                            field.onChange(e);
-                            setTimeout(calculateEstimatedCost, 100);
-                          }}
-                          data-testid="input-delivery-fee" 
-                        />
+                        <Input {...field} type="number" step="0.01" placeholder="0.00" onBlur={calculateEstimatedCost} data-testid="input-delivery-fee" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2486,16 +2510,8 @@ export default function BidDetailPage() {
                   <FormItem>
                     <FormLabel>Estimated Total Cost ($)</FormLabel>
                     <FormControl>
-                      <Input 
-                        {...field} 
-                        type="number" 
-                        step="0.01" 
-                        placeholder="0.00"
-                        className="font-mono font-bold"
-                        data-testid="input-estimated-cost" 
-                      />
+                      <Input {...field} type="number" step="0.01" placeholder="0.00" data-testid="input-estimated-cost" />
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">Auto-calculated from days/hours × rate + delivery</p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -2506,9 +2522,9 @@ export default function BidDetailPage() {
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes (Optional)</FormLabel>
+                    <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea {...field} value={field.value || ""} placeholder="Additional notes about equipment usage..." data-testid="input-equipment-notes" />
+                      <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." rows={2} data-testid="input-equipment-notes" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -2516,339 +2532,13 @@ export default function BidDetailPage() {
               />
 
               <DialogFooter>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => { 
-                    setShowEquipmentDialog(false);
-                    setEditingEquipmentSelection(null);
-                    equipmentForm.reset();
-                  }} 
-                  data-testid="button-cancel-equipment"
-                >
+                <Button type="button" variant="outline" onClick={() => setShowEquipmentDialog(false)}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={createEquipmentSelection.isPending || updateEquipmentSelection.isPending}
-                  data-testid="button-submit-equipment"
-                >
-                  {createEquipmentSelection.isPending || updateEquipmentSelection.isPending 
-                    ? "Saving..." 
-                    : editingEquipmentSelection 
-                      ? "Update Equipment" 
-                      : "Add Equipment"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Bid Dialog */}
-      <Dialog open={showEditBidDialog} onOpenChange={setShowEditBidDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Bid Information</DialogTitle>
-            <DialogDescription>Update the bid details and project information</DialogDescription>
-          </DialogHeader>
-          <Form {...bidEditForm}>
-            <form onSubmit={bidEditForm.handleSubmit((data) => updateBidMutation.mutate(data))} className="space-y-4">
-              <FormField
-                control={bidEditForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bid Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Project name or description" data-testid="input-bid-name" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={bidEditForm.control}
-                  name="bidAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bid Amount</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} type="number" step="0.01" placeholder="0.00" data-testid="input-bid-amount" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={bidEditForm.control}
-                  name="dueDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Due Date</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} type="date" data-testid="input-due-date" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Client/Owner Section */}
-              <div className="space-y-3 p-3 border rounded-md">
-                <h4 className="font-medium text-sm">Client / Owner</h4>
-                <div className="space-y-2">
-                  <Label>Select from CRM</Label>
-                  <CrmOrganizationSelector
-                    value={bidEditForm.watch("clientName") || ""}
-                    filterTypes={["CONTRACTOR"]}
-                    placeholder="Select or search for a client..."
-                    selectedContactId={editBidClientContactId}
-                    onSelect={(org) => {
-                      if (org) {
-                        bidEditForm.setValue("clientName", org.name);
-                      } else {
-                        bidEditForm.setValue("clientName", "");
-                        bidEditForm.setValue("clientContactName", "");
-                        bidEditForm.setValue("clientContactEmail", "");
-                        bidEditForm.setValue("clientContactPhone", "");
-                        setEditBidClientContactId(undefined);
-                      }
-                    }}
-                    onContactSelect={(contact) => {
-                      if (contact) {
-                        setEditBidClientContactId(String(contact.id));
-                        bidEditForm.setValue("clientContactName", `${contact.firstName} ${contact.lastName}`);
-                        bidEditForm.setValue("clientContactEmail", contact.email || "");
-                        bidEditForm.setValue("clientContactPhone", contact.phone || contact.mobile || "");
-                      } else {
-                        setEditBidClientContactId(undefined);
-                        bidEditForm.setValue("clientContactName", "");
-                        bidEditForm.setValue("clientContactEmail", "");
-                        bidEditForm.setValue("clientContactPhone", "");
-                      }
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Select from CRM or type manually below
-                  </p>
-                </div>
-                <FormField
-                  control={bidEditForm.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Client Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Client company or individual" data-testid="input-client-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={bidEditForm.control}
-                    name="clientContactName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Name</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-client-contact-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={bidEditForm.control}
-                    name="clientContactEmail"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Email</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} type="email" placeholder="john@example.com" data-testid="input-client-contact-email" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={bidEditForm.control}
-                    name="clientContactPhone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Phone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="(555) 123-4567" data-testid="input-client-contact-phone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-
-              {/* General Contractor Section */}
-              <div className="space-y-3 p-3 border rounded-md">
-                <h4 className="font-medium text-sm">General Contractor (if applicable)</h4>
-                <div className="space-y-2">
-                  <Label>Select from CRM</Label>
-                  <CrmOrganizationSelector
-                    value={bidEditForm.watch("gcName") || ""}
-                    filterTypes={["CONTRACTOR"]}
-                    placeholder="Select or search for a GC..."
-                    selectedContactId={editBidGcContactId}
-                    onSelect={(org) => {
-                      if (org) {
-                        bidEditForm.setValue("gcName", org.name);
-                      } else {
-                        bidEditForm.setValue("gcName", "");
-                        bidEditForm.setValue("gcContactName", "");
-                        bidEditForm.setValue("gcContactEmail", "");
-                        bidEditForm.setValue("gcContactPhone", "");
-                        setEditBidGcContactId(undefined);
-                      }
-                    }}
-                    onContactSelect={(contact) => {
-                      if (contact) {
-                        setEditBidGcContactId(String(contact.id));
-                        bidEditForm.setValue("gcContactName", `${contact.firstName} ${contact.lastName}`);
-                        bidEditForm.setValue("gcContactEmail", contact.email || "");
-                        bidEditForm.setValue("gcContactPhone", contact.phone || contact.mobile || "");
-                      } else {
-                        setEditBidGcContactId(undefined);
-                        bidEditForm.setValue("gcContactName", "");
-                        bidEditForm.setValue("gcContactEmail", "");
-                        bidEditForm.setValue("gcContactPhone", "");
-                      }
-                    }}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Select from CRM or type manually below
-                  </p>
-                </div>
-                <FormField
-                  control={bidEditForm.control}
-                  name="gcName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>GC Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="General Contractor company" data-testid="input-gc-name" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-3 gap-4">
-                  <FormField
-                    control={bidEditForm.control}
-                    name="gcContactName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Name</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Jane Doe" data-testid="input-gc-contact-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={bidEditForm.control}
-                    name="gcContactEmail"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Email</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} type="email" placeholder="jane@gc.com" data-testid="input-gc-contact-email" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={bidEditForm.control}
-                    name="gcContactPhone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contact Phone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="(555) 987-6543" data-testid="input-gc-contact-phone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={bidEditForm.control}
-                  name="locationAddress"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="123 Main St" data-testid="input-location-address" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={bidEditForm.control}
-                  name="city"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>City</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={bidEditForm.control}
-                  name="state"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>State</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={bidEditForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea {...field} value={field.value || ""} placeholder="Project details and requirements..." rows={4} data-testid="input-description" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setShowEditBidDialog(false); setEditBidClientContactId(undefined); setEditBidGcContactId(undefined); }} data-testid="button-cancel-edit">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateBidMutation.isPending} data-testid="button-save-bid">
-                  {updateBidMutation.isPending ? "Saving..." : "Save Changes"}
+                <Button type="submit" disabled={createEquipmentSelection.isPending || updateEquipmentSelection.isPending}>
+                  {editingEquipmentSelection 
+                    ? (updateEquipmentSelection.isPending ? "Saving..." : "Save Changes") 
+                    : (createEquipmentSelection.isPending ? "Adding..." : "Add Equipment")}
                 </Button>
               </DialogFooter>
             </form>
@@ -2865,7 +2555,6 @@ export default function BidDetailPage() {
             </DialogTitle>
             <DialogDescription>
               Convert this bid to an active project and assign the team members who will be responsible for it.
-              They will receive a notification on their dashboard.
             </DialogDescription>
           </DialogHeader>
           
@@ -2873,6 +2562,7 @@ export default function BidDetailPage() {
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-sm font-medium">Project: {bid?.name}</p>
               <p className="text-xs text-muted-foreground">Code: {bid?.code}</p>
+              <p className="text-xs text-muted-foreground mt-1">Final Bid: ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
 
             <div className="space-y-2">
@@ -2893,9 +2583,6 @@ export default function BidDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                The superintendent will oversee field operations.
-              </p>
             </div>
 
             <div className="space-y-2">
@@ -2916,9 +2603,6 @@ export default function BidDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                The project manager will oversee scheduling and coordination.
-              </p>
             </div>
           </div>
 
