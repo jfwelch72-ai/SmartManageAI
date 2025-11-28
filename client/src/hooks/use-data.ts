@@ -7,6 +7,9 @@ interface DashboardStats {
   activeProjectsCount: number;
   pendingChangeOrdersCount: number;
   pendingTimeOffCount: number;
+  activeDelaysCount: number;
+  delaysNeedingAckCount: number;
+  delaysNeedingChangeOrderCount: number;
 }
 
 export function useDashboardStats() {

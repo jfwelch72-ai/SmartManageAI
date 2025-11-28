@@ -16,7 +16,8 @@ import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
 import TMTicketsSection from "@/components/TMTicketsSection";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2 } from "lucide-react";
+import DelaysSection from "@/components/DelaysSection";
+import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -2274,6 +2275,10 @@ export default function ProjectDetailPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="delays" data-testid="tab-delays">
+              <CloudRain className="h-4 w-4 mr-1" />
+              Delays
+            </TabsTrigger>
             <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
             <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
             {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
@@ -2875,6 +2880,14 @@ export default function ProjectDetailPage() {
             isLoading={changeOrdersLoading}
             userRole={user?.role || ""}
           />
+
+          <TabsContent value="delays">
+            <DelaysSection 
+              projectId={project.id}
+              projectCode={projectCode}
+              userRole={user?.role || ""}
+            />
+          </TabsContent>
 
           <TabsContent value="daily-notes">
             <DailyNoteFeed projectId={project.id} availableUsers={allUsers} />

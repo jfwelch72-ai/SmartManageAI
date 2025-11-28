@@ -51,6 +51,7 @@ import { validateFileExists, validateMimeType, validateFileSize } from "./fileVa
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
+import delayRoutes from "./delayRoutes";
 import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
@@ -72,6 +73,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);
+
+  // Register delay tracking routes
+  app.use("/api", delayRoutes);
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);
@@ -281,10 +285,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
       const pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
 
+      // Count active delays (not acknowledged) - requires SUPERINTENDENT+ role visibility
+      const activeDelaysResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projectDelays)
+        .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
+      const activeDelaysCount = activeDelaysResult[0]?.count || 0;
+
+      // Count delays requiring acknowledgment (submitted but not yet acknowledged)
+      const delaysNeedingAckResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projectDelays)
+        .where(eq(projectDelays.status, "SUBMITTED"));
+      const delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+
+      // Count delays requiring change orders (marked as needing change order but not linked)
+      const delaysNeedingCOResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projectDelays)
+        .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
+      const delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+
       res.json({
         activeProjectsCount,
         pendingChangeOrdersCount,
         pendingTimeOffCount,
+        activeDelaysCount,
+        delaysNeedingAckCount,
+        delaysNeedingChangeOrderCount,
       });
     } catch (error) {
       console.error("Dashboard stats error:", error);

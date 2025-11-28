@@ -15,7 +15,7 @@ export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "DELAY_CHANGE_ORDER_NEEDED"]);
 
 // Messaging enums
 export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
@@ -40,6 +40,15 @@ export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRAC
 export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
 export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
 export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
+
+// Delay Tracking Enums
+export const delayReasonEnum = pgEnum("delay_reason", [
+  "WEATHER", "GC_SCHEDULING", "OTHER_CONTRACTORS", "MATERIAL_DELIVERY", 
+  "PERMIT_ISSUES", "INSPECTION_DELAY", "OWNER_DIRECTIVE", "DESIGN_CHANGES",
+  "SITE_CONDITIONS", "LABOR_SHORTAGE", "OTHER"
+]);
+export const delayStatusEnum = pgEnum("delay_status", ["DRAFT", "SUBMITTED", "ACKNOWLEDGED", "RESOLVED"]);
+export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", "GC", "SUBCONTRACTOR", "TFR", "FORCE_MAJEURE"]);
 
 // Users table
 export const users = pgTable("users", {
@@ -652,6 +661,44 @@ export const changeOrderMaterialEntries = pgTable("change_order_material_entries
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
   vendorPricingId: varchar("vendor_pricing_id"), // Reference to catalog item if applied
 });
+
+// Project Delays table - tracks schedule delays with change order integration
+export const projectDelays = pgTable("project_delays", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  delayNumber: text("delay_number").notNull(), // e.g., DLY-260009-001
+  reason: delayReasonEnum("reason").notNull(),
+  reasonNotes: text("reason_notes"), // Free-form description of delay cause
+  startDateTime: timestamp("start_date_time").notNull(),
+  endDateTime: timestamp("end_date_time"), // Null if delay is ongoing
+  estimatedDuration: integer("estimated_duration"), // Days if end unknown
+  ownerRepContactId: varchar("owner_rep_contact_id"), // CRM contact who issued delay
+  gcRepContactId: varchar("gc_rep_contact_id"), // GC rep who issued/acknowledged
+  ownerRepName: text("owner_rep_name"), // Cached name for display
+  gcRepName: text("gc_rep_name"), // Cached name for display
+  proofFileId: varchar("proof_file_id"), // Reference to uploaded email/document
+  proofFileName: text("proof_file_name"),
+  proofFileUrl: text("proof_file_url"),
+  financiallyResponsible: delayResponsibilityEnum("financially_responsible").notNull(),
+  changeOrderRequired: boolean("change_order_required").notNull().default(false),
+  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
+  proceedToWorkDate: timestamp("proceed_to_work_date"), // When work can resume
+  proceedToWorkNotes: text("proceed_to_work_notes"),
+  proceedToWorkFileUrl: text("proceed_to_work_file_url"), // Proof of proceed notice
+  status: delayStatusEnum("status").notNull().default("DRAFT"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("project_delays_project_id_idx").on(table.projectId),
+  statusIdx: index("project_delays_status_idx").on(table.status),
+  reasonIdx: index("project_delays_reason_idx").on(table.reason),
+  startDateIdx: index("project_delays_start_date_idx").on(table.startDateTime),
+}));
 
 // Calendar Events table
 export const calendarEvents = pgTable("calendar_events", {
@@ -1358,6 +1405,19 @@ export type ChangeOrderEquipmentEntry = typeof changeOrderEquipmentEntries.$infe
 
 export type InsertChangeOrderMaterialEntry = z.infer<typeof insertChangeOrderMaterialEntrySchema>;
 export type ChangeOrderMaterialEntry = typeof changeOrderMaterialEntries.$inferSelect;
+
+// Project Delays schema
+export const insertProjectDelaySchema = createInsertSchema(projectDelays).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+  acknowledgedAt: true,
+  resolvedAt: true,
+});
+
+export type InsertProjectDelay = z.infer<typeof insertProjectDelaySchema>;
+export type ProjectDelay = typeof projectDelays.$inferSelect;
 
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
