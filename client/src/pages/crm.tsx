@@ -33,13 +33,17 @@ import {
   FileText,
   ChevronRight,
   AlertCircle,
-  X
+  X,
+  DollarSign,
+  Truck,
+  Package,
+  Calendar
 } from "lucide-react";
-import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote } from "@shared/schema";
+import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog } from "@shared/schema";
 import { format, formatDistanceToNow } from "date-fns";
 import { MessageSquare, Clock } from "lucide-react";
 
-type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP";
+type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP" | "RENTAL_VENDOR";
 type ContactRole = "PM" | "ESTIMATOR" | "SUPERINTENDENT" | "SALES" | "ACCOUNTS_PAYABLE" | "ACCOUNTS_RECEIVABLE" | "OWNER" | "GENERAL_MANAGER" | "FOREMAN" | "OTHER";
 type NoteType = "CALL" | "EMAIL" | "MEETING" | "HOT_LEAD" | "COLD_LEAD" | "FOLLOW_UP" | "ISSUE" | "GENERAL";
 
@@ -60,6 +64,7 @@ const TYPE_LABELS: Record<OrganizationType, string> = {
   SUPPLIER: "Supplier",
   VENDOR: "Vendor",
   OWNER_REP: "Owner Rep",
+  RENTAL_VENDOR: "Rental Vendor",
 };
 
 const TYPE_COLORS: Record<OrganizationType, string> = {
@@ -68,6 +73,7 @@ const TYPE_COLORS: Record<OrganizationType, string> = {
   SUPPLIER: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   VENDOR: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
   OWNER_REP: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
+  RENTAL_VENDOR: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
 };
 
 const ROLE_LABELS: Record<ContactRole, string> = {
@@ -169,6 +175,55 @@ export default function CRMPage() {
   const { data: orgNotes = [], isLoading: notesLoading } = useQuery<OrgNote[]>({
     queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"],
     enabled: !!selectedOrg?.id && detailOrgOpen,
+  });
+
+  // Fetch vendor pricing catalog for suppliers/vendors
+  const showPricingTab = selectedOrg?.type === "SUPPLIER" || selectedOrg?.type === "VENDOR";
+  const { data: vendorPricing = [], isLoading: pricingLoading } = useQuery<VendorPricingCatalog[]>({
+    queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"],
+    enabled: !!selectedOrg?.id && detailOrgOpen && showPricingTab,
+  });
+
+  // Fetch rental catalog for rental vendors
+  const showRentalTab = selectedOrg?.type === "RENTAL_VENDOR" || selectedOrg?.type === "VENDOR";
+  const { data: rentalCatalog = [], isLoading: rentalLoading } = useQuery<RentalEquipmentCatalog[]>({
+    queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"],
+    enabled: !!selectedOrg?.id && detailOrgOpen && showRentalTab,
+  });
+
+  // State for new pricing item
+  const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
+  const [editingPricing, setEditingPricing] = useState<VendorPricingCatalog | null>(null);
+  const [newPricing, setNewPricing] = useState({
+    itemName: "",
+    itemCode: "",
+    category: "CONCRETE",
+    description: "",
+    unit: "YARD",
+    unitPrice: "",
+    minimumOrder: "",
+    deliveryFee: "",
+    effectiveQuarter: "",
+    effectiveDate: new Date().toISOString().split('T')[0],
+    leadTimeDays: "",
+  });
+
+  // State for new rental catalog item
+  const [rentalDialogOpen, setRentalDialogOpen] = useState(false);
+  const [editingRental, setEditingRental] = useState<RentalEquipmentCatalog | null>(null);
+  const [newRental, setNewRental] = useState({
+    name: "",
+    equipmentType: "HEAVY_EQUIPMENT",
+    make: "",
+    model: "",
+    description: "",
+    hourlyRate: "",
+    dailyRate: "",
+    weeklyRate: "",
+    monthlyRate: "",
+    deliveryFee: "",
+    pickupFee: "",
+    minimumRentalDays: "1",
   });
 
   const createOrgMutation = useMutation({
@@ -289,6 +344,169 @@ export default function CRMPage() {
       toast({ title: "Failed to delete note", description: err.message, variant: "destructive" });
     },
   });
+
+  // Pricing Catalog Mutations
+  const createPricingMutation = useMutation({
+    mutationFn: async (data: typeof newPricing) => {
+      if (!selectedOrg?.id) throw new Error("No organization selected");
+      const payload = {
+        ...data,
+        unitPrice: data.unitPrice || "0",
+        minimumOrder: data.minimumOrder || null,
+        deliveryFee: data.deliveryFee || null,
+        leadTimeDays: data.leadTimeDays ? parseInt(data.leadTimeDays) : null,
+        effectiveDate: new Date(data.effectiveDate),
+      };
+      return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/pricing`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      toast({ title: "Pricing item added" });
+      setPricingDialogOpen(false);
+      resetNewPricing();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add pricing item", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updatePricingMutation = useMutation({
+    mutationFn: async (data: typeof newPricing & { id: string }) => {
+      const { id, ...rest } = data;
+      const payload = {
+        ...rest,
+        unitPrice: rest.unitPrice || "0",
+        minimumOrder: rest.minimumOrder || null,
+        deliveryFee: rest.deliveryFee || null,
+        leadTimeDays: rest.leadTimeDays ? parseInt(rest.leadTimeDays) : null,
+        effectiveDate: new Date(rest.effectiveDate),
+      };
+      return apiRequest("PUT", `/api/crm/pricing/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      toast({ title: "Pricing item updated" });
+      setPricingDialogOpen(false);
+      setEditingPricing(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update pricing item", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deletePricingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/crm/pricing/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      toast({ title: "Pricing item deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete pricing item", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Rental Catalog Mutations
+  const createRentalMutation = useMutation({
+    mutationFn: async (data: typeof newRental) => {
+      if (!selectedOrg?.id) throw new Error("No organization selected");
+      const payload = {
+        ...data,
+        hourlyRate: data.hourlyRate || null,
+        dailyRate: data.dailyRate || null,
+        weeklyRate: data.weeklyRate || null,
+        monthlyRate: data.monthlyRate || null,
+        deliveryFee: data.deliveryFee || null,
+        pickupFee: data.pickupFee || null,
+        minimumRentalDays: data.minimumRentalDays ? parseInt(data.minimumRentalDays) : 1,
+      };
+      return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/rental-catalog`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      toast({ title: "Rental equipment added" });
+      setRentalDialogOpen(false);
+      resetNewRental();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add rental equipment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateRentalMutation = useMutation({
+    mutationFn: async (data: typeof newRental & { id: string }) => {
+      const { id, ...rest } = data;
+      const payload = {
+        ...rest,
+        hourlyRate: rest.hourlyRate || null,
+        dailyRate: rest.dailyRate || null,
+        weeklyRate: rest.weeklyRate || null,
+        monthlyRate: rest.monthlyRate || null,
+        deliveryFee: rest.deliveryFee || null,
+        pickupFee: rest.pickupFee || null,
+        minimumRentalDays: rest.minimumRentalDays ? parseInt(rest.minimumRentalDays) : 1,
+      };
+      return apiRequest("PUT", `/api/crm/rental-catalog/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      toast({ title: "Rental equipment updated" });
+      setRentalDialogOpen(false);
+      setEditingRental(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update rental equipment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteRentalMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/crm/rental-catalog/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      toast({ title: "Rental equipment deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete rental equipment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetNewPricing = () => {
+    const now = new Date();
+    const quarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+    setNewPricing({
+      itemName: "",
+      itemCode: "",
+      category: "CONCRETE",
+      description: "",
+      unit: "YARD",
+      unitPrice: "",
+      minimumOrder: "",
+      deliveryFee: "",
+      effectiveQuarter: quarter,
+      effectiveDate: now.toISOString().split('T')[0],
+      leadTimeDays: "",
+    });
+  };
+
+  const resetNewRental = () => {
+    setNewRental({
+      name: "",
+      equipmentType: "HEAVY_EQUIPMENT",
+      make: "",
+      model: "",
+      description: "",
+      hourlyRate: "",
+      dailyRate: "",
+      weeklyRate: "",
+      monthlyRate: "",
+      deliveryFee: "",
+      pickupFee: "",
+      minimumRentalDays: "1",
+    });
+  };
   
   const resetNewOrg = () => {
     setNewOrg({
@@ -511,6 +729,7 @@ export default function CRMPage() {
                       <SelectItem value="SUBCONTRACTOR">Subcontractors</SelectItem>
                       <SelectItem value="SUPPLIER">Suppliers</SelectItem>
                       <SelectItem value="VENDOR">Vendors</SelectItem>
+                      <SelectItem value="RENTAL_VENDOR">Rental Vendors</SelectItem>
                       <SelectItem value="OWNER_REP">Owner Reps</SelectItem>
                     </SelectContent>
                   </Select>
@@ -619,6 +838,7 @@ export default function CRMPage() {
                     <SelectItem value="SUBCONTRACTOR">Subcontractor</SelectItem>
                     <SelectItem value="SUPPLIER">Supplier</SelectItem>
                     <SelectItem value="VENDOR">Vendor</SelectItem>
+                    <SelectItem value="RENTAL_VENDOR">Rental Vendor</SelectItem>
                     <SelectItem value="OWNER_REP">Owner Rep</SelectItem>
                   </SelectContent>
                 </Select>
@@ -746,6 +966,7 @@ export default function CRMPage() {
                     <SelectItem value="SUBCONTRACTOR">Subcontractor</SelectItem>
                     <SelectItem value="SUPPLIER">Supplier</SelectItem>
                     <SelectItem value="VENDOR">Vendor</SelectItem>
+                    <SelectItem value="RENTAL_VENDOR">Rental Vendor</SelectItem>
                     <SelectItem value="OWNER_REP">Owner Rep</SelectItem>
                   </SelectContent>
                 </Select>
@@ -884,7 +1105,7 @@ export default function CRMPage() {
           </DialogHeader>
           
           <Tabs defaultValue="info" className="mt-4">
-            <TabsList>
+            <TabsList className="flex flex-wrap">
               <TabsTrigger value="info">Organization Info</TabsTrigger>
               <TabsTrigger value="contacts">
                 Contacts ({orgDetail?.contacts?.length || 0})
@@ -892,6 +1113,18 @@ export default function CRMPage() {
               <TabsTrigger value="activity" data-testid="tab-activity">
                 Activity ({orgNotes.length})
               </TabsTrigger>
+              {showPricingTab && (
+                <TabsTrigger value="pricing" data-testid="tab-pricing">
+                  <DollarSign className="w-3 h-3 mr-1" />
+                  Pricing ({vendorPricing.length})
+                </TabsTrigger>
+              )}
+              {showRentalTab && (
+                <TabsTrigger value="rental" data-testid="tab-rental">
+                  <Truck className="w-3 h-3 mr-1" />
+                  Rentals ({rentalCatalog.length})
+                </TabsTrigger>
+              )}
             </TabsList>
             
             <TabsContent value="info" className="space-y-4 mt-4">
@@ -1169,7 +1402,540 @@ export default function CRMPage() {
                 )}
               </div>
             </TabsContent>
+
+            {/* Pricing Catalog Tab */}
+            {showPricingTab && (
+              <TabsContent value="pricing" className="mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    Manage quarterly pricing for materials and supplies
+                  </p>
+                  <Button size="sm" onClick={() => { resetNewPricing(); setPricingDialogOpen(true); }} data-testid="button-add-pricing">
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Pricing
+                  </Button>
+                </div>
+
+                {pricingLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+                  </div>
+                ) : vendorPricing.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No pricing items yet</p>
+                    <p className="text-sm">Add pricing items to use in bid estimates</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {vendorPricing.map((item) => (
+                      <Card key={item.id} className="hover-elevate" data-testid={`card-pricing-${item.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-medium">{item.itemName}</span>
+                                {item.itemCode && (
+                                  <Badge variant="outline" className="text-xs">{item.itemCode}</Badge>
+                                )}
+                                <Badge variant="secondary" className="text-xs">{item.category}</Badge>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                                <span className="font-semibold text-foreground">
+                                  ${parseFloat(item.unitPrice || "0").toFixed(2)} / {item.unit}
+                                </span>
+                                {item.effectiveQuarter && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {item.effectiveQuarter}
+                                  </span>
+                                )}
+                                {item.leadTimeDays && (
+                                  <span>{item.leadTimeDays} day lead</span>
+                                )}
+                              </div>
+                              {item.description && (
+                                <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setEditingPricing(item);
+                                  setNewPricing({
+                                    itemName: item.itemName,
+                                    itemCode: item.itemCode || "",
+                                    category: item.category,
+                                    description: item.description || "",
+                                    unit: item.unit,
+                                    unitPrice: item.unitPrice || "",
+                                    minimumOrder: item.minimumOrder || "",
+                                    deliveryFee: item.deliveryFee || "",
+                                    effectiveQuarter: item.effectiveQuarter || "",
+                                    effectiveDate: item.effectiveDate ? new Date(item.effectiveDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                                    leadTimeDays: item.leadTimeDays?.toString() || "",
+                                  });
+                                  setPricingDialogOpen(true);
+                                }}
+                                data-testid={`button-edit-pricing-${item.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deletePricingMutation.mutate(item.id)}
+                                disabled={deletePricingMutation.isPending}
+                                data-testid={`button-delete-pricing-${item.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
+
+            {/* Rental Catalog Tab */}
+            {showRentalTab && (
+              <TabsContent value="rental" className="mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    Manage rental equipment catalog for this vendor
+                  </p>
+                  <Button size="sm" onClick={() => { resetNewRental(); setRentalDialogOpen(true); }} data-testid="button-add-rental">
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Equipment
+                  </Button>
+                </div>
+
+                {rentalLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+                  </div>
+                ) : rentalCatalog.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Truck className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No rental equipment yet</p>
+                    <p className="text-sm">Add rental equipment to use in bid estimates</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {rentalCatalog.map((item) => (
+                      <Card key={item.id} className="hover-elevate" data-testid={`card-rental-${item.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-medium">{item.name}</span>
+                                <Badge variant="secondary" className="text-xs">{item.equipmentType?.replace(/_/g, ' ')}</Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {item.make && item.model && <span>{item.make} {item.model}</span>}
+                              </div>
+                              <div className="flex items-center gap-3 text-sm mt-1 flex-wrap">
+                                {item.dailyRate && (
+                                  <span><span className="font-medium">${parseFloat(item.dailyRate).toFixed(0)}</span>/day</span>
+                                )}
+                                {item.weeklyRate && (
+                                  <span><span className="font-medium">${parseFloat(item.weeklyRate).toFixed(0)}</span>/week</span>
+                                )}
+                                {item.monthlyRate && (
+                                  <span><span className="font-medium">${parseFloat(item.monthlyRate).toFixed(0)}</span>/month</span>
+                                )}
+                              </div>
+                              {item.description && (
+                                <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  setEditingRental(item);
+                                  setNewRental({
+                                    name: item.name,
+                                    equipmentType: item.equipmentType || "HEAVY_EQUIPMENT",
+                                    make: item.make || "",
+                                    model: item.model || "",
+                                    description: item.description || "",
+                                    hourlyRate: item.hourlyRate || "",
+                                    dailyRate: item.dailyRate || "",
+                                    weeklyRate: item.weeklyRate || "",
+                                    monthlyRate: item.monthlyRate || "",
+                                    deliveryFee: item.deliveryFee || "",
+                                    pickupFee: item.pickupFee || "",
+                                    minimumRentalDays: item.minimumRentalDays?.toString() || "1",
+                                  });
+                                  setRentalDialogOpen(true);
+                                }}
+                                data-testid={`button-edit-rental-${item.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteRentalMutation.mutate(item.id)}
+                                disabled={deleteRentalMutation.isPending}
+                                data-testid={`button-delete-rental-${item.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pricing Dialog */}
+      <Dialog open={pricingDialogOpen} onOpenChange={(open) => { setPricingDialogOpen(open); if (!open) setEditingPricing(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingPricing ? "Edit Pricing Item" : "Add Pricing Item"}</DialogTitle>
+            <DialogDescription>
+              {editingPricing ? "Update pricing information" : "Add a new pricing item to the catalog"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Item Name *</Label>
+                <Input
+                  value={newPricing.itemName}
+                  onChange={(e) => setNewPricing({ ...newPricing, itemName: e.target.value })}
+                  placeholder="e.g., 4000 PSI Concrete"
+                  data-testid="input-pricing-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Item Code</Label>
+                <Input
+                  value={newPricing.itemCode}
+                  onChange={(e) => setNewPricing({ ...newPricing, itemCode: e.target.value })}
+                  placeholder="e.g., CON-4000"
+                  data-testid="input-pricing-code"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={newPricing.category} onValueChange={(v) => setNewPricing({ ...newPricing, category: v })}>
+                  <SelectTrigger data-testid="select-pricing-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CONCRETE">Concrete</SelectItem>
+                    <SelectItem value="STONE">Stone/Aggregate</SelectItem>
+                    <SelectItem value="REBAR">Rebar</SelectItem>
+                    <SelectItem value="WIRE_MESH">Wire Mesh</SelectItem>
+                    <SelectItem value="SEALER">Sealer/Cure</SelectItem>
+                    <SelectItem value="LUMBER">Lumber</SelectItem>
+                    <SelectItem value="FILL">Fill Material</SelectItem>
+                    <SelectItem value="EQUIPMENT">Equipment</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Unit</Label>
+                <Select value={newPricing.unit} onValueChange={(v) => setNewPricing({ ...newPricing, unit: v })}>
+                  <SelectTrigger data-testid="select-pricing-unit">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="YARD">Cubic Yard</SelectItem>
+                    <SelectItem value="TON">Ton</SelectItem>
+                    <SelectItem value="LF">Linear Foot</SelectItem>
+                    <SelectItem value="SF">Square Foot</SelectItem>
+                    <SelectItem value="EA">Each</SelectItem>
+                    <SelectItem value="ROLL">Roll</SelectItem>
+                    <SelectItem value="GAL">Gallon</SelectItem>
+                    <SelectItem value="BAG">Bag</SelectItem>
+                    <SelectItem value="LOAD">Load</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Unit Price ($) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newPricing.unitPrice}
+                  onChange={(e) => setNewPricing({ ...newPricing, unitPrice: e.target.value })}
+                  placeholder="0.00"
+                  data-testid="input-pricing-price"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Effective Quarter</Label>
+                <Input
+                  value={newPricing.effectiveQuarter}
+                  onChange={(e) => setNewPricing({ ...newPricing, effectiveQuarter: e.target.value })}
+                  placeholder="e.g., 2025-Q1"
+                  data-testid="input-pricing-quarter"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Minimum Order</Label>
+                <Input
+                  value={newPricing.minimumOrder}
+                  onChange={(e) => setNewPricing({ ...newPricing, minimumOrder: e.target.value })}
+                  placeholder="e.g., 5 yards"
+                  data-testid="input-pricing-minimum"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Delivery Fee ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newPricing.deliveryFee}
+                  onChange={(e) => setNewPricing({ ...newPricing, deliveryFee: e.target.value })}
+                  placeholder="0.00"
+                  data-testid="input-pricing-delivery"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Lead Time (days)</Label>
+                <Input
+                  type="number"
+                  value={newPricing.leadTimeDays}
+                  onChange={(e) => setNewPricing({ ...newPricing, leadTimeDays: e.target.value })}
+                  placeholder="e.g., 2"
+                  data-testid="input-pricing-lead-time"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Effective Date</Label>
+                <Input
+                  type="date"
+                  value={newPricing.effectiveDate}
+                  onChange={(e) => setNewPricing({ ...newPricing, effectiveDate: e.target.value })}
+                  data-testid="input-pricing-date"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={newPricing.description}
+                onChange={(e) => setNewPricing({ ...newPricing, description: e.target.value })}
+                placeholder="Additional details..."
+                data-testid="input-pricing-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setPricingDialogOpen(false); setEditingPricing(null); }} data-testid="button-cancel-pricing">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editingPricing) {
+                  updatePricingMutation.mutate({ ...newPricing, id: editingPricing.id });
+                } else {
+                  createPricingMutation.mutate(newPricing);
+                }
+              }}
+              disabled={!newPricing.itemName || !newPricing.unitPrice || createPricingMutation.isPending || updatePricingMutation.isPending}
+              data-testid="button-save-pricing"
+            >
+              {(createPricingMutation.isPending || updatePricingMutation.isPending) ? "Saving..." : (editingPricing ? "Update" : "Add Item")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rental Equipment Dialog */}
+      <Dialog open={rentalDialogOpen} onOpenChange={(open) => { setRentalDialogOpen(open); if (!open) setEditingRental(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingRental ? "Edit Rental Equipment" : "Add Rental Equipment"}</DialogTitle>
+            <DialogDescription>
+              {editingRental ? "Update rental equipment information" : "Add equipment to the rental catalog"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Equipment Name *</Label>
+                <Input
+                  value={newRental.name}
+                  onChange={(e) => setNewRental({ ...newRental, name: e.target.value })}
+                  placeholder="e.g., CAT 320 Excavator"
+                  data-testid="input-rental-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Equipment Type</Label>
+                <Select value={newRental.equipmentType} onValueChange={(v) => setNewRental({ ...newRental, equipmentType: v })}>
+                  <SelectTrigger data-testid="select-rental-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="HEAVY_EQUIPMENT">Heavy Equipment</SelectItem>
+                    <SelectItem value="VEHICLES">Vehicles</SelectItem>
+                    <SelectItem value="POWER_TOOLS">Power Tools</SelectItem>
+                    <SelectItem value="HAND_TOOLS">Hand Tools</SelectItem>
+                    <SelectItem value="TRAILERS">Trailers</SelectItem>
+                    <SelectItem value="COMPACTION">Compaction</SelectItem>
+                    <SelectItem value="CONCRETE">Concrete</SelectItem>
+                    <SelectItem value="LIFTING">Lifting</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Make</Label>
+                <Input
+                  value={newRental.make}
+                  onChange={(e) => setNewRental({ ...newRental, make: e.target.value })}
+                  placeholder="e.g., Caterpillar"
+                  data-testid="input-rental-make"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Model</Label>
+                <Input
+                  value={newRental.model}
+                  onChange={(e) => setNewRental({ ...newRental, model: e.target.value })}
+                  placeholder="e.g., 320"
+                  data-testid="input-rental-model"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Hourly ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.hourlyRate}
+                  onChange={(e) => setNewRental({ ...newRental, hourlyRate: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-hourly"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Daily ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.dailyRate}
+                  onChange={(e) => setNewRental({ ...newRental, dailyRate: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-daily"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Weekly ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.weeklyRate}
+                  onChange={(e) => setNewRental({ ...newRental, weeklyRate: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-weekly"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Monthly ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.monthlyRate}
+                  onChange={(e) => setNewRental({ ...newRental, monthlyRate: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-monthly"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Delivery Fee ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.deliveryFee}
+                  onChange={(e) => setNewRental({ ...newRental, deliveryFee: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-delivery"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Pickup Fee ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newRental.pickupFee}
+                  onChange={(e) => setNewRental({ ...newRental, pickupFee: e.target.value })}
+                  placeholder="0"
+                  data-testid="input-rental-pickup"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Min Days</Label>
+                <Input
+                  type="number"
+                  value={newRental.minimumRentalDays}
+                  onChange={(e) => setNewRental({ ...newRental, minimumRentalDays: e.target.value })}
+                  placeholder="1"
+                  data-testid="input-rental-min-days"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={newRental.description}
+                onChange={(e) => setNewRental({ ...newRental, description: e.target.value })}
+                placeholder="Additional details about this equipment..."
+                data-testid="input-rental-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRentalDialogOpen(false); setEditingRental(null); }} data-testid="button-cancel-rental">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editingRental) {
+                  updateRentalMutation.mutate({ ...newRental, id: editingRental.id });
+                } else {
+                  createRentalMutation.mutate(newRental);
+                }
+              }}
+              disabled={!newRental.name || createRentalMutation.isPending || updateRentalMutation.isPending}
+              data-testid="button-save-rental"
+            >
+              {(createRentalMutation.isPending || updateRentalMutation.isPending) ? "Saving..." : (editingRental ? "Update" : "Add Equipment")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       

@@ -4751,6 +4751,364 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Vendor Pricing Catalog Routes (CRM Extension)
+  // ====================
+  const { vendorPricingCatalogs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema } = await import("@shared/schema");
+
+  // Get all pricing items for an organisation
+  app.get("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const items = await db
+        .select()
+        .from(vendorPricingCatalogs)
+        .where(eq(vendorPricingCatalogs.crmOrganisationId, req.params.id))
+        .orderBy(vendorPricingCatalogs.category, vendorPricingCatalogs.itemName);
+      
+      res.json(items);
+    } catch (error) {
+      console.error("Get vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get active pricing for current quarter
+  app.get("/api/crm/organisations/:id/pricing/current", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const now = new Date();
+      const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+      
+      const items = await db
+        .select()
+        .from(vendorPricingCatalogs)
+        .where(and(
+          eq(vendorPricingCatalogs.crmOrganisationId, req.params.id),
+          eq(vendorPricingCatalogs.isActive, true),
+          eq(vendorPricingCatalogs.effectiveQuarter, currentQuarter)
+        ))
+        .orderBy(vendorPricingCatalogs.category, vendorPricingCatalogs.itemName);
+      
+      res.json(items);
+    } catch (error) {
+      console.error("Get current vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create pricing item
+  app.post("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [org] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
+      if (!org) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+
+      // Convert date strings to Date objects for Drizzle-zod validation
+      const bodyWithDates = {
+        ...req.body,
+        effectiveDate: req.body.effectiveDate ? new Date(req.body.effectiveDate) : new Date(),
+        expirationDate: req.body.expirationDate ? new Date(req.body.expirationDate) : null,
+        crmOrganisationId: req.params.id,
+        createdById: req.user!.id,
+      };
+
+      const validationResult = insertVendorPricingCatalogSchema.safeParse(bodyWithDates);
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newItem] = await db.insert(vendorPricingCatalogs).values(validationResult.data).returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "vendor_pricing_catalogs",
+        entityId: newItem.id,
+        newValue: JSON.stringify({ itemName: newItem.itemName, category: newItem.category, unitPrice: newItem.unitPrice }),
+      });
+
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Create vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update pricing item
+  app.put("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Pricing item not found" });
+        return;
+      }
+
+      // Convert date strings to Date objects for Drizzle-zod validation
+      const bodyWithDates = {
+        ...req.body,
+        ...(req.body.effectiveDate && { effectiveDate: new Date(req.body.effectiveDate) }),
+        ...(req.body.expirationDate && { expirationDate: new Date(req.body.expirationDate) }),
+      };
+
+      const validationResult = insertVendorPricingCatalogSchema.partial().safeParse(bodyWithDates);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [updated] = await db
+        .update(vendorPricingCatalogs)
+        .set({ ...validationResult.data, updatedAt: new Date() })
+        .where(eq(vendorPricingCatalogs.id, req.params.id))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "vendor_pricing_catalogs",
+        entityId: updated.id,
+        oldValue: JSON.stringify({ itemName: existing.itemName, unitPrice: existing.unitPrice }),
+        newValue: JSON.stringify({ itemName: updated.itemName, unitPrice: updated.unitPrice }),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete pricing item
+  app.delete("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Pricing item not found" });
+        return;
+      }
+
+      await db.delete(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id));
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "DELETE",
+        entityType: "vendor_pricing_catalogs",
+        entityId: existing.id,
+        oldValue: JSON.stringify({ itemName: existing.itemName, category: existing.category }),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Search all vendor pricing across all suppliers (for bid auto-populate)
+  app.get("/api/vendor-pricing/search", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { category, search, quarter } = req.query;
+      const now = new Date();
+      const currentQuarter = quarter as string || `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+
+      const conditions: any[] = [
+        eq(vendorPricingCatalogs.isActive, true),
+      ];
+
+      if (category) {
+        conditions.push(eq(vendorPricingCatalogs.category, category as string));
+      }
+      if (search) {
+        conditions.push(sql`LOWER(${vendorPricingCatalogs.itemName}) LIKE LOWER(${'%' + search + '%'})`);
+      }
+
+      const items = await db
+        .select({
+          id: vendorPricingCatalogs.id,
+          itemName: vendorPricingCatalogs.itemName,
+          itemCode: vendorPricingCatalogs.itemCode,
+          category: vendorPricingCatalogs.category,
+          description: vendorPricingCatalogs.description,
+          unit: vendorPricingCatalogs.unit,
+          unitPrice: vendorPricingCatalogs.unitPrice,
+          minimumOrder: vendorPricingCatalogs.minimumOrder,
+          deliveryFee: vendorPricingCatalogs.deliveryFee,
+          effectiveQuarter: vendorPricingCatalogs.effectiveQuarter,
+          leadTimeDays: vendorPricingCatalogs.leadTimeDays,
+          vendorId: crmOrganisations.id,
+          vendorName: crmOrganisations.name,
+          vendorType: crmOrganisations.type,
+        })
+        .from(vendorPricingCatalogs)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorPricingCatalogs.crmOrganisationId))
+        .where(and(...conditions))
+        .orderBy(vendorPricingCatalogs.unitPrice)
+        .limit(50);
+
+      res.json(items);
+    } catch (error) {
+      console.error("Search vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Rental Equipment Catalog Routes (CRM Extension)
+  // ====================
+
+  // Get rental catalog for a CRM organisation
+  app.get("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const items = await db
+        .select()
+        .from(rentalEquipmentCatalog)
+        .where(eq(rentalEquipmentCatalog.crmOrganisationId, req.params.id))
+        .orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
+      
+      res.json(items);
+    } catch (error) {
+      console.error("Get CRM rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create rental catalog item for CRM organisation
+  app.post("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [org] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
+      if (!org) {
+        res.status(404).json({ error: "Organisation not found" });
+        return;
+      }
+      if (org.type !== "RENTAL_VENDOR" && org.type !== "VENDOR") {
+        res.status(400).json({ error: "Organisation must be a Rental Vendor or Vendor type" });
+        return;
+      }
+
+      const validationResult = insertRentalEquipmentCatalogSchema.safeParse({
+        ...req.body,
+        crmOrganisationId: req.params.id,
+      });
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [newItem] = await db.insert(rentalEquipmentCatalog).values(validationResult.data).returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "rental_equipment_catalog",
+        entityId: newItem.id,
+        newValue: JSON.stringify({ name: newItem.name, equipmentType: newItem.equipmentType }),
+      });
+
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Create CRM rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update rental catalog item
+  app.put("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
+
+      const validationResult = insertRentalEquipmentCatalogSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const [updated] = await db
+        .update(rentalEquipmentCatalog)
+        .set({ ...validationResult.data, updatedAt: new Date() })
+        .where(eq(rentalEquipmentCatalog.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update CRM rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete rental catalog item
+  app.delete("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id)).limit(1);
+      if (!existing) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
+
+      await db.delete(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete CRM rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Search all rental equipment across all vendors (for bid equipment selection)
+  app.get("/api/rental-catalog/search", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const { type, search } = req.query;
+
+      const conditions: any[] = [
+        eq(rentalEquipmentCatalog.isActive, true),
+        sql`${rentalEquipmentCatalog.crmOrganisationId} IS NOT NULL`,
+      ];
+
+      if (type) {
+        conditions.push(eq(rentalEquipmentCatalog.equipmentType, type as string));
+      }
+      if (search) {
+        conditions.push(sql`LOWER(${rentalEquipmentCatalog.name}) LIKE LOWER(${'%' + search + '%'})`);
+      }
+
+      const items = await db
+        .select({
+          id: rentalEquipmentCatalog.id,
+          name: rentalEquipmentCatalog.name,
+          equipmentType: rentalEquipmentCatalog.equipmentType,
+          make: rentalEquipmentCatalog.make,
+          model: rentalEquipmentCatalog.model,
+          description: rentalEquipmentCatalog.description,
+          hourlyRate: rentalEquipmentCatalog.hourlyRate,
+          dailyRate: rentalEquipmentCatalog.dailyRate,
+          weeklyRate: rentalEquipmentCatalog.weeklyRate,
+          monthlyRate: rentalEquipmentCatalog.monthlyRate,
+          deliveryFee: rentalEquipmentCatalog.deliveryFee,
+          pickupFee: rentalEquipmentCatalog.pickupFee,
+          minimumRentalDays: rentalEquipmentCatalog.minimumRentalDays,
+          vendorId: crmOrganisations.id,
+          vendorName: crmOrganisations.name,
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, rentalEquipmentCatalog.crmOrganisationId))
+        .where(and(...conditions))
+        .orderBy(rentalEquipmentCatalog.dailyRate)
+        .limit(50);
+
+      res.json(items);
+    } catch (error) {
+      console.error("Search rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Scope Standardization Routes
   // ====================
 

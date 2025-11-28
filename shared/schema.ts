@@ -36,7 +36,7 @@ export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRES
 export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 
 // CRM Enums
-export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP"]);
+export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR"]);
 export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
 export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
 export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
@@ -2297,7 +2297,8 @@ export type RentalVendor = typeof rentalVendors.$inferSelect;
 // Rental Equipment Catalog - Available rental equipment types from vendors
 export const rentalEquipmentCatalog = pgTable("rental_equipment_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  vendorId: varchar("vendor_id").notNull().references(() => rentalVendors.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").references(() => rentalVendors.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "cascade" }),
   
   // Equipment Details
   name: text("name").notNull(), // "CAT 320 Excavator"
@@ -2327,6 +2328,7 @@ export const rentalEquipmentCatalog = pgTable("rental_equipment_catalog", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   vendorIdx: index("rental_equipment_catalog_vendor_idx").on(table.vendorId),
+  crmOrgIdx: index("rental_equipment_catalog_crm_org_idx").on(table.crmOrganisationId),
   typeIdx: index("rental_equipment_catalog_type_idx").on(table.equipmentType),
 }));
 
@@ -2507,3 +2509,48 @@ export const rentalEquipmentUsages = pgTable("rental_equipment_usages", {
 export const insertRentalEquipmentUsageSchema = createInsertSchema(rentalEquipmentUsages).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRentalEquipmentUsage = z.infer<typeof insertRentalEquipmentUsageSchema>;
 export type RentalEquipmentUsage = typeof rentalEquipmentUsages.$inferSelect;
+
+// Vendor Pricing Catalog - Quarterly pricing from suppliers/vendors for materials
+// Used to auto-populate bid estimates with current pricing
+export const vendorPricingCatalogs = pgTable("vendor_pricing_catalogs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  
+  // Item Details
+  itemName: text("item_name").notNull(), // "Ready Mix Concrete 4000 PSI"
+  itemCode: text("item_code"), // Vendor's SKU/item code
+  category: text("category").notNull(), // CONCRETE, STONE, REBAR, LUMBER, etc.
+  description: text("description"),
+  unit: text("unit").notNull(), // YARD, TON, EACH, LF, SF, etc.
+  
+  // Pricing
+  unitPrice: decimal("unit_price", { precision: 12, scale: 4 }).notNull(),
+  minimumOrder: decimal("minimum_order", { precision: 10, scale: 2 }),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }),
+  
+  // Effective Period (Quarterly)
+  effectiveQuarter: text("effective_quarter").notNull(), // "2025-Q1", "2025-Q2", etc.
+  effectiveDate: timestamp("effective_date").notNull(),
+  expirationDate: timestamp("expiration_date"),
+  
+  // Source Documentation
+  sourceDocUrl: text("source_doc_url"), // Link to price sheet PDF
+  sourceDocName: text("source_doc_name"),
+  
+  // Lead Time
+  leadTimeDays: integer("lead_time_days"),
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  crmOrgIdx: index("vendor_pricing_catalogs_crm_org_idx").on(table.crmOrganisationId),
+  categoryIdx: index("vendor_pricing_catalogs_category_idx").on(table.category),
+  quarterIdx: index("vendor_pricing_catalogs_quarter_idx").on(table.effectiveQuarter),
+  activeIdx: index("vendor_pricing_catalogs_active_idx").on(table.isActive),
+}));
+
+export const insertVendorPricingCatalogSchema = createInsertSchema(vendorPricingCatalogs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorPricingCatalog = z.infer<typeof insertVendorPricingCatalogSchema>;
+export type VendorPricingCatalog = typeof vendorPricingCatalogs.$inferSelect;
