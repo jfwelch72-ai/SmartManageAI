@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers, Mountain } from "lucide-react";
+import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers, Mountain, Tag, Store } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
@@ -69,6 +69,23 @@ const lineItemSchema = z.object({
 
 type LineItemFormValues = z.infer<typeof lineItemSchema>;
 
+type CatalogPriceItem = {
+  id: string;
+  itemName: string;
+  itemCode: string | null;
+  category: string;
+  description: string | null;
+  unit: string;
+  unitPrice: string;
+  minimumOrder: number | null;
+  deliveryFee: string | null;
+  effectiveQuarter: string;
+  leadTimeDays: number | null;
+  vendorId: string;
+  vendorName: string;
+  vendorType: string;
+};
+
 export default function BidEstimate() {
   const [, params] = useRoute("/bids/:code/estimate");
   const [, setLocation] = useLocation();
@@ -88,6 +105,7 @@ export default function BidEstimate() {
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
   const [selectedScopeData, setSelectedScopeData] = useState<ScopeSelectionData | null>(null);
   const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
+  const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("");
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -103,6 +121,13 @@ export default function BidEstimate() {
   const { data: subcontractorQuotes = [] } = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidId, "subcontractor-quotes"],
     enabled: !!bidId,
+  });
+  
+  // Fetch catalog pricing suggestions for the selected category
+  const { data: catalogPrices = [] } = useQuery<CatalogPriceItem[]>({
+    queryKey: [`/api/vendor-pricing/search?category=${selectedCatalogCategory}`],
+    enabled: !!selectedCatalogCategory && hasEstimateAccess,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
   
   const totals = estimate?.totals || {
@@ -169,6 +194,7 @@ export default function BidEstimate() {
       setEditLineItemOpen(false);
       setEditingLineItem(null);
       setMaterialCalcData(getDefaultMaterialCalculatorData());
+      setSelectedCatalogCategory("");
       toast({ title: "Line item updated successfully" });
     },
     onError: () => {
@@ -222,6 +248,28 @@ export default function BidEstimate() {
     };
     const mappedCategory = categoryMap[data.categoryName] || "OTHER";
     form.setValue("category", mappedCategory);
+    setSelectedCatalogCategory(mappedCategory);
+  };
+  
+  // Handle category change to trigger catalog lookup
+  const handleCategoryChange = (value: string) => {
+    form.setValue("category", value);
+    setSelectedCatalogCategory(value);
+  };
+  
+  // Apply catalog pricing to form
+  const applyCatalogPrice = (item: CatalogPriceItem) => {
+    const quantity = form.getValues("quantity") || 1;
+    const unitPrice = parseFloat(item.unitPrice);
+    const totalMaterialCost = unitPrice * quantity;
+    form.setValue("materialCost", totalMaterialCost);
+    if (item.unit) {
+      form.setValue("unit", item.unit);
+    }
+    toast({
+      title: "Catalog price applied",
+      description: `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit}`
+    });
   };
   
   // Reset form and scope selection when dialog closes
@@ -231,6 +279,7 @@ export default function BidEstimate() {
       form.reset();
       setSelectedScopeData(null);
       setMaterialCalcData(getDefaultMaterialCalculatorData());
+      setSelectedCatalogCategory("");
     }
   };
 
@@ -768,7 +817,7 @@ export default function BidEstimate() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Category</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={handleCategoryChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-category">
                                   <SelectValue placeholder="Select a category" />
@@ -832,6 +881,45 @@ export default function BidEstimate() {
                           </FormItem>
                         )}
                       />
+
+                      {/* Catalog Price Suggestions */}
+                      {catalogPrices.length > 0 && (
+                        <div className="col-span-2 p-3 bg-muted/50 rounded-md border">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Store className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-medium">Catalog Pricing Available</span>
+                            <Badge variant="secondary" className="text-xs">{catalogPrices.length} items</Badge>
+                          </div>
+                          <div className="space-y-2 max-h-32 overflow-y-auto">
+                            {catalogPrices.slice(0, 5).map((item) => (
+                              <div 
+                                key={item.id}
+                                className="flex items-center justify-between p-2 bg-background rounded border hover-elevate cursor-pointer"
+                                onClick={() => applyCatalogPrice(item)}
+                                data-testid={`catalog-price-${item.id}`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{item.itemName}</p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {item.vendorName} | {item.effectiveQuarter}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 ml-2">
+                                  <Badge variant="outline" className="text-xs whitespace-nowrap">
+                                    ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
+                                  </Badge>
+                                  <Tag className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {catalogPrices.length > 5 && (
+                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                              +{catalogPrices.length - 5} more items available
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       <FormField
                         control={form.control}
@@ -1080,6 +1168,7 @@ export default function BidEstimate() {
                 setEditingLineItem(null);
                 form.reset();
                 setMaterialCalcData(getDefaultMaterialCalculatorData());
+                setSelectedCatalogCategory("");
               }
             }}>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -1116,7 +1205,7 @@ export default function BidEstimate() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Category</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
+                            <Select onValueChange={handleCategoryChange} value={field.value}>
                               <FormControl>
                                 <SelectTrigger data-testid="select-edit-category">
                                   <SelectValue placeholder="Select a category" />
@@ -1180,6 +1269,45 @@ export default function BidEstimate() {
                           </FormItem>
                         )}
                       />
+
+                      {/* Catalog Price Suggestions (Edit Dialog) */}
+                      {catalogPrices.length > 0 && (
+                        <div className="col-span-2 p-3 bg-muted/50 rounded-md border">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Store className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-medium">Catalog Pricing Available</span>
+                            <Badge variant="secondary" className="text-xs">{catalogPrices.length} items</Badge>
+                          </div>
+                          <div className="space-y-2 max-h-32 overflow-y-auto">
+                            {catalogPrices.slice(0, 5).map((item) => (
+                              <div 
+                                key={item.id}
+                                className="flex items-center justify-between p-2 bg-background rounded border hover-elevate cursor-pointer"
+                                onClick={() => applyCatalogPrice(item)}
+                                data-testid={`edit-catalog-price-${item.id}`}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{item.itemName}</p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {item.vendorName} | {item.effectiveQuarter}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 ml-2">
+                                  <Badge variant="outline" className="text-xs whitespace-nowrap">
+                                    ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
+                                  </Badge>
+                                  <Tag className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {catalogPrices.length > 5 && (
+                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                              +{catalogPrices.length - 5} more items available
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       <FormField
                         control={form.control}
@@ -1414,6 +1542,7 @@ export default function BidEstimate() {
                         setEditingLineItem(null);
                         form.reset();
                         setMaterialCalcData(getDefaultMaterialCalculatorData());
+                        setSelectedCatalogCategory("");
                       }} data-testid="button-cancel-edit">
                         Cancel
                       </Button>
@@ -1574,6 +1703,7 @@ export default function BidEstimate() {
                                     underlaymentWasteFactor: lineItemAny.underlaymentWasteFactor || "10",
                                     calculatedUnderlaymentSF: lineItemAny.calculatedUnderlaymentSF || "0",
                                   });
+                                  setSelectedCatalogCategory(item.category);
                                   setEditLineItemOpen(true);
                                 }}
                                 data-testid={`button-edit-line-item-${item.id}`}
