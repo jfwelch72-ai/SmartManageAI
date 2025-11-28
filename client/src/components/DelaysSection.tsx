@@ -12,7 +12,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, CloudRain, Clock, Building, Truck, FileWarning, CheckCircle, AlertTriangle, Send, Undo2, FileText, ExternalLink, DollarSign, Loader2 } from "lucide-react";
+import { Plus, CloudRain, Clock, Building, Truck, FileWarning, CheckCircle, AlertTriangle, Send, Undo2, FileText, ExternalLink, DollarSign, Loader2, Mail, Download, Eye, Edit2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import type { ProjectDelay, ChangeOrder } from "@shared/schema";
 
@@ -57,6 +59,27 @@ interface ExtendedDelay extends ProjectDelay {
   linkedChangeOrder?: ChangeOrder | null;
 }
 
+interface DelayNotification {
+  id: string;
+  delayId: string;
+  recipientType: "OWNER_REP" | "GC_REP" | "OTHER";
+  recipientName: string;
+  recipientCompany: string | null;
+  recipientEmail: string | null;
+  subject: string;
+  body: string;
+  status: "DRAFT" | "FINALIZED";
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const RECIPIENT_TYPE_OPTIONS = [
+  { value: "OWNER_REP", label: "Owner's Representative" },
+  { value: "GC_REP", label: "General Contractor" },
+  { value: "OTHER", label: "Other Party" },
+];
+
 export function DelaysSection({ projectId, projectCode, userRole }: DelaySectionProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -80,7 +103,21 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
     proceedToWorkNotes: ""
   });
 
+  const [showNotificationDialog, setShowNotificationDialog] = useState(false);
+  const [selectedDelayForNotification, setSelectedDelayForNotification] = useState<ExtendedDelay | null>(null);
+  const [notificationMode, setNotificationMode] = useState<"create" | "edit" | "view">("create");
+  const [selectedNotification, setSelectedNotification] = useState<DelayNotification | null>(null);
+  const [notificationFormData, setNotificationFormData] = useState({
+    recipientType: "OWNER_REP" as "OWNER_REP" | "GC_REP" | "OTHER",
+    recipientName: "",
+    recipientCompany: "",
+    recipientEmail: "",
+    subject: "",
+    body: ""
+  });
+
   const canCreateDelay = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
+  const canGenerateNotification = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT";
   const canAcknowledge = userRole === "ADMIN" || userRole === "MANAGER";
   const canCreateChangeOrder = userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -216,6 +253,113 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
       toast({ title: "Error", description: error.message || "Failed to create change order", variant: "destructive" });
     },
   });
+
+  const generateNotification = useMutation({
+    mutationFn: async (data: { delayId: string; recipientType: string; recipientName: string; recipientCompany?: string; recipientEmail?: string }): Promise<DelayNotification> => {
+      const response = await apiRequest("POST", `/api/delays/${data.delayId}/notifications/generate`, {
+        recipientType: data.recipientType,
+        recipientName: data.recipientName,
+        recipientCompany: data.recipientCompany || null,
+        recipientEmail: data.recipientEmail || null
+      });
+      return response.json();
+    },
+    onSuccess: (data: DelayNotification) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delays", selectedDelayForNotification?.id, "notifications"] });
+      setSelectedNotification(data);
+      setNotificationFormData({
+        recipientType: data.recipientType,
+        recipientName: data.recipientName,
+        recipientCompany: data.recipientCompany || "",
+        recipientEmail: data.recipientEmail || "",
+        subject: data.subject,
+        body: data.body
+      });
+      setNotificationMode("edit");
+      toast({ title: "Success", description: "Notification draft generated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to generate notification", variant: "destructive" });
+    },
+  });
+
+  const updateNotification = useMutation({
+    mutationFn: async (data: { delayId: string; notificationId: string; updates: Partial<typeof notificationFormData> & { status?: string } }): Promise<DelayNotification> => {
+      const response = await apiRequest("PATCH", `/api/delays/${data.delayId}/notifications/${data.notificationId}`, data.updates);
+      return response.json();
+    },
+    onSuccess: (data: DelayNotification) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delays", selectedDelayForNotification?.id, "notifications"] });
+      setSelectedNotification(data);
+      toast({ title: "Success", description: "Notification updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update notification", variant: "destructive" });
+    },
+  });
+
+  const { data: delayNotifications = [], refetch: refetchNotifications } = useQuery<DelayNotification[]>({
+    queryKey: ["/api/delays", selectedDelayForNotification?.id, "notifications"],
+    queryFn: async () => {
+      if (!selectedDelayForNotification?.id) return [];
+      const response = await fetch(`/api/delays/${selectedDelayForNotification.id}/notifications`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch notifications");
+      return response.json();
+    },
+    enabled: !!selectedDelayForNotification?.id && showNotificationDialog,
+  });
+
+  const openNotificationDialog = (delay: ExtendedDelay) => {
+    setSelectedDelayForNotification(delay);
+    setNotificationMode("create");
+    setSelectedNotification(null);
+    setNotificationFormData({
+      recipientType: "OWNER_REP",
+      recipientName: delay.ownerRepName || "",
+      recipientCompany: "",
+      recipientEmail: "",
+      subject: "",
+      body: ""
+    });
+    setShowNotificationDialog(true);
+  };
+
+  const handleDownloadPDF = async (notification: DelayNotification) => {
+    if (!selectedDelayForNotification) return;
+    try {
+      const response = await fetch(`/api/delays/${selectedDelayForNotification.id}/notifications/${notification.id}/pdf`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to generate PDF");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Delay-Notification-${selectedDelayForNotification.delayNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Success", description: "PDF downloaded" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    }
+  };
+
+  const selectExistingNotification = (notification: DelayNotification) => {
+    setSelectedNotification(notification);
+    setNotificationFormData({
+      recipientType: notification.recipientType,
+      recipientName: notification.recipientName,
+      recipientCompany: notification.recipientCompany || "",
+      recipientEmail: notification.recipientEmail || "",
+      subject: notification.subject,
+      body: notification.body
+    });
+    setNotificationMode(notification.status === "FINALIZED" ? "view" : "edit");
+  };
 
   const resetForm = () => {
     setFormData({
@@ -432,6 +576,12 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
                         <Button size="sm" variant="destructive" onClick={() => createChangeOrder.mutate(delay.id)} disabled={createChangeOrder.isPending} data-testid={`button-create-co-delay-${delay.id}`}>
                           <DollarSign className="h-4 w-4 mr-1" />
                           Create CO
+                        </Button>
+                      )}
+                      {delay.status !== "DRAFT" && canGenerateNotification && (
+                        <Button size="sm" variant="outline" onClick={() => openNotificationDialog(delay)} data-testid={`button-notify-delay-${delay.id}`}>
+                          <Mail className="h-4 w-4 mr-1" />
+                          Notify
                         </Button>
                       )}
                     </div>
@@ -716,6 +866,321 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
             >
               {updateDelay.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNotificationDialog} onOpenChange={(open) => {
+        setShowNotificationDialog(open);
+        if (!open) {
+          setSelectedDelayForNotification(null);
+          setSelectedNotification(null);
+          setNotificationMode("create");
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Delay Notification
+              {selectedDelayForNotification && (
+                <Badge variant="outline">{selectedDelayForNotification.delayNumber}</Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Generate a professional notification for responsible parties about this project delay
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs defaultValue="compose" className="flex-1 flex flex-col overflow-hidden">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="compose" data-testid="tab-compose">Compose</TabsTrigger>
+              <TabsTrigger value="history" data-testid="tab-history">Previous Notifications ({delayNotifications.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="compose" className="flex-1 overflow-auto mt-4 space-y-4">
+              {notificationMode === "create" ? (
+                <div className="space-y-4">
+                  <div className="p-4 border rounded-lg bg-muted/50">
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Select recipient details below and we'll auto-generate a professional notification letter.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Recipient Type *</Label>
+                      <Select 
+                        value={notificationFormData.recipientType} 
+                        onValueChange={(v: "OWNER_REP" | "GC_REP" | "OTHER") => setNotificationFormData({ ...notificationFormData, recipientType: v })}
+                      >
+                        <SelectTrigger data-testid="select-recipient-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {RECIPIENT_TYPE_OPTIONS.map(option => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Recipient Name *</Label>
+                      <Input
+                        value={notificationFormData.recipientName}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientName: e.target.value })}
+                        placeholder="Full name of recipient"
+                        data-testid="input-recipient-name"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Company (optional)</Label>
+                      <Input
+                        value={notificationFormData.recipientCompany}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientCompany: e.target.value })}
+                        placeholder="Company name"
+                        data-testid="input-recipient-company"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email (optional)</Label>
+                      <Input
+                        type="email"
+                        value={notificationFormData.recipientEmail}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientEmail: e.target.value })}
+                        placeholder="email@company.com"
+                        data-testid="input-recipient-email"
+                      />
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={() => selectedDelayForNotification && generateNotification.mutate({
+                      delayId: selectedDelayForNotification.id,
+                      recipientType: notificationFormData.recipientType,
+                      recipientName: notificationFormData.recipientName,
+                      recipientCompany: notificationFormData.recipientCompany || undefined,
+                      recipientEmail: notificationFormData.recipientEmail || undefined
+                    })}
+                    disabled={generateNotification.isPending || !notificationFormData.recipientName}
+                    className="w-full"
+                    data-testid="button-generate-notification"
+                  >
+                    {generateNotification.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                    Generate Notification Draft
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      {notificationMode === "view" && (
+                        <Badge variant="outline" className="text-green-600 border-green-600">Finalized</Badge>
+                      )}
+                      {notificationMode === "edit" && (
+                        <Badge variant="secondary">Draft</Badge>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => {
+                          setNotificationMode("create");
+                          setSelectedNotification(null);
+                          setNotificationFormData({
+                            recipientType: "OWNER_REP",
+                            recipientName: selectedDelayForNotification?.ownerRepName || "",
+                            recipientCompany: "",
+                            recipientEmail: "",
+                            subject: "",
+                            body: ""
+                          });
+                        }}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        New
+                      </Button>
+                      {selectedNotification && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleDownloadPDF(selectedNotification)}
+                          data-testid="button-download-pdf"
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Download PDF
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Recipient</Label>
+                      <Input
+                        value={notificationFormData.recipientName}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientName: e.target.value })}
+                        disabled={notificationMode === "view"}
+                        data-testid="input-edit-recipient-name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Company</Label>
+                      <Input
+                        value={notificationFormData.recipientCompany}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientCompany: e.target.value })}
+                        disabled={notificationMode === "view"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input
+                        type="email"
+                        value={notificationFormData.recipientEmail}
+                        onChange={(e) => setNotificationFormData({ ...notificationFormData, recipientEmail: e.target.value })}
+                        disabled={notificationMode === "view"}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Subject</Label>
+                    <Input
+                      value={notificationFormData.subject}
+                      onChange={(e) => setNotificationFormData({ ...notificationFormData, subject: e.target.value })}
+                      disabled={notificationMode === "view"}
+                      data-testid="input-notification-subject"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Letter Body</Label>
+                    <Textarea
+                      value={notificationFormData.body}
+                      onChange={(e) => setNotificationFormData({ ...notificationFormData, body: e.target.value })}
+                      disabled={notificationMode === "view"}
+                      rows={12}
+                      className="font-mono text-sm"
+                      data-testid="textarea-notification-body"
+                    />
+                  </div>
+
+                  {notificationMode === "edit" && selectedNotification && (
+                    <div className="flex gap-2 justify-end">
+                      <Button 
+                        variant="outline"
+                        onClick={() => selectedDelayForNotification && updateNotification.mutate({
+                          delayId: selectedDelayForNotification.id,
+                          notificationId: selectedNotification.id,
+                          updates: {
+                            recipientName: notificationFormData.recipientName,
+                            recipientCompany: notificationFormData.recipientCompany || undefined,
+                            recipientEmail: notificationFormData.recipientEmail || undefined,
+                            subject: notificationFormData.subject,
+                            body: notificationFormData.body
+                          }
+                        })}
+                        disabled={updateNotification.isPending}
+                        data-testid="button-save-draft"
+                      >
+                        {updateNotification.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Edit2 className="h-4 w-4 mr-2" />}
+                        Save Draft
+                      </Button>
+                      <Button 
+                        onClick={() => selectedDelayForNotification && updateNotification.mutate({
+                          delayId: selectedDelayForNotification.id,
+                          notificationId: selectedNotification.id,
+                          updates: {
+                            recipientName: notificationFormData.recipientName,
+                            recipientCompany: notificationFormData.recipientCompany || undefined,
+                            recipientEmail: notificationFormData.recipientEmail || undefined,
+                            subject: notificationFormData.subject,
+                            body: notificationFormData.body,
+                            status: "FINALIZED"
+                          }
+                        })}
+                        disabled={updateNotification.isPending}
+                        data-testid="button-finalize"
+                      >
+                        {updateNotification.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                        Finalize & Download
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="history" className="flex-1 overflow-auto mt-4">
+              {delayNotifications.length === 0 ? (
+                <div className="text-center py-12">
+                  <Mail className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No notifications have been created for this delay yet</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {delayNotifications.map((notification) => (
+                      <Card 
+                        key={notification.id} 
+                        className={`cursor-pointer hover-elevate ${selectedNotification?.id === notification.id ? 'ring-2 ring-primary' : ''}`}
+                        onClick={() => selectExistingNotification(notification)}
+                        data-testid={`notification-card-${notification.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge variant={notification.status === "FINALIZED" ? "default" : "secondary"} className="text-xs">
+                                  {notification.status}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                  {RECIPIENT_TYPE_OPTIONS.find(o => o.value === notification.recipientType)?.label}
+                                </Badge>
+                              </div>
+                              <p className="font-medium truncate">{notification.recipientName}</p>
+                              <p className="text-sm text-muted-foreground truncate">{notification.subject}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {format(new Date(notification.createdAt), "MMM d, yyyy h:mm a")}
+                              </p>
+                            </div>
+                            <div className="flex gap-1">
+                              <Button 
+                                size="icon" 
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectExistingNotification(notification);
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                size="icon" 
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadPDF(notification);
+                                }}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowNotificationDialog(false)} data-testid="button-close-notification-dialog">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

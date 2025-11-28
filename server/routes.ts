@@ -6,7 +6,7 @@ import {
   projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
   changeOrders, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries,
-  calendarEvents, notifications, filePermissions,
+  calendarEvents, notifications, filePermissions, projectDelays,
   insertProjectSchema, insertBidSchema, insertEstimateSchema,
   insertProcurementItemSchema, insertPlanDocumentSchema, insertTimeEntrySchema,
   insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
