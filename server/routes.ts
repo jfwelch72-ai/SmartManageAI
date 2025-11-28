@@ -9577,7 +9577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         equipmentId,
         projectId,
         assignedById: req.user!.id,
-        expectedReturnDate: expectedReturnDate ? new Date(expectedReturnDate) : null,
+        expectedReturnDate: expectedReturnDate || null,
         hoursAtAssignment: equipmentItem.currentHours,
         notes,
         isActive: true,
@@ -9739,7 +9739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hoursAtReport: equipmentItem.currentHours,
         repairLocation,
         estimatedCost,
-        estimatedCompletionDate: estimatedCompletionDate ? new Date(estimatedCompletionDate) : null,
+        estimatedCompletionDate: estimatedCompletionDate || null,
       }).returning();
       
       // Update equipment status
@@ -10035,8 +10035,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         equipmentId,
         assignmentId: assignment?.id,
         projectId,
-        weekStartDate: new Date(weekStartDate),
-        weekEndDate: new Date(weekEndDate),
+        weekStartDate,
+        weekEndDate,
         startingHours,
         endingHours,
         hoursUsed,
@@ -10239,21 +10239,21 @@ Please provide:
         ));
       
       const allRecipients = [...maintenanceManagers, ...adminsAndManagers];
-      const uniqueRecipients = [...new Set(allRecipients.map(r => r.id))];
+      const uniqueRecipientIds = Array.from(new Set(allRecipients.map(r => r.id)));
       
       // Create notifications for all recipients
-      for (const recipientId of uniqueRecipients) {
+      for (const recipientId of uniqueRecipientIds) {
         await db.insert(notifications).values({
           userId: recipientId,
           type: type === 'REPAIR' ? 'REPAIR_REQUEST' : 'MAINTENANCE_REQUEST',
           title: type === 'REPAIR' ? 'New Repair Request' : 'Maintenance Required',
           message,
-          link: `/equipment/${equipmentId}`,
-          createdAt: new Date(),
+          relatedEntityId: equipmentId,
+          relatedEntityType: 'equipment',
         });
       }
       
-      res.json({ success: true, notifiedCount: uniqueRecipients.length });
+      res.json({ success: true, notifiedCount: uniqueRecipientIds.length });
     } catch (error) {
       console.error("Notify maintenance error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -10293,6 +10293,280 @@ Please provide:
       res.json(assignedEquipment);
     } catch (error) {
       console.error("Get project equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get preventative maintenance schedules for equipment
+  app.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const schedules = await db
+        .select()
+        .from(equipmentMaintenanceSchedules)
+        .where(eq(equipmentMaintenanceSchedules.equipmentId, equipmentId))
+        .orderBy(equipmentMaintenanceSchedules.nextDueAt);
+      
+      res.json(schedules);
+    } catch (error) {
+      console.error("Get maintenance schedules error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Generate AI-powered preventative maintenance schedule for equipment
+  app.post("/api/equipment/:equipmentId/generate-maintenance-schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      // Get equipment details
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      // Get existing maintenance history for context
+      const maintenanceHistory = await db
+        .select()
+        .from(equipmentMaintenanceHistory)
+        .where(eq(equipmentMaintenanceHistory.equipmentId, equipmentId))
+        .orderBy(desc(equipmentMaintenanceHistory.performedAt))
+        .limit(20);
+      
+      const { openai } = await import('./ai/openaiClient');
+      
+      const systemPrompt = `You are an expert equipment maintenance specialist with deep knowledge of manufacturer-recommended maintenance schedules.
+You provide comprehensive preventative maintenance schedules based on specific equipment make, model, and type.
+Research and provide manufacturer-specific recommendations where possible.
+Always respond in valid JSON format with the following structure:
+{
+  "schedules": [
+    {
+      "name": "Maintenance task name (e.g., Engine Oil Change)",
+      "maintenanceType": "PREVENTATIVE" | "SCHEDULED_SERVICE" | "INSPECTION" | "CALIBRATION",
+      "description": "Detailed description of what this maintenance involves",
+      "intervalHours": number or null (hours between maintenance, e.g., 250),
+      "intervalDays": number or null (days between maintenance, e.g., 90),
+      "alertDaysBefore": 7,
+      "alertHoursBefore": 25,
+      "priority": "HIGH" | "MEDIUM" | "LOW",
+      "estimatedDuration": "Time to complete (e.g., 1 hour)",
+      "estimatedCost": number (approximate cost in USD),
+      "requiredParts": ["List of parts needed"],
+      "notes": "Any special notes or manufacturer recommendations"
+    }
+  ],
+  "manufacturerNotes": "Any important notes about this specific make/model maintenance requirements",
+  "totalAnnualMaintenanceCost": number (estimated annual cost for all maintenance),
+  "criticalItems": ["List of most critical maintenance items that should never be skipped"]
+}`;
+
+      const userPrompt = `Generate a comprehensive preventative maintenance schedule for the following equipment:
+
+Equipment Details:
+- Name: ${equipmentItem.name}
+- Type: ${equipmentItem.type}
+- Make: ${equipmentItem.make || 'Unknown'}
+- Model: ${equipmentItem.model || 'Unknown'}
+- Year: ${equipmentItem.year || 'Unknown'}
+- Current Hours: ${equipmentItem.currentHours || 0}
+- Last Maintenance Date: ${equipmentItem.lastMaintenanceDate ? new Date(equipmentItem.lastMaintenanceDate).toLocaleDateString() : 'Unknown'}
+
+Recent Maintenance History:
+${maintenanceHistory.length > 0
+  ? maintenanceHistory.map(m => `- ${m.maintenanceType}: ${m.description} at ${m.hoursAtMaintenance || 'Unknown'} hours`).join('\n')
+  : 'No recent maintenance records'}
+
+Please provide:
+1. A complete preventative maintenance schedule based on manufacturer recommendations for this specific make/model
+2. Include both hour-based and calendar-based intervals where appropriate
+3. Prioritize items by importance
+4. Include estimated costs and required parts
+5. Note any special considerations for this equipment type/model
+
+If the make/model is unknown, provide general best practices for the equipment type (${equipmentItem.type}).`;
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 4096,
+      });
+      
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+      
+      const aiResponse = JSON.parse(content);
+      
+      // Delete existing schedules for this equipment (replace with new AI-generated ones)
+      await db.delete(equipmentMaintenanceSchedules).where(eq(equipmentMaintenanceSchedules.equipmentId, equipmentId));
+      
+      // Calculate next due dates based on current hours and last maintenance
+      const currentHours = parseFloat(equipmentItem.currentHours || "0");
+      const now = new Date();
+      
+      // Insert new schedules
+      const insertedSchedules = [];
+      for (const schedule of aiResponse.schedules) {
+        // Calculate next due date
+        let nextDueAt: Date | null = null;
+        let nextDueHours: string | null = null;
+        
+        if (schedule.intervalDays) {
+          nextDueAt = new Date(now.getTime() + schedule.intervalDays * 24 * 60 * 60 * 1000);
+        }
+        if (schedule.intervalHours) {
+          nextDueHours = String(currentHours + schedule.intervalHours);
+        }
+        
+        const [inserted] = await db.insert(equipmentMaintenanceSchedules).values({
+          equipmentId,
+          maintenanceType: schedule.maintenanceType || "PREVENTATIVE",
+          name: schedule.name,
+          description: schedule.description,
+          intervalHours: schedule.intervalHours,
+          intervalDays: schedule.intervalDays,
+          nextDueAt,
+          nextDueHours,
+          alertDaysBefore: schedule.alertDaysBefore || 7,
+          alertHoursBefore: schedule.alertHoursBefore || 25,
+          isActive: true,
+        }).returning();
+        
+        insertedSchedules.push({
+          ...inserted,
+          priority: schedule.priority,
+          estimatedDuration: schedule.estimatedDuration,
+          estimatedCost: schedule.estimatedCost,
+          requiredParts: schedule.requiredParts,
+          notes: schedule.notes,
+        });
+      }
+      
+      res.json({
+        schedules: insertedSchedules,
+        manufacturerNotes: aiResponse.manufacturerNotes,
+        totalAnnualMaintenanceCost: aiResponse.totalAnnualMaintenanceCost,
+        criticalItems: aiResponse.criticalItems,
+      });
+    } catch (error) {
+      console.error("Generate maintenance schedule error:", error);
+      res.status(500).json({ error: "Failed to generate maintenance schedule. Please try again." });
+    }
+  });
+
+  // Complete a scheduled maintenance item
+  app.post("/api/equipment/:equipmentId/maintenance-schedules/:scheduleId/complete", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId, scheduleId } = req.params;
+      const { notes, laborCost, partsCost, performedByVendor, partsUsed } = req.body;
+      
+      // Get schedule
+      const [schedule] = await db.select().from(equipmentMaintenanceSchedules).where(eq(equipmentMaintenanceSchedules.id, scheduleId));
+      if (!schedule) {
+        res.status(404).json({ error: "Maintenance schedule not found" });
+        return;
+      }
+      
+      // Get equipment current hours
+      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      if (!equipmentItem) {
+        res.status(404).json({ error: "Equipment not found" });
+        return;
+      }
+      
+      const currentHours = equipmentItem.currentHours;
+      const now = new Date();
+      const totalCost = (parseFloat(laborCost || "0") + parseFloat(partsCost || "0")).toString();
+      
+      // Create history record
+      const [historyRecord] = await db.insert(equipmentMaintenanceHistory).values({
+        equipmentId,
+        scheduleId,
+        maintenanceType: schedule.maintenanceType,
+        description: schedule.name + (schedule.description ? `: ${schedule.description}` : ''),
+        performedAt: now,
+        hoursAtMaintenance: currentHours,
+        performedById: req.user!.id,
+        performedByVendor,
+        laborCost,
+        partsCost,
+        totalCost,
+        notes,
+        partsUsed: partsUsed ? JSON.stringify(partsUsed) : null,
+      }).returning();
+      
+      // Update schedule with new last performed date and calculate next due
+      let nextDueAt: Date | null = null;
+      let nextDueHours: string | null = null;
+      
+      if (schedule.intervalDays) {
+        nextDueAt = new Date(now.getTime() + schedule.intervalDays * 24 * 60 * 60 * 1000);
+      }
+      if (schedule.intervalHours) {
+        nextDueHours = String(parseFloat(currentHours || "0") + schedule.intervalHours);
+      }
+      
+      await db.update(equipmentMaintenanceSchedules).set({
+        lastPerformedAt: now,
+        lastPerformedHours: currentHours,
+        nextDueAt,
+        nextDueHours,
+        updatedAt: now,
+      }).where(eq(equipmentMaintenanceSchedules.id, scheduleId));
+      
+      // Update equipment last maintenance date
+      await db.update(equipment).set({
+        lastMaintenanceDate: now,
+        updatedAt: now,
+      }).where(eq(equipment.id, equipmentId));
+      
+      res.json({
+        historyRecord,
+        message: "Maintenance completed successfully",
+      });
+    } catch (error) {
+      console.error("Complete maintenance error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get maintenance history for equipment
+  app.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      
+      const history = await db
+        .select({
+          id: equipmentMaintenanceHistory.id,
+          maintenanceType: equipmentMaintenanceHistory.maintenanceType,
+          description: equipmentMaintenanceHistory.description,
+          performedAt: equipmentMaintenanceHistory.performedAt,
+          hoursAtMaintenance: equipmentMaintenanceHistory.hoursAtMaintenance,
+          performedByVendor: equipmentMaintenanceHistory.performedByVendor,
+          laborCost: equipmentMaintenanceHistory.laborCost,
+          partsCost: equipmentMaintenanceHistory.partsCost,
+          totalCost: equipmentMaintenanceHistory.totalCost,
+          notes: equipmentMaintenanceHistory.notes,
+          partsUsed: equipmentMaintenanceHistory.partsUsed,
+          performedByName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'External')`,
+        })
+        .from(equipmentMaintenanceHistory)
+        .leftJoin(users, eq(equipmentMaintenanceHistory.performedById, users.id))
+        .where(eq(equipmentMaintenanceHistory.equipmentId, equipmentId))
+        .orderBy(desc(equipmentMaintenanceHistory.performedAt));
+      
+      res.json(history);
+    } catch (error) {
+      console.error("Get maintenance history error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

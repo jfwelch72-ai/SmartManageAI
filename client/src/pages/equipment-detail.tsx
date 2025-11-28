@@ -20,7 +20,8 @@ import { z } from "zod";
 import { 
   ArrowLeft, Truck, Wrench, Clock, MapPin, Calendar, DollarSign, 
   Settings2, AlertTriangle, CheckCircle, Edit, History, FileText,
-  Plus, Send, Loader2, Sparkles, Package, ClipboardList, Undo2
+  Plus, Send, Loader2, Sparkles, Package, ClipboardList, Undo2,
+  CalendarClock, RefreshCw, Check, AlertCircle
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, startOfWeek, endOfWeek } from "date-fns";
@@ -118,6 +119,49 @@ interface AIRecommendation {
   warningsOrNotes: string[];
 }
 
+interface MaintenanceSchedule {
+  id: string;
+  equipmentId: string;
+  maintenanceType: string;
+  name: string;
+  description: string | null;
+  intervalHours: number | null;
+  intervalDays: number | null;
+  lastPerformedAt: string | null;
+  lastPerformedHours: string | null;
+  nextDueAt: string | null;
+  nextDueHours: string | null;
+  alertDaysBefore: number;
+  alertHoursBefore: number;
+  isActive: boolean;
+  priority?: string;
+  estimatedDuration?: string;
+  estimatedCost?: number;
+  requiredParts?: string[];
+  notes?: string;
+}
+
+interface MaintenanceScheduleResponse {
+  schedules: MaintenanceSchedule[];
+  manufacturerNotes?: string;
+  totalAnnualMaintenanceCost?: number;
+  criticalItems?: string[];
+}
+
+interface MaintenanceHistory {
+  id: string;
+  maintenanceType: string;
+  description: string;
+  performedAt: string;
+  hoursAtMaintenance: string | null;
+  performedByVendor: string | null;
+  laborCost: string | null;
+  partsCost: string | null;
+  totalCost: string | null;
+  notes: string | null;
+  performedByName: string;
+}
+
 export default function EquipmentDetailPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -132,6 +176,8 @@ export default function EquipmentDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [aiRecommendations, setAiRecommendations] = useState<AIRecommendation | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [showCompleteMaintenanceDialog, setShowCompleteMaintenanceDialog] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<MaintenanceSchedule | null>(null);
   
   const { data: equipment, isLoading, error } = useQuery<Equipment>({
     queryKey: ["/api/equipment", code],
@@ -193,6 +239,34 @@ export default function EquipmentDetailPage() {
       if (!response.ok) throw new Error("Failed to fetch projects");
       return response.json();
     },
+  });
+
+  const { data: maintenanceSchedules = [] } = useQuery<MaintenanceSchedule[]>({
+    queryKey: ["/api/equipment", equipment?.id, "maintenance-schedules"],
+    queryFn: async ({ queryKey }) => {
+      const [, equipmentId] = queryKey as [string, string | undefined, string];
+      if (!equipmentId) return [];
+      const response = await fetch(`/api/equipment/${equipmentId}/maintenance-schedules`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch maintenance schedules");
+      return response.json();
+    },
+    enabled: !!equipment?.id,
+  });
+
+  const { data: maintenanceHistory = [] } = useQuery<MaintenanceHistory[]>({
+    queryKey: ["/api/equipment", equipment?.id, "maintenance-history"],
+    queryFn: async ({ queryKey }) => {
+      const [, equipmentId] = queryKey as [string, string | undefined, string];
+      if (!equipmentId) return [];
+      const response = await fetch(`/api/equipment/${equipmentId}/maintenance-history`, {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch maintenance history");
+      return response.json();
+    },
+    enabled: !!equipment?.id,
   });
   
   const form = useForm<EditEquipmentInput>({
@@ -381,6 +455,52 @@ export default function EquipmentDetailPage() {
     },
   });
 
+  const generateSchedule = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/equipment/${equipment?.id}/generate-maintenance-schedule`, {});
+      return res.json();
+    },
+    onSuccess: (data: MaintenanceScheduleResponse) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "maintenance-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({
+        title: "Success",
+        description: `Generated ${data.schedules.length} maintenance schedule items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate maintenance schedule",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const completeMaintenance = useMutation({
+    mutationFn: async ({ scheduleId, data }: { scheduleId: string; data: { notes?: string; laborCost?: string; partsCost?: string; performedByVendor?: string } }) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/maintenance-schedules/${scheduleId}/complete`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "maintenance-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "maintenance-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      toast({
+        title: "Success",
+        description: "Maintenance marked as completed",
+      });
+      setShowCompleteMaintenanceDialog(false);
+      setSelectedSchedule(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to complete maintenance",
+        variant: "destructive",
+      });
+    },
+  });
+
   const fetchAIRecommendations = async () => {
     if (!equipment?.id) return;
     setLoadingAI(true);
@@ -469,6 +589,54 @@ export default function EquipmentDetailPage() {
       fuelUsed: "",
     });
     setShowHourLogDialog(true);
+  };
+
+  const handleCompleteMaintenance = (schedule: MaintenanceSchedule) => {
+    setSelectedSchedule(schedule);
+    setShowCompleteMaintenanceDialog(true);
+  };
+
+  const handleGenerateSchedule = () => {
+    if (!equipment?.id) return;
+    generateSchedule.mutate();
+  };
+
+  const submitCompleteMaintenance = (formData: { notes?: string; laborCost?: string; partsCost?: string; performedByVendor?: string }) => {
+    if (!equipment?.id || !selectedSchedule?.id) return;
+    completeMaintenance.mutate({ scheduleId: selectedSchedule.id, data: formData });
+  };
+
+  const getMaintenanceStatus = (schedule: MaintenanceSchedule): { status: string; color: string; icon: any } => {
+    const now = new Date();
+    const currentHours = parseFloat(equipment?.currentHours || "0");
+    
+    // Check hour-based due
+    if (schedule.nextDueHours) {
+      const dueHours = parseFloat(schedule.nextDueHours);
+      const hoursRemaining = dueHours - currentHours;
+      
+      if (hoursRemaining <= 0) {
+        return { status: "Overdue", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200", icon: AlertCircle };
+      }
+      if (hoursRemaining <= (schedule.alertHoursBefore || 25)) {
+        return { status: "Due Soon", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200", icon: AlertTriangle };
+      }
+    }
+    
+    // Check date-based due
+    if (schedule.nextDueAt) {
+      const dueDate = new Date(schedule.nextDueAt);
+      const daysRemaining = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysRemaining <= 0) {
+        return { status: "Overdue", color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200", icon: AlertCircle };
+      }
+      if (daysRemaining <= (schedule.alertDaysBefore || 7)) {
+        return { status: "Due Soon", color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200", icon: AlertTriangle };
+      }
+    }
+    
+    return { status: "On Schedule", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200", icon: CheckCircle };
   };
   
   const handleSubmit = (data: EditEquipmentInput) => {
@@ -597,11 +765,15 @@ export default function EquipmentDetailPage() {
         )}
         
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+          <TabsList className="flex-wrap">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="assignments" data-testid="tab-assignments">Assignments</TabsTrigger>
             <TabsTrigger value="repairs" data-testid="tab-repairs">Repairs</TabsTrigger>
             <TabsTrigger value="hours" data-testid="tab-hours">Hour Logs</TabsTrigger>
+            <TabsTrigger value="maintenance" data-testid="tab-maintenance">
+              <CalendarClock className="h-4 w-4 mr-1" />
+              Preventative Maintenance
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="overview" className="space-y-6">
@@ -903,6 +1075,203 @@ export default function EquipmentDetailPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="maintenance">
+            <div className="space-y-6">
+              {/* Schedule Generation Card */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <CalendarClock className="h-5 w-5" />
+                      Preventative Maintenance Schedule
+                    </CardTitle>
+                    <CardDescription>
+                      AI-generated maintenance schedule based on {equipment.make && equipment.model 
+                        ? `${equipment.make} ${equipment.model} manufacturer recommendations` 
+                        : `${getTypeLabel(equipment.type)} best practices`}
+                    </CardDescription>
+                  </div>
+                  {canEdit && (
+                    <Button 
+                      onClick={handleGenerateSchedule} 
+                      disabled={generateSchedule.isPending}
+                      size="sm"
+                      data-testid="button-generate-schedule"
+                    >
+                      {generateSchedule.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          {maintenanceSchedules.length > 0 ? "Regenerate Schedule" : "Generate Schedule"}
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  {maintenanceSchedules.length === 0 ? (
+                    <div className="text-center py-12">
+                      <CalendarClock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Maintenance Schedule</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Generate an AI-powered maintenance schedule based on this equipment's make, model, and current hours.
+                      </p>
+                      {canEdit && (
+                        <Button onClick={handleGenerateSchedule} disabled={generateSchedule.isPending} data-testid="button-generate-schedule-empty">
+                          {generateSchedule.isPending ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Generating Schedule...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-4 w-4 mr-2" />
+                              Generate Maintenance Schedule
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {maintenanceSchedules.map((schedule) => {
+                        const statusInfo = getMaintenanceStatus(schedule);
+                        const StatusIcon = statusInfo.icon;
+                        return (
+                          <Card key={schedule.id} className="border">
+                            <CardContent className="p-4">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div className="flex-1 min-w-0 space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h4 className="font-semibold">{schedule.name}</h4>
+                                    <Badge className={statusInfo.color}>
+                                      <StatusIcon className="h-3 w-3 mr-1" />
+                                      {statusInfo.status}
+                                    </Badge>
+                                    <Badge variant="outline">{schedule.maintenanceType}</Badge>
+                                  </div>
+                                  
+                                  {schedule.description && (
+                                    <p className="text-sm text-muted-foreground">{schedule.description}</p>
+                                  )}
+                                  
+                                  <div className="flex flex-wrap gap-4 text-sm">
+                                    {schedule.intervalHours && (
+                                      <div className="flex items-center gap-1 text-muted-foreground">
+                                        <Clock className="h-4 w-4" />
+                                        Every {schedule.intervalHours} hours
+                                      </div>
+                                    )}
+                                    {schedule.intervalDays && (
+                                      <div className="flex items-center gap-1 text-muted-foreground">
+                                        <Calendar className="h-4 w-4" />
+                                        Every {schedule.intervalDays} days
+                                      </div>
+                                    )}
+                                    {schedule.nextDueHours && (
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-muted-foreground">Next due at:</span>
+                                        <span className="font-medium">{parseFloat(schedule.nextDueHours).toLocaleString()} hrs</span>
+                                        <span className="text-muted-foreground">
+                                          ({(parseFloat(schedule.nextDueHours) - parseFloat(equipment.currentHours || "0")).toFixed(0)} hrs remaining)
+                                        </span>
+                                      </div>
+                                    )}
+                                    {schedule.nextDueAt && (
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-muted-foreground">Next due:</span>
+                                        <span className="font-medium">{format(new Date(schedule.nextDueAt), "MMM d, yyyy")}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {schedule.lastPerformedAt && (
+                                    <div className="text-xs text-muted-foreground">
+                                      Last performed: {format(new Date(schedule.lastPerformedAt), "MMM d, yyyy")}
+                                      {schedule.lastPerformedHours && ` at ${parseFloat(schedule.lastPerformedHours).toLocaleString()} hrs`}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {canEdit && (
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => handleCompleteMaintenance(schedule)}
+                                    data-testid={`button-complete-maintenance-${schedule.id}`}
+                                  >
+                                    <Check className="h-4 w-4 mr-1" />
+                                    Mark Complete
+                                  </Button>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Maintenance History Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Maintenance History
+                  </CardTitle>
+                  <CardDescription>Record of completed maintenance tasks</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {maintenanceHistory.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No maintenance history recorded</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Performed</TableHead>
+                          <TableHead>Hours</TableHead>
+                          <TableHead>Cost</TableHead>
+                          <TableHead>Performed By</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {maintenanceHistory.map((record) => (
+                          <TableRow key={record.id}>
+                            <TableCell>
+                              <Badge variant="outline">{record.maintenanceType}</Badge>
+                            </TableCell>
+                            <TableCell className="max-w-xs truncate">{record.description}</TableCell>
+                            <TableCell>{format(new Date(record.performedAt), "MMM d, yyyy")}</TableCell>
+                            <TableCell>
+                              {record.hoursAtMaintenance 
+                                ? `${parseFloat(record.hoursAtMaintenance).toLocaleString()} hrs`
+                                : "-"
+                              }
+                            </TableCell>
+                            <TableCell>
+                              {record.totalCost 
+                                ? `$${parseFloat(record.totalCost).toLocaleString()}`
+                                : "-"
+                              }
+                            </TableCell>
+                            <TableCell>{record.performedByVendor || record.performedByName}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
@@ -1640,6 +2009,112 @@ export default function EquipmentDetailPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* Complete Maintenance Dialog */}
+      <Dialog open={showCompleteMaintenanceDialog} onOpenChange={(open) => {
+        setShowCompleteMaintenanceDialog(open);
+        if (!open) setSelectedSchedule(null);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Complete Maintenance</DialogTitle>
+            <DialogDescription>
+              {selectedSchedule && (
+                <>Record completion of: <strong>{selectedSchedule.name}</strong></>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <CompleteMaintenanceForm 
+            onSubmit={submitCompleteMaintenance}
+            onCancel={() => {
+              setShowCompleteMaintenanceDialog(false);
+              setSelectedSchedule(null);
+            }}
+            isPending={completeMaintenance.isPending}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function CompleteMaintenanceForm({ 
+  onSubmit, 
+  onCancel,
+  isPending
+}: { 
+  onSubmit: (data: { notes?: string; laborCost?: string; partsCost?: string; performedByVendor?: string }) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const [formData, setFormData] = useState({
+    notes: "",
+    laborCost: "",
+    partsCost: "",
+    performedByVendor: "",
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Labor Cost</label>
+          <Input 
+            type="number" 
+            step="0.01" 
+            placeholder="$0.00"
+            value={formData.laborCost}
+            onChange={(e) => setFormData({ ...formData, laborCost: e.target.value })}
+            data-testid="input-labor-cost"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Parts Cost</label>
+          <Input 
+            type="number" 
+            step="0.01" 
+            placeholder="$0.00"
+            value={formData.partsCost}
+            onChange={(e) => setFormData({ ...formData, partsCost: e.target.value })}
+            data-testid="input-parts-cost"
+          />
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Performed By (External Vendor)</label>
+        <Input 
+          placeholder="Leave blank if performed in-house"
+          value={formData.performedByVendor}
+          onChange={(e) => setFormData({ ...formData, performedByVendor: e.target.value })}
+          data-testid="input-vendor"
+        />
+      </div>
+      
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Notes</label>
+        <Textarea 
+          placeholder="Any notes about this maintenance..."
+          value={formData.notes}
+          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+          data-testid="input-maintenance-notes"
+        />
+      </div>
+      
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel} data-testid="button-cancel-complete">
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isPending} data-testid="button-confirm-complete">
+          {isPending ? "Completing..." : "Complete Maintenance"}
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

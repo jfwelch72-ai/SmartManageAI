@@ -40,8 +40,12 @@ The platform utilizes a modern web stack for robustness and comprehensive functi
     -   **Material Calculator**: Integrated into bid estimates for automatic concrete yards and stone tonnage calculations. Supports SF items (area × depth formula) and LF items (linear × width × height for curbs/walls). Features adjustable waste factors (5-15%), stone sub-base toggle with type selection (crushed stone, limestone, compacted base), density-based calculations (1.5 tons/yd³ standard), and job totals summary card displaying aggregate concrete yards and stone tons across all estimate line items.
     -   **Internal Messaging System**: Secure team communication with company-wide channel and direct messages. Features conversation list with search, message composition, unread message badges in navigation, read receipts, and mobile-responsive design. All messaging routes verify participant membership before allowing access (403 for unauthorized users). Company channel auto-created for all users.
     -   **Equipment Management System**: Comprehensive fleet and tool tracking with equipment catalog (make, model, year, serial number, current hours), project assignment tracking with availability status, repair workflow with vendor tracking and cost monitoring, preventative maintenance scheduling based on hours or calendar intervals, and weekly hour entry reminders for project managers. Equipment types include Heavy Equipment, Vehicles, Power Tools, Hand Tools, Trailers, and specialized categories. RBAC restricts access to ADMIN, MANAGER, SUPERINTENDENT, and MAINTENANCE_MANAGER roles. Features include:
-        - Equipment detail page with Overview, Assignments, Repairs, and Hour Logs tabs
+        - Equipment detail page with Overview, Assignments, Repairs, Hour Logs, and Preventative Maintenance tabs
         - AI-powered maintenance recommendations using GPT-4o for repair tasks, parts suggestions, and preventative maintenance schedules
+        - Preventative Maintenance tab with AI-generated schedule based on equipment make, model, type, and current hours
+        - Maintenance schedules with status indicators (Overdue, Due Soon, On Schedule) based on hours or calendar intervals
+        - Maintenance completion workflow with labor/parts cost tracking, vendor information, and automatic next-due-date calculations
+        - Maintenance history table showing all completed maintenance tasks
         - Equipment assignment to projects with expected return date tracking
         - Equipment return workflow with condition reporting and hour updates
         - Weekly hour logging with fuel usage tracking
