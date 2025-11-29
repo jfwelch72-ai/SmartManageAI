@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes } from "@shared/schema";
+import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { 
   runAIAnalysis, 
@@ -17,6 +17,50 @@ import { fromZodError } from "zod-validation-error";
 import { type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
+import { z } from "zod";
+
+const onboardingCompleteSchema = z.object({
+  companyName: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().min(2, "Company name must be at least 2 characters").max(200))
+    .transform(s => sanitizeShortText(s)),
+  tradeType: z.enum(tradeTypeEnum.enumValues, { 
+    errorMap: () => ({ message: "Invalid trade type" }) 
+  }),
+  tradeName: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().max(200))
+    .transform(s => s ? sanitizeShortText(s) : null)
+    .optional()
+    .nullable(),
+  crewSize: z.number().int().min(1).max(10000).optional().nullable(),
+  region: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().max(200))
+    .transform(s => s ? sanitizeShortText(s) : null)
+    .optional()
+    .nullable(),
+  materials: z.array(
+    z.string()
+      .transform(s => s?.trim() || '')
+      .pipe(z.string().max(100))
+      .transform(s => sanitizeShortText(s))
+  ).max(50).optional().nullable(),
+});
+
+const onboardingChatSchema = z.object({
+  message: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().min(1, "Message is required").max(2000))
+    .transform(s => sanitizeText(s)),
+  conversationHistory: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string()
+      .transform(s => s?.trim() || '')
+      .pipe(z.string().max(5000))
+      .transform(s => sanitizeText(s)),
+  })).max(30).optional().default([]),
+});
 
 const router = Router();
 
@@ -462,21 +506,34 @@ Set isComplete to true only when you have gathered all the key information and c
 The step should increment as you progress through the conversation (1=trade, 2=crew, 3=materials, 4=region, 5=confirmation).`;
 
 // Complete onboarding and save organization configuration
-router.post("/ai/onboarding/complete", async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { companyName, tradeType, tradeName, crewSize, region, materials } = req.body;
-
-    if (!companyName || !tradeType) {
-      return res.status(400).json({ error: "Company name and trade type are required" });
+    // Validate and sanitize input
+    const validationResult = onboardingCompleteSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid input", 
+        details: fromZodError(validationResult.error).toString() 
+      });
     }
 
-    // Generate a unique slug
+    const { companyName, tradeType, tradeName, crewSize, region, materials } = validationResult.data;
+
+    // Prevent users who already have an organization from creating another
+    if (req.user.organizationId) {
+      return res.status(400).json({ error: "You already belong to an organization" });
+    }
+
+    // Generate a unique slug from sanitized company name
     const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+    // Materials are already sanitized by Zod schema
+    const sanitizedMaterials = materials || [];
 
     // Create the organization
     const [newOrg] = await db.insert(organizations).values({
@@ -487,7 +544,7 @@ router.post("/ai/onboarding/complete", async (req: AuthRequest, res) => {
       typicalCrewSize: crewSize || null,
       region: region || null,
       onboardingStatus: 'COMPLETED',
-      onboardingData: JSON.stringify({ materials, completedAt: new Date() }),
+      onboardingData: JSON.stringify({ materials: sanitizedMaterials, completedAt: new Date() }),
     }).returning();
 
     // Update the user to belong to this organization
@@ -549,27 +606,30 @@ router.post("/ai/onboarding/complete", async (req: AuthRequest, res) => {
 });
 
 // AI Onboarding Chat endpoint
-router.post("/ai/onboarding/chat", async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const { message, conversationHistory = [] } = req.body;
-
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ error: "Message is required" });
+    // Validate and sanitize input
+    const validationResult = onboardingChatSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid input", 
+        details: fromZodError(validationResult.error).toString() 
+      });
     }
+
+    const { message, conversationHistory } = validationResult.data;
 
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
       { role: 'system', content: ONBOARDING_SYSTEM_PROMPT }
     ];
 
-    // Add conversation history
+    // Add sanitized conversation history
     for (const msg of conversationHistory.slice(-20)) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        messages.push({ role: msg.role, content: msg.content });
-      }
+      messages.push({ role: msg.role, content: msg.content });
     }
 
     messages.push({ role: 'user', content: message });
