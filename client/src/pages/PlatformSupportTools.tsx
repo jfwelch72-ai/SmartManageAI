@@ -24,6 +24,8 @@ import {
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
   id: string;
@@ -58,9 +60,13 @@ interface WorkType {
 }
 
 export default function PlatformSupportTools() {
+  const { user, logout } = useAuth();
   const { toast } = useToast();
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
+  const userRole = user?.role || "SUPER_ADMIN";
 
   const { data: organizations } = useQuery<Organization[]>({
     queryKey: ["/api/platform/organizations"],
@@ -155,21 +161,23 @@ export default function PlatformSupportTools() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin">
-          <Button variant="ghost" size="sm">
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-support-title">Support Tools</h1>
-          <p className="text-muted-foreground">Backend support tools for resolving user issues</p>
+    <div className="min-h-screen bg-background">
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <main className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/admin">
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-support-title">Support Tools</h1>
+            <p className="text-muted-foreground">Backend support tools for resolving user issues</p>
+          </div>
         </div>
-      </div>
 
-      <Tabs defaultValue="users" className="space-y-6">
+        <Tabs defaultValue="users" className="space-y-6">
         <TabsList>
           <TabsTrigger value="users" data-testid="tab-users">
             <Users className="h-4 w-4 mr-2" />
@@ -497,7 +505,8 @@ export default function PlatformSupportTools() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+        </Tabs>
+      </main>
     </div>
   );
 }

@@ -540,6 +540,20 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
           )}
 
           <ThemeToggle />
+
+          {/* Dedicated Logout button for SUPER_ADMIN - more visible */}
+          {isSuperAdmin(userRole) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="hidden md:flex items-center gap-2"
+              data-testid="button-super-admin-logout"
+            >
+              <LogOut className="h-4 w-4" />
+              Log Out
+            </Button>
+          )}
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

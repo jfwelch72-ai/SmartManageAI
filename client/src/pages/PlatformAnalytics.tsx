@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChevronLeft, Activity, FileText, Hammer, Clock, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/hooks/use-auth";
 
 interface PlatformAnalytics {
   weeklyActions: number;
@@ -26,9 +28,13 @@ interface PlatformAnalytics {
 }
 
 export default function PlatformAnalytics() {
+  const { user, logout } = useAuth();
   const { data: analytics, isLoading } = useQuery<PlatformAnalytics>({
     queryKey: ["/api/platform/analytics"],
   });
+
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
+  const userRole = user?.role || "SUPER_ADMIN";
 
   const getActionBadge = (action: string) => {
     switch (action) {
@@ -51,21 +57,23 @@ export default function PlatformAnalytics() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin">
-          <Button variant="ghost" size="sm">
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-analytics-title">Platform Analytics</h1>
-          <p className="text-muted-foreground">Usage metrics and activity across all organizations</p>
+    <div className="min-h-screen bg-background">
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <main className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/admin">
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-analytics-title">Platform Analytics</h1>
+            <p className="text-muted-foreground">Usage metrics and activity across all organizations</p>
+          </div>
         </div>
-      </div>
 
-      {isLoading ? (
+        {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
@@ -177,6 +185,7 @@ export default function PlatformAnalytics() {
           </Card>
         </>
       )}
+      </main>
     </div>
   );
 }

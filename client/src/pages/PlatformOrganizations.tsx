@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, Users, Search, ExternalLink, ChevronLeft } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
   id: string;
@@ -27,12 +29,16 @@ interface Organization {
 }
 
 export default function PlatformOrganizations() {
+  const { user, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [tradeFilter, setTradeFilter] = useState<string>("all");
 
   const { data: organizations, isLoading } = useQuery<Organization[]>({
     queryKey: ["/api/platform/organizations"],
   });
+
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
+  const userRole = user?.role || "SUPER_ADMIN";
 
   const tradeTypeLabels: Record<string, string> = {
     GENERAL_CONTRACTOR: "General Contractor",
@@ -78,21 +84,23 @@ export default function PlatformOrganizations() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin">
-          <Button variant="ghost" size="sm">
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-organizations-title">Organizations</h1>
-          <p className="text-muted-foreground">Manage all contractor companies on the platform</p>
+    <div className="min-h-screen bg-background">
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <main className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/admin">
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-organizations-title">Organizations</h1>
+            <p className="text-muted-foreground">Manage all contractor companies on the platform</p>
+          </div>
         </div>
-      </div>
 
-      <Card>
+        <Card>
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1 max-w-sm">
@@ -191,6 +199,7 @@ export default function PlatformOrganizations() {
           )}
         </CardContent>
       </Card>
+      </main>
     </div>
   );
 }

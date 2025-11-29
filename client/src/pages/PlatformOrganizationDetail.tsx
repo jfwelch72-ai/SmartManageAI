@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
   id: string;
@@ -57,8 +59,12 @@ interface WorkType {
 }
 
 export default function PlatformOrganizationDetail() {
+  const { user, logout } = useAuth();
   const params = useParams<{ id: string }>();
   const orgId = params.id;
+
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
+  const userRole = user?.role || "SUPER_ADMIN";
 
   const { data: organizations } = useQuery<Organization[]>({
     queryKey: ["/api/platform/organizations"],
@@ -128,39 +134,44 @@ export default function PlatformOrganizationDetail() {
 
   if (!organization) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center gap-4">
-          <Link href="/admin/organizations">
-            <Button variant="ghost" size="sm">
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
-            </Button>
-          </Link>
-        </div>
-        <Card>
-          <CardContent className="p-8">
-            <div className="space-y-4">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-4 w-48" />
-              <div className="grid gap-4 md:grid-cols-3 mt-6">
-                <Skeleton className="h-24" />
-                <Skeleton className="h-24" />
-                <Skeleton className="h-24" />
+      <div className="min-h-screen bg-background">
+        <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+        <main className="p-6 space-y-6">
+          <div className="flex items-center gap-4">
+            <Link href="/admin/organizations">
+              <Button variant="ghost" size="sm">
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Back
+              </Button>
+            </Link>
+          </div>
+          <Card>
+            <CardContent className="p-8">
+              <div className="space-y-4">
+                <Skeleton className="h-8 w-64" />
+                <Skeleton className="h-4 w-48" />
+                <div className="grid gap-4 md:grid-cols-3 mt-6">
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin/organizations">
-          <Button variant="ghost" size="sm">
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to Organizations
+    <div className="min-h-screen bg-background">
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <main className="p-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/admin/organizations">
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Back to Organizations
           </Button>
         </Link>
       </div>
@@ -441,8 +452,9 @@ export default function PlatformOrganizationDetail() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 }

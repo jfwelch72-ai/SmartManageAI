@@ -5,6 +5,8 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import AppHeader from "@/components/AppHeader";
+import { useAuth } from "@/hooks/use-auth";
 
 interface PlatformStats {
   totalOrganizations: number;
@@ -16,9 +18,13 @@ interface PlatformStats {
 }
 
 export default function PlatformAdminDashboard() {
+  const { user, logout } = useAuth();
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/platform/stats"],
   });
+
+  const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
+  const userRole = user?.role || "SUPER_ADMIN";
 
   const tradeTypeLabels: Record<string, string> = {
     GENERAL_CONTRACTOR: "General Contractor",
@@ -55,32 +61,37 @@ export default function PlatformAdminDashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Platform Administration</h1>
-            <p className="text-muted-foreground">Monitor and manage all organizations</p>
+      <div className="min-h-screen bg-background">
+        <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+        <main className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Platform Administration</h1>
+              <p className="text-muted-foreground">Monitor and manage all organizations</p>
+            </div>
           </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-16" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-4" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-h-screen bg-background">
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <main className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-platform-admin-title">Platform Administration</h1>
@@ -239,6 +250,7 @@ export default function PlatformAdminDashboard() {
           </Card>
         </Link>
       </div>
+      </main>
     </div>
   );
 }
