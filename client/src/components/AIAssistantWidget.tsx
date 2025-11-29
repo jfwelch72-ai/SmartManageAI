@@ -117,10 +117,16 @@ export function AIAssistantWidget() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover-elevate active-elevate-2 transition-all"
+          className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg hover-elevate active-elevate-2 transition-all"
+          style={{ 
+            position: 'fixed', 
+            bottom: '24px', 
+            right: '24px', 
+            zIndex: 9999 
+          }}
           data-testid="button-ai-assistant-open"
         >
-          <Bot className="h-6 w-6" />
+          <Bot className="h-5 w-5" />
           <span className="sr-only">Open AI Assistant</span>
         </button>
       )}
@@ -128,9 +134,16 @@ export function AIAssistantWidget() {
       {/* Chat Panel */}
       {isOpen && (
         <div 
-          className={`fixed bottom-6 right-6 z-50 bg-card border rounded-lg shadow-2xl transition-all ${
-            isMinimized ? "w-72" : "w-96"
+          className={`bg-card border rounded-lg shadow-2xl transition-all ${
+            isMinimized ? "w-64" : "w-80 sm:w-96"
           }`}
+          style={{ 
+            position: 'fixed', 
+            bottom: '24px', 
+            right: '24px', 
+            zIndex: 9999,
+            maxWidth: 'calc(100vw - 48px)'
+          }}
           data-testid="ai-assistant-panel"
         >
           {/* Header */}
