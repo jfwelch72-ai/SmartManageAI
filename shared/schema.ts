@@ -52,9 +52,42 @@ export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", 
 export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
 export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
+// White-Label / Multi-Tenant Enums
+export const tradeTypeEnum = pgEnum("trade_type", [
+  "GENERAL_CONTRACTOR", "CONCRETE", "ROOFING", "ELECTRICAL", "PLUMBING", 
+  "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING",
+  "LANDSCAPING", "EXCAVATION", "DEMOLITION", "STEEL_ERECTION", "GLAZING",
+  "INSULATION", "FIRE_PROTECTION", "WATERPROOFING", "OTHER"
+]);
+export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
+
+// Organizations table (tenants/companies)
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  tradeType: tradeTypeEnum("trade_type").notNull().default("GENERAL_CONTRACTOR"),
+  tradeName: text("trade_name"),
+  logoUrl: text("logo_url"),
+  primaryColor: text("primary_color"),
+  region: text("region"),
+  typicalCrewSize: integer("typical_crew_size"),
+  onboardingStatus: onboardingStatusEnum("onboarding_status").notNull().default("NOT_STARTED"),
+  onboardingData: text("onboarding_data"),
+  terminologyJson: text("terminology_json"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = typeof organizations.$inferSelect;
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
@@ -2698,3 +2731,64 @@ export const vendorPricingCatalogs = pgTable("vendor_pricing_catalogs", {
 export const insertVendorPricingCatalogSchema = createInsertSchema(vendorPricingCatalogs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertVendorPricingCatalog = z.infer<typeof insertVendorPricingCatalogSchema>;
 export type VendorPricingCatalog = typeof vendorPricingCatalogs.$inferSelect;
+
+// Trade Templates - Pre-built configurations for different trades
+export const tradeTemplates = pgTable("trade_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  materialCategories: text("material_categories").notNull(),
+  workTypesJson: text("work_types_json").notNull(),
+  calculatorConfigJson: text("calculator_config_json").notNull(),
+  terminologyJson: text("terminology_json"),
+  defaultUnitsJson: text("default_units_json"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTradeTemplateSchema = createInsertSchema(tradeTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTradeTemplate = z.infer<typeof insertTradeTemplateSchema>;
+export type TradeTemplate = typeof tradeTemplates.$inferSelect;
+
+// Organization Material Calculators - Custom calculators per organization
+export const organizationCalculators = pgTable("organization_calculators", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  unit: text("unit").notNull(),
+  formulaJson: text("formula_json").notNull(),
+  inputFieldsJson: text("input_fields_json").notNull(),
+  defaultValues: text("default_values"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_calculators_org_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationCalculatorSchema = createInsertSchema(organizationCalculators).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationCalculator = z.infer<typeof insertOrganizationCalculatorSchema>;
+export type OrganizationCalculator = typeof organizationCalculators.$inferSelect;
+
+// Organization Work Types - Custom work types per organization
+export const organizationWorkTypes = pgTable("organization_work_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category"),
+  unit: text("unit").notNull(),
+  defaultProductionRate: decimal("default_production_rate", { precision: 10, scale: 2 }),
+  laborCostPerUnit: decimal("labor_cost_per_unit", { precision: 10, scale: 2 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_work_types_org_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationWorkTypeSchema = createInsertSchema(organizationWorkTypes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationWorkType = z.infer<typeof insertOrganizationWorkTypeSchema>;
+export type OrganizationWorkType = typeof organizationWorkTypes.$inferSelect;
