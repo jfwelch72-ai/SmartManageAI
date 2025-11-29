@@ -103,6 +103,9 @@ export const users = pgTable("users", {
   tokenVersion: integer("token_version").notNull().default(0),
   costRateRegular: decimal("cost_rate_regular", { precision: 10, scale: 2 }),
   costRateOvertime: decimal("cost_rate_overtime", { precision: 10, scale: 2 }),
+  walkthroughCompleted: boolean("walkthrough_completed").notNull().default(false),
+  walkthroughStep: integer("walkthrough_step").notNull().default(0),
+  walkthroughStartedAt: timestamp("walkthrough_started_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
