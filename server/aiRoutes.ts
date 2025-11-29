@@ -15,6 +15,8 @@ import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
 import { type AuthRequest } from "./auth";
+import { openai } from "./ai/openaiClient";
+import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 
 const router = Router();
 
@@ -410,10 +412,7 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
 });
 
 // AI Assistant Chat endpoint
-import { openai } from "./ai/openaiClient";
-import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
-
-router.post("/assistant/chat", async (req: AuthRequest, res) => {
+router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -457,7 +456,7 @@ Tailor your responses to the user's role and current location in the app.`
     messages.push({ role: 'user', content: message });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Cost-effective model for chat
+      model: 'gpt-4o-mini',
       messages,
       temperature: 0.7,
       max_tokens: 1000,
@@ -468,7 +467,6 @@ Tailor your responses to the user's role and current location in the app.`
     if (!response) {
       throw new Error('No response from AI');
     }
-
     res.json({ 
       response,
       usage: {
@@ -477,7 +475,7 @@ Tailor your responses to the user's role and current location in the app.`
       }
     });
   } catch (error: any) {
-    console.error("Error in AI assistant chat:", error);
+    console.error("AI Assistant chat error:", error.message || "Unknown error");
     res.status(500).json({ error: "Failed to get AI response. Please try again." });
   }
 });
