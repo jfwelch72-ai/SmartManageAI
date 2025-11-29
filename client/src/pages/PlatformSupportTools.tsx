@@ -9,7 +9,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Plus, Users, Search, Mail, Building2 } from "lucide-react";
+import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -109,6 +120,22 @@ export default function PlatformSupportTools() {
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest("POST", `/api/platform/users/${userId}/reset-password`);
+    },
+    onSuccess: (_, userId) => {
+      const user = users?.find(u => u.id === userId);
+      toast({ 
+        title: "Password reset email sent", 
+        description: `A password reset link has been sent to ${user?.email}` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to send reset email", description: error.message, variant: "destructive" });
+    },
+  });
+
   const filteredUsers = users?.filter((user) => {
     const matchesSearch =
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -190,6 +217,7 @@ export default function PlatformSupportTools() {
                       <TableHead>Role</TableHead>
                       <TableHead>Organization</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -217,11 +245,44 @@ export default function PlatformSupportTools() {
                             {user.isActive ? "Active" : "Inactive"}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-right">
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                disabled={resetPasswordMutation.isPending}
+                                data-testid={`button-reset-password-${user.id}`}
+                              >
+                                <KeyRound className="h-4 w-4 mr-1" />
+                                Reset Password
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will send a password reset email to <strong>{user.email}</strong>. 
+                                  The user will receive a link to set a new password.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => resetPasswordMutation.mutate(user.id)}
+                                  data-testid={`button-confirm-reset-${user.id}`}
+                                >
+                                  Send Reset Email
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </TableCell>
                       </TableRow>
                     ))}
                     {filteredUsers?.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                           No users found
                         </TableCell>
                       </TableRow>

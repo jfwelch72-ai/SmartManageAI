@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { RoutePermissions } from "@/lib/rbac";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
 import DashboardPage from "@/pages/dashboard";
 import UsersPage from "@/pages/users";
@@ -101,6 +103,8 @@ function Router() {
     <Switch>
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={LoginPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/register" component={RegisterPage} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       

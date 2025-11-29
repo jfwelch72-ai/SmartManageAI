@@ -1,8 +1,11 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
+import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
+import { logAudit } from "./auditLogger";
 
 const router = Router();
 
@@ -352,6 +355,55 @@ router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, a
   } catch (error: any) {
     console.error("Update organization error:", error.message);
     res.status(500).json({ error: "Failed to update organization" });
+  }
+});
+
+router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    await db.insert(passwordResetTokens).values({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    const baseUrl = process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+    const resetLink = `${baseUrl}/reset-password?token=${token}`;
+
+    await sendEmail({
+      to: user.email,
+      subject: 'Password Reset Required - TFR Construction',
+      html: getAdminPasswordResetEmailHtml(resetLink, user.firstName),
+      text: getPasswordResetEmailText(resetLink, user.firstName),
+    });
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: user.id,
+      userId: req.user!.id,
+      organizationId: null,
+      changes: { adminPasswordReset: true, targetEmail: user.email },
+    });
+
+    console.log(`Admin-initiated password reset for user: ${user.email} by admin: ${req.user!.email}`);
+    res.json({ message: `Password reset email sent to ${user.email}` });
+  } catch (error: any) {
+    console.error("Admin password reset error:", error.message);
+    res.status(500).json({ error: "Failed to initiate password reset" });
   }
 });
 

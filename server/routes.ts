@@ -1,7 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import crypto from "crypto";
 import { db } from "./db";
-import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts } from "@shared/schema";
+import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens } from "@shared/schema";
+import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { 
   projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
   timeEntries, tmDailySheets, receipts, projectNotes, scopeItems, media,
@@ -256,6 +258,164 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Init error:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Forgot Password - Request password reset email
+  app.post("/api/auth/forgot-password", authLimiter, async (req: AuthRequest, res) => {
+    try {
+      const schema = z.object({
+        email: z.string().email(),
+      });
+
+      const validationResult = schema.safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid email address" });
+        return;
+      }
+
+      const { email } = validationResult.data;
+      const sanitizedEmail = sanitizeEmail(email);
+
+      const [user] = await db.select().from(users).where(eq(users.email, sanitizedEmail)).limit(1);
+
+      if (user && user.isActive) {
+        await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+        await db.insert(passwordResetTokens).values({
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+        });
+
+        const baseUrl = process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+        const resetLink = `${baseUrl}/reset-password?token=${token}`;
+
+        await sendEmail({
+          to: user.email,
+          subject: 'Password Reset Request - TFR Construction',
+          html: getPasswordResetEmailHtml(resetLink, user.firstName),
+          text: getPasswordResetEmailText(resetLink, user.firstName),
+        });
+
+        console.log(`Password reset requested for: ${sanitizedEmail}`);
+      }
+
+      res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reset Password - Set new password using token
+  app.post("/api/auth/reset-password", authLimiter, async (req: AuthRequest, res) => {
+    try {
+      const schema = z.object({
+        token: z.string().min(1),
+        password: z.string().min(8, "Password must be at least 8 characters"),
+      });
+
+      const validationResult = schema.safeParse(req.body);
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      const { token, password } = validationResult.data;
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const [resetToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.tokenHash, tokenHash),
+            isNull(passwordResetTokens.usedAt)
+          )
+        )
+        .limit(1);
+
+      if (!resetToken) {
+        res.status(400).json({ error: "Invalid or expired reset token" });
+        return;
+      }
+
+      if (new Date() > resetToken.expiresAt) {
+        res.status(400).json({ error: "Reset token has expired" });
+        return;
+      }
+
+      const newPasswordHash = await hashPassword(password);
+
+      await db.update(users).set({
+        passwordHash: newPasswordHash,
+        tokenVersion: sql`${users.tokenVersion} + 1`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, resetToken.userId));
+
+      await db.update(passwordResetTokens).set({
+        usedAt: new Date(),
+      }).where(eq(passwordResetTokens.id, resetToken.id));
+
+      await logAudit({
+        action: "UPDATE",
+        entityType: "users",
+        entityId: resetToken.userId,
+        userId: resetToken.userId,
+        organizationId: null,
+        changes: { passwordReset: true },
+      });
+
+      console.log(`Password reset completed for user: ${resetToken.userId}`);
+      res.json({ message: "Password has been reset successfully. Please login with your new password." });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Validate Reset Token - Check if token is valid without using it
+  app.get("/api/auth/validate-reset-token", async (req: AuthRequest, res) => {
+    try {
+      const token = req.query.token as string;
+      
+      if (!token) {
+        res.status(400).json({ valid: false, error: "No token provided" });
+        return;
+      }
+
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const [resetToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.tokenHash, tokenHash),
+            isNull(passwordResetTokens.usedAt)
+          )
+        )
+        .limit(1);
+
+      if (!resetToken) {
+        res.json({ valid: false, error: "Invalid or expired reset token" });
+        return;
+      }
+
+      if (new Date() > resetToken.expiresAt) {
+        res.json({ valid: false, error: "Reset token has expired" });
+        return;
+      }
+
+      res.json({ valid: true });
+    } catch (error) {
+      console.error("Validate token error:", error);
+      res.status(500).json({ valid: false, error: "Internal server error" });
     }
   });
 
