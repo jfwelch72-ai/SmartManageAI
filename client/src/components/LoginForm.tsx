@@ -20,10 +20,10 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
 
   return (
     <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">SmartManageAI</CardTitle>
-        <CardDescription>
-          Enter your credentials to access your management platform
+      <CardHeader className="space-y-2 text-center">
+        <CardTitle className="text-2xl font-bold">Welcome to SmartManageAI</CardTitle>
+        <CardDescription className="text-base">
+          Let's get you started! Sign in to access your construction management platform.
         </CardDescription>
       </CardHeader>
       <CardContent>

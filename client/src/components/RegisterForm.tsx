@@ -53,10 +53,10 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
 
   return (
     <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Register for SmartManageAI</CardTitle>
-        <CardDescription>
-          Create an account to manage your construction projects
+      <CardHeader className="space-y-2 text-center">
+        <CardTitle className="text-2xl font-bold">Join SmartManageAI</CardTitle>
+        <CardDescription className="text-base">
+          Great to have you here! Let's set up your account in just a few steps.
         </CardDescription>
       </CardHeader>
       <CardContent>
