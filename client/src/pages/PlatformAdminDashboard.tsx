@@ -18,7 +18,7 @@ interface PlatformStats {
 }
 
 export default function PlatformAdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/platform/stats"],
   });
@@ -62,7 +62,7 @@ export default function PlatformAdminDashboard() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+        <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="p-6 space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -90,7 +90,7 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>

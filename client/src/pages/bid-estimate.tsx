@@ -92,7 +92,7 @@ export default function BidEstimate() {
   const bidCode = params?.code || "";
   const { data: bid, isLoading: bidLoading } = useBid(bidCode);
   const bidId = bid?.id;
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   
   // Check if user has estimate editing access (Admin, Manager, Estimator only)
   const hasEstimateAccess = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR";
@@ -452,6 +452,7 @@ export default function BidEstimate() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading...</p>
@@ -467,6 +468,7 @@ export default function BidEstimate() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="mx-auto max-w-7xl px-6 py-8">
           <Button variant="ghost" onClick={() => setLocation(`/bids/${bidCode}`)} data-testid="button-back">
@@ -486,6 +488,7 @@ export default function BidEstimate() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">

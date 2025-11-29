@@ -29,7 +29,7 @@ interface Organization {
 }
 
 export default function PlatformOrganizations() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [tradeFilter, setTradeFilter] = useState<string>("all");
 
@@ -85,7 +85,7 @@ export default function PlatformOrganizations() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin">

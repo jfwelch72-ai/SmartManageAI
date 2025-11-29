@@ -57,7 +57,7 @@ import { z } from "zod";
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
   const searchParams = useSearch();
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const allowedStatuses = getAllowedProjectStatuses(user?.role);
@@ -306,6 +306,7 @@ export default function ProjectsPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

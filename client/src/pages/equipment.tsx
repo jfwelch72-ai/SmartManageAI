@@ -78,7 +78,7 @@ const createEquipmentSchema = z.object({
 type CreateEquipmentInput = z.infer<typeof createEquipmentSchema>;
 
 export default function EquipmentPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
@@ -210,6 +210,7 @@ export default function EquipmentPage() {
         userName={`${user.firstName} ${user.lastName}`}
         userRole={user.role}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">

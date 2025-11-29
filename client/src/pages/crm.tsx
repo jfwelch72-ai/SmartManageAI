@@ -239,7 +239,7 @@ const NOTE_TYPE_COLORS: Record<NoteType, string> = {
 };
 
 export default function CRMPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -758,7 +758,7 @@ export default function CRMPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <AppHeader userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"} userRole={user.role} onLogout={logout} />
+      <AppHeader userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
       
       <main className="flex-1 container mx-auto px-4 py-6">
         <div className="flex flex-col gap-6">

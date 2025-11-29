@@ -105,7 +105,7 @@ interface CatalogWithVendor extends RentalEquipmentCatalog {
 }
 
 export default function RentalVendorsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   
@@ -405,7 +405,7 @@ export default function RentalVendorsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} />
+      <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
       
       <main className="container mx-auto px-4 py-6 max-w-7xl">
         <div className="flex items-center justify-between mb-6">

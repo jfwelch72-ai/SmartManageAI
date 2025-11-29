@@ -55,7 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function BidsPage() {
   const [, setLocation] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
@@ -289,6 +289,7 @@ export default function BidsPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

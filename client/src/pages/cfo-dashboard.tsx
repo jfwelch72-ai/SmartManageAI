@@ -74,7 +74,7 @@ interface EquipmentMetrics {
 }
 
 export default function CFODashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const [, setLocation] = useLocation();
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
@@ -94,6 +94,7 @@ export default function CFODashboard() {
           userName="Guest"
           userRole=""
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Please log in to view profitability data</p>
@@ -109,6 +110,7 @@ export default function CFODashboard() {
           userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
           userRole={user.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Admin or Manager access required</p>
@@ -170,6 +172,7 @@ export default function CFODashboard() {
         userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
         userRole={user.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

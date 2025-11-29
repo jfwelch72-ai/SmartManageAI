@@ -65,7 +65,7 @@ interface Message {
 }
 
 export default function MessagesPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [newConversationOpen, setNewConversationOpen] = useState(false);
@@ -223,6 +223,7 @@ export default function MessagesPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-8">

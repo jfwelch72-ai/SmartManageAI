@@ -55,7 +55,7 @@ interface CrewMember {
 }
 
 export default function CrewsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
 
   // Crews state
@@ -280,6 +280,7 @@ export default function CrewsPage() {
           userName={`${user.firstName} ${user.lastName}`}
           userRole={user.role}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="flex items-center justify-center h-full">
@@ -299,6 +300,7 @@ export default function CrewsPage() {
         userName={`${user.firstName} ${user.lastName}`}
         userRole={user.role}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">

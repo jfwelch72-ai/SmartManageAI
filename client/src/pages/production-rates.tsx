@@ -84,7 +84,7 @@ type SortField = "description" | "avgPerDay" | "totalQuantity" | "totalDays" | "
 type SortDirection = "asc" | "desc";
 
 export default function ProductionRatesPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
@@ -178,6 +178,7 @@ export default function ProductionRatesPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
 
       <main className="mx-auto max-w-7xl px-6 py-8">

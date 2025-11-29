@@ -23,7 +23,7 @@ interface User {
 }
 
 export default function CostRatesPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -86,6 +86,7 @@ export default function CostRatesPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">

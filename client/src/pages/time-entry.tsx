@@ -10,7 +10,7 @@ import { CheckCircle, Clock } from "lucide-react";
 import { format } from "date-fns";
 
 export default function TimeEntryPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
@@ -80,6 +80,7 @@ export default function TimeEntryPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-4xl px-6 py-8">

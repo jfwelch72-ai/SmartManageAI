@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { FileText } from "lucide-react";
 
 export default function TMDailyPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const formRef = useRef<TMDailyFormRef>(null);
@@ -76,6 +76,7 @@ export default function TMDailyPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-4xl px-6 py-8">

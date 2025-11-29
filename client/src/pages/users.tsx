@@ -44,7 +44,7 @@ const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
 };
 
 export default function UsersPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
 
   const { data: users = [], isLoading } = useQuery<SelectUser[]>({
@@ -97,6 +97,7 @@ export default function UsersPage() {
           userName={`${user.firstName} ${user.lastName}`}
           userRole={user.role}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="flex items-center justify-center h-full">
@@ -116,6 +117,7 @@ export default function UsersPage() {
         userName={`${user.firstName} ${user.lastName}`}
         userRole={user.role}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="flex items-center justify-between">

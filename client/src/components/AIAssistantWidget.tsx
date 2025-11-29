@@ -40,11 +40,12 @@ interface WalkthroughStatus {
   } | null;
 }
 
-const STORAGE_KEY = "tfr-ai-assistant-enabled";
-const MINIMIZED_KEY = "tfr-ai-assistant-minimized";
+const STORAGE_KEY = "smartmanage-ai-assistant-enabled";
+const MINIMIZED_KEY = "smartmanage-ai-assistant-minimized";
 
 export function AIAssistantWidget() {
-  const { user } = useAuth();
+  const { user, organizationName } = useAuth();
+  const assistantName = organizationName ? `${organizationName} AI` : "SmartManageAI";
   const queryClient = useQueryClient();
   const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
@@ -293,7 +294,7 @@ export function AIAssistantWidget() {
                 )}
               </div>
               <span className="font-medium text-sm">
-                {isInWalkthrough ? "Getting Started" : "TFR Assistant"}
+                {isInWalkthrough ? "Getting Started" : assistantName}
               </span>
               {isInWalkthrough && walkthroughStatus && (
                 <Badge variant="secondary" className="text-xs">
@@ -443,9 +444,9 @@ export function AIAssistantWidget() {
                 ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center px-4">
                     <Bot className="h-12 w-12 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium mb-1">Hi, I'm TFR Assistant!</p>
+                    <p className="text-sm font-medium mb-1">Hi, I'm {assistantName}!</p>
                     <p className="text-xs text-muted-foreground">
-                      Ask me anything about using the TFR platform. I can help with projects, bids, delays, and more.
+                      Ask me anything about using the platform. I can help with projects, bids, delays, and more.
                     </p>
                     <div className="flex flex-wrap gap-1 mt-3 justify-center">
                       {["How do I create a delay?", "What is a change order?", "Help with time clock"].map((suggestion) => (

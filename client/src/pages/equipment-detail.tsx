@@ -198,7 +198,7 @@ const rateProfileSchema = z.object({
 type RateProfileInput = z.infer<typeof rateProfileSchema>;
 
 export default function EquipmentDetailPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { code } = useParams<{ code: string }>();
@@ -837,7 +837,7 @@ export default function EquipmentDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} />
+        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="text-center text-muted-foreground">Loading equipment...</div>
         </main>
@@ -848,7 +848,7 @@ export default function EquipmentDetailPage() {
   if (error || !equipment) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} />
+        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="text-center">
             <h2 className="text-xl font-semibold text-destructive">Equipment Not Found</h2>
@@ -868,6 +868,7 @@ export default function EquipmentDetailPage() {
         userName={`${user.firstName} ${user.lastName}`}
         userRole={user.role}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">

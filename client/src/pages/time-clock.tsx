@@ -31,7 +31,7 @@ import { Clock, MapPin, Calendar, Briefcase, LogIn, LogOut, AlertCircle } from "
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [gpsError, setGpsError] = useState<string>("");
@@ -141,6 +141,7 @@ export default function TimeClockPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

@@ -57,7 +57,7 @@ interface Payable {
 }
 
 export default function SubcontractorPayablesPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
@@ -132,6 +132,7 @@ export default function SubcontractorPayablesPage() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <Card>
@@ -153,6 +154,7 @@ export default function SubcontractorPayablesPage() {
         userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
         userRole={user.role}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
 
       <main className="mx-auto max-w-7xl px-6 py-8">

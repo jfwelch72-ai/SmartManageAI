@@ -13,7 +13,7 @@ import type { AITask, AIRun } from "@shared/schema";
 import AppHeader from "@/components/AppHeader";
 
 export default function AIPMDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -115,6 +115,7 @@ export default function AIPMDashboard() {
           userName="Guest"
           userRole=""
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Please log in to view your AI-generated tasks</p>
@@ -129,6 +130,7 @@ export default function AIPMDashboard() {
         userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
         userRole={user.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

@@ -38,7 +38,7 @@ import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase } from "luc
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockManagerPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -171,6 +171,7 @@ export default function TimeClockManagerPage() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <Card>
@@ -192,6 +193,7 @@ export default function TimeClockManagerPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

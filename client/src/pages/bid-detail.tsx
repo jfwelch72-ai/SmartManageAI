@@ -85,7 +85,7 @@ type BidEditFormValues = z.infer<typeof bidEditFormSchema>;
 export default function BidDetailPage() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/bids/:code");
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const [showEditBidDialog, setShowEditBidDialog] = useState(false);
@@ -1018,6 +1018,7 @@ export default function BidDetailPage() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading bid details...</p>
@@ -1033,6 +1034,7 @@ export default function BidDetailPage() {
           userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Bid not found</p>
@@ -1133,6 +1135,7 @@ export default function BidDetailPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

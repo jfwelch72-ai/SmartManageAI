@@ -1,7 +1,7 @@
 /**
  * Role-Based Access Control (RBAC) Utilities
  * 
- * This module defines permission checks for different user roles in the TFR Construction Management Platform.
+ * This module defines permission checks for different user roles in the SmartManageAI Construction Management Platform.
  * 
  * Role Hierarchy:
  * - SUPER_ADMIN: Platform administrator - monitors all organizations, analytics, support tools (NO contractor features)

@@ -60,7 +60,7 @@ interface WorkType {
 }
 
 export default function PlatformSupportTools() {
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -162,7 +162,7 @@ export default function PlatformSupportTools() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} />
+      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin">

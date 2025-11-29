@@ -21,6 +21,7 @@ import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCir
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+
 import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
 import { useProject, useScopeItems, useChangeOrders, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder, useCreateChangeOrder, useProjectNotes, useProjectMedia, useProjectEstimates, useProjectProcurement, useProjectDocuments, useProjectTimeEntries, useProjectTMSheets, useProjectReceipts, useCreateProcurementItem, useCreateSubcontractorPayment, useProjectLaborRates, useProjectEmployeeRates, useUpdateProjectLaborRates, useUpdateProjectEmployeeRate, useDeleteProjectEmployeeRate } from "@/hooks/use-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -1599,7 +1600,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
   const [, params] = useRoute("/projects/:code");
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   
   // Check if coming from CFO dashboard
@@ -2199,6 +2200,7 @@ export default function ProjectDetailPage() {
           userName={user?.firstName || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="flex items-center justify-center h-96">
           <div className="text-muted-foreground">Loading project...</div>
@@ -2214,6 +2216,7 @@ export default function ProjectDetailPage() {
           userName={user?.firstName || "User"}
           userRole={user?.role || ""}
           onLogout={logout}
+          organizationName={organizationName || undefined}
         />
         <div className="flex flex-col items-center justify-center h-96">
           <p className="text-muted-foreground mb-4">Project not found</p>
@@ -2231,6 +2234,7 @@ export default function ProjectDetailPage() {
         userName={user?.firstName || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">
