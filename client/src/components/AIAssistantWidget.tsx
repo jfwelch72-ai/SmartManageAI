@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
-import { Bot, X, Send, Loader2, Minimize2, Maximize2, Sparkles } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Bot, X, Send, Loader2, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -16,12 +17,36 @@ interface Message {
   timestamp: Date;
 }
 
+interface WalkthroughStep {
+  stepNumber: number;
+  title: string;
+  description: string;
+  action: string;
+  targetPage: string;
+  tips: string[];
+}
+
+interface WalkthroughStatus {
+  walkthroughCompleted: boolean;
+  walkthroughStep: number;
+  walkthroughStartedAt: string | null;
+  totalSteps: number;
+  role: string;
+  walkthrough: {
+    roleName: string;
+    welcomeMessage: string;
+    completionMessage: string;
+    currentStep: WalkthroughStep | null;
+  } | null;
+}
+
 const STORAGE_KEY = "tfr-ai-assistant-enabled";
 const MINIMIZED_KEY = "tfr-ai-assistant-minimized";
 
 export function AIAssistantWidget() {
   const { user } = useAuth();
-  const [location] = useLocation();
+  const queryClient = useQueryClient();
+  const [location, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(() => {
     const stored = localStorage.getItem(MINIMIZED_KEY);
@@ -29,28 +54,36 @@ export function AIAssistantWidget() {
   });
   const [isEnabled, setIsEnabled] = useState(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored !== "false"; // Default to enabled
+    return stored !== "false";
   });
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationMessage, setCelebrationMessage] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Scroll to bottom when new messages arrive
+  const { data: walkthroughStatus, isLoading: statusLoading } = useQuery<WalkthroughStatus>({
+    queryKey: ["/api/ai/walkthrough/status"],
+    enabled: !!user,
+    refetchOnWindowFocus: false,
+  });
+
+  const isInWalkthrough = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep > 0;
+  const hasNotStarted = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep === 0;
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Focus input when opening
   useEffect(() => {
     if (isOpen && !isMinimized && inputRef.current) {
       inputRef.current.focus();
     }
   }, [isOpen, isMinimized]);
 
-  // Save preferences
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(isEnabled));
   }, [isEnabled]);
@@ -58,6 +91,65 @@ export function AIAssistantWidget() {
   useEffect(() => {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
   }, [isMinimized]);
+
+  useEffect(() => {
+    if (hasNotStarted && user && !isOpen) {
+      setTimeout(() => setIsOpen(true), 1000);
+    }
+  }, [hasNotStarted, user, isOpen]);
+
+  const startWalkthroughMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/ai/walkthrough/start");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+      setMessages([]);
+    },
+  });
+
+  const nextStepMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/ai/walkthrough/next");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.completed) {
+        setCelebrationMessage(data.completionMessage);
+        setShowCelebration(true);
+        setTimeout(() => {
+          setShowCelebration(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        }, 5000);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        setMessages([]);
+      }
+    },
+  });
+
+  const skipWalkthroughMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/ai/walkthrough/complete");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+      setMessages([]);
+    },
+  });
+
+  const resetWalkthroughMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/ai/walkthrough/reset");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+      setMessages([]);
+    },
+  });
 
   const chatMutation = useMutation({
     mutationFn: async (message: string) => {
@@ -75,7 +167,7 @@ export function AIAssistantWidget() {
         timestamp: new Date(),
       }]);
     },
-    onError: (error: any) => {
+    onError: () => {
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "Sorry, I encountered an error. Please try again.",
@@ -108,16 +200,56 @@ export function AIAssistantWidget() {
     setMessages([]);
   };
 
-  // Don't render if disabled or not logged in
+  const navigateToStep = () => {
+    if (walkthroughStatus?.walkthrough?.currentStep?.targetPage) {
+      navigate(walkthroughStatus.walkthrough.currentStep.targetPage);
+    }
+  };
+
   if (!isEnabled || !user) return null;
+
+  const currentStep = walkthroughStatus?.walkthrough?.currentStep;
+  const progress = walkthroughStatus ? (walkthroughStatus.walkthroughStep / walkthroughStatus.totalSteps) * 100 : 0;
 
   return (
     <>
-      {/* Floating Button */}
+      {showCelebration && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          style={{ zIndex: 10000 }}
+        >
+          <div className="bg-card border rounded-2xl shadow-2xl p-8 max-w-md text-center animate-in zoom-in-95 duration-300">
+            <div className="flex justify-center mb-4">
+              <div className="relative">
+                <div className="absolute inset-0 animate-ping">
+                  <Trophy className="h-16 w-16 text-yellow-500/50" />
+                </div>
+                <Trophy className="h-16 w-16 text-yellow-500 relative" />
+              </div>
+            </div>
+            <div className="flex justify-center gap-2 mb-4">
+              <PartyPopper className="h-8 w-8 text-pink-500 animate-bounce" />
+              <PartyPopper className="h-8 w-8 text-blue-500 animate-bounce delay-75" />
+              <PartyPopper className="h-8 w-8 text-green-500 animate-bounce delay-150" />
+            </div>
+            <h2 className="text-2xl font-bold mb-3">Congratulations!</h2>
+            <p className="text-muted-foreground mb-6">{celebrationMessage}</p>
+            <Button onClick={() => setShowCelebration(false)} className="w-full" data-testid="button-celebration-close">
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Get Started
+            </Button>
+          </div>
+        </div>
+      )}
+
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg hover-elevate active-elevate-2 transition-all"
+          className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg hover-elevate active-elevate-2 transition-all ${
+            hasNotStarted || isInWalkthrough 
+              ? "bg-gradient-to-r from-primary to-purple-500 animate-pulse" 
+              : "bg-primary"
+          } text-primary-foreground`}
           style={{ 
             position: 'fixed', 
             bottom: '24px', 
@@ -126,12 +258,15 @@ export function AIAssistantWidget() {
           }}
           data-testid="button-ai-assistant-open"
         >
-          <Bot className="h-5 w-5" />
+          {hasNotStarted || isInWalkthrough ? (
+            <Lightbulb className="h-5 w-5" />
+          ) : (
+            <Bot className="h-5 w-5" />
+          )}
           <span className="sr-only">Open AI Assistant</span>
         </button>
       )}
 
-      {/* Chat Panel */}
       {isOpen && (
         <div 
           className={`bg-card border rounded-lg shadow-2xl transition-all ${
@@ -146,14 +281,26 @@ export function AIAssistantWidget() {
           }}
           data-testid="ai-assistant-panel"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between p-3 border-b bg-muted/50 rounded-t-lg">
+          <div className={`flex items-center justify-between p-3 border-b rounded-t-lg ${
+            isInWalkthrough ? "bg-gradient-to-r from-primary/10 to-purple-500/10" : "bg-muted/50"
+          }`}>
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-primary/10">
-                <Sparkles className="h-4 w-4 text-primary" />
+              <div className={`p-1.5 rounded-md ${isInWalkthrough ? "bg-primary/20" : "bg-primary/10"}`}>
+                {isInWalkthrough ? (
+                  <Target className="h-4 w-4 text-primary" />
+                ) : (
+                  <Sparkles className="h-4 w-4 text-primary" />
+                )}
               </div>
-              <span className="font-medium text-sm">TFR Assistant</span>
-              <Badge variant="secondary" className="text-xs">AI</Badge>
+              <span className="font-medium text-sm">
+                {isInWalkthrough ? "Getting Started" : "TFR Assistant"}
+              </span>
+              {isInWalkthrough && walkthroughStatus && (
+                <Badge variant="secondary" className="text-xs">
+                  Step {walkthroughStatus.walkthroughStep}/{walkthroughStatus.totalSteps}
+                </Badge>
+              )}
+              {!isInWalkthrough && <Badge variant="secondary" className="text-xs">AI</Badge>}
             </div>
             <div className="flex items-center gap-1">
               <Button 
@@ -179,9 +326,121 @@ export function AIAssistantWidget() {
 
           {!isMinimized && (
             <>
-              {/* Messages Area */}
+              {isInWalkthrough && walkthroughStatus && (
+                <div className="px-3 pt-2">
+                  <Progress value={progress} className="h-1.5" />
+                </div>
+              )}
+
               <ScrollArea className="h-80 p-3" ref={scrollRef}>
-                {messages.length === 0 ? (
+                {hasNotStarted && walkthroughStatus?.walkthrough ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                    <div className="p-4 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 mb-4">
+                      <Lightbulb className="h-10 w-10 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">
+                      Welcome, {walkthroughStatus.walkthrough.roleName}!
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      {walkthroughStatus.walkthrough.welcomeMessage}
+                    </p>
+                    <div className="flex flex-col gap-2 w-full">
+                      <Button 
+                        onClick={() => startWalkthroughMutation.mutate()}
+                        disabled={startWalkthroughMutation.isPending}
+                        className="w-full"
+                        data-testid="button-start-walkthrough"
+                      >
+                        {startWalkthroughMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 mr-2" />
+                        )}
+                        Start Quick Tour
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => skipWalkthroughMutation.mutate()}
+                        disabled={skipWalkthroughMutation.isPending}
+                        className="text-xs"
+                        data-testid="button-skip-walkthrough"
+                      >
+                        <SkipForward className="h-3 w-3 mr-1" />
+                        Skip, I know my way around
+                      </Button>
+                    </div>
+                  </div>
+                ) : isInWalkthrough && currentStep ? (
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="outline" className="text-xs">
+                          Step {currentStep.stepNumber}
+                        </Badge>
+                        <span className="font-medium text-sm">{currentStep.title}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        {currentStep.description}
+                      </p>
+                      <div className="p-2 rounded bg-muted/50 mb-3">
+                        <p className="text-sm font-medium flex items-start gap-2">
+                          <Target className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                          {currentStep.action}
+                        </p>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={navigateToStep}
+                        className="w-full"
+                        data-testid="button-navigate-step"
+                      >
+                        <MapPin className="h-3 w-3 mr-2" />
+                        Go to {currentStep.targetPage}
+                      </Button>
+                    </div>
+
+                    {currentStep.tips.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tips</p>
+                        {currentStep.tips.map((tip, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <Lightbulb className="h-3 w-3 mt-0.5 text-yellow-500 shrink-0" />
+                            <span>{tip}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {messages.length > 0 && (
+                      <div className="border-t pt-3 space-y-3">
+                        {messages.map((msg, idx) => (
+                          <div
+                            key={idx}
+                            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                          >
+                            <div
+                              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                                msg.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted"
+                              }`}
+                            >
+                              <div className="whitespace-pre-wrap">{msg.content}</div>
+                            </div>
+                          </div>
+                        ))}
+                        {chatMutation.isPending && (
+                          <div className="flex justify-start">
+                            <div className="bg-muted rounded-lg px-3 py-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center px-4">
                     <Bot className="h-12 w-12 text-muted-foreground mb-3" />
                     <p className="text-sm font-medium mb-1">Hi, I'm TFR Assistant!</p>
@@ -202,6 +461,17 @@ export function AIAssistantWidget() {
                         </button>
                       ))}
                     </div>
+                    {walkthroughStatus?.walkthroughCompleted && (
+                      <button
+                        onClick={() => resetWalkthroughMutation.mutate()}
+                        disabled={resetWalkthroughMutation.isPending}
+                        className="flex items-center gap-1 mt-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        data-testid="button-retake-walkthrough"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Retake the quick tour
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -232,55 +502,112 @@ export function AIAssistantWidget() {
                 )}
               </ScrollArea>
 
-              {/* Input Area */}
               <div className="p-3 border-t">
-                <div className="flex gap-2">
-                  <Input
-                    ref={inputRef}
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ask a question..."
-                    className="flex-1 text-sm"
-                    disabled={chatMutation.isPending}
-                    data-testid="input-ai-assistant-message"
-                  />
-                  <Button
-                    size="icon"
-                    onClick={handleSend}
-                    disabled={!inputValue.trim() || chatMutation.isPending}
-                    data-testid="button-ai-assistant-send"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-                {messages.length > 0 && (
-                  <div className="flex items-center justify-between mt-2">
-                    <button
-                      onClick={clearChat}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      data-testid="button-ai-assistant-clear"
-                    >
-                      Clear chat
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Assistant</span>
-                      <Switch
-                        checked={isEnabled}
-                        onCheckedChange={setIsEnabled}
-                        className="scale-75"
-                        data-testid="switch-ai-assistant-toggle"
+                {isInWalkthrough ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        ref={inputRef}
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask about this step..."
+                        className="flex-1 text-sm"
+                        disabled={chatMutation.isPending}
+                        data-testid="input-walkthrough-message"
                       />
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={handleSend}
+                        disabled={!inputValue.trim() || chatMutation.isPending}
+                        data-testid="button-walkthrough-send"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="default"
+                        className="flex-1"
+                        onClick={() => nextStepMutation.mutate()}
+                        disabled={nextStepMutation.isPending}
+                        data-testid="button-next-step"
+                      >
+                        {nextStepMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps ? (
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 mr-2" />
+                        )}
+                        {walkthroughStatus && walkthroughStatus.walkthroughStep === walkthroughStatus.totalSteps 
+                          ? "Complete Tour" 
+                          : "Next Step"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => skipWalkthroughMutation.mutate()}
+                        disabled={skipWalkthroughMutation.isPending}
+                        title="Skip walkthrough"
+                        data-testid="button-skip-step"
+                      >
+                        <SkipForward className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Input
+                        ref={inputRef}
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask a question..."
+                        className="flex-1 text-sm"
+                        disabled={chatMutation.isPending}
+                        data-testid="input-ai-assistant-message"
+                      />
+                      <Button
+                        size="icon"
+                        onClick={handleSend}
+                        disabled={!inputValue.trim() || chatMutation.isPending}
+                        data-testid="button-ai-assistant-send"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {messages.length > 0 && (
+                      <div className="flex items-center justify-between mt-2">
+                        <button
+                          onClick={clearChat}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          data-testid="button-ai-assistant-clear"
+                        >
+                          Clear chat
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Assistant</span>
+                          <Switch
+                            checked={isEnabled}
+                            onCheckedChange={setIsEnabled}
+                            className="scale-75"
+                            data-testid="switch-ai-assistant-toggle"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </>
           )}
 
           {isMinimized && (
-            <div className="p-3 text-center">
-              <p className="text-xs text-muted-foreground">Click to expand</p>
+            <div className="p-3 text-center" onClick={() => setIsMinimized(false)}>
+              <p className="text-xs text-muted-foreground cursor-pointer">Click to expand</p>
             </div>
           )}
         </div>

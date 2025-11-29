@@ -307,61 +307,61 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     completionMessage: "Great job! You've completed the Superintendent walkthrough! You're ready to manage field operations, track progress, and keep your projects running smoothly."
   },
 
-  FOREMAN: {
-    role: "FOREMAN",
-    roleName: "Foreman",
-    welcomeMessage: "Welcome! As a Foreman, you lead your crew in the field and report on daily progress. Here's how to use the platform to stay organized.",
+  OFFICE_MANAGER: {
+    role: "OFFICE_MANAGER",
+    roleName: "Office Manager",
+    welcomeMessage: "Welcome! As an Office Manager, you'll handle administrative tasks, billing, and supply ordering. Let me show you the key features you'll use daily.",
     steps: [
       {
         stepNumber: 1,
-        title: "Your Crew & Assignments",
-        description: "See your crew members and the projects you're assigned to.",
-        action: "Check your dashboard to see your current project assignments.",
+        title: "Your Dashboard",
+        description: "Your dashboard shows pending administrative tasks, billing items, and team communications.",
+        action: "Explore your dashboard to see pending invoices, supply orders, and action items.",
         targetPage: "/dashboard",
         tips: [
-          "View who's on your crew today",
-          "Check the work scheduled for the day",
-          "Review safety requirements"
+          "Check pending invoices regularly",
+          "Review the calendar for important deadlines",
+          "Monitor unread messages for urgent requests"
         ]
       },
       {
         stepNumber: 2,
-        title: "Clocking In Your Crew",
-        description: "Help your crew clock in and track their hours on the job.",
-        action: "Learn how to use the timeclock for yourself and assist crew members.",
-        targetPage: "/timeclock",
+        title: "Vendor & Supplier Management",
+        description: "Manage your vendor relationships, pricing catalogs, and ordering.",
+        action: "Navigate to the CRM section to see vendors, suppliers, and their contact information.",
+        targetPage: "/crm",
         tips: [
-          "Clock in when you arrive on site",
-          "Assign hours to the correct project",
-          "Clock out at end of shift"
+          "Keep vendor contact info up to date",
+          "Review pricing catalogs periodically",
+          "Track preferred vendors for each material type"
         ]
       },
       {
         stepNumber: 3,
-        title: "Daily Progress Updates",
-        description: "Report what your crew accomplished each day.",
-        action: "See how to submit your crew's daily work summary.",
-        targetPage: "/daily-reports",
+        title: "Billing & Invoicing",
+        description: "Process invoices, track payments, and manage billing cycles.",
+        action: "Learn how to view and process project billing and invoices.",
+        targetPage: "/projects",
         tips: [
-          "Log completed work quantities",
-          "Note any issues encountered",
-          "Report equipment or material needs"
+          "Track invoice due dates",
+          "Document payment receipts",
+          "Flag overdue accounts for follow-up"
         ]
       },
       {
         stepNumber: 4,
         title: "Team Communication",
-        description: "Stay in touch with superintendents and the office.",
-        action: "Check your messages and learn how to send updates.",
+        description: "Stay connected with the team and handle administrative requests.",
+        action: "Check out the Messages section for internal communications.",
         targetPage: "/messages",
         tips: [
-          "Report urgent issues immediately",
-          "Share photos of completed work",
-          "Request materials or support"
+          "Respond to supply requests promptly",
+          "Coordinate with superintendents on material needs",
+          "Use company channel for office announcements"
         ]
       }
     ],
-    completionMessage: "Awesome! You've completed the Foreman walkthrough! You're ready to lead your crew, track time, and report progress."
+    completionMessage: "Great job! You've completed the Office Manager walkthrough! You're ready to handle billing, vendor management, and keep the office running smoothly."
   },
 
   HOURLY_EMPLOYEE: {
@@ -409,61 +409,73 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
     completionMessage: "You're all set! You've completed the basics walkthrough. Clock in, do great work, and clock out. Welcome to the team!"
   },
 
-  SUBCONTRACTOR: {
-    role: "SUBCONTRACTOR",
-    roleName: "Subcontractor",
-    welcomeMessage: "Welcome! As a Subcontractor partner, you'll have access to project information, submit invoices, and coordinate with project managers.",
+  MAINTENANCE_MANAGER: {
+    role: "MAINTENANCE_MANAGER",
+    roleName: "Maintenance Manager",
+    welcomeMessage: "Welcome! As a Maintenance Manager, you'll oversee equipment maintenance, repairs, and fleet management. Let me show you the tools you'll use.",
     steps: [
       {
         stepNumber: 1,
-        title: "Your Assigned Projects",
-        description: "View the projects you're working on and your scope of work.",
-        action: "Check your dashboard to see projects where you're assigned.",
-        targetPage: "/dashboard",
+        title: "Equipment Overview",
+        description: "View all company equipment, their status, and maintenance schedules.",
+        action: "Navigate to the Equipment section to see your fleet and tools inventory.",
+        targetPage: "/equipment",
         tips: [
-          "Review your contract scope",
-          "Check project schedules and milestones",
-          "Contact the superintendent for coordination"
+          "Review equipment status at a glance",
+          "Check items due for maintenance",
+          "Monitor equipment utilization"
         ]
       },
       {
         stepNumber: 2,
-        title: "Project Documents",
-        description: "Access drawings, specifications, and other project documents.",
-        action: "Learn how to find and download project documents.",
-        targetPage: "/projects",
+        title: "Maintenance Scheduling",
+        description: "Set up preventative maintenance schedules for equipment.",
+        action: "Learn how to create and manage maintenance schedules.",
+        targetPage: "/equipment",
         tips: [
-          "Download current drawings",
-          "Check for addendums and changes",
-          "Review RFIs and submittals"
+          "Schedule based on hours or calendar intervals",
+          "Set up reminders for upcoming maintenance",
+          "Track maintenance history"
         ]
       },
       {
         stepNumber: 3,
-        title: "Communication",
-        description: "Communicate with the project team and report issues.",
-        action: "Use the messaging system to coordinate with the project manager.",
-        targetPage: "/messages",
+        title: "Repair Workflows",
+        description: "Manage equipment repairs from report to completion.",
+        action: "See how to track repair requests and manage the repair process.",
+        targetPage: "/equipment",
         tips: [
-          "Report scheduling conflicts early",
-          "Request information through the system",
-          "Document all important communications"
+          "Log repair issues as they're reported",
+          "Track repair costs and parts",
+          "Document repair completion"
         ]
       },
       {
         stepNumber: 4,
-        title: "Invoice Submission",
-        description: "Submit progress invoices for your completed work.",
-        action: "Learn how to submit invoices for your contracted work.",
-        targetPage: "/invoices",
+        title: "Hour Logging",
+        description: "Track equipment usage hours for maintenance planning.",
+        action: "Learn how to log and review equipment operating hours.",
+        targetPage: "/equipment",
         tips: [
-          "Include all required documentation",
-          "Match invoice to contract line items",
-          "Track payment status"
+          "Regular hour updates improve maintenance timing",
+          "Compare actual vs expected hours",
+          "Use for depreciation tracking"
+        ]
+      },
+      {
+        stepNumber: 5,
+        title: "Team Communication",
+        description: "Coordinate with superintendents and crews on equipment needs.",
+        action: "Check the Messages section for equipment-related requests.",
+        targetPage: "/messages",
+        tips: [
+          "Respond to equipment requests promptly",
+          "Coordinate rental needs with projects",
+          "Report equipment availability"
         ]
       }
     ],
-    completionMessage: "Excellent! You've completed the Subcontractor walkthrough. You're ready to access project info, communicate with the team, and submit invoices."
+    completionMessage: "Excellent! You've completed the Maintenance Manager walkthrough. You're ready to manage equipment, schedule maintenance, and keep the fleet running!"
   }
 };
 

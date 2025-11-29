@@ -18,6 +18,7 @@ import { type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
+import { getWalkthroughForRole, getTotalStepsForRole, getWalkthroughStep, generateWalkthroughPrompt } from "./ai/walkthroughContent";
 
 const onboardingCompleteSchema = z.object({
   companyName: z.string()
@@ -859,7 +860,244 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, re
   }
 });
 
-// AI Assistant Chat endpoint
+// Get user walkthrough status
+router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user has an organization (defense-in-depth for multi-tenant isolation)
+    if (!req.user.organizationId) {
+      // Users without organizations should complete org onboarding first
+      return res.json({
+        walkthroughCompleted: true,
+        walkthroughStep: 0,
+        walkthroughStartedAt: null,
+        totalSteps: 0,
+        role: req.user.role,
+        walkthrough: null,
+      });
+    }
+
+    const [user] = await db.select({
+      walkthroughCompleted: users.walkthroughCompleted,
+      walkthroughStep: users.walkthroughStep,
+      walkthroughStartedAt: users.walkthroughStartedAt,
+      role: users.role,
+      organizationId: users.organizationId,
+    }).from(users).where(and(
+      eq(users.id, req.user.id),
+      eq(users.organizationId, req.user.organizationId)
+    ));
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const walkthrough = getWalkthroughForRole(user.role);
+    const totalSteps = getTotalStepsForRole(user.role);
+
+    res.json({
+      walkthroughCompleted: user.walkthroughCompleted,
+      walkthroughStep: user.walkthroughStep,
+      walkthroughStartedAt: user.walkthroughStartedAt,
+      totalSteps,
+      role: user.role,
+      walkthrough: walkthrough ? {
+        roleName: walkthrough.roleName,
+        welcomeMessage: walkthrough.welcomeMessage,
+        completionMessage: walkthrough.completionMessage,
+        currentStep: user.walkthroughStep > 0 ? getWalkthroughStep(user.role, user.walkthroughStep) : null,
+      } : null,
+    });
+  } catch (error: any) {
+    console.error("Walkthrough status error:", error.message);
+    res.status(500).json({ error: "Failed to get walkthrough status" });
+  }
+});
+
+// Start walkthrough for user
+router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user has an organization
+    if (!req.user.organizationId) {
+      return res.status(400).json({ error: "Please complete organization setup first" });
+    }
+
+    const walkthrough = getWalkthroughForRole(req.user.role);
+    if (!walkthrough) {
+      return res.status(400).json({ error: "No walkthrough available for this role" });
+    }
+
+    await db.update(users)
+      .set({
+        walkthroughStep: 1,
+        walkthroughStartedAt: new Date(),
+        walkthroughCompleted: false,
+      })
+      .where(and(
+        eq(users.id, req.user.id),
+        eq(users.organizationId, req.user.organizationId)
+      ));
+
+    const firstStep = getWalkthroughStep(req.user.role, 1);
+
+    res.json({
+      success: true,
+      currentStep: 1,
+      totalSteps: walkthrough.steps.length,
+      welcomeMessage: walkthrough.welcomeMessage,
+      step: firstStep,
+    });
+  } catch (error: any) {
+    console.error("Walkthrough start error:", error.message);
+    res.status(500).json({ error: "Failed to start walkthrough" });
+  }
+});
+
+// Advance walkthrough to next step
+router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user has an organization
+    if (!req.user.organizationId) {
+      return res.status(400).json({ error: "Please complete organization setup first" });
+    }
+
+    const [user] = await db.select({
+      walkthroughStep: users.walkthroughStep,
+      role: users.role,
+    }).from(users).where(and(
+      eq(users.id, req.user.id),
+      eq(users.organizationId, req.user.organizationId)
+    ));
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const totalSteps = getTotalStepsForRole(user.role);
+    const nextStep = user.walkthroughStep + 1;
+
+    if (nextStep > totalSteps) {
+      // Complete the walkthrough
+      await db.update(users)
+        .set({
+          walkthroughCompleted: true,
+          walkthroughStep: totalSteps,
+        })
+        .where(and(
+          eq(users.id, req.user.id),
+          eq(users.organizationId, req.user.organizationId)
+        ));
+
+      const walkthrough = getWalkthroughForRole(user.role);
+
+      res.json({
+        success: true,
+        completed: true,
+        completionMessage: walkthrough?.completionMessage || "Congratulations! You've completed the walkthrough!",
+      });
+    } else {
+      await db.update(users)
+        .set({ walkthroughStep: nextStep })
+        .where(and(
+          eq(users.id, req.user.id),
+          eq(users.organizationId, req.user.organizationId)
+        ));
+
+      const stepContent = getWalkthroughStep(user.role, nextStep);
+
+      res.json({
+        success: true,
+        completed: false,
+        currentStep: nextStep,
+        totalSteps,
+        step: stepContent,
+      });
+    }
+  } catch (error: any) {
+    console.error("Walkthrough next error:", error.message);
+    res.status(500).json({ error: "Failed to advance walkthrough" });
+  }
+});
+
+// Skip/complete walkthrough
+router.post("/ai/walkthrough/complete", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user has an organization
+    if (!req.user.organizationId) {
+      return res.status(400).json({ error: "Please complete organization setup first" });
+    }
+
+    const totalSteps = getTotalStepsForRole(req.user.role);
+
+    await db.update(users)
+      .set({
+        walkthroughCompleted: true,
+        walkthroughStep: totalSteps,
+      })
+      .where(and(
+        eq(users.id, req.user.id),
+        eq(users.organizationId, req.user.organizationId)
+      ));
+
+    res.json({
+      success: true,
+      message: "Walkthrough completed",
+    });
+  } catch (error: any) {
+    console.error("Walkthrough complete error:", error.message);
+    res.status(500).json({ error: "Failed to complete walkthrough" });
+  }
+});
+
+// Reset walkthrough (for testing or retaking)
+router.post("/ai/walkthrough/reset", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user has an organization
+    if (!req.user.organizationId) {
+      return res.status(400).json({ error: "Please complete organization setup first" });
+    }
+
+    await db.update(users)
+      .set({
+        walkthroughCompleted: false,
+        walkthroughStep: 0,
+        walkthroughStartedAt: null,
+      })
+      .where(and(
+        eq(users.id, req.user.id),
+        eq(users.organizationId, req.user.organizationId)
+      ));
+
+    res.json({
+      success: true,
+      message: "Walkthrough reset",
+    });
+  } catch (error: any) {
+    console.error("Walkthrough reset error:", error.message);
+    res.status(500).json({ error: "Failed to reset walkthrough" });
+  }
+});
+
+// AI Assistant Chat endpoint - with walkthrough mode support
 router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -872,24 +1110,52 @@ router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "Message is required" });
     }
 
+    // Check if user is in walkthrough mode
+    const [userStatus] = await db.select({
+      walkthroughCompleted: users.walkthroughCompleted,
+      walkthroughStep: users.walkthroughStep,
+      role: users.role,
+    }).from(users).where(eq(users.id, req.user.id));
+
+    const isInWalkthrough = userStatus && !userStatus.walkthroughCompleted && userStatus.walkthroughStep > 0;
+
     // Build context based on current page
     const pageContext = getPageContext(currentPath || '/dashboard');
     const userRole = req.user.role;
     const userName = `${req.user.firstName} ${req.user.lastName}`;
 
-    // Build messages array with conversation history
-    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
-      { 
-        role: 'system', 
-        content: `${AI_ASSISTANT_SYSTEM_PROMPT}
+    let systemPrompt: string;
+
+    if (isInWalkthrough) {
+      // Use walkthrough-specific prompt
+      const walkthroughPrompt = generateWalkthroughPrompt(userStatus.role, userStatus.walkthroughStep);
+      const walkthrough = getWalkthroughForRole(userStatus.role);
+      const totalSteps = getTotalStepsForRole(userStatus.role);
+      
+      systemPrompt = `${walkthroughPrompt}
+
+## Current Context
+- User: ${userName}
+- Role: ${userRole}
+- ${pageContext}
+- Walkthrough Progress: Step ${userStatus.walkthroughStep} of ${totalSteps}
+
+When the user says they've completed the current step or wants to continue, respond with enthusiasm and remind them to click "Next Step" to proceed. Be supportive and encouraging throughout their learning journey.`;
+    } else {
+      // Normal help mode
+      systemPrompt = `${AI_ASSISTANT_SYSTEM_PROMPT}
 
 ## Current Context
 - User: ${userName}
 - Role: ${userRole}
 - ${pageContext}
 
-Tailor your responses to the user's role and current location in the app.`
-      }
+Tailor your responses to the user's role and current location in the app.`;
+    }
+
+    // Build messages array with conversation history
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+      { role: 'system', content: systemPrompt }
     ];
 
     // Add conversation history (limit to last 10 messages for context window)
@@ -917,6 +1183,8 @@ Tailor your responses to the user's role and current location in the app.`
     }
     res.json({ 
       response,
+      isWalkthroughMode: isInWalkthrough,
+      walkthroughStep: isInWalkthrough ? userStatus.walkthroughStep : null,
       usage: {
         promptTokens: completion.usage?.prompt_tokens,
         completionTokens: completion.usage?.completion_tokens,
