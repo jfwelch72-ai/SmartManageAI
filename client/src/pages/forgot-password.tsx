@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground text-center">
-              The link in the email will expire in 30 minutes. If you don't see the email, check your spam folder.
+              The link in the email will expire in 15 minutes. If you don't see the email, check your spam folder.
             </p>
           </CardContent>
           <CardFooter className="flex flex-col gap-2">
