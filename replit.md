@@ -35,7 +35,9 @@ The platform can optionally extract brand colors from a contractor's website dur
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
 
-**Testing Credentials**: For development and testing, use manager2@tfr.com with password TFR2025!
+**Testing Credentials**: 
+- Organization testing: manager2@tfr.com with password TFR2025!
+- Platform Admin testing: jfwelch72@gmail.com with password Stella123@@
 
 ## System Architecture
 The platform utilizes a modern web stack with a client-server architecture, prioritizing security, scalability, and user experience.
@@ -43,7 +45,7 @@ The platform utilizes a modern web stack with a client-server architecture, prio
 -   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui. The UI/UX focuses on a clean, functional interface and intuitive project management workflows.
 -   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
 -   **Database**: PostgreSQL on Neon, managed with Drizzle ORM. The database design supports bid-to-project conversion and quote preservation.
--   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across seven distinct user roles.
+-   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across eight distinct user roles including platform-level SUPER_ADMIN.
 -   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
 -   **Key Features**:
     -   **Personalized Dashboard**: Role-based landing page with quick navigation and overview of active projects, bids, messages, events, and delay alerts.
