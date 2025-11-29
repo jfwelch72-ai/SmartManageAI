@@ -34,14 +34,17 @@ import ScopeSettingsPage from "@/pages/scope-settings";
 import MessagesPage from "@/pages/messages";
 import EquipmentPage from "@/pages/equipment";
 import EquipmentDetailPage from "@/pages/equipment-detail";
+import OnboardingPage from "@/pages/onboarding";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 
 function ProtectedRoute({ 
   component: Component,
-  permission
+  permission,
+  skipOnboardingCheck = false
 }: { 
   component: () => JSX.Element | null;
   permission?: (role?: string) => boolean;
+  skipOnboardingCheck?: boolean;
 }) {
   const { user, isLoading } = useAuth();
   const [location] = useLocation();
@@ -56,6 +59,12 @@ function ProtectedRoute({
 
   if (!user) {
     return <Redirect to={`/login?redirect=${encodeURIComponent(location)}`} />;
+  }
+
+  // Check if user needs onboarding (no organization assigned)
+  // Skip this check for the onboarding page itself
+  if (!skipOnboardingCheck && !user.organizationId && location !== '/onboarding') {
+    return <Redirect to="/onboarding" />;
   }
 
   // Check role-based permission if provided
@@ -88,6 +97,7 @@ function Router() {
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
+      <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
       {/* Routes accessible to all authenticated users */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />

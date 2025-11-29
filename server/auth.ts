@@ -94,6 +94,7 @@ export async function authMiddleware(
       isActive: user.isActive,
       costRateRegular: user.costRateRegular,
       costRateOvertime: user.costRateOvertime,
+      organizationId: user.organizationId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
