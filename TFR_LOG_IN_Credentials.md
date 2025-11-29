@@ -16,12 +16,22 @@
 ---
 
 **Platform URL**: Your Replit deployment URL
-**Last Updated**: November 21, 2025
-**Universal Password**: `TFR2025!` (All accounts use this same password)
+**Last Updated**: November 29, 2025
 
 ---
 
-## 🔐 ALL ACCOUNTS USE THE SAME PASSWORD: `TFR2025!`
+## 🛡️ SUPER ADMIN (PLATFORM ADMINISTRATOR)
+
+### Program Administrator
+- **Email**: `jfwelch72@gmail.com`
+- **Password**: `Stella123@@`
+- **Name**: Program Administrator
+- **Role**: SUPER_ADMIN
+- **Permissions**: Full platform access - monitor all organizations, analytics, issue resolution, user support
+
+---
+
+## 🔐 ORGANIZATION ACCOUNTS (Universal Password: `TFR2025!`)
 
 **Important Notes:**
 - All accounts use the **SAME** email domain: `@tfr.com`
@@ -101,6 +111,12 @@
 
 ## 📋 Quick Reference
 
+### Platform Administrator
+| Email | Password | Role | Name |
+|-------|----------|------|------|
+| jfwelch72@gmail.com | Stella123@@ | SUPER_ADMIN | Program Administrator |
+
+### Organization Users (TFR)
 | Email | Password | Role | Name |
 |-------|----------|------|------|
 | admin@tfr.com | TFR2025! | ADMIN | Admin User |
@@ -116,13 +132,14 @@
 
 ## 📊 Role Permissions Summary
 
-| Role | Projects | Time Clock | Billing | AI Features | User Mgmt |
-|------|----------|------------|---------|-------------|-----------|
-| ADMIN | ✅ Full | ✅ All | ✅ All | ✅ All | ✅ Full |
-| MANAGER | ✅ All | ✅ Approve | ✅ View | ✅ AI PM | ❌ No |
-| SUPERINTENDENT | ✅ Assigned | ✅ Team | ❌ No | ✅ Tasks | ❌ No |
-| OFFICE_MANAGER | ✅ All | ✅ View | ✅ Manage | ✅ CFO | ❌ No |
-| HOURLY_EMPLOYEE | ✅ View | ✅ Self | ❌ No | ✅ Tasks | ❌ No |
+| Role | Projects | Time Clock | Billing | AI Features | User Mgmt | Platform Admin |
+|------|----------|------------|---------|-------------|-----------|----------------|
+| SUPER_ADMIN | ✅ All Orgs | ✅ All Orgs | ✅ All Orgs | ✅ All | ✅ All Orgs | ✅ Full |
+| ADMIN | ✅ Full | ✅ All | ✅ All | ✅ All | ✅ Full | ❌ No |
+| MANAGER | ✅ All | ✅ Approve | ✅ View | ✅ AI PM | ❌ No | ❌ No |
+| SUPERINTENDENT | ✅ Assigned | ✅ Team | ❌ No | ✅ Tasks | ❌ No | ❌ No |
+| OFFICE_MANAGER | ✅ All | ✅ View | ✅ Manage | ✅ CFO | ❌ No | ❌ No |
+| HOURLY_EMPLOYEE | ✅ View | ✅ Self | ❌ No | ✅ Tasks | ❌ No | ❌ No |
 
 ---
 

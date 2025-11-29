@@ -19,6 +19,75 @@ export interface RoleWalkthrough {
 }
 
 export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
+  SUPER_ADMIN: {
+    role: "SUPER_ADMIN",
+    roleName: "Platform Administrator",
+    welcomeMessage: "Welcome, Platform Administrator! You have full access to monitor all organizations using the platform, assist with issues, and view analytics. Let me show you around.",
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Platform Overview",
+        description: "As a Super Admin, you can see all organizations, users, and activity across the entire platform.",
+        action: "Your dashboard provides an overview of platform health, active organizations, and any issues requiring attention.",
+        targetPage: "/dashboard",
+        tips: [
+          "Monitor platform-wide metrics and usage",
+          "Identify organizations that may need assistance",
+          "Track platform adoption and growth"
+        ]
+      },
+      {
+        stepNumber: 2,
+        title: "Organization Management",
+        description: "View and manage all contractor organizations using the platform.",
+        action: "Access the organization list to see all tenants, their trade types, and onboarding status.",
+        targetPage: "/admin/organizations",
+        tips: [
+          "Review organization onboarding progress",
+          "Assist organizations with configuration issues",
+          "Monitor organization activity levels"
+        ]
+      },
+      {
+        stepNumber: 3,
+        title: "User Support",
+        description: "Help users across all organizations when the AI assistant cannot resolve their issues.",
+        action: "Review support requests and user issues that need human intervention.",
+        targetPage: "/admin/support",
+        tips: [
+          "Escalated issues from AI assistant appear here",
+          "You can impersonate users to diagnose problems",
+          "Document solutions for common issues"
+        ]
+      },
+      {
+        stepNumber: 4,
+        title: "Platform Analytics",
+        description: "View comprehensive analytics about platform usage, feature adoption, and trends.",
+        action: "Explore the analytics dashboard for insights into how the platform is being used.",
+        targetPage: "/admin/analytics",
+        tips: [
+          "Track feature usage across organizations",
+          "Identify popular and underused features",
+          "Monitor system performance metrics"
+        ]
+      },
+      {
+        stepNumber: 5,
+        title: "System Configuration",
+        description: "Manage platform-wide settings, trade templates, and system configurations.",
+        action: "Review system settings and trade template configurations.",
+        targetPage: "/admin/settings",
+        tips: [
+          "Update trade templates as industry needs evolve",
+          "Configure default settings for new organizations",
+          "Manage platform-wide integrations"
+        ]
+      }
+    ],
+    completionMessage: "Excellent! You're now familiar with the Platform Administrator tools. You have full access to monitor and support all organizations on the platform."
+  },
+
   ADMIN: {
     role: "ADMIN",
     roleName: "Administrator",
