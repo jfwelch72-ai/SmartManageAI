@@ -25,7 +25,7 @@ import {
 import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
-import { NavigationConfig, hasManagementAccess } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -88,7 +88,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
   const hasAdminMenu = visibleAdminItems.length > 0;
   const hasAIMenu = visibleAIItems.length > 0;
 
-  // Mobile navigation items
+  // Mobile navigation items for contractors
   const mobileNavItems = [
     { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/projects", icon: Briefcase, label: "Projects" },
@@ -96,6 +96,14 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
     { href: "/communications", icon: MessageSquare, label: "Communications" },
     { href: "/messages", icon: MessageCircle, label: "Messages", badge: unreadMessageCount },
     { href: "/bids", icon: Gavel, label: "Bids" },
+  ];
+
+  // Mobile navigation items for platform admins
+  const platformAdminMobileNavItems = [
+    { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/admin/organizations", icon: Building2, label: "Organizations" },
+    { href: "/admin/analytics", icon: Briefcase, label: "Analytics" },
+    { href: "/admin/support", icon: Shield, label: "Support Tools" },
   ];
 
   // Mobile navigation link component
@@ -145,96 +153,107 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             </SheetHeader>
             <ScrollArea className="h-[calc(100vh-80px)]">
               <nav className="flex flex-col gap-1 p-4">
-                {/* Main nav items */}
-                {mobileNavItems.map((item) => (
-                  <MobileNavLink key={item.href} {...item} />
-                ))}
+                {/* Platform admin mobile navigation */}
+                {isSuperAdmin(userRole) ? (
+                  <>
+                    {platformAdminMobileNavItems.map((item) => (
+                      <MobileNavLink key={item.href} {...item} />
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    {/* Main nav items */}
+                    {mobileNavItems.map((item) => (
+                      <MobileNavLink key={item.href} {...item} />
+                    ))}
 
-                {/* CRM - conditional */}
-                {hasManagementAccess(userRole) && (
-                  <MobileNavLink href="/crm" icon={UsersIcon} label="CRM" />
-                )}
-
-                {/* Equipment - conditional */}
-                {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
-                  <MobileNavLink href="/equipment" icon={Truck} label="Equipment" />
-                )}
-
-                {/* Time Clock - collapsible */}
-                <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen}>
-                  <CollapsibleTrigger asChild>
-                    <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <Clock className="w-5 h-5" />
-                        <span>Time Clock</span>
-                      </div>
-                      <ChevronRight className={`w-4 h-4 transition-transform ${timeClockOpen ? "rotate-90" : ""}`} />
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pl-8 space-y-1">
-                    <Link href="/time-clock" onClick={closeMobileMenu}>
-                      <div className={`px-4 py-2 rounded-lg ${isActive("/time-clock") ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
-                        My Time Clock
-                      </div>
-                    </Link>
-                    {NavigationConfig.timeClockMenu.slice(1).map((item) =>
-                      item.visible(userRole) && (
-                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
-                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
-                            {item.label}
-                          </div>
-                        </Link>
-                      )
+                    {/* CRM - conditional */}
+                    {hasManagementAccess(userRole) && (
+                      <MobileNavLink href="/crm" icon={UsersIcon} label="CRM" />
                     )}
-                  </CollapsibleContent>
-                </Collapsible>
 
-                {/* AI Menu - collapsible */}
-                {hasAIMenu && (
-                  <Collapsible open={aiMenuOpen} onOpenChange={setAiMenuOpen}>
-                    <CollapsibleTrigger asChild>
-                      <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <Bot className="w-5 h-5" />
-                          <span>AI</span>
+                    {/* Equipment - conditional */}
+                    {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+                      <MobileNavLink href="/equipment" icon={Truck} label="Equipment" />
+                    )}
+
+                    {/* Time Clock - collapsible */}
+                    <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen}>
+                      <CollapsibleTrigger asChild>
+                        <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                          <div className="flex items-center gap-3">
+                            <Clock className="w-5 h-5" />
+                            <span>Time Clock</span>
+                          </div>
+                          <ChevronRight className={`w-4 h-4 transition-transform ${timeClockOpen ? "rotate-90" : ""}`} />
                         </div>
-                        <ChevronRight className={`w-4 h-4 transition-transform ${aiMenuOpen ? "rotate-90" : ""}`} />
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="pl-8 space-y-1">
-                      {visibleAIItems.map((item) => (
-                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
-                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
-                            {item.label}
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="pl-8 space-y-1">
+                        <Link href="/time-clock" onClick={closeMobileMenu}>
+                          <div className={`px-4 py-2 rounded-lg ${isActive("/time-clock") ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                            My Time Clock
                           </div>
                         </Link>
-                      ))}
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
+                        {NavigationConfig.timeClockMenu.slice(1).map((item) =>
+                          item.visible(userRole) && (
+                            <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                              <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                                {item.label}
+                              </div>
+                            </Link>
+                          )
+                        )}
+                      </CollapsibleContent>
+                    </Collapsible>
 
-                {/* Admin Menu - collapsible */}
-                {hasAdminMenu && (
-                  <Collapsible open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
-                    <CollapsibleTrigger asChild>
-                      <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
-                        <div className="flex items-center gap-3">
-                          <Shield className="w-5 h-5" />
-                          <span>Admin</span>
-                        </div>
-                        <ChevronRight className={`w-4 h-4 transition-transform ${adminMenuOpen ? "rotate-90" : ""}`} />
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="pl-8 space-y-1">
-                      {visibleAdminItems.map((item) => (
-                        <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
-                          <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
-                            {item.label}
+                    {/* AI Menu - collapsible */}
+                    {hasAIMenu && (
+                      <Collapsible open={aiMenuOpen} onOpenChange={setAiMenuOpen}>
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <Bot className="w-5 h-5" />
+                              <span>AI</span>
+                            </div>
+                            <ChevronRight className={`w-4 h-4 transition-transform ${aiMenuOpen ? "rotate-90" : ""}`} />
                           </div>
-                        </Link>
-                      ))}
-                    </CollapsibleContent>
-                  </Collapsible>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pl-8 space-y-1">
+                          {visibleAIItems.map((item) => (
+                            <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                              <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                                {item.label}
+                              </div>
+                            </Link>
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
+                    {/* Admin Menu - collapsible */}
+                    {hasAdminMenu && (
+                      <Collapsible open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <Shield className="w-5 h-5" />
+                              <span>Admin</span>
+                            </div>
+                            <ChevronRight className={`w-4 h-4 transition-transform ${adminMenuOpen ? "rotate-90" : ""}`} />
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pl-8 space-y-1">
+                          {visibleAdminItems.map((item) => (
+                            <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                              <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                                {item.label}
+                              </div>
+                            </Link>
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </>
                 )}
 
                 {/* User section at bottom */}
@@ -267,175 +286,210 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
         </Sheet>
 
         {/* Logo - simplified on mobile */}
-        <Link href="/dashboard" data-testid="link-dashboard">
+        <Link href={isSuperAdmin(userRole) ? "/admin" : "/dashboard"} data-testid="link-dashboard">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md pl-1 md:pl-2 pr-2 md:pr-3 py-2">
             <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
             <div className="hidden sm:block">
-              <h1 className="text-lg md:text-xl font-bold text-foreground">TFR Construction</h1>
-              <p className="text-xs text-muted-foreground hidden md:block">Management Platform</p>
+              <h1 className="text-lg md:text-xl font-bold text-foreground">
+                {isSuperAdmin(userRole) ? "TFR Platform Admin" : "TFR Construction"}
+              </h1>
+              <p className="text-xs text-muted-foreground hidden md:block">
+                {isSuperAdmin(userRole) ? "Platform Administration" : "Management Platform"}
+              </p>
             </div>
           </div>
         </Link>
 
         {/* Desktop Navigation - hidden on mobile */}
         <nav className="hidden md:flex items-center gap-1 flex-1 overflow-x-auto">
-          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-dashboard">
-            <Link href="/dashboard">
-              <LayoutDashboard className="w-4 h-4" />
-              Dashboard
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-projects">
-            <Link href="/projects">
-              <Briefcase className="w-4 h-4" />
-              Projects
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-calendar">
-            <Link href="/calendar">
-              <Calendar className="w-4 h-4" />
-              Calendar
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-communications">
-            <Link href="/communications">
-              <MessageSquare className="w-4 h-4" />
-              Communications
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-bids">
-            <Link href="/bids">
-              <Gavel className="w-4 h-4" />
-              Bids
-            </Link>
-          </Button>
-          {hasManagementAccess(userRole) && (
-            <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-crm">
-              <Link href="/crm">
-                <UsersIcon className="w-4 h-4" />
-                CRM
-              </Link>
-            </Button>
-          )}
-          {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
-            <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-equipment">
-              <Link href="/equipment">
-                <Truck className="w-4 h-4" />
-                Equipment
-              </Link>
-            </Button>
-          )}
-          
-          {/* Time Clock Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-time-clock">
-                <Clock className="w-4 h-4" />
-                Time Clock
-                <ChevronDown className="w-3 h-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem asChild data-testid="nav-my-time-clock">
-                <Link href="/time-clock">
-                  <Clock className="mr-2 h-4 w-4" />
-                  My Time Clock
+          {/* Platform Admin Navigation - SUPER_ADMIN only */}
+          {isSuperAdmin(userRole) ? (
+            <>
+              {PlatformAdminNavConfig.mainNav.map((item) => (
+                <Button
+                  key={item.href}
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 whitespace-nowrap"
+                  asChild
+                  data-testid={item.testId}
+                >
+                  <Link href={item.href}>
+                    {item.href === "/admin" && <LayoutDashboard className="w-4 h-4" />}
+                    {item.href === "/admin/organizations" && <Building2 className="w-4 h-4" />}
+                    {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
+                    {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
+                    {item.label}
+                  </Link>
+                </Button>
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Regular contractor navigation */}
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-dashboard">
+                <Link href="/dashboard">
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
                 </Link>
-              </DropdownMenuItem>
-              {NavigationConfig.timeClockMenu.slice(1).map((item) => 
-                item.visible(userRole) && (
-                  <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
-                    <Link href={item.href}>{item.label}</Link>
-                  </DropdownMenuItem>
-                )
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-projects">
+                <Link href="/projects">
+                  <Briefcase className="w-4 h-4" />
+                  Projects
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-calendar">
+                <Link href="/calendar">
+                  <Calendar className="w-4 h-4" />
+                  Calendar
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-communications">
+                <Link href="/communications">
+                  <MessageSquare className="w-4 h-4" />
+                  Communications
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-bids">
+                <Link href="/bids">
+                  <Gavel className="w-4 h-4" />
+                  Bids
+                </Link>
+              </Button>
+              {hasManagementAccess(userRole) && (
+                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-crm">
+                  <Link href="/crm">
+                    <UsersIcon className="w-4 h-4" />
+                    CRM
+                  </Link>
+                </Button>
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* AI Menu - Only show if user has access to at least one AI feature */}
-          {hasAIMenu && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-ai">
-                  <Bot className="w-4 h-4" />
-                  AI
-                  <ChevronDown className="w-3 h-3" />
+              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" asChild data-testid="nav-equipment">
+                  <Link href="/equipment">
+                    <Truck className="w-4 h-4" />
+                    Equipment
+                  </Link>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {visibleAIItems.map((item, index) => (
-                  <div key={item.href}>
-                    {index === visibleAIItems.length - 1 && visibleAIItems.length > 1 && <DropdownMenuSeparator />}
-                    <DropdownMenuItem asChild data-testid={item.testId}>
-                      <Link href={item.href}>
-                        {item.href === "/ai-pm" && <Bot className="mr-2 h-4 w-4" />}
-                        {item.href === "/cfo" && <DollarSign className="mr-2 h-4 w-4" />}
-                        {item.href === "/ai-settings" && <Settings className="mr-2 h-4 w-4" />}
-                        {item.label}
-                      </Link>
-                    </DropdownMenuItem>
-                  </div>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-
-          {/* Admin Menu - Only show if user has access to admin features */}
-          {hasAdminMenu && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-admin">
-                  <Shield className="w-4 h-4" />
-                  Admin
-                  <ChevronDown className="w-3 h-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {visibleAdminItems.map((item) => (
-                  <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
-                    <Link href={item.href}>
-                      <UsersIcon className="mr-2 h-4 w-4" />
-                      {item.label}
+              )}
+              
+              {/* Time Clock Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-time-clock">
+                    <Clock className="w-4 h-4" />
+                    Time Clock
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem asChild data-testid="nav-my-time-clock">
+                    <Link href="/time-clock">
+                      <Clock className="mr-2 h-4 w-4" />
+                      My Time Clock
                     </Link>
                   </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {NavigationConfig.timeClockMenu.slice(1).map((item) => 
+                    item.visible(userRole) && (
+                      <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
+                        <Link href={item.href}>{item.label}</Link>
+                      </DropdownMenuItem>
+                    )
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* AI Menu - Only show if user has access to at least one AI feature */}
+              {hasAIMenu && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-ai">
+                      <Bot className="w-4 h-4" />
+                      AI
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {visibleAIItems.map((item, index) => (
+                      <div key={item.href}>
+                        {index === visibleAIItems.length - 1 && visibleAIItems.length > 1 && <DropdownMenuSeparator />}
+                        <DropdownMenuItem asChild data-testid={item.testId}>
+                          <Link href={item.href}>
+                            {item.href === "/ai-pm" && <Bot className="mr-2 h-4 w-4" />}
+                            {item.href === "/cfo" && <DollarSign className="mr-2 h-4 w-4" />}
+                            {item.href === "/ai-settings" && <Settings className="mr-2 h-4 w-4" />}
+                            {item.label}
+                          </Link>
+                        </DropdownMenuItem>
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
+              {/* Admin Menu - Only show if user has access to admin features */}
+              {hasAdminMenu && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-admin">
+                      <Shield className="w-4 h-4" />
+                      Admin
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {visibleAdminItems.map((item) => (
+                      <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
+                        <Link href={item.href}>
+                          <UsersIcon className="mr-2 h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </>
           )}
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* Messages Icon */}
-          <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
-            <Link href="/messages">
-              <MessageSquare className="w-5 h-5" />
-              {unreadMessageCount > 0 && (
-                <Badge 
-                  variant="default" 
-                  className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-xs"
-                  data-testid="badge-unread-messages"
-                >
-                  {unreadMessageCount}
-                </Badge>
-              )}
-            </Link>
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
+          {/* Messages Icon - only for contractor users */}
+          {hasContractorAccess(userRole) && (
+            <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
+              <Link href="/messages">
+                <MessageSquare className="w-5 h-5" />
+                {unreadMessageCount > 0 && (
                   <Badge 
-                    variant="destructive" 
+                    variant="default" 
                     className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-xs"
-                    data-testid="badge-unread-count"
+                    data-testid="badge-unread-messages"
                   >
-                    {unreadCount}
+                    {unreadMessageCount}
                   </Badge>
                 )}
-              </Button>
-            </DropdownMenuTrigger>
+              </Link>
+            </Button>
+          )}
+
+          {/* Notifications - only for contractor users */}
+          {hasContractorAccess(userRole) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
+                  <Bell className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <Badge 
+                      variant="destructive" 
+                      className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 text-xs"
+                      data-testid="badge-unread-count"
+                    >
+                      {unreadCount}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-96" data-testid="notifications-panel">
               <div className="flex items-center justify-between p-2">
                 <DropdownMenuLabel>Notifications</DropdownMenuLabel>
@@ -483,6 +537,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
               </ScrollArea>
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
 
           <ThemeToggle />
           

@@ -4,8 +4,8 @@
  * This module defines permission checks for different user roles in the TFR Construction Management Platform.
  * 
  * Role Hierarchy:
- * - SUPER_ADMIN: Platform administrator with access to all organizations and system settings
- * - ADMIN: Full access to everything within their organization including user management
+ * - SUPER_ADMIN: Platform administrator - monitors all organizations, analytics, support tools (NO contractor features)
+ * - ADMIN: Organization admin - full access to everything within their organization including user management
  * - MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER: Full access except user management
  * - MAINTENANCE_MANAGER: Full access to equipment management and receives maintenance/repair requests
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
@@ -14,24 +14,31 @@
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER";
 
 /**
- * Check if user is a super admin (platform level)
+ * Check if user is a super admin (platform level - NO contractor features)
  */
 export function isSuperAdmin(role?: string): boolean {
   return role === "SUPER_ADMIN";
 }
 
 /**
- * Check if user is an admin (organization level) or super admin
+ * Check if user is an organization admin (NOT super admin)
+ */
+export function isOrganizationAdmin(role?: string): boolean {
+  return role === "ADMIN";
+}
+
+/**
+ * Check if user is an organization admin or super admin
  */
 export function isAdmin(role?: string): boolean {
   return role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
 /**
- * Check if user is admin or manager
+ * Check if user is admin or manager (organization level only, not super admin)
  */
 export function isAdminOrManager(role?: string): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER";
+  return role === "ADMIN" || role === "MANAGER";
 }
 
 /**
@@ -42,10 +49,19 @@ export function isHourlyEmployee(role?: string): boolean {
 }
 
 /**
- * Check if user has management-level access (not hourly employee)
+ * Check if user has contractor-level access (excludes SUPER_ADMIN who only does platform admin)
+ */
+export function hasContractorAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER" ||
+         role === "HOURLY_EMPLOYEE";
+}
+
+/**
+ * Check if user has management-level access within an organization (not hourly employee, not super admin)
  */
 export function hasManagementAccess(role?: string): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
          role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER";
 }
 
@@ -57,24 +73,30 @@ export function isMaintenanceManager(role?: string): boolean {
 }
 
 /**
- * Check if user has equipment access
+ * Check if user has equipment access (organization level only)
  */
 export function hasEquipmentAccess(role?: string): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
 }
 
 /**
  * Route access permissions
  */
 export const RoutePermissions = {
-  // Admin-only routes
-  USERS: (role?: string) => isAdmin(role),
-  AI_SETTINGS: (role?: string) => isAdmin(role),
-  COST_RATES: (role?: string) => isAdmin(role),
-  CREWS: (role?: string) => isAdmin(role),
-  SUBCONTRACTOR_PAYABLES: (role?: string) => isAdmin(role),
+  // Platform Admin routes (SUPER_ADMIN only)
+  PLATFORM_ADMIN: (role?: string) => isSuperAdmin(role),
+  PLATFORM_ORGANIZATIONS: (role?: string) => isSuperAdmin(role),
+  PLATFORM_ANALYTICS: (role?: string) => isSuperAdmin(role),
+  PLATFORM_SUPPORT: (role?: string) => isSuperAdmin(role),
 
-  // Management routes (blocked for hourly employees)
+  // Organization Admin-only routes (not for SUPER_ADMIN)
+  USERS: (role?: string) => isOrganizationAdmin(role),
+  AI_SETTINGS: (role?: string) => isOrganizationAdmin(role),
+  COST_RATES: (role?: string) => isOrganizationAdmin(role),
+  CREWS: (role?: string) => isOrganizationAdmin(role),
+  SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
+
+  // Management routes (blocked for hourly employees and SUPER_ADMIN)
   BIDS: (role?: string) => hasManagementAccess(role),
   BID_DETAIL: (role?: string) => hasManagementAccess(role),
   TIME_ENTRY: (role?: string) => hasManagementAccess(role),
@@ -82,17 +104,18 @@ export const RoutePermissions = {
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
-  PRODUCTION_RATES: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+  PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
 
-  // Everyone has access
-  DASHBOARD: () => true,
-  PROJECTS: () => true,
-  PROJECT_DETAIL: () => true,
-  CALENDAR: () => true,
-  TIME_CLOCK: () => true,
+  // Contractor user access (everyone except SUPER_ADMIN)
+  DASHBOARD: (role?: string) => hasContractorAccess(role),
+  PROJECTS: (role?: string) => hasContractorAccess(role),
+  PROJECT_DETAIL: (role?: string) => hasContractorAccess(role),
+  CALENDAR: (role?: string) => hasContractorAccess(role),
+  TIME_CLOCK: (role?: string) => hasContractorAccess(role),
+  MESSAGES: (role?: string) => hasContractorAccess(role),
 };
 
 /**
@@ -118,27 +141,37 @@ export const FeaturePermissions = {
   VIEW_TIME_ENTRIES_TAB: (role?: string) => hasManagementAccess(role),
   VIEW_SUBCONTRACTORS_TAB: (role?: string) => hasManagementAccess(role),
 
-  // Always accessible tabs for all users (including hourly employees)
-  VIEW_OVERVIEW_TAB: () => true,
-  VIEW_SCOPE_TAB: () => true,
-  VIEW_CHANGE_ORDERS_TAB: () => true,
-  VIEW_TAKEOFF_TAB: () => true,
-  VIEW_DOCUMENTS_TAB: () => true,
-  VIEW_MEDIA_TAB: () => true,
-  VIEW_DAILY_NOTES_TAB: () => true,
+  // Always accessible tabs for contractor users
+  VIEW_OVERVIEW_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_SCOPE_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_CHANGE_ORDERS_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_TAKEOFF_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_DOCUMENTS_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_MEDIA_TAB: (role?: string) => hasContractorAccess(role),
+  VIEW_DAILY_NOTES_TAB: (role?: string) => hasContractorAccess(role),
 
   // Equipment management
   VIEW_EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
   MANAGE_EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
 
-  // User management
-  MANAGE_USERS: (role?: string) => isAdmin(role),
+  // User management (organization admin only)
+  MANAGE_USERS: (role?: string) => isOrganizationAdmin(role),
+
+  // Platform admin features
+  VIEW_ALL_ORGANIZATIONS: (role?: string) => isSuperAdmin(role),
+  MANAGE_PLATFORM: (role?: string) => isSuperAdmin(role),
+  VIEW_PLATFORM_ANALYTICS: (role?: string) => isSuperAdmin(role),
+  BACKEND_SUPPORT: (role?: string) => isSuperAdmin(role),
 };
 
 /**
  * Get allowed project statuses for viewing based on role
  */
 export function getAllowedProjectStatuses(role?: string): string[] {
+  if (isSuperAdmin(role)) {
+    // Super admin doesn't view projects
+    return [];
+  }
   if (isHourlyEmployee(role)) {
     // Hourly employees only see active projects
     return ["ACTIVE"];
@@ -156,7 +189,7 @@ export function canViewProjectStatus(role?: string, status?: string): boolean {
 }
 
 /**
- * Navigation items configuration
+ * Navigation items configuration for contractors
  */
 export interface NavItem {
   href: string;
@@ -165,19 +198,22 @@ export interface NavItem {
   visible: (role?: string) => boolean;
 }
 
+/**
+ * Contractor Navigation Config (for organization users, NOT super admin)
+ */
 export const NavigationConfig = {
   mainNav: [
     {
       href: "/dashboard",
       label: "Dashboard",
       testId: "nav-dashboard",
-      visible: () => true,
+      visible: (role?: string) => hasContractorAccess(role),
     },
     {
       href: "/projects",
       label: "Projects",
       testId: "nav-projects",
-      visible: () => true,
+      visible: (role?: string) => hasContractorAccess(role),
     },
     {
       href: "/crm",
@@ -189,7 +225,7 @@ export const NavigationConfig = {
       href: "/calendar",
       label: "Calendar",
       testId: "nav-calendar",
-      visible: () => true,
+      visible: (role?: string) => hasContractorAccess(role),
     },
   ],
   
@@ -198,7 +234,7 @@ export const NavigationConfig = {
       href: "/time-clock",
       label: "My Time Clock",
       testId: "nav-my-time-clock",
-      visible: () => true,
+      visible: (role?: string) => hasContractorAccess(role),
     },
     {
       href: "/time-clock-manager",
@@ -237,13 +273,13 @@ export const NavigationConfig = {
       href: "/production-rates",
       label: "Production Rates",
       testId: "nav-production-rates",
-      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
     },
     {
       href: "/ai-settings",
       label: "AI Settings",
       testId: "nav-ai-settings",
-      visible: (role?: string) => isAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
   ],
 
@@ -252,25 +288,57 @@ export const NavigationConfig = {
       href: "/users",
       label: "Users",
       testId: "nav-users",
-      visible: (role?: string) => isAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
       href: "/crews",
       label: "Crews & Skills",
       testId: "nav-crews",
-      visible: (role?: string) => isAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
       href: "/cost-rates",
       label: "Cost Rates",
       testId: "nav-cost-rates",
-      visible: (role?: string) => isAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
       href: "/subcontractor-payables",
       label: "Subcontractor Payables",
       testId: "nav-subcontractor-payables",
-      visible: (role?: string) => isAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+  ],
+};
+
+/**
+ * Platform Admin Navigation Config (SUPER_ADMIN only)
+ */
+export const PlatformAdminNavConfig = {
+  mainNav: [
+    {
+      href: "/admin",
+      label: "Dashboard",
+      testId: "nav-platform-dashboard",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
+    {
+      href: "/admin/organizations",
+      label: "Organizations",
+      testId: "nav-platform-organizations",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
+    {
+      href: "/admin/analytics",
+      label: "Analytics",
+      testId: "nav-platform-analytics",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
+    {
+      href: "/admin/support",
+      label: "Support Tools",
+      testId: "nav-platform-support",
+      visible: (role?: string) => isSuperAdmin(role),
     },
   ],
 };

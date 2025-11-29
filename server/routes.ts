@@ -58,6 +58,7 @@ import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
 import registerEstimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmTicketRoutes";
+import platformAdminRoutes from "./platformAdminRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 
@@ -94,6 +95,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register T&M ticket routes
   registerTMTicketRoutes(app);
+
+  // Register platform admin routes (SUPER_ADMIN only)
+  app.use("/api", platformAdminRoutes);
 
   // ====================
   // Auth Routes

@@ -39,6 +39,25 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 - Organization testing: manager2@tfr.com with password TFR2025!
 - Platform Admin testing: jfwelch72@gmail.com with password Stella123@@
 
+### Platform Administration (SUPER_ADMIN)
+The platform includes a dedicated administration section for platform operators:
+- **SUPER_ADMIN Role**: Pure platform administrator - monitors all organizations, analytics, support tools (NO access to contractor features like bids, projects, CRM)
+- **Platform Admin Dashboard** (/admin): Overview with total organizations, users, trade distribution, user roles distribution
+- **Organizations Page** (/admin/organizations): View and manage all contractor organizations, filter by trade type, see user counts and onboarding status
+- **Analytics Page** (/admin/analytics): Platform-wide metrics (weekly actions, monthly projects/bids/shifts, recent activity log)
+- **Support Tools** (/admin/support): Backend support features including:
+  - View all users across all organizations
+  - Add SOW items for organizations
+  - Add work types for organizations
+- **Separate Navigation**: SUPER_ADMIN users see a completely different navigation with only platform admin options
+
+### Role-Based Access Control (RBAC)
+Key helper functions in `client/src/lib/rbac.ts`:
+- `isSuperAdmin(role)` - Check if user is platform admin (NO contractor features)
+- `isOrganizationAdmin(role)` - Check if user is organization admin (NOT super admin)
+- `hasContractorAccess(role)` - Check if user has contractor-level access (excludes SUPER_ADMIN)
+- `hasManagementAccess(role)` - Check if user has management-level access (not hourly, not super admin)
+
 ## System Architecture
 The platform utilizes a modern web stack with a client-server architecture, prioritizing security, scalability, and user experience.
 

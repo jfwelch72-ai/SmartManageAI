@@ -35,6 +35,11 @@ import MessagesPage from "@/pages/messages";
 import EquipmentPage from "@/pages/equipment";
 import EquipmentDetailPage from "@/pages/equipment-detail";
 import OnboardingPage from "@/pages/onboarding";
+import PlatformAdminDashboard from "@/pages/PlatformAdminDashboard";
+import PlatformOrganizations from "@/pages/PlatformOrganizations";
+import PlatformOrganizationDetail from "@/pages/PlatformOrganizationDetail";
+import PlatformAnalytics from "@/pages/PlatformAnalytics";
+import PlatformSupportTools from "@/pages/PlatformSupportTools";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 
 function ProtectedRoute({ 
@@ -131,6 +136,13 @@ function Router() {
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/rental-vendors" component={() => <Redirect to="/crm" />} />
+      
+      {/* Platform Admin routes (SUPER_ADMIN only) */}
+      <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       
       <Route component={NotFound} />
     </Switch>

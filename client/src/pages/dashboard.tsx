@@ -16,10 +16,11 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
+import { FeaturePermissions, hasManagementAccess, isSuperAdmin } from "@/lib/rbac";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Notification, CalendarEvent, AITask } from "@shared/schema";
 import { formatDistanceToNow, format, isToday, isTomorrow, isThisWeek } from "date-fns";
+import { Redirect } from "wouter";
 
 function getTimeGreeting(): { greeting: string; icon: typeof Sun } {
   const hour = new Date().getHours();
@@ -67,6 +68,11 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: bids = [], isLoading: bidsLoading } = useBids();
+
+  // Redirect SUPER_ADMIN users to platform admin dashboard
+  if (isSuperAdmin(user?.role)) {
+    return <Redirect to="/admin" />;
+  }
 
   const { greeting, icon: GreetingIcon } = getTimeGreeting();
   const firstName = user?.firstName || "there";
