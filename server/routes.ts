@@ -9614,7 +9614,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     messages, 
     messageReadReceipts,
     insertConversationSchema,
-    insertMessageSchema 
+    insertMessageSchema,
+    organizations 
   } = await import("@shared/schema");
 
   // Get all conversations for current user
@@ -9709,40 +9710,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get or create company-wide channel
+  // Get or create company-wide channel (scoped to organization)
   app.get("/api/conversations/company-channel", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      const organizationId = req.user!.organizationId;
 
-      // Find existing company channel
+      if (!organizationId) {
+        res.status(400).json({ error: "You must belong to an organization to access company chat" });
+        return;
+      }
+
+      // Find existing company channel for this organization
       let [companyChannel] = await db
         .select()
         .from(conversations)
-        .where(eq(conversations.isCompanyChannel, true))
+        .where(
+          and(
+            eq(conversations.isCompanyChannel, true),
+            eq(conversations.organizationId, organizationId)
+          )
+        )
         .limit(1);
 
-      // Create if doesn't exist
+      // Create if doesn't exist for this organization
       if (!companyChannel) {
+        // Get organization name for channel title
+        const [org] = await db
+          .select({ name: organizations.name })
+          .from(organizations)
+          .where(eq(organizations.id, organizationId))
+          .limit(1);
+        
+        const orgName = org?.name || "Company";
+
         [companyChannel] = await db
           .insert(conversations)
           .values({
             type: "COMPANY",
-            name: "TFR Company Chat",
+            name: `${orgName} Team Chat`,
             description: "Company-wide announcements and general discussion",
             isCompanyChannel: true,
+            organizationId: organizationId,
             createdById: userId,
           })
           .returning();
 
-        // Add all active users as participants
-        const activeUsers = await db
+        // Add all active users from this organization as participants
+        const orgUsers = await db
           .select({ id: users.id })
           .from(users)
-          .where(eq(users.isActive, true));
+          .where(
+            and(
+              eq(users.isActive, true),
+              eq(users.organizationId, organizationId)
+            )
+          );
 
-        if (activeUsers.length > 0) {
+        if (orgUsers.length > 0) {
           await db.insert(conversationParticipants).values(
-            activeUsers.map(u => ({
+            orgUsers.map(u => ({
               conversationId: companyChannel.id,
               userId: u.id,
               isAdmin: u.id === userId,
@@ -9778,16 +9805,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create a new conversation (direct message or group)
+  // Create a new conversation (direct message or group) - scoped to organization
   app.post("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      const organizationId = req.user!.organizationId;
       const { type, name, description, participantIds } = req.body;
+
+      if (!organizationId) {
+        res.status(400).json({ error: "You must belong to an organization to create conversations" });
+        return;
+      }
 
       // Validate type
       if (!["DIRECT", "GROUP"].includes(type)) {
         res.status(400).json({ error: "Invalid conversation type" });
         return;
+      }
+
+      // Validate that all participants are from the same organization
+      if (participantIds && participantIds.length > 0) {
+        const participantUsers = await db
+          .select({ id: users.id, organizationId: users.organizationId })
+          .from(users)
+          .where(sql`${users.id} IN ${participantIds}`);
+
+        const crossOrgParticipants = participantUsers.filter(u => u.organizationId !== organizationId);
+        if (crossOrgParticipants.length > 0) {
+          res.status(400).json({ error: "Cannot create conversations with users from different organizations" });
+          return;
+        }
       }
 
       // For direct messages, check if conversation already exists
@@ -9831,7 +9878,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Create new conversation
+      // Create new conversation with organization scope
       const [newConversation] = await db
         .insert(conversations)
         .values({
@@ -9839,6 +9886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: type === "GROUP" ? (name || "Group Chat") : null,
           description: description || null,
           isCompanyChannel: false,
+          organizationId: organizationId,
           createdById: userId,
         })
         .returning();

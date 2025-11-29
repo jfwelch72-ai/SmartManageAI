@@ -70,11 +70,16 @@ export const organizations = pgTable("organizations", {
   tradeName: text("trade_name"),
   logoUrl: text("logo_url"),
   primaryColor: text("primary_color"),
+  secondaryColor: text("secondary_color"),
+  accentColor: text("accent_color"),
+  fontFamily: text("font_family"),
+  websiteUrl: text("website_url"),
   region: text("region"),
   typicalCrewSize: integer("typical_crew_size"),
   onboardingStatus: onboardingStatusEnum("onboarding_status").notNull().default("NOT_STARTED"),
   onboardingData: text("onboarding_data"),
   terminologyJson: text("terminology_json"),
+  themeExtractedAt: timestamp("theme_extracted_at"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2075,6 +2080,7 @@ export type ScopeModifier = typeof scopeModifiers.$inferSelect;
 // Conversations table (channels and direct messages)
 export const conversations = pgTable("conversations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   type: conversationTypeEnum("type").notNull(), // DIRECT, GROUP, COMPANY
   name: text("name"), // null for direct messages, required for groups/company
   description: text("description"),
@@ -2084,6 +2090,7 @@ export const conversations = pgTable("conversations", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   typeIdx: index("conversations_type_idx").on(table.type),
+  orgIdx: index("conversations_org_idx").on(table.organizationId),
 }));
 
 // Conversation Participants table
@@ -2792,3 +2799,29 @@ export const organizationWorkTypes = pgTable("organization_work_types", {
 export const insertOrganizationWorkTypeSchema = createInsertSchema(organizationWorkTypes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationWorkType = z.infer<typeof insertOrganizationWorkTypeSchema>;
 export type OrganizationWorkType = typeof organizationWorkTypes.$inferSelect;
+
+// Organization SOW Items - Scope of Work items specific to each organization
+export const organizationSowItems = pgTable("organization_sow_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  categoryName: text("category_name").notNull(),
+  name: text("name").notNull(),
+  code: text("code").notNull(),
+  description: text("description"),
+  unit: text("unit"),
+  requiresDimensions: boolean("requires_dimensions").notNull().default(false),
+  dimensionLabel: text("dimension_label"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isFromTemplate: boolean("is_from_template").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_sow_items_org_idx").on(table.organizationId),
+  categoryIdx: index("org_sow_items_category_idx").on(table.categoryName),
+  codeOrgUnique: unique("org_sow_items_code_org_unique").on(table.organizationId, table.code),
+}));
+
+export const insertOrganizationSowItemSchema = createInsertSchema(organizationSowItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationSowItem = z.infer<typeof insertOrganizationSowItemSchema>;
+export type OrganizationSowItem = typeof organizationSowItems.$inferSelect;
