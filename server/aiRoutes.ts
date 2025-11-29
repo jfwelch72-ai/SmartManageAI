@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema } from "@shared/schema";
+import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { 
   runAIAnalysis, 
@@ -408,6 +408,190 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   } catch (error: any) {
     console.error("Error fetching AI runs:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// AI Onboarding System Prompt
+const ONBOARDING_SYSTEM_PROMPT = `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, conversational exchange to understand their business so we can configure the system perfectly for their needs.
+
+## Your Conversation Flow:
+1. **Welcome & Introduction** - Warmly greet them and ask what type of contracting work they specialize in
+2. **Trade Details** - Once they mention their trade, confirm it and ask about their typical crew size
+3. **Materials** - Ask about the main materials they work with regularly
+4. **Region** - Ask what geographic area they primarily serve
+5. **Wrap Up** - Summarize what you learned and confirm the setup
+
+## Important Guidelines:
+- Be conversational and friendly, not robotic
+- Ask ONE question at a time - don't overwhelm them
+- Use their answers to ask relevant follow-up questions
+- If they give vague answers, gently probe for more specifics
+- When you have gathered: trade type, crew size, main materials, and region - you can wrap up
+
+## Trade Types to Identify:
+- ROOFING: Shingle installation, commercial roofing, repairs
+- ELECTRICAL: Wiring, panel work, commercial/residential electrical
+- PLUMBING: Pipe work, fixtures, water heaters
+- HVAC: Heating, cooling, ductwork, ventilation
+- CARPENTRY: Framing, finish work, cabinetry
+- CONCRETE: Flatwork, foundations, structural concrete
+- MASONRY: Brick, block, stone work
+- DRYWALL: Sheetrock, taping, finishing
+- PAINTING: Interior/exterior painting
+- FLOORING: Tile, hardwood, carpet, LVP
+- LANDSCAPING: Hardscaping, irrigation, planting
+- EXCAVATION: Grading, trenching, site prep
+- GENERAL_CONTRACTOR: Full-service construction management
+
+## Response Format:
+Always respond with valid JSON in this exact format:
+{
+  "message": "Your conversational response to the user",
+  "extractedData": {
+    "tradeType": "ROOFING" or null if not yet determined,
+    "tradeName": "Custom trade description" or null,
+    "crewSize": 5 or null if not yet determined,
+    "region": "Dallas, TX area" or null if not yet determined,
+    "materials": ["shingles", "underlayment"] or null if not yet determined
+  },
+  "isComplete": false,
+  "step": 1
+}
+
+Set isComplete to true only when you have gathered all the key information and confirmed with the user.
+The step should increment as you progress through the conversation (1=trade, 2=crew, 3=materials, 4=region, 5=confirmation).`;
+
+// Complete onboarding and save organization configuration
+router.post("/ai/onboarding/complete", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { companyName, tradeType, tradeName, crewSize, region, materials } = req.body;
+
+    if (!companyName || !tradeType) {
+      return res.status(400).json({ error: "Company name and trade type are required" });
+    }
+
+    // Generate a unique slug
+    const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+    // Create the organization
+    const [newOrg] = await db.insert(organizations).values({
+      name: companyName,
+      slug,
+      tradeType: tradeType as any,
+      tradeName: tradeName || null,
+      typicalCrewSize: crewSize || null,
+      region: region || null,
+      onboardingStatus: 'COMPLETED',
+      onboardingData: JSON.stringify({ materials, completedAt: new Date() }),
+    }).returning();
+
+    // Update the user to belong to this organization
+    await db.update(users)
+      .set({ 
+        organizationId: newOrg.id,
+        role: 'ADMIN', // First user becomes admin
+        isActive: true 
+      })
+      .where(eq(users.id, req.user.id));
+
+    // Copy trade template configurations to organization
+    const [template] = await db.select().from(tradeTemplates).where(eq(tradeTemplates.tradeType, tradeType as any));
+    
+    if (template) {
+      // Parse and create organization-specific work types
+      try {
+        const workTypes = JSON.parse(template.workTypesJson);
+        for (const wt of workTypes) {
+          await db.insert(organizationWorkTypes).values({
+            organizationId: newOrg.id,
+            name: wt.name,
+            category: template.displayName,
+            unit: wt.unit,
+            defaultProductionRate: wt.rate ? String(wt.rate) : null,
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing work types:", e);
+      }
+
+      // Parse and create organization-specific calculators
+      try {
+        const calculators = JSON.parse(template.calculatorConfigJson);
+        for (const calc of calculators) {
+          await db.insert(organizationCalculators).values({
+            organizationId: newOrg.id,
+            name: calc.name,
+            category: template.displayName,
+            unit: calc.unit,
+            formulaJson: JSON.stringify({ formula: calc.formula, inputs: calc.inputs }),
+            inputFieldsJson: JSON.stringify(calc.inputs),
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing calculators:", e);
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      organization: newOrg,
+      message: "Your account has been configured successfully!" 
+    });
+  } catch (error: any) {
+    console.error("Onboarding complete error:", error.message || "Unknown error");
+    res.status(500).json({ error: "Failed to complete onboarding. Please try again." });
+  }
+});
+
+// AI Onboarding Chat endpoint
+router.post("/ai/onboarding/chat", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { message, conversationHistory = [] } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+      { role: 'system', content: ONBOARDING_SYSTEM_PROMPT }
+    ];
+
+    // Add conversation history
+    for (const msg of conversationHistory.slice(-20)) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    messages.push({ role: 'user', content: message });
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      temperature: 0.7,
+      max_tokens: 500,
+      response_format: { type: "json_object" },
+    });
+
+    const responseText = completion.choices[0]?.message?.content;
+    if (!responseText) {
+      throw new Error('No response from AI');
+    }
+
+    const parsed = JSON.parse(responseText);
+    res.json(parsed);
+  } catch (error: any) {
+    console.error("AI Onboarding error:", error.message || "Unknown error");
+    res.status(500).json({ error: "Failed to get AI response. Please try again." });
   }
 });
 
