@@ -4,26 +4,34 @@
  * This module defines permission checks for different user roles in the TFR Construction Management Platform.
  * 
  * Role Hierarchy:
- * - ADMIN: Full access to everything including user management
+ * - SUPER_ADMIN: Platform administrator with access to all organizations and system settings
+ * - ADMIN: Full access to everything within their organization including user management
  * - MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER: Full access except user management
  * - MAINTENANCE_MANAGER: Full access to equipment management and receives maintenance/repair requests
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
  */
 
-export type UserRole = "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER";
 
 /**
- * Check if user is an admin
+ * Check if user is a super admin (platform level)
+ */
+export function isSuperAdmin(role?: string): boolean {
+  return role === "SUPER_ADMIN";
+}
+
+/**
+ * Check if user is an admin (organization level) or super admin
  */
 export function isAdmin(role?: string): boolean {
-  return role === "ADMIN";
+  return role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
 /**
  * Check if user is admin or manager
  */
 export function isAdminOrManager(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER";
+  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER";
 }
 
 /**
@@ -37,7 +45,7 @@ export function isHourlyEmployee(role?: string): boolean {
  * Check if user has management-level access (not hourly employee)
  */
 export function hasManagementAccess(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
+  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
          role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER";
 }
 
@@ -52,7 +60,7 @@ export function isMaintenanceManager(role?: string): boolean {
  * Check if user has equipment access
  */
 export function hasEquipmentAccess(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
+  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
 }
 
 /**
@@ -74,7 +82,7 @@ export const RoutePermissions = {
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
-  PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+  PRODUCTION_RATES: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
@@ -229,7 +237,7 @@ export const NavigationConfig = {
       href: "/production-rates",
       label: "Production Rates",
       testId: "nav-production-rates",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
     },
     {
       href: "/ai-settings",
