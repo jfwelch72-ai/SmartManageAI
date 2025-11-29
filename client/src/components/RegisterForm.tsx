@@ -54,9 +54,9 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">Register for TFR Construction</CardTitle>
+        <CardTitle className="text-2xl font-bold">Register for SmartManageAI</CardTitle>
         <CardDescription>
-          Create an account using your company email
+          Create an account to manage your construction projects
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -92,7 +92,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
             <Input
               id="email"
               type="email"
-              placeholder="you@tfrllc.com"
+              placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

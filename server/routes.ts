@@ -222,9 +222,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
-  // Get current user
-  app.get("/api/auth/me", requireAuth, (req: AuthRequest, res) => {
-    res.json({ user: req.user });
+  // Get current user (with organization name if available)
+  app.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      let organizationName = null;
+      if (req.user?.organizationId) {
+        const [org] = await db
+          .select({ name: organizations.name })
+          .from(organizations)
+          .where(eq(organizations.id, req.user.organizationId))
+          .limit(1);
+        organizationName = org?.name || null;
+      }
+      res.json({ user: req.user, organizationName });
+    } catch (error) {
+      console.error("Error fetching user org:", error);
+      res.json({ user: req.user, organizationName: null });
+    }
   });
 
   // Initialize admin user (one-time setup)

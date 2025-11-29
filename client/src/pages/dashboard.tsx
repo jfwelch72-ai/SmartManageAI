@@ -64,7 +64,7 @@ interface ConversationWithDetails {
 
 export default function DashboardPage() {
   const [, setLocation] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, organizationName } = useAuth();
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: bids = [], isLoading: bidsLoading } = useBids();
@@ -155,6 +155,7 @@ export default function DashboardPage() {
         userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
         userRole={user?.role || ""}
         onLogout={logout}
+        organizationName={organizationName || undefined}
       />
       
       <main className="mx-auto max-w-7xl px-6 py-8">

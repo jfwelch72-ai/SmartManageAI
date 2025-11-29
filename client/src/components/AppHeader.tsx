@@ -34,9 +34,11 @@ interface AppHeaderProps {
   userName: string;
   userRole: string;
   onLogout: () => Promise<void>;
+  organizationName?: string;
 }
 
-export default function AppHeader({ userName, userRole, onLogout }: AppHeaderProps) {
+export default function AppHeader({ userName, userRole, onLogout, organizationName }: AppHeaderProps) {
+  const displayName = organizationName || "SmartManageAI";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [timeClockOpen, setTimeClockOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
@@ -148,7 +150,7 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             <SheetHeader className="p-4 border-b">
               <SheetTitle className="flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-primary" />
-                <span>TFR Construction</span>
+                <span>{isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}</span>
               </SheetTitle>
             </SheetHeader>
             <ScrollArea className="h-[calc(100vh-80px)]">
@@ -291,10 +293,10 @@ export default function AppHeader({ userName, userRole, onLogout }: AppHeaderPro
             <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
             <div className="hidden sm:block">
               <h1 className="text-lg md:text-xl font-bold text-foreground">
-                {isSuperAdmin(userRole) ? "TFR Platform Admin" : "TFR Construction"}
+                {isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}
               </h1>
               <p className="text-xs text-muted-foreground hidden md:block">
-                {isSuperAdmin(userRole) ? "Platform Administration" : "Management Platform"}
+                {isSuperAdmin(userRole) ? "Platform Administration" : "Construction Management"}
               </p>
             </div>
           </div>

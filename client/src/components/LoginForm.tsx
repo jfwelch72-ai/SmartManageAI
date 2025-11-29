@@ -21,9 +21,9 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold">TFR Construction</CardTitle>
+        <CardTitle className="text-2xl font-bold">SmartManageAI</CardTitle>
         <CardDescription>
-          Enter your credentials to access the management platform
+          Enter your credentials to access your management platform
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -33,7 +33,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
             <Input
               id="email"
               type="email"
-              placeholder="you@tfrllc.com"
+              placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
