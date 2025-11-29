@@ -7,15 +7,30 @@ The TFR Construction Management Platform is a white-label SaaS solution designed
 The platform now supports multi-tenant organizations with trade-specific configurations:
 - **Organizations**: Each contractor company operates as a separate organization with its own users, settings, and customizations
 - **Trade Templates**: Pre-built configurations for 7+ common trades (Roofing, Electrical, Plumbing, HVAC, Carpentry, Concrete, General Contractor)
-- **AI Onboarding**: New users complete an AI-driven onboarding conversation that configures material calculators, work types, and terminology for their specific trade
+- **AI Onboarding**: Enhanced AI-driven onboarding conversation that:
+  - Gathers trade type, crew size, region, and materials through natural conversation
+  - Suggests trade-specific work types (scope of work items) based on the identified trade
+  - Allows users to select from suggestions and add custom work items
+  - Optionally extracts brand colors from the contractor's website for theme customization
+  - Auto-creates material calculators relevant to the contractor's specific work types
+- **Messaging Isolation**: Conversations and company channels are scoped by organizationId to prevent cross-tenant communication
 - **Existing TFR Users**: Migrate seamlessly with organizationId = 'tfr-default-org' and unchanged experience
 
+### Website Theme Extraction
+The platform can optionally extract brand colors from a contractor's website during onboarding:
+- SSRF-protected fetching (HTTPS-only, private IP blocking, timeout limits, size caps)
+- AI-powered color analysis to identify primary, secondary, and accent colors
+- Colors stored in organization record (primaryColor, secondaryColor, accentColor)
+- Background async processing to avoid blocking onboarding completion
+
 ### Key Database Tables for Multi-Tenancy
-- `organizations`: Core tenant table with trade type, name, slug, onboarding status
+- `organizations`: Core tenant table with trade type, name, slug, onboarding status, theme colors (primaryColor, secondaryColor, accentColor), websiteUrl
 - `trade_templates`: Pre-built configurations for common trades with work types, calculators, terminology
 - `organization_calculators`: Organization-specific material calculators
 - `organization_work_types`: Organization-specific work types and production rates
+- `organization_sow_items`: Organization-specific scope of work items with categories, codes, and display order
 - `users.organizationId`: Foreign key linking users to their organization
+- `conversations.organizationId`: Ensures messaging isolation between tenants
 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.

@@ -46,6 +46,22 @@ const onboardingCompleteSchema = z.object({
       .pipe(z.string().max(100))
       .transform(s => sanitizeShortText(s))
   ).max(50).optional().nullable(),
+  workTypes: z.array(
+    z.string()
+      .transform(s => s?.trim() || '')
+      .pipe(z.string().max(100))
+      .transform(s => sanitizeShortText(s))
+  ).max(50).optional().nullable(),
+  websiteUrl: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().url().max(500).or(z.literal('')))
+    .transform(s => s ? sanitizeShortText(s) : null)
+    .optional()
+    .nullable(),
+  suggestedCalculators: z.array(z.object({
+    name: z.string().max(100).transform(s => sanitizeShortText(s)),
+    description: z.string().max(500).transform(s => sanitizeText(s)).optional(),
+  })).max(20).optional().nullable(),
 });
 
 const onboardingChatSchema = z.object({
@@ -455,37 +471,45 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   }
 });
 
-// AI Onboarding System Prompt
-const ONBOARDING_SYSTEM_PROMPT = `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, conversational exchange to understand their business so we can configure the system perfectly for their needs.
+// AI Onboarding System Prompt - Enhanced with SOW suggestions and theme extraction
+const ONBOARDING_SYSTEM_PROMPT = `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, in-depth conversation to understand their business so we can configure the system perfectly for their needs, including pre-building their work type dropdowns and material calculators.
 
 ## Your Conversation Flow:
-1. **Welcome & Introduction** - Warmly greet them and ask what type of contracting work they specialize in
-2. **Trade Details** - Once they mention their trade, confirm it and ask about their typical crew size
-3. **Materials** - Ask about the main materials they work with regularly
-4. **Region** - Ask what geographic area they primarily serve
-5. **Wrap Up** - Summarize what you learned and confirm the setup
+1. **Welcome & Trade** - Warmly greet them and ask what type of contracting work they specialize in
+2. **Crew Size** - Ask about their typical crew size
+3. **Region** - Ask what geographic area they primarily serve
+4. **Work Types/SOW** - Based on their trade, suggest specific work types (scope of work items) they might perform. Present 5-8 common ones for their trade and ask them to confirm which they do, plus add any others
+5. **Materials** - Based on their work types, suggest materials they likely use and ask them to confirm/add
+6. **Website** - Ask if they have a company website - we can match their system's look to their brand
+7. **Wrap Up** - Summarize everything and confirm they're ready to set up
 
-## Important Guidelines:
-- Be conversational and friendly, not robotic
-- Ask ONE question at a time - don't overwhelm them
-- Use their answers to ask relevant follow-up questions
-- If they give vague answers, gently probe for more specifics
-- When you have gathered: trade type, crew size, main materials, and region - you can wrap up
+## Work Type Suggestions by Trade:
+When they identify their trade, suggest these common work types:
+
+ROOFING: ["Shingle Tear-off & Replace", "New Construction Roofing", "Commercial Flat Roof", "Metal Roofing", "Roof Repairs", "Gutter Installation", "Skylight Installation", "Roof Inspection"]
+
+ELECTRICAL: ["Residential Rough-in", "Commercial Wiring", "Panel Upgrade", "EV Charger Installation", "Lighting Installation", "Generator Installation", "Low Voltage/Data", "Service Upgrade"]
+
+PLUMBING: ["New Construction Rough-in", "Fixture Installation", "Water Heater Install", "Drain Cleaning", "Repiping", "Gas Line Work", "Sewer Line Repair", "Backflow Testing"]
+
+HVAC: ["AC Installation", "Furnace Installation", "Duct Installation", "HVAC Repair", "Mini-Split Installation", "Commercial HVAC", "Refrigeration", "Ventilation Systems"]
+
+CONCRETE: ["Sidewalk - 4 inch", "Driveway - 6 inch", "Foundation Pour", "Stamped Concrete", "Curb & Gutter", "Retaining Walls", "Concrete Repairs", "Commercial Flatwork"]
+
+CARPENTRY: ["Framing - Walls", "Framing - Roof", "Finish Carpentry", "Cabinet Installation", "Deck Building", "Door/Window Installation", "Trim Work", "Custom Millwork"]
+
+GENERAL_CONTRACTOR: ["Project Management", "General Construction", "Renovation", "Tenant Improvement", "New Build Coordination", "Site Supervision"]
+
+## Material Calculator Suggestions:
+For each work type they select, suggest relevant calculators:
+- Roofing: Square footage to shingle bundles, underlayment rolls, nails
+- Concrete: Volume calculator (L×W×D), bags per cubic yard, rebar spacing
+- Electrical: Wire length by run, outlets per circuit, panel sizing
+- Plumbing: Pipe length, fitting counts, fixture rough-in materials
+- HVAC: Duct sizing, refrigerant amounts, BTU calculations
 
 ## Trade Types to Identify:
-- ROOFING: Shingle installation, commercial roofing, repairs
-- ELECTRICAL: Wiring, panel work, commercial/residential electrical
-- PLUMBING: Pipe work, fixtures, water heaters
-- HVAC: Heating, cooling, ductwork, ventilation
-- CARPENTRY: Framing, finish work, cabinetry
-- CONCRETE: Flatwork, foundations, structural concrete
-- MASONRY: Brick, block, stone work
-- DRYWALL: Sheetrock, taping, finishing
-- PAINTING: Interior/exterior painting
-- FLOORING: Tile, hardwood, carpet, LVP
-- LANDSCAPING: Hardscaping, irrigation, planting
-- EXCAVATION: Grading, trenching, site prep
-- GENERAL_CONTRACTOR: Full-service construction management
+ROOFING, ELECTRICAL, PLUMBING, HVAC, CARPENTRY, CONCRETE, MASONRY, DRYWALL, PAINTING, FLOORING, LANDSCAPING, EXCAVATION, DEMOLITION, STEEL_ERECTION, GLAZING, INSULATION, FIRE_PROTECTION, WATERPROOFING, GENERAL_CONTRACTOR, OTHER
 
 ## Response Format:
 Always respond with valid JSON in this exact format:
@@ -496,14 +520,30 @@ Always respond with valid JSON in this exact format:
     "tradeName": "Custom trade description" or null,
     "crewSize": 5 or null if not yet determined,
     "region": "Dallas, TX area" or null if not yet determined,
-    "materials": ["shingles", "underlayment"] or null if not yet determined
+    "materials": ["shingles", "underlayment"] or null if not yet determined,
+    "workTypes": ["Shingle Tear-off & Replace", "Roof Repairs"] or null,
+    "websiteUrl": "https://example.com" or null if not provided,
+    "suggestedCalculators": [
+      {"name": "Shingle Calculator", "description": "Calculate bundles needed from square footage"}
+    ] or null
+  },
+  "suggestions": {
+    "workTypes": ["Shingle Tear-off & Replace", "New Construction Roofing"] or null,
+    "materials": ["Shingles", "Underlayment", "Nails"] or null
   },
   "isComplete": false,
   "step": 1
 }
 
-Set isComplete to true only when you have gathered all the key information and confirmed with the user.
-The step should increment as you progress through the conversation (1=trade, 2=crew, 3=materials, 4=region, 5=confirmation).`;
+## Important Guidelines:
+- Be conversational and friendly, not robotic
+- Ask ONE question at a time - don't overwhelm them
+- When suggesting work types, present them as options they can select from
+- Let them know they can also add custom work types not in your list
+- For the website, explain we'll use it to match their system colors to their brand
+- Set isComplete to true only when you have gathered all key information
+
+Step progression: 1=trade, 2=crew, 3=region, 4=workTypes, 5=materials, 6=website, 7=confirmation`;
 
 // Complete onboarding and save organization configuration
 router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest, res) => {
@@ -521,7 +561,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       });
     }
 
-    const { companyName, tradeType, tradeName, crewSize, region, materials } = validationResult.data;
+    const { companyName, tradeType, tradeName, crewSize, region, materials, workTypes, websiteUrl, suggestedCalculators } = validationResult.data;
 
     // Prevent users who already have an organization from creating another
     if (req.user.organizationId) {
@@ -534,8 +574,9 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
 
     // Materials are already sanitized by Zod schema
     const sanitizedMaterials = materials || [];
+    const sanitizedWorkTypes = workTypes || [];
 
-    // Create the organization
+    // Create the organization with website URL for theme extraction
     const [newOrg] = await db.insert(organizations).values({
       name: companyName,
       slug,
@@ -543,8 +584,14 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       tradeName: tradeName || null,
       typicalCrewSize: crewSize || null,
       region: region || null,
+      websiteUrl: websiteUrl || null,
       onboardingStatus: 'COMPLETED',
-      onboardingData: JSON.stringify({ materials: sanitizedMaterials, completedAt: new Date() }),
+      onboardingData: JSON.stringify({ 
+        materials: sanitizedMaterials, 
+        workTypes: sanitizedWorkTypes,
+        suggestedCalculators: suggestedCalculators || [],
+        completedAt: new Date() 
+      }),
     }).returning();
 
     // Update the user to belong to this organization
@@ -556,27 +603,49 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       })
       .where(eq(users.id, req.user.id));
 
+    // Import organizationSowItems for saving work types
+    const { organizationSowItems } = await import("@shared/schema");
+
+    // Save user-selected work types as organization SOW items
+    if (sanitizedWorkTypes.length > 0) {
+      for (let i = 0; i < sanitizedWorkTypes.length; i++) {
+        const wt = sanitizedWorkTypes[i];
+        const code = wt.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+        await db.insert(organizationSowItems).values({
+          organizationId: newOrg.id,
+          categoryName: tradeName || tradeType,
+          name: wt,
+          code: `${code}_${i}`,
+          displayOrder: i,
+          isFromTemplate: false,
+        }).onConflictDoNothing();
+      }
+    }
+
     // Copy trade template configurations to organization
     const [template] = await db.select().from(tradeTemplates).where(eq(tradeTemplates.tradeType, tradeType as any));
     
     if (template) {
-      // Parse and create organization-specific work types
+      // Parse and create organization-specific work types from template
       try {
-        const workTypes = JSON.parse(template.workTypesJson);
-        for (const wt of workTypes) {
-          await db.insert(organizationWorkTypes).values({
-            organizationId: newOrg.id,
-            name: wt.name,
-            category: template.displayName,
-            unit: wt.unit,
-            defaultProductionRate: wt.rate ? String(wt.rate) : null,
-          });
+        const templateWorkTypes = JSON.parse(template.workTypesJson);
+        for (const wt of templateWorkTypes) {
+          // Only add if not already selected by user
+          if (!sanitizedWorkTypes.some(sw => sw.toLowerCase() === wt.name.toLowerCase())) {
+            await db.insert(organizationWorkTypes).values({
+              organizationId: newOrg.id,
+              name: wt.name,
+              category: template.displayName,
+              unit: wt.unit,
+              defaultProductionRate: wt.rate ? String(wt.rate) : null,
+            });
+          }
         }
       } catch (e) {
         console.error("Error parsing work types:", e);
       }
 
-      // Parse and create organization-specific calculators
+      // Parse and create organization-specific calculators from template
       try {
         const calculators = JSON.parse(template.calculatorConfigJson);
         for (const calc of calculators) {
@@ -594,6 +663,27 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       }
     }
 
+    // Create calculators from AI suggestions if no template or additional ones suggested
+    if (suggestedCalculators && suggestedCalculators.length > 0) {
+      for (const calc of suggestedCalculators) {
+        await db.insert(organizationCalculators).values({
+          organizationId: newOrg.id,
+          name: calc.name,
+          category: tradeName || tradeType,
+          unit: 'units',
+          formulaJson: JSON.stringify({ formula: 'quantity * rate', description: calc.description }),
+          inputFieldsJson: JSON.stringify([{ name: 'quantity', label: 'Quantity', type: 'number' }]),
+        });
+      }
+    }
+
+    // If website URL provided, trigger background theme extraction (async)
+    if (websiteUrl) {
+      extractThemeFromWebsite(newOrg.id, websiteUrl).catch(err => {
+        console.error("Theme extraction failed:", err.message);
+      });
+    }
+
     res.json({ 
       success: true, 
       organization: newOrg,
@@ -604,6 +694,120 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     res.status(500).json({ error: "Failed to complete onboarding. Please try again." });
   }
 });
+
+// Helper function to extract theme colors from a website (SSRF protected)
+async function extractThemeFromWebsite(organizationId: string, websiteUrl: string): Promise<void> {
+  try {
+    // SSRF Protection: Validate URL
+    const url = new URL(websiteUrl);
+    
+    // Only allow http/https
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      console.log("Theme extraction: Invalid protocol");
+      return;
+    }
+    
+    // Block private/internal IPs
+    const hostname = url.hostname.toLowerCase();
+    const blockedPatterns = [
+      /^localhost$/i,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2[0-9]|3[01])\./,
+      /^192\.168\./,
+      /^0\./,
+      /^169\.254\./,
+      /\.local$/i,
+      /^::1$/,
+      /^fc00:/i,
+      /^fe80:/i,
+    ];
+    
+    if (blockedPatterns.some(pattern => pattern.test(hostname))) {
+      console.log("Theme extraction: Blocked internal IP/hostname");
+      return;
+    }
+
+    // Fetch with timeout and size limit
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+    const response = await fetch(websiteUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'TFR-Construction-Theme-Extractor/1.0',
+        'Accept': 'text/html',
+      },
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.log("Theme extraction: Failed to fetch website");
+      return;
+    }
+
+    // Limit response size to 1MB
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > 1000000) {
+      console.log("Theme extraction: Response too large");
+      return;
+    }
+
+    const html = await response.text();
+    
+    // Simple color extraction from HTML/CSS
+    const colorPatterns = [
+      // Hex colors
+      /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g,
+      // RGB colors
+      /rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/gi,
+    ];
+
+    const foundColors: string[] = [];
+    for (const pattern of colorPatterns) {
+      const matches = html.match(pattern);
+      if (matches) {
+        foundColors.push(...matches.slice(0, 10)); // Limit to first 10 matches
+      }
+    }
+
+    // Use AI to analyze colors and pick primary/secondary/accent
+    if (foundColors.length > 0) {
+      const colorAnalysis = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'system',
+          content: 'You are a design expert. Given a list of colors found on a website, identify the most likely primary brand color, secondary color, and accent color. Return JSON with: {"primaryColor": "#hex", "secondaryColor": "#hex", "accentColor": "#hex"}'
+        }, {
+          role: 'user',
+          content: `Colors found on website: ${foundColors.slice(0, 20).join(', ')}`
+        }],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 100,
+      });
+
+      const themeColors = JSON.parse(colorAnalysis.choices[0]?.message?.content || '{}');
+      
+      // Update organization with extracted colors
+      if (themeColors.primaryColor || themeColors.secondaryColor || themeColors.accentColor) {
+        await db.update(organizations)
+          .set({
+            primaryColor: themeColors.primaryColor || null,
+            secondaryColor: themeColors.secondaryColor || null,
+            accentColor: themeColors.accentColor || null,
+            themeExtractedAt: new Date(),
+          })
+          .where(eq(organizations.id, organizationId));
+        
+        console.log(`Theme extracted for org ${organizationId}:`, themeColors);
+      }
+    }
+  } catch (error: any) {
+    console.error("Theme extraction error:", error.message);
+  }
+}
 
 // AI Onboarding Chat endpoint
 router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, res) => {

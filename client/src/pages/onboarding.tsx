@@ -10,11 +10,16 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package } from "lucide-react";
+import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator } from "lucide-react";
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface SuggestedCalculator {
+  name: string;
+  description?: string;
 }
 
 interface ExtractedData {
@@ -22,6 +27,14 @@ interface ExtractedData {
   tradeName: string | null;
   crewSize: number | null;
   region: string | null;
+  materials: string[] | null;
+  workTypes: string[] | null;
+  websiteUrl: string | null;
+  suggestedCalculators: SuggestedCalculator[] | null;
+}
+
+interface Suggestions {
+  workTypes: string[] | null;
   materials: string[] | null;
 }
 
@@ -39,10 +52,18 @@ export default function OnboardingPage() {
     crewSize: null,
     region: null,
     materials: null,
+    workTypes: null,
+    websiteUrl: null,
+    suggestedCalculators: null,
+  });
+  const [suggestions, setSuggestions] = useState<Suggestions>({
+    workTypes: null,
+    materials: null,
   });
   const [isComplete, setIsComplete] = useState(false);
   const [step, setStep] = useState(0);
   const [companyName, setCompanyName] = useState("");
+  const [websiteInput, setWebsiteInput] = useState("");
   const [showCompanyInput, setShowCompanyInput] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -117,8 +138,18 @@ export default function OnboardingPage() {
           if (data.extractedData.crewSize) updated.crewSize = data.extractedData.crewSize;
           if (data.extractedData.region) updated.region = data.extractedData.region;
           if (data.extractedData.materials) updated.materials = data.extractedData.materials;
+          if (data.extractedData.workTypes) updated.workTypes = data.extractedData.workTypes;
+          if (data.extractedData.websiteUrl) updated.websiteUrl = data.extractedData.websiteUrl;
+          if (data.extractedData.suggestedCalculators) updated.suggestedCalculators = data.extractedData.suggestedCalculators;
           return updated;
         });
+      }
+      
+      if (data.suggestions) {
+        setSuggestions(prev => ({
+          ...prev,
+          ...data.suggestions,
+        }));
       }
       
       if (data.step) setStep(data.step);
@@ -164,6 +195,9 @@ export default function OnboardingPage() {
         crewSize: extractedData.crewSize,
         region: extractedData.region,
         materials: extractedData.materials,
+        workTypes: extractedData.workTypes,
+        websiteUrl: websiteInput.trim() || extractedData.websiteUrl,
+        suggestedCalculators: extractedData.suggestedCalculators,
       });
       
       const data = await res.json();
@@ -192,7 +226,7 @@ export default function OnboardingPage() {
     }
   };
 
-  const progressPercentage = Math.min((step / 5) * 100, 100);
+  const progressPercentage = Math.min((step / 7) * 100, 100);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -286,6 +320,20 @@ export default function OnboardingPage() {
                       placeholder="Enter your company name"
                       data-testid="input-company-name"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="websiteUrl">Website (optional)</Label>
+                    <Input
+                      id="websiteUrl"
+                      type="url"
+                      value={websiteInput}
+                      onChange={(e) => setWebsiteInput(e.target.value)}
+                      placeholder="https://yourcompany.com"
+                      data-testid="input-website-url"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      We'll match your platform colors to your brand
+                    </p>
                   </div>
                   <Button 
                     onClick={completeOnboarding} 
@@ -381,6 +429,68 @@ export default function OnboardingPage() {
                     )}
                   </div>
                 </div>
+
+                <div className="flex items-start gap-3">
+                  <ClipboardList className="h-4 w-4 mt-1 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Work Types</p>
+                    {extractedData.workTypes && extractedData.workTypes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {extractedData.workTypes.slice(0, 3).map((wt, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs" data-testid={`badge-work-type-${idx}`}>
+                            {wt}
+                          </Badge>
+                        ))}
+                        {extractedData.workTypes.length > 3 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{extractedData.workTypes.length - 3} more
+                          </Badge>
+                        )}
+                      </div>
+                    ) : suggestions.workTypes && suggestions.workTypes.length > 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        {suggestions.workTypes.length} suggestions available
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Not yet specified</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Globe className="h-4 w-4 mt-1 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Website</p>
+                    {extractedData.websiteUrl ? (
+                      <Badge variant="secondary" className="text-xs" data-testid="badge-website">
+                        {extractedData.websiteUrl.replace(/^https?:\/\//, '').slice(0, 25)}...
+                      </Badge>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Optional - for brand colors</p>
+                    )}
+                  </div>
+                </div>
+
+                {extractedData.suggestedCalculators && extractedData.suggestedCalculators.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <Calculator className="h-4 w-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Calculators</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {extractedData.suggestedCalculators.slice(0, 2).map((calc, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs" data-testid={`badge-calculator-${idx}`}>
+                            {calc.name}
+                          </Badge>
+                        ))}
+                        {extractedData.suggestedCalculators.length > 2 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{extractedData.suggestedCalculators.length - 2} more
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {isComplete && (
