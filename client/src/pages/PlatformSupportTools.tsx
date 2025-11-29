@@ -63,6 +63,8 @@ export default function PlatformSupportTools() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+  const [selectedUserOrgId, setSelectedUserOrgId] = useState<string>("");
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
@@ -142,12 +144,18 @@ export default function PlatformSupportTools() {
     },
   });
 
-  const filteredUsers = users?.filter((user) => {
+  const filteredUsers = users?.filter((u) => {
+    const matchesOrg = !selectedUserOrgId || selectedUserOrgId === "all" || u.organizationId === selectedUserOrgId;
+    const matchesRole = selectedRoleFilter === "all" || u.role === selectedRoleFilter;
     const matchesSearch =
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${user.firstName} ${user.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
+      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesOrg && matchesRole && matchesSearch;
   });
+  
+  const selectedOrgName = selectedUserOrgId && selectedUserOrgId !== "all" 
+    ? organizations?.find(o => o.id === selectedUserOrgId)?.name 
+    : null;
 
   const roleLabels: Record<string, string> = {
     SUPER_ADMIN: "Platform Admin",
@@ -196,17 +204,57 @@ export default function PlatformSupportTools() {
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>All Platform Users</CardTitle>
-              <CardDescription>View all users across all organizations</CardDescription>
-              <div className="relative max-w-sm mt-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name or email..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-search-users"
-                />
+              <CardTitle>Platform Users</CardTitle>
+              <CardDescription>Select an organization to view and manage its users</CardDescription>
+              <div className="flex flex-wrap items-end gap-4 mt-4">
+                <div className="space-y-2">
+                  <Label className="text-sm text-muted-foreground">Organization</Label>
+                  <Select value={selectedUserOrgId} onValueChange={setSelectedUserOrgId}>
+                    <SelectTrigger className="w-[280px]" data-testid="select-org-users">
+                      <SelectValue placeholder="Select an organization..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Organizations</SelectItem>
+                      {organizations?.map((org) => (
+                        <SelectItem key={org.id} value={org.id}>
+                          {org.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm text-muted-foreground">Role</Label>
+                  <Select value={selectedRoleFilter} onValueChange={setSelectedRoleFilter}>
+                    <SelectTrigger className="w-[200px]" data-testid="select-role-filter">
+                      <SelectValue placeholder="Filter by role..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="SUPER_ADMIN">Platform Admin</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      <SelectItem value="MANAGER">Manager</SelectItem>
+                      <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
+                      <SelectItem value="ESTIMATOR">Estimator</SelectItem>
+                      <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
+                      <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
+                      <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="relative flex-1 min-w-[200px]">
+                  <Label className="text-sm text-muted-foreground">Search</Label>
+                  <div className="relative mt-2">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name or email..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-search-users"
+                    />
+                  </div>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -217,6 +265,14 @@ export default function PlatformSupportTools() {
                   ))}
                 </div>
               ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-sm text-muted-foreground border-b pb-3">
+                    <span>
+                      Showing <strong className="text-foreground">{filteredUsers?.length || 0}</strong> users
+                      {selectedOrgName && <> from <strong className="text-foreground">{selectedOrgName}</strong></>}
+                      {selectedRoleFilter !== "all" && <> with role <strong className="text-foreground">{roleLabels[selectedRoleFilter]}</strong></>}
+                    </span>
+                  </div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -291,12 +347,13 @@ export default function PlatformSupportTools() {
                     {filteredUsers?.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                          No users found
+                          No users found matching your filters
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
