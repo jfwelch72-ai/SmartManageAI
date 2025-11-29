@@ -34,6 +34,7 @@ import ScopeSettingsPage from "@/pages/scope-settings";
 import MessagesPage from "@/pages/messages";
 import EquipmentPage from "@/pages/equipment";
 import EquipmentDetailPage from "@/pages/equipment-detail";
+import AIAssistantWidget from "@/components/AIAssistantWidget";
 
 function ProtectedRoute({ 
   component: Component,
@@ -133,6 +134,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <AIAssistantWidget />
         </TooltipProvider>
       </AuthProvider>
     </QueryClientProvider>

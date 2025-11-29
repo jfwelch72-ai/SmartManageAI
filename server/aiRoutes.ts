@@ -409,4 +409,77 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   }
 });
 
+// AI Assistant Chat endpoint
+import { openai } from "./ai/openaiClient";
+import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
+
+router.post("/assistant/chat", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { message, currentPath, conversationHistory = [] } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    // Build context based on current page
+    const pageContext = getPageContext(currentPath || '/dashboard');
+    const userRole = req.user.role;
+    const userName = `${req.user.firstName} ${req.user.lastName}`;
+
+    // Build messages array with conversation history
+    const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+      { 
+        role: 'system', 
+        content: `${AI_ASSISTANT_SYSTEM_PROMPT}
+
+## Current Context
+- User: ${userName}
+- Role: ${userRole}
+- ${pageContext}
+
+Tailor your responses to the user's role and current location in the app.`
+      }
+    ];
+
+    // Add conversation history (limit to last 10 messages for context window)
+    const recentHistory = conversationHistory.slice(-10);
+    for (const msg of recentHistory) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    // Add current message
+    messages.push({ role: 'user', content: message });
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini', // Cost-effective model for chat
+      messages,
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+
+    if (!response) {
+      throw new Error('No response from AI');
+    }
+
+    res.json({ 
+      response,
+      usage: {
+        promptTokens: completion.usage?.prompt_tokens,
+        completionTokens: completion.usage?.completion_tokens,
+      }
+    });
+  } catch (error: any) {
+    console.error("Error in AI assistant chat:", error);
+    res.status(500).json({ error: "Failed to get AI response. Please try again." });
+  }
+});
+
 export default router;
