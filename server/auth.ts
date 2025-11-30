@@ -97,6 +97,9 @@ export async function authMiddleware(
       organizationId: user.organizationId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      walkthroughCompleted: user.walkthroughCompleted,
+      walkthroughStep: user.walkthroughStep,
+      walkthroughStartedAt: user.walkthroughStartedAt,
     };
     req.user = sanitized;
   }
@@ -113,8 +116,8 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-// Middleware to require specific roles (all 7 roles supported)
-export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER">) {
+// Middleware to require specific roles (all 8 roles supported)
+export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR">) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });

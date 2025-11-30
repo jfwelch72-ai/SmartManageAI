@@ -45,6 +45,10 @@ import PlatformSupportTools from "@/pages/PlatformSupportTools";
 import VendorPricingPage from "@/pages/vendor-pricing";
 import MobileSyncPage from "@/pages/mobile-sync";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
+import VendorDashboard from "@/pages/vendor/index";
+import VendorPortalPricing from "@/pages/vendor/pricing";
+import VendorClients from "@/pages/vendor/clients";
+import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
   component: Component,
@@ -144,6 +148,11 @@ function Router() {
       <Route path="/rental-vendors" component={() => <Redirect to="/crm" />} />
       <Route path="/vendor-pricing" component={() => <ProtectedRoute component={VendorPricingPage} permission={RoutePermissions.CRM} />} />
       <Route path="/mobile-sync" component={() => <ProtectedRoute component={MobileSyncPage} />} />
+      
+      {/* Vendor Portal routes (VENDOR only) */}
+      <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />
+      <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} skipOnboardingCheck />} />
+      <Route path="/vendor" component={() => <ProtectedRoute component={VendorDashboard} permission={VendorRoutePermissions.VENDOR_DASHBOARD} skipOnboardingCheck />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

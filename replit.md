@@ -1,141 +1,42 @@
 # TFR Construction Management Platform
 
 ## Overview
-The TFR Construction Management Platform is a white-label SaaS solution designed to manage the entire construction project lifecycle, from bid tracking to project completion. It supports multiple contracting specialties (roofing, electrical, plumbing, HVAC, concrete, carpentry, etc.) with trade-specific customizations. The platform centralizes project data, user management, and daily operations to enhance efficiency, compliance, and oversight.
-
-### Multi-Tenant Architecture (White-Label SaaS)
-The platform now supports multi-tenant organizations with trade-specific configurations:
-- **Organizations**: Each contractor company operates as a separate organization with its own users, settings, and customizations
-- **Trade Templates**: Pre-built configurations for 22 CSI trade divisions (19 CSI divisions + 3 specialized trades)
-- **Self-Service Registration**: New users are auto-approved and immediately redirected to AI onboarding
-  - No admin approval required - users can start using the platform immediately
-  - New registrants are assigned ADMIN role for their organization
-  - After onboarding, admins can invite team members and assign roles
-- **AI Onboarding**: Enhanced AI-driven onboarding conversation that:
-  - Gathers trade type, crew size, region, and materials through natural conversation
-  - Suggests trade-specific work types (scope of work items) based on the identified trade
-  - Allows users to select from suggestions and add custom work items
-  - Optionally extracts brand colors from the contractor's website for theme customization
-  - Auto-copies master SOW items from database templates on organization creation
-- **General Contractor (GC) Mode**: When a user selects General Contractor trade type, they receive all 22 trade templates with subcontractor coordination features (deduplicated by featureKey)
-- **Messaging Isolation**: Conversations and company channels are scoped by organizationId to prevent cross-tenant communication
-- **Existing TFR Users**: Migrate seamlessly with organizationId = 'tfr-default-org' and unchanged experience
-
-### Trade-Specific Features System
-The platform provides dynamic, trade-aware functionality:
-- **Trade Features** (/api/trade-features): Fetches enabled features for the organization's trade type
-  - GC mode returns all features across 22 trades (deduplicated by featureKey)
-  - Single-trade mode returns features specific to that trade only
-- **Dynamic Navigation**: Trade Tools dropdown menu in AppHeader shows trade-specific sections
-  - Only visible to management-level roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER)
-  - Features grouped by navSection (e.g., Operations, Scheduling, Compliance)
-- **Dashboard Widgets**: Trade-specific widget cards on dashboard
-  - WeatherWidget, EquipmentWidget, InspectionWidget, PermitWidget
-  - SubcontractorWidget, DeliveryWidget, ComplianceWidget, SafetyWidget
-- **Standardized UOM**: 18 standard units of measure (SF, SY, SQ, LF, CY, EA, TON, LB, GAL, HR, LS, etc.)
-  - UomSelect component pulls from master_uom table for platform-wide consistency
-- **Master SOW Items**: 393 pre-seeded scope of work items across all 22 trades with proper CSI codes
-
-### Website Theme Extraction
-The platform can optionally extract brand colors from a contractor's website during onboarding:
-- SSRF-protected fetching (HTTPS-only, private IP blocking, timeout limits, size caps)
-- AI-powered color analysis to identify primary, secondary, and accent colors
-- Colors stored in organization record (primaryColor, secondaryColor, accentColor)
-- Background async processing to avoid blocking onboarding completion
-
-### Key Database Tables for Multi-Tenancy
-- `organizations`: Core tenant table with trade type, name, slug, onboarding status, theme colors (primaryColor, secondaryColor, accentColor), websiteUrl
-- `trade_templates`: Pre-built configurations for 22 trades with work types, calculators, terminology
-- `trade_features`: Trade-specific navigation features with navSection, navIcon, navPath, and dashboardWidget fields
-- `master_uom`: 18 standardized units of measure for platform-wide consistency
-- `master_sow_items`: 393 pre-seeded scope of work items across all trades with CSI codes
-- `inspection_templates`: Trade-specific inspection/certification forms and requirements
-- `calculators`: Trade-specific material calculators (concrete volume, roofing squares, etc.)
-- `organization_calculators`: Organization-specific material calculators
-- `organization_work_types`: Organization-specific work types and production rates
-- `organization_sow_items`: Organization-specific scope of work items with categories, codes, and display order
-- `users.organizationId`: Foreign key linking users to their organization
-- `conversations.organizationId`: Ensures messaging isolation between tenants
+The TFR Construction Management Platform is a white-label SaaS solution designed to manage the entire construction project lifecycle, from bid tracking to project completion. It supports multiple contracting specialties with trade-specific customizations, centralizing project data, user management, and daily operations to enhance efficiency, compliance, and oversight. The platform features a multi-tenant architecture with AI-driven onboarding, dynamic navigation, trade-specific dashboards, and a comprehensive suite of tools for project management, estimating, CRM, and compliance.
 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
 
-**Testing Credentials**: 
-- Organization testing: manager2@tfr.com with password TFR2025!
-- Platform Admin testing: jfwelch72@gmail.com with password Stella123@@
-
-### Platform Administration (SUPER_ADMIN)
-The platform includes a dedicated administration section for platform operators:
-- **SUPER_ADMIN Role**: Pure platform administrator - monitors all organizations, analytics, support tools (NO access to contractor features like bids, projects, CRM)
-- **Platform Admin Dashboard** (/admin): Overview with total organizations, users, trade distribution, user roles distribution
-- **Organizations Page** (/admin/organizations): View and manage all contractor organizations, filter by trade type, see user counts and onboarding status
-- **Analytics Page** (/admin/analytics): Platform-wide metrics (weekly actions, monthly projects/bids/shifts, recent activity log)
-- **Support Tools** (/admin/support): Backend support features including:
-  - View all users across all organizations
-  - Add SOW items for organizations
-  - Add work types for organizations
-- **Separate Navigation**: SUPER_ADMIN users see a completely different navigation with only platform admin options
-
-### Role-Based Access Control (RBAC)
-Key helper functions in `client/src/lib/rbac.ts`:
-- `isSuperAdmin(role)` - Check if user is platform admin (NO contractor features)
-- `isOrganizationAdmin(role)` - Check if user is organization admin (NOT super admin)
-- `hasContractorAccess(role)` - Check if user has contractor-level access (excludes SUPER_ADMIN)
-- `hasManagementAccess(role)` - Check if user has management-level access (not hourly, not super admin)
-
 ## System Architecture
-The platform utilizes a modern web stack with a client-server architecture, prioritizing security, scalability, and user experience.
+The platform employs a modern web stack, prioritizing security, scalability, and user experience.
 
--   **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui. The UI/UX focuses on a clean, functional interface and intuitive project management workflows.
--   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
--   **Database**: PostgreSQL on Neon, managed with Drizzle ORM. The database design supports bid-to-project conversion and quote preservation.
--   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across eight distinct user roles including platform-level SUPER_ADMIN.
--   **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
--   **Key Features**:
-    -   **Personalized Dashboard**: Role-based landing page with quick navigation and overview of active projects, bids, messages, events, and delay alerts.
-    -   **Comprehensive Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material (T&M) Tracking with advanced workflows, attachment management, and billing status tracking.
-    -   **Project Delay Tracking System**: Track project delays with comprehensive documentation including:
-        - Delay Reasons: Weather, GC Scheduling, Other Contractors, Material Delivery, Permit Issues, Inspection Delay, Owner Directive, Design Changes, Site Conditions, Labor Shortage
-        - Status Workflow: DRAFT → SUBMITTED → ACKNOWLEDGED → RESOLVED
-        - Financial Responsibility Tracking: Owner, GC, Subcontractor, TFR, Force Majeure
-        - Proof Documentation: File uploads for evidence (emails, photos, reports)
-        - Change Order Integration: Auto-link delays to change orders for cost recovery
-        - CRM Integration: Link Owner Rep and GC Rep contacts from CRM
-        - RBAC: SUPERINTENDENT+ can create/edit delays, ADMIN/MANAGER can acknowledge
-    -   **Inspection Scheduling System**: Schedule and track inspections with city officials, GC representatives, and owner representatives:
-        - Inspection Types: CITY_OFFICIAL, GC_REPRESENTATIVE, OWNER_REPRESENTATIVE
-        - Status Workflow: REQUESTED → SCHEDULED → PASSED/FAILED/CANCELLED
-        - Request Methods: CALL, EMAIL, PORTAL, OTHER
-        - Inspector Contact Management: Track inspector name, company, phone, email
-        - GC Rep and Owner Rep Contact Integration
-        - Result Tracking: Notes, punch list items, reinspection requirements
-        - PDF Generation: Generate professional inspection request documents
-        - Email Notifications: Send inspection requests to stakeholders
-        - RBAC: SUPERINTENDENT+ can create/edit/pass/fail, OFFICE_MANAGER can schedule
-    -   **AI Integration**: AI Senior PM + CFO System for task generation, profitability analysis, scheduling, and billing automation, including Lead Time Intelligence. AI-powered maintenance recommendations for equipment.
-    -   **AI-Enhanced Features (7 Major Features)**:
-        - **Feature A - AI Auto-Takeoff**: Enhances existing takeoff workspace with AI blueprint analysis. Integrated via AiTakeoffPanel in the right sidebar with "AI Analyze" button for automatic measurement extraction.
-        - **Feature B - AI Scheduling Assistant**: Trade-specific Gantt chart generation with AI-powered schedule optimization. Accessible via "Schedule" tab on project-detail page through AiSchedulingPanel component.
-        - **Feature C - AI Jobsite Camera Analysis**: Safety compliance and progress monitoring using jobsite camera footage. Integrated as "Jobsite AI" tab on project-detail page.
-        - **Feature D - Vendor Pricing Sync**: Automatic synchronization of vendor pricebooks with real-time price updates. Accessible via Admin > Vendor Pricing Sync or /vendor-pricing route.
-        - **Feature E - Client Portal**: External client access for project updates, document sharing, and approvals. Integrated as "Client Portal" tab on project-detail page.
-        - **Feature F - AI Change Order Generator**: AI-powered change order drafting integrated into existing change order workflow. Available via "AI Generate" button in change orders section.
-        - **Feature G - Mobile/Offline Mode**: Comprehensive mobile sync status with offline data persistence. Accessible via Tools > Mobile Sync Status or /mobile-sync route.
-    -   **Takeoff & Estimating Engine**: Interactive drawing tools for linear, area, volume, and count measurements, supporting multi-page PDF rendering and a comprehensive material calculator.
-    -   **CRM System**: Management for various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
-    -   **Time-Clock System**: Native time-clock with GPS, shift management, and project labor hour tracking.
-    -   **Audit & Compliance**: Comprehensive audit logging for all critical actions.
-    -   **Production Rate Tracking**: Analyzes historical field data to compute production benchmarks across various work types.
-    -   **Internal Messaging System**: Secure team communication with company-wide and direct messages, including read receipts and role-based access.
-    -   **Bid Cost Builder Workflow**: A guided 5-step process for cost estimation, incorporating SOW-driven requirements, vendor pricing, and PDF generation for internal summaries and customer quotes.
-    -   **Equipment Management System**: Comprehensive fleet and tool tracking, including project assignment, repair workflows, preventative maintenance scheduling, and hour logging.
+**Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
+**Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
+**Database**: PostgreSQL on Neon, managed with Drizzle ORM.
+**Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across eight user roles, including a platform-level SUPER_ADMIN.
+**Security**: Multi-layered protection including rate limiting, comprehensive audit logging, and file validation.
+
+**Key Architectural Decisions & Features**:
+*   **Multi-Tenant Architecture**: Supports distinct organizations with trade-specific configurations, self-service registration, and AI-driven onboarding that extracts trade type, crew size, region, materials, and optionally website brand colors for theme customization. Includes General Contractor (GC) mode with access to all trade templates and messaging isolation per organization.
+*   **Trade-Specific Features System**: Dynamic functionality based on an organization's trade type, including trade-specific APIs, navigation menus, dashboard widgets, standardized units of measure (UOM), and master scope of work (SOW) items.
+*   **Comprehensive Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material (T&M) Tracking.
+*   **Project Delay Tracking System**: Comprehensive tracking of project delays with defined reasons, status workflows, financial responsibility, proof documentation, and integration with change orders and CRM.
+*   **Inspection Scheduling System**: Manages scheduling and tracking of various inspection types with status workflows, contact management, PDF generation, and email notifications.
+*   **AI Integration**: AI Senior PM + CFO System for task generation, profitability analysis, scheduling, billing automation, and lead time intelligence. Includes seven major AI-enhanced features: AI Auto-Takeoff, AI Scheduling Assistant, AI Jobsite Camera Analysis, Vendor Pricing Sync, Client Portal, AI Change Order Generator, and Mobile/Offline Mode.
+*   **Takeoff & Estimating Engine**: Interactive drawing tools for measurements, multi-page PDF rendering, and a material calculator.
+*   **CRM System**: Manages various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
+*   **Time-Clock System**: Native time-clock with GPS, shift management, and labor hour tracking.
+*   **Audit & Compliance**: Comprehensive audit logging for all critical actions.
+*   **Production Rate Tracking**: Analyzes historical data for production benchmarks.
+*   **Internal Messaging System**: Secure team communication with company-wide and direct messages.
+*   **Bid Cost Builder Workflow**: A guided 5-step process for cost estimation, integrating SOW, vendor pricing, and PDF generation.
+*   **Equipment Management System**: Fleet and tool tracking, project assignment, repair workflows, and preventative maintenance.
 
 ## External Dependencies
--   **PostgreSQL (Neon)**: Primary database service.
--   **Replit Object Storage (Google Cloud Storage backend)**: For file storage and management.
--   **OpenAI GPT-4**: Powers AI functionalities and recommendations.
--   **JWT**: Used for secure authentication and authorization.
--   **Bcrypt**: Used for password hashing.
--   **Uppy**: Utilized for enhanced file upload experiences.
--   **node-cron**: For scheduling backend tasks.
--   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing within the takeoff engine.
+*   **PostgreSQL (Neon)**: Primary database service.
+*   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.
+*   **OpenAI GPT-4**: Powers AI functionalities.
+*   **JWT**: For secure authentication and authorization.
+*   **Bcrypt**: For password hashing.
+*   **Uppy**: For enhanced file uploads.
+*   **node-cron**: For scheduling backend tasks.
+*   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.

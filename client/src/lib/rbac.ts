@@ -9,15 +9,23 @@
  * - MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER: Full access except user management
  * - MAINTENANCE_MANAGER: Full access to equipment management and receives maintenance/repair requests
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
+ * - VENDOR: External vendor portal access - submit pricing to enrolled clients, view enrollments (NO contractor features)
  */
 
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR";
 
 /**
  * Check if user is a super admin (platform level - NO contractor features)
  */
 export function isSuperAdmin(role?: string): boolean {
   return role === "SUPER_ADMIN";
+}
+
+/**
+ * Check if user is a vendor (external vendor portal - NO contractor features)
+ */
+export function isVendor(role?: string): boolean {
+  return role === "VENDOR";
 }
 
 /**
@@ -368,4 +376,40 @@ export const PlatformAdminNavConfig = {
       visible: (role?: string) => isSuperAdmin(role),
     },
   ],
+};
+
+/**
+ * Vendor Portal Navigation Config (VENDOR only)
+ * External vendors can submit pricing to enrolled contractor clients
+ */
+export const VendorPortalNavConfig = {
+  mainNav: [
+    {
+      href: "/vendor",
+      label: "Dashboard",
+      testId: "nav-vendor-dashboard",
+      visible: (role?: string) => isVendor(role),
+    },
+    {
+      href: "/vendor/pricing",
+      label: "My Pricing",
+      testId: "nav-vendor-pricing",
+      visible: (role?: string) => isVendor(role),
+    },
+    {
+      href: "/vendor/clients",
+      label: "Enrolled Clients",
+      testId: "nav-vendor-clients",
+      visible: (role?: string) => isVendor(role),
+    },
+  ],
+};
+
+/**
+ * Route permissions for vendor portal
+ */
+export const VendorRoutePermissions = {
+  VENDOR_DASHBOARD: (role?: string) => isVendor(role),
+  VENDOR_PRICING: (role?: string) => isVendor(role),
+  VENDOR_CLIENTS: (role?: string) => isVendor(role),
 };

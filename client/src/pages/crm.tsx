@@ -41,7 +41,15 @@ import {
   Package,
   Calendar,
   Check,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Link2,
+  Send,
+  CheckCircle,
+  XCircle,
+  Clock as ClockIcon,
+  ExternalLink,
+  UserPlus,
+  Store
 } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog } from "@shared/schema";
 import { format, formatDistanceToNow } from "date-fns";
@@ -185,6 +193,24 @@ interface OrganizationWithContacts extends CrmOrganization {
   contacts: CrmContact[];
 }
 
+interface VendorEnrollment {
+  id: string;
+  vendorCrmOrganisationId: string;
+  contractorOrganizationId: string;
+  status: 'INVITED' | 'ACTIVE' | 'SUSPENDED';
+  autoApproveNewPricing: boolean;
+  invitedAt: string;
+  enrolledAt: string | null;
+  suspendedAt: string | null;
+  vendorName?: string;
+  vendorUserEmail?: string;
+}
+
+interface VendorPricingSubmission extends VendorPricingCatalog {
+  submittedByEmail?: string;
+  submittedByName?: string;
+}
+
 const TYPE_LABELS: Record<OrganizationType, string> = {
   CONTRACTOR: "GC / Contractor",
   SUBCONTRACTOR: "Subcontractor",
@@ -294,29 +320,47 @@ export default function CRMPage() {
   });
   
   const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganizationWithContacts>({
-    queryKey: ["/api/crm/organisations", selectedOrg?.id],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}`],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
 
   // Fetch notes for selected organization
   const { data: orgNotes = [], isLoading: notesLoading } = useQuery<OrgNote[]>({
-    queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/notes`],
     enabled: !!selectedOrg?.id && detailOrgOpen,
   });
 
   // Fetch vendor pricing catalog for suppliers/vendors
   const showPricingTab = selectedOrg?.type === "SUPPLIER" || selectedOrg?.type === "VENDOR";
   const { data: vendorPricing = [], isLoading: pricingLoading } = useQuery<VendorPricingCatalog[]>({
-    queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`],
     enabled: !!selectedOrg?.id && detailOrgOpen && showPricingTab,
   });
 
   // Fetch rental catalog for rental vendors
   const showRentalTab = selectedOrg?.type === "RENTAL_VENDOR" || selectedOrg?.type === "VENDOR";
   const { data: rentalCatalog = [], isLoading: rentalLoading } = useQuery<RentalEquipmentCatalog[]>({
-    queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/rental-catalog`],
     enabled: !!selectedOrg?.id && detailOrgOpen && showRentalTab,
   });
+
+  // Fetch vendor enrollment status for vendors/suppliers
+  const showPortalTab = selectedOrg?.type === "SUPPLIER" || selectedOrg?.type === "VENDOR";
+  const { data: vendorEnrollment, isLoading: enrollmentLoading } = useQuery<VendorEnrollment | null>({
+    queryKey: [`/api/vendor-enrollments/by-crm-org/${selectedOrg?.id}`],
+    enabled: !!selectedOrg?.id && detailOrgOpen && showPortalTab,
+  });
+
+  // Fetch pending pricing submissions for this vendor
+  const { data: pendingSubmissions = [], isLoading: submissionsLoading } = useQuery<VendorPricingSubmission[]>({
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing/pending`],
+    enabled: !!selectedOrg?.id && detailOrgOpen && showPortalTab && !!vendorEnrollment,
+  });
+
+  // State for invite vendor dialog
+  const [inviteVendorOpen, setInviteVendorOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [autoApprove, setAutoApprove] = useState(false);
 
   // State for new pricing item
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
@@ -429,7 +473,7 @@ export default function CRMPage() {
       return apiRequest("POST", "/api/crm/contacts", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}`] });
       toast({ title: "Contact created successfully" });
       setCreateContactOpen(false);
       resetNewContact();
@@ -445,7 +489,7 @@ export default function CRMPage() {
       return apiRequest("PUT", `/api/crm/contacts/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}`] });
       toast({ title: "Contact updated successfully" });
       setEditContactOpen(false);
     },
@@ -459,7 +503,7 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}`] });
       toast({ title: "Contact deleted successfully" });
     },
     onError: (err: any) => {
@@ -474,7 +518,7 @@ export default function CRMPage() {
       return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/notes`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/notes`] });
       toast({ title: "Note added successfully" });
       resetNewNote();
     },
@@ -490,7 +534,7 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/organisations/${selectedOrg.id}/notes/${noteId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "notes"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/notes`] });
       toast({ title: "Note deleted" });
     },
     onError: (err: any) => {
@@ -513,7 +557,7 @@ export default function CRMPage() {
       return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/pricing`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`] });
       toast({ title: "Pricing item added" });
       setPricingDialogOpen(false);
       resetNewPricing();
@@ -537,7 +581,7 @@ export default function CRMPage() {
       return apiRequest("PUT", `/api/crm/pricing/${id}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`] });
       toast({ title: "Pricing item updated" });
       setPricingDialogOpen(false);
       setEditingPricing(null);
@@ -552,7 +596,7 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/pricing/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`] });
       toast({ title: "Pricing item deleted" });
     },
     onError: (err: any) => {
@@ -577,7 +621,7 @@ export default function CRMPage() {
       return apiRequest("POST", `/api/crm/organisations/${selectedOrg.id}/rental-catalog`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/rental-catalog`] });
       toast({ title: "Rental equipment added" });
       setRentalDialogOpen(false);
       resetNewRental();
@@ -603,7 +647,7 @@ export default function CRMPage() {
       return apiRequest("PUT", `/api/crm/rental-catalog/${id}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/rental-catalog`] });
       toast({ title: "Rental equipment updated" });
       setRentalDialogOpen(false);
       setEditingRental(null);
@@ -618,11 +662,102 @@ export default function CRMPage() {
       return apiRequest("DELETE", `/api/crm/rental-catalog/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations", selectedOrg?.id, "rental-catalog"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/rental-catalog`] });
       toast({ title: "Rental equipment deleted" });
     },
     onError: (err: any) => {
       toast({ title: "Failed to delete rental equipment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Vendor Enrollment Mutations
+  const inviteVendorMutation = useMutation({
+    mutationFn: async (data: { vendorEmail: string; autoApprove: boolean }) => {
+      if (!selectedOrg?.id) throw new Error("No organization selected");
+      return apiRequest("POST", `/api/vendor-enrollments/invite`, {
+        vendorCrmOrganisationId: selectedOrg.id,
+        vendorEmail: data.vendorEmail,
+        autoApproveNewPricing: data.autoApprove,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/vendor-enrollments/by-crm-org/${selectedOrg?.id}`] });
+      toast({ title: "Vendor invitation sent", description: "The vendor will receive an email to set up their portal access." });
+      setInviteVendorOpen(false);
+      setInviteEmail("");
+      setAutoApprove(false);
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to invite vendor", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateEnrollmentMutation = useMutation({
+    mutationFn: async (data: { enrollmentId: string; autoApprove: boolean }) => {
+      return apiRequest("PATCH", `/api/vendor-enrollments/${data.enrollmentId}`, {
+        autoApproveNewPricing: data.autoApprove,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/vendor-enrollments/by-crm-org/${selectedOrg?.id}`] });
+      toast({ title: "Enrollment settings updated" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update enrollment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const suspendEnrollmentMutation = useMutation({
+    mutationFn: async (enrollmentId: string) => {
+      return apiRequest("POST", `/api/vendor-enrollments/${enrollmentId}/suspend`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/vendor-enrollments/by-crm-org/${selectedOrg?.id}`] });
+      toast({ title: "Vendor portal access suspended" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to suspend vendor", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const reactivateEnrollmentMutation = useMutation({
+    mutationFn: async (enrollmentId: string) => {
+      return apiRequest("POST", `/api/vendor-enrollments/${enrollmentId}/reactivate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/vendor-enrollments/by-crm-org/${selectedOrg?.id}`] });
+      toast({ title: "Vendor portal access reactivated" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to reactivate vendor", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const approvePricingMutation = useMutation({
+    mutationFn: async (pricingId: string) => {
+      return apiRequest("POST", `/api/crm/pricing/${pricingId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing/pending`] });
+      toast({ title: "Pricing approved" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to approve pricing", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const rejectPricingMutation = useMutation({
+    mutationFn: async (pricingId: string) => {
+      return apiRequest("POST", `/api/crm/pricing/${pricingId}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/crm/organisations/${selectedOrg?.id}/pricing/pending`] });
+      toast({ title: "Pricing rejected" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to reject pricing", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1279,6 +1414,12 @@ export default function CRMPage() {
                   Rentals ({rentalCatalog.length})
                 </TabsTrigger>
               )}
+              {showPortalTab && (
+                <TabsTrigger value="portal" data-testid="tab-portal">
+                  <Link2 className="w-3 h-3 mr-1" />
+                  Portal Access
+                </TabsTrigger>
+              )}
             </TabsList>
             
             <TabsContent value="info" className="space-y-4 mt-4">
@@ -1754,7 +1895,283 @@ export default function CRMPage() {
                 )}
               </TabsContent>
             )}
+
+            {/* Portal Access Tab */}
+            {showPortalTab && (
+              <TabsContent value="portal" className="mt-4">
+                <div className="space-y-6">
+                  {enrollmentLoading ? (
+                    <div className="space-y-4">
+                      <Skeleton className="h-24 w-full" />
+                      <Skeleton className="h-48 w-full" />
+                    </div>
+                  ) : !vendorEnrollment ? (
+                    <Card>
+                      <CardContent className="p-6">
+                        <div className="text-center">
+                          <Store className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                          <h3 className="font-medium text-lg mb-2">Vendor Portal Not Connected</h3>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Enable this vendor to submit pricing directly to your catalog through their own portal.
+                          </p>
+                          <Button onClick={() => setInviteVendorOpen(true)} data-testid="button-invite-vendor">
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            Invite to Vendor Portal
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <>
+                      {/* Enrollment Status Card */}
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <CardTitle className="text-base">Portal Connection Status</CardTitle>
+                              <CardDescription>
+                                Vendor portal access for {selectedOrg?.name}
+                              </CardDescription>
+                            </div>
+                            <Badge
+                              className={
+                                vendorEnrollment.status === 'ACTIVE'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : vendorEnrollment.status === 'INVITED'
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              }
+                            >
+                              {vendorEnrollment.status === 'ACTIVE' && <CheckCircle className="w-3 h-3 mr-1" />}
+                              {vendorEnrollment.status === 'INVITED' && <ClockIcon className="w-3 h-3 mr-1" />}
+                              {vendorEnrollment.status === 'SUSPENDED' && <XCircle className="w-3 h-3 mr-1" />}
+                              {vendorEnrollment.status}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Invited</p>
+                              <p className="font-medium">
+                                {vendorEnrollment.invitedAt 
+                                  ? format(new Date(vendorEnrollment.invitedAt), 'MMM d, yyyy')
+                                  : 'N/A'}
+                              </p>
+                            </div>
+                            {vendorEnrollment.enrolledAt && (
+                              <div>
+                                <p className="text-muted-foreground">Enrolled</p>
+                                <p className="font-medium">
+                                  {format(new Date(vendorEnrollment.enrolledAt), 'MMM d, yyyy')}
+                                </p>
+                              </div>
+                            )}
+                            {vendorEnrollment.vendorUserEmail && (
+                              <div className="col-span-2">
+                                <p className="text-muted-foreground">Vendor Email</p>
+                                <p className="font-medium">{vendorEnrollment.vendorUserEmail}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <Separator />
+
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">Auto-Approve Pricing</p>
+                              <p className="text-sm text-muted-foreground">
+                                {vendorEnrollment.autoApproveNewPricing
+                                  ? 'New pricing submissions are automatically approved'
+                                  : 'New pricing submissions require your review'}
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateEnrollmentMutation.mutate({
+                                enrollmentId: vendorEnrollment.id,
+                                autoApprove: !vendorEnrollment.autoApproveNewPricing,
+                              })}
+                              disabled={updateEnrollmentMutation.isPending}
+                              data-testid="button-toggle-auto-approve"
+                            >
+                              {vendorEnrollment.autoApproveNewPricing ? 'Disable' : 'Enable'}
+                            </Button>
+                          </div>
+
+                          <Separator />
+
+                          <div className="flex items-center gap-2">
+                            {vendorEnrollment.status === 'ACTIVE' && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => suspendEnrollmentMutation.mutate(vendorEnrollment.id)}
+                                disabled={suspendEnrollmentMutation.isPending}
+                                data-testid="button-suspend-enrollment"
+                              >
+                                <XCircle className="w-4 h-4 mr-1" />
+                                Suspend Access
+                              </Button>
+                            )}
+                            {vendorEnrollment.status === 'SUSPENDED' && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => reactivateEnrollmentMutation.mutate(vendorEnrollment.id)}
+                                disabled={reactivateEnrollmentMutation.isPending}
+                                data-testid="button-reactivate-enrollment"
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Reactivate Access
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Pending Submissions Card */}
+                      {!vendorEnrollment.autoApproveNewPricing && (
+                        <Card>
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-base">Pending Submissions</CardTitle>
+                            <CardDescription>
+                              Review and approve pricing submitted by this vendor
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            {submissionsLoading ? (
+                              <div className="space-y-2">
+                                {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+                              </div>
+                            ) : pendingSubmissions.length === 0 ? (
+                              <div className="text-center py-6 text-muted-foreground">
+                                <ClockIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                <p>No pending submissions</p>
+                                <p className="text-sm">
+                                  New pricing from this vendor will appear here for review
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {pendingSubmissions.map((item) => (
+                                  <div
+                                    key={item.id}
+                                    className="flex items-start justify-between p-3 border rounded-lg"
+                                    data-testid={`pending-pricing-${item.id}`}
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-medium">{item.itemName}</span>
+                                        {item.itemCode && (
+                                          <Badge variant="outline" className="text-xs">{item.itemCode}</Badge>
+                                        )}
+                                        <Badge variant="secondary" className="text-xs">{item.category}</Badge>
+                                      </div>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        ${parseFloat(item.unitPrice || "0").toFixed(2)} / {item.unit}
+                                        {item.effectiveQuarter && ` • ${item.effectiveQuarter}`}
+                                      </p>
+                                      {item.submittedByEmail && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Submitted by {item.submittedByEmail}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => approvePricingMutation.mutate(item.id)}
+                                        disabled={approvePricingMutation.isPending}
+                                        className="text-green-600 hover:text-green-700 hover:bg-green-100"
+                                        data-testid={`button-approve-${item.id}`}
+                                      >
+                                        <CheckCircle className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => rejectPricingMutation.mutate(item.id)}
+                                        disabled={rejectPricingMutation.isPending}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-100"
+                                        data-testid={`button-reject-${item.id}`}
+                                      >
+                                        <XCircle className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </>
+                  )}
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Vendor Dialog */}
+      <Dialog open={inviteVendorOpen} onOpenChange={setInviteVendorOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite Vendor to Portal</DialogTitle>
+            <DialogDescription>
+              Send an invitation to {selectedOrg?.name} to submit pricing directly through the vendor portal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Vendor Email Address</Label>
+              <Input
+                type="email"
+                placeholder="vendor@company.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                data-testid="input-vendor-email"
+              />
+              <p className="text-xs text-muted-foreground">
+                This email will receive login credentials to access the vendor portal.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 p-3 border rounded-lg">
+              <input
+                type="checkbox"
+                id="auto-approve"
+                checked={autoApprove}
+                onChange={(e) => setAutoApprove(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+                data-testid="checkbox-auto-approve"
+              />
+              <div>
+                <Label htmlFor="auto-approve" className="cursor-pointer">
+                  Auto-approve new pricing
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Skip review and automatically add submitted pricing to your catalog
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteVendorOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => inviteVendorMutation.mutate({ vendorEmail: inviteEmail, autoApprove })}
+              disabled={!inviteEmail || inviteVendorMutation.isPending}
+              data-testid="button-send-invite"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {inviteVendorMutation.isPending ? 'Sending...' : 'Send Invitation'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

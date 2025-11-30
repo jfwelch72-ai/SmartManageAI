@@ -22,10 +22,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
-import { NavigationConfig, PlatformAdminNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess, isVendor } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
@@ -113,6 +113,13 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     { href: "/admin/support", icon: Shield, label: "Support Tools" },
   ];
 
+  // Mobile navigation items for vendors
+  const vendorMobileNavItems = [
+    { href: "/vendor", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/vendor/pricing", icon: Package, label: "My Pricing" },
+    { href: "/vendor/clients", icon: Store, label: "Enrolled Clients" },
+  ];
+
   // Mobile navigation link component
   const MobileNavLink = ({ href, icon: Icon, label, badge }: { href: string; icon: any; label: string; badge?: number }) => (
     <Link href={href} onClick={closeMobileMenu}>
@@ -155,7 +162,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
             <SheetHeader className="p-4 border-b">
               <SheetTitle className="flex items-center gap-2">
                 <Building2 className="w-6 h-6 text-primary" />
-                <span>{isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}</span>
+                <span>{isSuperAdmin(userRole) ? "SmartManageAI Admin" : isVendor(userRole) ? "Vendor Portal" : displayName}</span>
               </SheetTitle>
             </SheetHeader>
             <ScrollArea className="h-[calc(100vh-80px)]">
@@ -164,6 +171,13 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                 {isSuperAdmin(userRole) ? (
                   <>
                     {platformAdminMobileNavItems.map((item) => (
+                      <MobileNavLink key={item.href} {...item} />
+                    ))}
+                  </>
+                ) : isVendor(userRole) ? (
+                  <>
+                    {/* Vendor portal mobile navigation */}
+                    {vendorMobileNavItems.map((item) => (
                       <MobileNavLink key={item.href} {...item} />
                     ))}
                   </>
@@ -312,15 +326,15 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
         </Sheet>
 
         {/* Logo - simplified on mobile */}
-        <Link href={isSuperAdmin(userRole) ? "/admin" : "/dashboard"} data-testid="link-dashboard">
+        <Link href={isSuperAdmin(userRole) ? "/admin" : isVendor(userRole) ? "/vendor" : "/dashboard"} data-testid="link-dashboard">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer hover-elevate active-elevate-2 rounded-md pl-1 md:pl-2 pr-2 md:pr-3 py-2">
             <Building2 className="w-7 h-7 md:w-8 md:h-8 text-primary" />
             <div className="hidden sm:block">
               <h1 className="text-lg md:text-xl font-bold text-foreground">
-                {isSuperAdmin(userRole) ? "SmartManageAI Admin" : displayName}
+                {isSuperAdmin(userRole) ? "SmartManageAI Admin" : isVendor(userRole) ? "Vendor Portal" : displayName}
               </h1>
               <p className="text-xs text-muted-foreground hidden md:block">
-                {isSuperAdmin(userRole) ? "Platform Administration" : "Construction Management"}
+                {isSuperAdmin(userRole) ? "Platform Administration" : isVendor(userRole) ? "Submit Pricing to Clients" : "Construction Management"}
               </p>
             </div>
           </div>
@@ -345,6 +359,27 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     {item.href === "/admin/organizations" && <Building2 className="w-4 h-4" />}
                     {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
                     {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
+                    {item.label}
+                  </Link>
+                </Button>
+              ))}
+            </>
+          ) : isVendor(userRole) ? (
+            <>
+              {/* Vendor Portal Navigation */}
+              {VendorPortalNavConfig.mainNav.map((item) => (
+                <Button
+                  key={item.href}
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 whitespace-nowrap"
+                  asChild
+                  data-testid={item.testId}
+                >
+                  <Link href={item.href}>
+                    {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
+                    {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
+                    {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
                     {item.label}
                   </Link>
                 </Button>

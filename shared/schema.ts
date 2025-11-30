@@ -4,7 +4,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enums
-export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER"]);
+export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR"]);
 export const projectStatusEnum = pgEnum("project_status", ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"]);
 export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
 export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["MANUAL", "TAKEOFF", "GENERATED"]);
@@ -40,6 +40,11 @@ export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRAC
 export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
 export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
 export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
+
+// Vendor Pricing Integration Enums
+export const pricingSourceTypeEnum = pgEnum("pricing_source_type", ["MANUAL", "PRICEBOOK_IMPORT", "VENDOR_PORTAL"]);
+export const vendorEnrollmentStatusEnum = pgEnum("vendor_enrollment_status", ["PENDING", "ACTIVE", "SUSPENDED", "REJECTED"]);
+export const pricingApprovalStatusEnum = pgEnum("pricing_approval_status", ["PENDING_REVIEW", "APPROVED", "REJECTED", "AUTO_APPROVED"]);
 
 // Delay Tracking Enums
 export const delayReasonEnum = pgEnum("delay_reason", [
@@ -2809,9 +2814,11 @@ export type RentalEquipmentUsage = typeof rentalEquipmentUsages.$inferSelect;
 
 // Vendor Pricing Catalog - Quarterly pricing from suppliers/vendors for materials
 // Used to auto-populate bid estimates with current pricing
+// Unified system: manual entry + vendor portal submissions + pricebook imports
 export const vendorPricingCatalogs = pgTable("vendor_pricing_catalogs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }), // Contractor receiving this pricing
   
   // Item Details
   itemName: text("item_name").notNull(), // "Ready Mix Concrete 4000 PSI"
@@ -2837,20 +2844,92 @@ export const vendorPricingCatalogs = pgTable("vendor_pricing_catalogs", {
   // Lead Time
   leadTimeDays: integer("lead_time_days"),
   
+  // Unified Pricing Source Tracking
+  sourceType: pricingSourceTypeEnum("source_type").notNull().default("MANUAL"),
+  approvalStatus: pricingApprovalStatusEnum("approval_status").default("AUTO_APPROVED"),
+  submittedByVendorUserId: varchar("submitted_by_vendor_user_id").references(() => users.id),
+  approvedByUserId: varchar("approved_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  pricebookImportId: varchar("pricebook_import_id"), // Reference to original pricebook if imported
+  
   isActive: boolean("is_active").notNull().default(true),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   crmOrgIdx: index("vendor_pricing_catalogs_crm_org_idx").on(table.crmOrganisationId),
+  orgIdx: index("vendor_pricing_catalogs_org_idx").on(table.organizationId),
   categoryIdx: index("vendor_pricing_catalogs_category_idx").on(table.category),
   quarterIdx: index("vendor_pricing_catalogs_quarter_idx").on(table.effectiveQuarter),
   activeIdx: index("vendor_pricing_catalogs_active_idx").on(table.isActive),
+  sourceIdx: index("vendor_pricing_catalogs_source_idx").on(table.sourceType),
 }));
 
 export const insertVendorPricingCatalogSchema = createInsertSchema(vendorPricingCatalogs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertVendorPricingCatalog = z.infer<typeof insertVendorPricingCatalogSchema>;
 export type VendorPricingCatalog = typeof vendorPricingCatalogs.$inferSelect;
+
+// Vendor Enrollments - Links vendors to contractor organizations they serve
+// Enables vendors to send pricing directly to enrolled clients
+export const vendorEnrollments = pgTable("vendor_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  vendorCrmOrgId: varchar("vendor_crm_org_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  contractorOrgId: varchar("contractor_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Enrollment Status
+  status: vendorEnrollmentStatusEnum("status").notNull().default("PENDING"),
+  
+  // Enrollment Settings
+  autoApproveNewPricing: boolean("auto_approve_new_pricing").notNull().default(false),
+  notifyOnPriceUpdate: boolean("notify_on_price_update").notNull().default(true),
+  
+  // Invitation/Enrollment tracking
+  invitedByUserId: varchar("invited_by_user_id").references(() => users.id),
+  invitedAt: timestamp("invited_at").notNull().defaultNow(),
+  enrolledAt: timestamp("enrolled_at"),
+  enrollmentCode: varchar("enrollment_code").unique(), // Code for vendor self-enrollment
+  
+  // Categories this vendor is enrolled for
+  enrolledCategories: text("enrolled_categories").array(), // ["CONCRETE", "STONE", "REBAR"]
+  
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  vendorIdx: index("vendor_enrollments_vendor_idx").on(table.vendorCrmOrgId),
+  contractorIdx: index("vendor_enrollments_contractor_idx").on(table.contractorOrgId),
+  statusIdx: index("vendor_enrollments_status_idx").on(table.status),
+  vendorContractorUnique: unique("vendor_enrollments_unique").on(table.vendorCrmOrgId, table.contractorOrgId),
+}));
+
+export const insertVendorEnrollmentSchema = createInsertSchema(vendorEnrollments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorEnrollment = z.infer<typeof insertVendorEnrollmentSchema>;
+export type VendorEnrollment = typeof vendorEnrollments.$inferSelect;
+
+// Vendor Users - Links CRM organizations (vendors) to user accounts for portal access
+export const vendorUsers = pgTable("vendor_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  
+  // Vendor portal permissions
+  canSubmitPricing: boolean("can_submit_pricing").notNull().default(true),
+  canViewEnrollments: boolean("can_view_enrollments").notNull().default(true),
+  canManageUsers: boolean("can_manage_users").notNull().default(false),
+  isPrimaryContact: boolean("is_primary_contact").notNull().default(false),
+  
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("vendor_users_user_idx").on(table.userId),
+  crmOrgIdx: index("vendor_users_crm_org_idx").on(table.crmOrganisationId),
+  userCrmOrgUnique: unique("vendor_users_unique").on(table.userId, table.crmOrganisationId),
+}));
+
+export const insertVendorUserSchema = createInsertSchema(vendorUsers).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorUser = z.infer<typeof insertVendorUserSchema>;
+export type VendorUser = typeof vendorUsers.$inferSelect;
 
 // Trade Templates - Pre-built configurations for different trades
 export const tradeTemplates = pgTable("trade_templates", {

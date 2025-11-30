@@ -1,7 +1,14 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
+import multer from "multer";
 import { db } from "./db";
+
+// Configure multer for memory storage (for file uploads)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens } from "@shared/schema";
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { 
@@ -5628,6 +5635,1186 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(items);
     } catch (error) {
       console.error("Search rental catalog error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Vendor Enrollment Routes
+  // ====================
+  const { vendorEnrollments, insertVendorEnrollmentSchema, vendorUsers, insertVendorUserSchema } = await import("@shared/schema");
+
+  // Get all vendor enrollments for a contractor organization
+  app.get("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const enrollments = await db
+        .select({
+          id: vendorEnrollments.id,
+          vendorCrmOrgId: vendorEnrollments.vendorCrmOrgId,
+          contractorOrgId: vendorEnrollments.contractorOrgId,
+          status: vendorEnrollments.status,
+          autoApproveNewPricing: vendorEnrollments.autoApproveNewPricing,
+          notifyOnPriceUpdate: vendorEnrollments.notifyOnPriceUpdate,
+          invitedAt: vendorEnrollments.invitedAt,
+          enrolledAt: vendorEnrollments.enrolledAt,
+          enrolledCategories: vendorEnrollments.enrolledCategories,
+          notes: vendorEnrollments.notes,
+          vendorName: crmOrganisations.name,
+          vendorType: crmOrganisations.type,
+          vendorCity: crmOrganisations.city,
+          vendorState: crmOrganisations.state,
+        })
+        .from(vendorEnrollments)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorEnrollments.vendorCrmOrgId))
+        .where(eq(vendorEnrollments.contractorOrgId, organizationId))
+        .orderBy(crmOrganisations.name);
+
+      res.json(enrollments);
+    } catch (error) {
+      console.error("Get vendor enrollments error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create vendor enrollment (invite vendor to send pricing)
+  app.post("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const { vendorCrmOrgId, enrolledCategories, autoApproveNewPricing, notifyOnPriceUpdate, notes } = req.body;
+
+      // Verify vendor exists and is a valid type
+      const [vendor] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, vendorCrmOrgId)).limit(1);
+      if (!vendor) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+      if (vendor.type !== "VENDOR" && vendor.type !== "SUPPLIER") {
+        return res.status(400).json({ error: "Organization must be a Vendor or Supplier type" });
+      }
+
+      // Generate enrollment code for vendor self-enrollment
+      const enrollmentCode = `VE-${organizationId.slice(0, 4)}-${vendorCrmOrgId.slice(0, 4)}-${Date.now().toString(36)}`.toUpperCase();
+
+      const [enrollment] = await db.insert(vendorEnrollments).values({
+        vendorCrmOrgId,
+        contractorOrgId: organizationId,
+        status: "PENDING",
+        autoApproveNewPricing: autoApproveNewPricing || false,
+        notifyOnPriceUpdate: notifyOnPriceUpdate !== false,
+        invitedByUserId: req.user!.id,
+        enrolledCategories: enrolledCategories || [],
+        enrollmentCode,
+        notes,
+      }).returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "vendor_enrollment",
+        entityId: enrollment.id,
+        newValue: JSON.stringify({ vendorName: vendor.name, status: "PENDING" }),
+      });
+
+      res.status(201).json({ ...enrollment, vendorName: vendor.name });
+    } catch (error: any) {
+      if (error.code === "23505") {
+        return res.status(409).json({ error: "Vendor is already enrolled" });
+      }
+      console.error("Create vendor enrollment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update vendor enrollment settings
+  app.put("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(eq(vendorEnrollments.id, req.params.id), eq(vendorEnrollments.contractorOrgId, organizationId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      const { status, autoApproveNewPricing, notifyOnPriceUpdate, enrolledCategories, notes } = req.body;
+
+      const [updated] = await db
+        .update(vendorEnrollments)
+        .set({
+          ...(status && { status }),
+          ...(autoApproveNewPricing !== undefined && { autoApproveNewPricing }),
+          ...(notifyOnPriceUpdate !== undefined && { notifyOnPriceUpdate }),
+          ...(enrolledCategories && { enrolledCategories }),
+          ...(notes !== undefined && { notes }),
+          ...(status === "ACTIVE" && !existing.enrolledAt && { enrolledAt: new Date() }),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorEnrollments.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update vendor enrollment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete vendor enrollment
+  app.delete("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(eq(vendorEnrollments.id, req.params.id), eq(vendorEnrollments.contractorOrgId, organizationId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      await db.delete(vendorEnrollments).where(eq(vendorEnrollments.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete vendor enrollment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get enrollment by CRM organization ID (for CRM page)
+  app.get("/api/vendor-enrollments/by-crm-org/:crmOrgId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [enrollment] = await db
+        .select({
+          id: vendorEnrollments.id,
+          vendorCrmOrganisationId: vendorEnrollments.vendorCrmOrgId,
+          contractorOrganizationId: vendorEnrollments.contractorOrgId,
+          status: vendorEnrollments.status,
+          autoApproveNewPricing: vendorEnrollments.autoApproveNewPricing,
+          invitedAt: vendorEnrollments.invitedAt,
+          enrolledAt: vendorEnrollments.enrolledAt,
+          suspendedAt: vendorEnrollments.updatedAt,
+          vendorName: crmOrganisations.name,
+        })
+        .from(vendorEnrollments)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorEnrollments.vendorCrmOrgId))
+        .where(and(
+          eq(vendorEnrollments.vendorCrmOrgId, req.params.crmOrgId),
+          eq(vendorEnrollments.contractorOrgId, organizationId)
+        ))
+        .limit(1);
+
+      // Get vendor user email if exists
+      if (enrollment) {
+        const [vendorUser] = await db.select({ email: users.email })
+          .from(vendorUsers)
+          .innerJoin(users, eq(users.id, vendorUsers.userId))
+          .where(and(
+            eq(vendorUsers.crmOrganisationId, req.params.crmOrgId),
+            eq(vendorUsers.isActive, true)
+          ))
+          .limit(1);
+
+        res.json({
+          ...enrollment,
+          vendorUserEmail: vendorUser?.email || null,
+        });
+      } else {
+        res.json(null);
+      }
+    } catch (error) {
+      console.error("Get enrollment by CRM org error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Invite vendor to portal (from CRM page)
+  app.post("/api/vendor-enrollments/invite", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const { vendorCrmOrganisationId, vendorEmail, autoApproveNewPricing } = req.body;
+
+      if (!vendorCrmOrganisationId || !vendorEmail) {
+        return res.status(400).json({ error: "Vendor CRM organization ID and email are required" });
+      }
+
+      // Verify vendor exists and is a valid type
+      const [vendor] = await db.select().from(crmOrganisations)
+        .where(eq(crmOrganisations.id, vendorCrmOrganisationId))
+        .limit(1);
+      if (!vendor) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+      if (vendor.type !== "VENDOR" && vendor.type !== "SUPPLIER") {
+        return res.status(400).json({ error: "Organization must be a Vendor or Supplier type" });
+      }
+
+      // Check if already enrolled
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorCrmOrganisationId),
+          eq(vendorEnrollments.contractorOrgId, organizationId)
+        ))
+        .limit(1);
+
+      if (existing) {
+        return res.status(409).json({ error: "Vendor is already enrolled or invited" });
+      }
+
+      // Generate enrollment code
+      const enrollmentCode = `VE-${organizationId.slice(0, 4)}-${vendorCrmOrganisationId.slice(0, 4)}-${Date.now().toString(36)}`.toUpperCase();
+
+      // Create enrollment with INVITED status
+      const [enrollment] = await db.insert(vendorEnrollments).values({
+        vendorCrmOrgId: vendorCrmOrganisationId,
+        contractorOrgId: organizationId,
+        status: "INVITED",
+        autoApproveNewPricing: autoApproveNewPricing || false,
+        notifyOnPriceUpdate: true,
+        invitedByUserId: req.user!.id,
+        enrollmentCode,
+      }).returning();
+
+      // TODO: Send invitation email to vendor
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "vendor_enrollment",
+        entityId: enrollment.id,
+        newValue: JSON.stringify({ vendorName: vendor.name, vendorEmail, status: "INVITED" }),
+      });
+
+      res.status(201).json({
+        ...enrollment,
+        vendorName: vendor.name,
+        message: `Invitation will be sent to ${vendorEmail}`,
+      });
+    } catch (error) {
+      console.error("Invite vendor error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update enrollment settings (PATCH for partial updates)
+  app.patch("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(eq(vendorEnrollments.id, req.params.id), eq(vendorEnrollments.contractorOrgId, organizationId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      const { autoApproveNewPricing, notifyOnPriceUpdate } = req.body;
+
+      const [updated] = await db
+        .update(vendorEnrollments)
+        .set({
+          ...(autoApproveNewPricing !== undefined && { autoApproveNewPricing }),
+          ...(notifyOnPriceUpdate !== undefined && { notifyOnPriceUpdate }),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorEnrollments.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update enrollment settings error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Suspend vendor enrollment
+  app.post("/api/vendor-enrollments/:id/suspend", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(eq(vendorEnrollments.id, req.params.id), eq(vendorEnrollments.contractorOrgId, organizationId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      if (existing.status === "SUSPENDED") {
+        return res.status(400).json({ error: "Enrollment is already suspended" });
+      }
+
+      const [updated] = await db
+        .update(vendorEnrollments)
+        .set({
+          status: "SUSPENDED",
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorEnrollments.id, req.params.id))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "vendor_enrollment",
+        entityId: req.params.id,
+        previousValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: "SUSPENDED" }),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Suspend vendor enrollment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reactivate vendor enrollment
+  app.post("/api/vendor-enrollments/:id/reactivate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorEnrollments)
+        .where(and(eq(vendorEnrollments.id, req.params.id), eq(vendorEnrollments.contractorOrgId, organizationId)))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+
+      if (existing.status === "ACTIVE") {
+        return res.status(400).json({ error: "Enrollment is already active" });
+      }
+
+      const [updated] = await db
+        .update(vendorEnrollments)
+        .set({
+          status: "ACTIVE",
+          enrolledAt: existing.enrolledAt || new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorEnrollments.id, req.params.id))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "vendor_enrollment",
+        entityId: req.params.id,
+        previousValue: JSON.stringify({ status: existing.status }),
+        newValue: JSON.stringify({ status: "ACTIVE" }),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Reactivate vendor enrollment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get pending pricing submissions for a vendor
+  app.get("/api/crm/organisations/:id/pricing/pending", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const pendingPricing = await db
+        .select({
+          id: vendorPricingCatalogs.id,
+          itemName: vendorPricingCatalogs.itemName,
+          itemCode: vendorPricingCatalogs.itemCode,
+          category: vendorPricingCatalogs.category,
+          description: vendorPricingCatalogs.description,
+          unit: vendorPricingCatalogs.unit,
+          unitPrice: vendorPricingCatalogs.unitPrice,
+          effectiveQuarter: vendorPricingCatalogs.effectiveQuarter,
+          effectiveDate: vendorPricingCatalogs.effectiveDate,
+          approvalStatus: vendorPricingCatalogs.approvalStatus,
+          createdAt: vendorPricingCatalogs.createdAt,
+          submittedByEmail: users.email,
+          submittedByName: sql`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+        })
+        .from(vendorPricingCatalogs)
+        .leftJoin(users, eq(users.id, vendorPricingCatalogs.submittedByUserId))
+        .where(and(
+          eq(vendorPricingCatalogs.crmOrganisationId, req.params.id),
+          eq(vendorPricingCatalogs.organizationId, organizationId),
+          eq(vendorPricingCatalogs.approvalStatus, "PENDING")
+        ))
+        .orderBy(vendorPricingCatalogs.createdAt);
+
+      res.json(pendingPricing);
+    } catch (error) {
+      console.error("Get pending pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Approve pricing submission
+  app.post("/api/crm/pricing/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorPricingCatalogs)
+        .where(and(
+          eq(vendorPricingCatalogs.id, req.params.id),
+          eq(vendorPricingCatalogs.organizationId, organizationId)
+        ))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Pricing item not found" });
+      }
+
+      if (existing.approvalStatus !== "PENDING") {
+        return res.status(400).json({ error: "Pricing item is not pending approval" });
+      }
+
+      const [updated] = await db
+        .update(vendorPricingCatalogs)
+        .set({
+          approvalStatus: "APPROVED",
+          approvedByUserId: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorPricingCatalogs.id, req.params.id))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "vendor_pricing",
+        entityId: req.params.id,
+        previousValue: JSON.stringify({ approvalStatus: "PENDING" }),
+        newValue: JSON.stringify({ approvalStatus: "APPROVED" }),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Approve pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reject pricing submission
+  app.post("/api/crm/pricing/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorPricingCatalogs)
+        .where(and(
+          eq(vendorPricingCatalogs.id, req.params.id),
+          eq(vendorPricingCatalogs.organizationId, organizationId)
+        ))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Pricing item not found" });
+      }
+
+      if (existing.approvalStatus !== "PENDING") {
+        return res.status(400).json({ error: "Pricing item is not pending approval" });
+      }
+
+      const [updated] = await db
+        .update(vendorPricingCatalogs)
+        .set({
+          approvalStatus: "REJECTED",
+          approvedByUserId: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorPricingCatalogs.id, req.params.id))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "vendor_pricing",
+        entityId: req.params.id,
+        previousValue: JSON.stringify({ approvalStatus: "PENDING" }),
+        newValue: JSON.stringify({ approvalStatus: "REJECTED" }),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Reject pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Vendor Portal Routes (for VENDOR role users)
+  // ====================
+
+  // Get vendor user's linked CRM organization and enrollments
+  app.get("/api/vendor/portal", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get vendor user's linked CRM organization
+      const [vendorUser] = await db.select().from(vendorUsers)
+        .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+        .limit(1);
+
+      if (!vendorUser) {
+        return res.status(403).json({ error: "Vendor account not linked to any organization" });
+      }
+
+      // Get the CRM organization details
+      const [crmOrg] = await db.select().from(crmOrganisations)
+        .where(eq(crmOrganisations.id, vendorUser.crmOrganisationId))
+        .limit(1);
+
+      if (!crmOrg) {
+        return res.status(404).json({ error: "Vendor organization not found" });
+      }
+
+      // Get all enrollments for this vendor
+      const enrollments = await db
+        .select({
+          id: vendorEnrollments.id,
+          contractorOrgId: vendorEnrollments.contractorOrgId,
+          status: vendorEnrollments.status,
+          autoApproveNewPricing: vendorEnrollments.autoApproveNewPricing,
+          enrolledAt: vendorEnrollments.enrolledAt,
+          enrolledCategories: vendorEnrollments.enrolledCategories,
+          contractorName: organizations.name,
+          contractorRegion: organizations.region,
+        })
+        .from(vendorEnrollments)
+        .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+        .where(and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.status, "ACTIVE")
+        ));
+
+      res.json({
+        vendor: {
+          id: crmOrg.id,
+          name: crmOrg.name,
+          type: crmOrg.type,
+          city: crmOrg.city,
+          state: crmOrg.state,
+        },
+        permissions: {
+          canSubmitPricing: vendorUser.canSubmitPricing,
+          canViewEnrollments: vendorUser.canViewEnrollments,
+          canManageUsers: vendorUser.canManageUsers,
+          isPrimaryContact: vendorUser.isPrimaryContact,
+        },
+        enrolledClients: enrollments,
+      });
+    } catch (error) {
+      console.error("Get vendor portal error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Submit pricing to enrolled clients (vendor portal)
+  app.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get vendor user's linked CRM organization
+      const [vendorUser] = await db.select().from(vendorUsers)
+        .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+        .limit(1);
+
+      if (!vendorUser) {
+        return res.status(403).json({ error: "No permission to submit pricing" });
+      }
+
+      const { items, targetContractorOrgIds } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one pricing item is required" });
+      }
+
+      // Get active enrollments for this vendor (optionally filtered by target contractors)
+      const conditions: any[] = [
+        eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+        eq(vendorEnrollments.status, "ACTIVE"),
+      ];
+      if (targetContractorOrgIds && targetContractorOrgIds.length > 0) {
+        conditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(targetContractorOrgIds.map((id: string) => sql`${id}`), sql`, `)})`);
+      }
+
+      const enrollments = await db.select().from(vendorEnrollments).where(and(...conditions));
+
+      if (enrollments.length === 0) {
+        return res.status(400).json({ error: "No active enrollments found for pricing submission" });
+      }
+
+      const now = new Date();
+      const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+      const insertedItems: any[] = [];
+
+      // Insert pricing items for each enrolled contractor
+      for (const enrollment of enrollments) {
+        for (const item of items) {
+          const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+          
+          const [inserted] = await db.insert(vendorPricingCatalogs).values({
+            crmOrganisationId: vendorUser.crmOrganisationId,
+            organizationId: enrollment.contractorOrgId,
+            itemName: item.itemName,
+            itemCode: item.itemCode,
+            category: item.category,
+            description: item.description,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            minimumOrder: item.minimumOrder,
+            deliveryFee: item.deliveryFee,
+            effectiveQuarter: currentQuarter,
+            effectiveDate: now,
+            expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
+            leadTimeDays: item.leadTimeDays,
+            sourceType: "VENDOR_PORTAL",
+            approvalStatus,
+            submittedByVendorUserId: userId,
+            isActive: approvalStatus === "AUTO_APPROVED",
+          }).returning();
+
+          insertedItems.push(inserted);
+
+          // Create notification for contractor if notify is enabled and we have a user to notify
+          if (enrollment.notifyOnPriceUpdate && enrollment.invitedByUserId) {
+            await db.insert(notifications).values({
+              userId: enrollment.invitedByUserId,
+              type: "GENERAL",
+              title: "New Vendor Pricing Submitted",
+              message: `Vendor has submitted ${items.length} pricing item(s) for review.`,
+              isRead: false,
+            });
+          }
+        }
+      }
+
+      res.status(201).json({
+        success: true,
+        itemsCreated: insertedItems.length,
+        enrollmentsServed: enrollments.length,
+      });
+    } catch (error) {
+      console.error("Submit vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get vendor's submitted pricing items
+  app.get("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get vendor user's linked CRM organization
+      const [vendorUser] = await db.select().from(vendorUsers)
+        .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+        .limit(1);
+
+      if (!vendorUser) {
+        return res.status(403).json({ error: "Vendor account not linked" });
+      }
+
+      const items = await db
+        .select()
+        .from(vendorPricingCatalogs)
+        .where(eq(vendorPricingCatalogs.crmOrganisationId, vendorUser.crmOrganisationId))
+        .orderBy(vendorPricingCatalogs.createdAt);
+
+      res.json(items);
+    } catch (error) {
+      console.error("Get vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Contractor: Review vendor-submitted pricing
+  // ====================
+
+  // Get pending pricing submissions for review
+  app.get("/api/crm/pricing-reviews", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const items = await db
+        .select({
+          id: vendorPricingCatalogs.id,
+          itemName: vendorPricingCatalogs.itemName,
+          itemCode: vendorPricingCatalogs.itemCode,
+          category: vendorPricingCatalogs.category,
+          description: vendorPricingCatalogs.description,
+          unit: vendorPricingCatalogs.unit,
+          unitPrice: vendorPricingCatalogs.unitPrice,
+          minimumOrder: vendorPricingCatalogs.minimumOrder,
+          deliveryFee: vendorPricingCatalogs.deliveryFee,
+          effectiveQuarter: vendorPricingCatalogs.effectiveQuarter,
+          sourceType: vendorPricingCatalogs.sourceType,
+          approvalStatus: vendorPricingCatalogs.approvalStatus,
+          createdAt: vendorPricingCatalogs.createdAt,
+          vendorName: crmOrganisations.name,
+          vendorId: crmOrganisations.id,
+        })
+        .from(vendorPricingCatalogs)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorPricingCatalogs.crmOrganisationId))
+        .where(and(
+          eq(vendorPricingCatalogs.organizationId, organizationId),
+          eq(vendorPricingCatalogs.approvalStatus, "PENDING_REVIEW")
+        ))
+        .orderBy(vendorPricingCatalogs.createdAt);
+
+      res.json(items);
+    } catch (error) {
+      console.error("Get pricing reviews error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Approve or reject vendor-submitted pricing
+  app.post("/api/crm/pricing-reviews/:id/:action", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const { action } = req.params;
+      if (action !== "approve" && action !== "reject") {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+
+      const [item] = await db.select().from(vendorPricingCatalogs)
+        .where(and(
+          eq(vendorPricingCatalogs.id, req.params.id),
+          eq(vendorPricingCatalogs.organizationId, organizationId),
+          eq(vendorPricingCatalogs.approvalStatus, "PENDING_REVIEW")
+        ))
+        .limit(1);
+
+      if (!item) {
+        return res.status(404).json({ error: "Pricing item not found or already reviewed" });
+      }
+
+      const [updated] = await db
+        .update(vendorPricingCatalogs)
+        .set({
+          approvalStatus: action === "approve" ? "APPROVED" : "REJECTED",
+          isActive: action === "approve",
+          approvedByUserId: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorPricingCatalogs.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Review pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Vendor Pricebook Routes (Staging/Import System)
+  // ====================
+  const { vendorPricebooks, vendorPricebookItems, insertVendorPricebookSchema, insertVendorPricebookItemSchema } = await import("@shared/schema");
+
+  // Get all vendor pricebooks for the organization
+  app.get("/api/ai-features/vendor-pricebooks", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const pricebooks = await db
+        .select({
+          id: vendorPricebooks.id,
+          vendorId: vendorPricebooks.vendorId,
+          vendorName: crmOrganisations.name,
+          version: sql<string>`COALESCE(${vendorPricebooks.fileName}, 'Imported')`,
+          effectiveDate: vendorPricebooks.effectiveDate,
+          expirationDate: vendorPricebooks.expirationDate,
+          itemCount: vendorPricebooks.itemCount,
+          isActive: sql<boolean>`${vendorPricebooks.status} = 'ACTIVE'`,
+          lastSyncedAt: vendorPricebooks.importedAt,
+          createdAt: vendorPricebooks.createdAt,
+          status: vendorPricebooks.status,
+        })
+        .from(vendorPricebooks)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, vendorPricebooks.vendorId))
+        .where(eq(vendorPricebooks.organizationId, organizationId))
+        .orderBy(sql`${vendorPricebooks.createdAt} DESC`);
+
+      res.json({ pricebooks });
+    } catch (error) {
+      console.error("Get vendor pricebooks error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get items for a specific pricebook
+  app.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const items = await db
+        .select({
+          id: vendorPricebookItems.id,
+          vendorCode: vendorPricebookItems.vendorCode,
+          vendorDescription: vendorPricebookItems.vendorDescription,
+          category: vendorPricebookItems.category,
+          unit: vendorPricebookItems.unit,
+          unitPrice: vendorPricebookItems.unitPrice,
+          uom: vendorPricebookItems.vendorUnit,
+          lastUpdated: vendorPricebookItems.updatedAt,
+          isActive: vendorPricebookItems.isActive,
+        })
+        .from(vendorPricebookItems)
+        .where(and(
+          eq(vendorPricebookItems.pricebookId, req.params.pricebookId),
+          eq(vendorPricebookItems.organizationId, organizationId)
+        ))
+        .orderBy(vendorPricebookItems.category, vendorPricebookItems.vendorDescription);
+
+      res.json({ items });
+    } catch (error) {
+      console.error("Get pricebook items error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Upload a vendor pricebook (handles file upload and parsing)
+  app.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, requireRole("ADMIN", "MANAGER"), upload.single("file"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const { vendorId, effectiveDate } = req.body;
+      const file = req.file;
+
+      if (!file || !vendorId) {
+        return res.status(400).json({ error: "File and vendor ID are required" });
+      }
+
+      // Verify vendor exists
+      const [vendor] = await db.select().from(crmOrganisations)
+        .where(eq(crmOrganisations.id, vendorId))
+        .limit(1);
+      if (!vendor) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+
+      // Create pricebook record
+      const [pricebook] = await db.insert(vendorPricebooks).values({
+        organizationId,
+        vendorId,
+        fileKey: `pricebooks/${organizationId}/${Date.now()}_${file.originalname}`,
+        fileName: file.originalname,
+        fileType: file.mimetype.includes("csv") ? "CSV" : "XLSX",
+        effectiveDate: effectiveDate || null,
+        status: "PROCESSING",
+        uploadedByUserId: req.user!.id,
+      }).returning();
+
+      // Parse the file and create pricebook items
+      const xlsx = require("xlsx");
+      const workbook = xlsx.read(file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = xlsx.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+      if (rows.length < 2) {
+        await db.update(vendorPricebooks)
+          .set({ status: "PENDING", errorMessage: "File is empty or has no data rows" })
+          .where(eq(vendorPricebooks.id, pricebook.id));
+        return res.status(400).json({ error: "File has no data rows" });
+      }
+
+      const headers = rows[0] as string[];
+      const dataRows = rows.slice(1);
+
+      // Try to auto-map common column names
+      const codeIdx = headers.findIndex(h => /code|sku|item.*no|part.*no/i.test(String(h)));
+      const descIdx = headers.findIndex(h => /desc|name|item/i.test(String(h)));
+      const priceIdx = headers.findIndex(h => /price|cost|unit.*price/i.test(String(h)));
+      const unitIdx = headers.findIndex(h => /unit|uom/i.test(String(h)));
+      const categoryIdx = headers.findIndex(h => /cat|type|group/i.test(String(h)));
+
+      let itemsCreated = 0;
+      for (const row of dataRows) {
+        const code = codeIdx >= 0 ? String(row[codeIdx] || "") : "";
+        const desc = descIdx >= 0 ? String(row[descIdx] || "") : "";
+        const price = priceIdx >= 0 ? parseFloat(String(row[priceIdx] || "0")) : 0;
+        const unit = unitIdx >= 0 ? String(row[unitIdx] || "EA") : "EA";
+        const category = categoryIdx >= 0 ? String(row[categoryIdx] || "Uncategorized") : "Uncategorized";
+
+        if (code || desc) {
+          await db.insert(vendorPricebookItems).values({
+            pricebookId: pricebook.id,
+            organizationId,
+            vendorId,
+            vendorCode: code || `AUTO-${itemsCreated + 1}`,
+            vendorDescription: desc || code,
+            vendorUnit: unit,
+            category,
+            unit,
+            unitPrice: String(price || 0),
+            effectiveDate: effectiveDate || null,
+          });
+          itemsCreated++;
+        }
+      }
+
+      // Update pricebook with item count and status
+      await db.update(vendorPricebooks)
+        .set({
+          itemCount: itemsCreated,
+          status: "ACTIVE",
+          importedAt: new Date(),
+        })
+        .where(eq(vendorPricebooks.id, pricebook.id));
+
+      res.status(201).json({
+        pricebookId: pricebook.id,
+        itemCount: itemsCreated,
+        message: `Successfully imported ${itemsCreated} items`,
+      });
+    } catch (error) {
+      console.error("Upload pricebook error:", error);
+      res.status(500).json({ error: "Failed to process pricebook file" });
+    }
+  });
+
+  // Add item to pricebook
+  app.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      // Verify pricebook exists and belongs to org
+      const [pricebook] = await db.select().from(vendorPricebooks)
+        .where(and(
+          eq(vendorPricebooks.id, req.params.pricebookId),
+          eq(vendorPricebooks.organizationId, organizationId)
+        ))
+        .limit(1);
+
+      if (!pricebook) {
+        return res.status(404).json({ error: "Pricebook not found" });
+      }
+
+      const { vendorCode, vendorDescription, category, unit, unitPrice } = req.body;
+
+      const [item] = await db.insert(vendorPricebookItems).values({
+        pricebookId: pricebook.id,
+        organizationId,
+        vendorId: pricebook.vendorId,
+        vendorCode: vendorCode || `MANUAL-${Date.now()}`,
+        vendorDescription: vendorDescription || "",
+        vendorUnit: unit || "EA",
+        category: category || "Uncategorized",
+        unit: unit || "EA",
+        unitPrice: String(unitPrice || 0),
+      }).returning();
+
+      // Update pricebook item count
+      await db.update(vendorPricebooks)
+        .set({ itemCount: sql`${vendorPricebooks.itemCount} + 1` })
+        .where(eq(vendorPricebooks.id, pricebook.id));
+
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Add pricebook item error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update pricebook item
+  app.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [existing] = await db.select().from(vendorPricebookItems)
+        .where(and(
+          eq(vendorPricebookItems.id, req.params.id),
+          eq(vendorPricebookItems.organizationId, organizationId)
+        ))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+
+      const { vendorCode, vendorDescription, category, unit, unitPrice, isActive } = req.body;
+
+      const [updated] = await db.update(vendorPricebookItems)
+        .set({
+          ...(vendorCode !== undefined && { vendorCode }),
+          ...(vendorDescription !== undefined && { vendorDescription }),
+          ...(category !== undefined && { category }),
+          ...(unit !== undefined && { unit, vendorUnit: unit }),
+          ...(unitPrice !== undefined && { unitPrice: String(unitPrice) }),
+          ...(isActive !== undefined && { isActive }),
+          updatedAt: new Date(),
+        })
+        .where(eq(vendorPricebookItems.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update pricebook item error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Sync pricebook to vendor pricing catalog (promote from staging)
+  app.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(403).json({ error: "Organization not found" });
+      }
+
+      const [pricebook] = await db.select().from(vendorPricebooks)
+        .where(and(
+          eq(vendorPricebooks.id, req.params.pricebookId),
+          eq(vendorPricebooks.organizationId, organizationId)
+        ))
+        .limit(1);
+
+      if (!pricebook) {
+        return res.status(404).json({ error: "Pricebook not found" });
+      }
+
+      // Get all active items from the pricebook
+      const items = await db.select().from(vendorPricebookItems)
+        .where(and(
+          eq(vendorPricebookItems.pricebookId, pricebook.id),
+          eq(vendorPricebookItems.isActive, true)
+        ));
+
+      let syncedCount = 0;
+      for (const item of items) {
+        // Check if item already exists in catalog
+        const [existing] = await db.select().from(vendorPricingCatalogs)
+          .where(and(
+            eq(vendorPricingCatalogs.organizationId, organizationId),
+            eq(vendorPricingCatalogs.crmOrganisationId, pricebook.vendorId),
+            eq(vendorPricingCatalogs.itemCode, item.vendorCode)
+          ))
+          .limit(1);
+
+        if (existing) {
+          // Update existing catalog item
+          await db.update(vendorPricingCatalogs)
+            .set({
+              itemName: item.vendorDescription,
+              category: item.category,
+              unit: item.unit,
+              unitPrice: item.unitPrice,
+              sourceType: "PRICEBOOK_IMPORT",
+              updatedAt: new Date(),
+            })
+            .where(eq(vendorPricingCatalogs.id, existing.id));
+        } else {
+          // Create new catalog item
+          await db.insert(vendorPricingCatalogs).values({
+            organizationId,
+            crmOrganisationId: pricebook.vendorId,
+            itemCode: item.vendorCode,
+            itemName: item.vendorDescription,
+            description: item.vendorDescription,
+            category: item.category,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            sourceType: "PRICEBOOK_IMPORT",
+            approvalStatus: "APPROVED",
+            isActive: true,
+          });
+        }
+        syncedCount++;
+      }
+
+      // Update pricebook last sync time
+      await db.update(vendorPricebooks)
+        .set({ importedAt: new Date() })
+        .where(eq(vendorPricebooks.id, pricebook.id));
+
+      res.json({
+        success: true,
+        syncedItems: syncedCount,
+        message: `Successfully synced ${syncedCount} items to catalog`,
+      });
+    } catch (error) {
+      console.error("Sync pricebook error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
