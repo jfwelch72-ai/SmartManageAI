@@ -39,65 +39,59 @@ function formatEventDate(dateStr: string | Date): string {
   return format(date, "MMM d 'at' h:mm a");
 }
 
-// Get icon for trade widget type
+// Get icon for trade widget type (matches database PascalCase naming)
 function getWidgetIcon(widgetType: string | null): typeof Sun {
   switch (widgetType) {
-    case 'weather_widget': return CloudRain;
-    case 'equipment_status_widget': return Truck;
-    case 'inspection_widget': return ClipboardCheck;
-    case 'permit_widget': return FileText;
-    case 'subcontractor_widget': return Users;
-    case 'material_widget': return Package;
-    case 'compliance_widget': return Shield;
-    case 'safety_widget': return Shield;
-    case 'hvac_widget': return Thermometer;
-    case 'fire_widget': return Flame;
-    case 'plumbing_widget': return Droplets;
-    case 'electrical_widget': return Zap;
-    case 'concrete_widget': return Wrench;
-    case 'wind_widget': return Wind;
+    case 'WeatherWidget': return CloudRain;
+    case 'EquipmentWidget': return Truck;
+    case 'InspectionWidget': return ClipboardCheck;
+    case 'PermitWidget': return FileText;
+    case 'SubcontractorWidget': return Users;
+    case 'DeliveryWidget': return Package;
+    case 'ComplianceWidget': return Shield;
+    case 'SafetyWidget': return Shield;
     default: return Wrench;
   }
 }
 
-// Widget config for trade-specific dashboard widgets
+// Widget config for trade-specific dashboard widgets (matches database PascalCase naming)
 const widgetConfig: Record<string, { title: string; description: string; stats?: { label: string; value: string }[] }> = {
-  weather_widget: {
+  WeatherWidget: {
     title: "Weather Conditions",
     description: "Monitor weather for outdoor work scheduling",
     stats: [{ label: "Next 7 Days", value: "Check forecast" }]
   },
-  equipment_status_widget: {
+  EquipmentWidget: {
     title: "Equipment Status",
     description: "Track equipment locations and maintenance",
     stats: [{ label: "Status", value: "All operational" }]
   },
-  inspection_widget: {
+  InspectionWidget: {
     title: "Inspection Schedule",
     description: "Upcoming inspections and certifications",
     stats: [{ label: "Pending", value: "View schedule" }]
   },
-  permit_widget: {
+  PermitWidget: {
     title: "Permit Tracking",
     description: "Active permits and application status",
     stats: [{ label: "Active", value: "View permits" }]
   },
-  subcontractor_widget: {
+  SubcontractorWidget: {
     title: "Subcontractor Status",
     description: "Coordinate with active subcontractors",
     stats: [{ label: "Active", value: "View subs" }]
   },
-  material_widget: {
+  DeliveryWidget: {
     title: "Material Deliveries",
     description: "Track incoming material shipments",
     stats: [{ label: "Scheduled", value: "View deliveries" }]
   },
-  compliance_widget: {
+  ComplianceWidget: {
     title: "Compliance Documents",
     description: "Required certifications and documentation",
     stats: [{ label: "Status", value: "Review docs" }]
   },
-  safety_widget: {
+  SafetyWidget: {
     title: "Safety Management",
     description: "Safety protocols and incident tracking",
     stats: [{ label: "Days Safe", value: "View details" }]
