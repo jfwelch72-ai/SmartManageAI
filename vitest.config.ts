@@ -5,13 +5,13 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['**/*.test.ts'],
-    exclude: ['node_modules', 'dist'],
+    include: ['shared/**/*.test.ts', 'server/**/*.test.ts'],
+    exclude: ['node_modules', 'dist', '.cache', '**/node_modules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['server/**/*.ts', 'shared/**/*.ts'],
-      exclude: ['**/*.test.ts', 'node_modules'],
+      exclude: ['**/*.test.ts', 'node_modules', '.cache'],
     },
   },
   resolve: {
