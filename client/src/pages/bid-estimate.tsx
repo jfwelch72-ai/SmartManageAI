@@ -10,6 +10,7 @@ import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { 
   Dialog, 
@@ -850,7 +851,12 @@ export default function BidEstimate() {
                           <FormItem>
                             <FormLabel>Unit</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="e.g., CY, SF, LF" data-testid="input-unit" />
+                              <UomSelect
+                                value={field.value}
+                                onChange={field.onChange}
+                                placeholder="Select unit"
+                                data-testid="select-unit"
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
