@@ -43,6 +43,20 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 
 ## Recent Changes (November 2025)
 
+### Custom Trade Onboarding System
+- Implemented custom trade onboarding for "OTHER" trade type (specialty contractors)
+- AI wizard detects non-preset trades and follows extended 10-step conversation to gather:
+  - Custom trade name (required)
+  - Scope of work items specific to the trade
+  - Work types with units and production rates
+  - Specialized calculators for the trade
+- Comprehensive fallback system ensures organizations never receive empty configurations:
+  - Default SOW items: 5 generic items based on trade name
+  - Default work types: 4 types (General Work, Project Completion, Service Call, Material Installation)
+  - Default calculator: Material Quantity Calculator
+- Zod validation requires tradeName when tradeType is "OTHER"
+- Supports any specialty not in the 22 preset trades (pool contractors, chimney sweeps, elevator technicians, etc.)
+
 ### E2E Testing Completed
 - Comprehensive E2E testing across all 13 major feature areas with 100% pass rate
 - All 9 user roles verified (SUPER_ADMIN, ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, MAINTENANCE_MANAGER, HOURLY_EMPLOYEE, VENDOR)
@@ -55,6 +69,12 @@ The platform employs a modern web stack, prioritizing security, scalability, and
   - tasks.tsx (Project/Assignee selects)
   - bid-estimate.tsx (Subcontractor quote selects)
   - crews.tsx (Crew Lead select)
+
+### Bug Fix: Equipment Validation
+- Fixed equipment schema validation using Zod transform to coerce empty strings to null for numeric fields (year, currentHours, purchasePrice)
+
+### Bug Fix: Website URL Validation
+- Auto-prepends "https://" when user enters bare domain in AI onboarding wizard
 
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
