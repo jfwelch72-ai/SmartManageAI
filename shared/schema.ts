@@ -52,12 +52,31 @@ export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", 
 export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
 export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
-// White-Label / Multi-Tenant Enums
+// White-Label / Multi-Tenant Enums - All 19 CSI Trade Divisions
 export const tradeTypeEnum = pgEnum("trade_type", [
-  "GENERAL_CONTRACTOR", "CONCRETE", "ROOFING", "ELECTRICAL", "PLUMBING", 
-  "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING",
-  "LANDSCAPING", "EXCAVATION", "DEMOLITION", "STEEL_ERECTION", "GLAZING",
-  "INSULATION", "FIRE_PROTECTION", "WATERPROOFING", "OTHER"
+  "GENERAL_CONTRACTOR",    // CSI 00/01 - Full GC/CM
+  "CONCRETE",              // CSI 03 - Concrete/Foundations  
+  "EARTHWORK",             // CSI 31 - Excavation/Grading
+  "ASPHALT_PAVING",        // CSI 32 - Asphalt & Striping
+  "ROOFING",               // CSI 07 - Roofing & Waterproofing
+  "ELECTRICAL",            // CSI 26 - Power & Lighting
+  "PLUMBING",              // CSI 22 - Plumbing Systems
+  "HVAC",                  // CSI 23 - Mechanical/HVAC
+  "CARPENTRY",             // CSI 06 - Wood & Metal Framing
+  "MASONRY",               // CSI 04 - Masonry/Stone
+  "DRYWALL",               // CSI 09 - Drywall/Insulation/Acoustical
+  "PAINTING",              // CSI 09 90 - Painting & Coatings
+  "FLOORING",              // CSI 09 60 - All Flooring Types
+  "LANDSCAPING",           // CSI 32 90 - Landscaping & Irrigation
+  "DEMOLITION",            // CSI 02 - Demo & Hazmat
+  "STEEL_ERECTION",        // CSI 05 - Structural Steel & Metals
+  "GLAZING",               // CSI 08 - Doors/Frames/Windows/Glass
+  "INSULATION",            // CSI 07 21 - Thermal & Acoustic Insulation
+  "FIRE_PROTECTION",       // CSI 21 - Fire Sprinkler/Suppression
+  "LOW_VOLTAGE",           // CSI 27/28 - Technology/Security/AV
+  "SOLAR",                 // Renewable Energy/Solar Installation
+  "WATERPROOFING",         // CSI 07 - Below Grade/Above Grade
+  "OTHER"
 ]);
 export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
 
@@ -2769,11 +2788,16 @@ export const tradeTemplates = pgTable("trade_templates", {
   tradeType: tradeTypeEnum("trade_type").notNull().unique(),
   displayName: text("display_name").notNull(),
   description: text("description"),
+  csiDivision: text("csi_division"),              // CSI code (e.g., "03", "31", "07")
+  iconName: text("icon_name"),                    // Lucide icon name
+  colorHex: text("color_hex"),                    // Brand color for this trade
   materialCategories: text("material_categories").notNull(),
   workTypesJson: text("work_types_json").notNull(),
   calculatorConfigJson: text("calculator_config_json").notNull(),
   terminologyJson: text("terminology_json"),
   defaultUnitsJson: text("default_units_json"),
+  enabledFeaturesJson: text("enabled_features_json"), // Features this trade unlocks
+  isGcTrade: boolean("is_gc_trade").notNull().default(false), // True = GC gets this trade's features
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2849,3 +2873,132 @@ export const organizationSowItems = pgTable("organization_sow_items", {
 export const insertOrganizationSowItemSchema = createInsertSchema(organizationSowItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationSowItem = z.infer<typeof insertOrganizationSowItemSchema>;
 export type OrganizationSowItem = typeof organizationSowItems.$inferSelect;
+
+// ============================================
+// STANDARDIZED UNITS OF MEASURE (UOM)
+// Platform-wide dropdown for consistency & AI tracking
+// ============================================
+export const unitsOfMeasure = pgTable("units_of_measure", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(),           // SF, LF, CY, EA, etc.
+  name: text("name").notNull(),                    // Square Foot, Linear Foot, etc.
+  abbreviation: text("abbreviation").notNull(),   // sq ft, lin ft, cu yd
+  category: text("category").notNull(),           // area, length, volume, quantity, time, weight, capacity
+  description: text("description"),
+  conversionFactor: decimal("conversion_factor", { precision: 12, scale: 6 }), // For unit conversions
+  baseUnit: text("base_unit"),                    // Reference to base unit code for conversions
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertUnitOfMeasureSchema = createInsertSchema(unitsOfMeasure).omit({ id: true, createdAt: true });
+export type InsertUnitOfMeasure = z.infer<typeof insertUnitOfMeasureSchema>;
+export type UnitOfMeasure = typeof unitsOfMeasure.$inferSelect;
+
+// ============================================
+// MASTER SOW ITEMS (Template Library)
+// Pre-built scope of work items by trade for onboarding
+// ============================================
+export const masterSowItems = pgTable("master_sow_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  csiCode: text("csi_code"),                      // CSI division code (e.g., "03", "31 20")
+  categoryName: text("category_name").notNull(),   // Grouping category
+  name: text("name").notNull(),                    // SOW item name
+  code: text("code").notNull(),                    // Short code for the item
+  description: text("description"),
+  defaultUomCode: text("default_uom_code"),        // References unitsOfMeasure.code
+  requiresDimensions: boolean("requires_dimensions").notNull().default(false),
+  dimensionLabel: text("dimension_label"),         // e.g., "Area (SF)", "Length (LF)"
+  laborRateMultiplier: decimal("labor_rate_multiplier", { precision: 6, scale: 2 }), // For estimating
+  materialWasteFactor: decimal("material_waste_factor", { precision: 5, scale: 2 }), // e.g., 1.10 for 10% waste
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("master_sow_trade_idx").on(table.tradeType),
+  csiIdx: index("master_sow_csi_idx").on(table.csiCode),
+  codeUnique: unique("master_sow_code_trade_unique").on(table.tradeType, table.code),
+}));
+
+export const insertMasterSowItemSchema = createInsertSchema(masterSowItems).omit({ id: true, createdAt: true });
+export type InsertMasterSowItem = z.infer<typeof insertMasterSowItemSchema>;
+export type MasterSowItem = typeof masterSowItems.$inferSelect;
+
+// ============================================
+// MASTER CALCULATORS (Template Library)
+// Pre-built material calculators by trade
+// ============================================
+export const masterCalculators = pgTable("master_calculators", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  name: text("name").notNull(),                    // e.g., "Concrete Volume Calculator"
+  category: text("category").notNull(),            // e.g., "Foundations", "Slabs"
+  description: text("description"),
+  outputUomCode: text("output_uom_code").notNull(), // Output unit (CY, SF, etc.)
+  formulaJson: text("formula_json").notNull(),     // Calculation formula
+  inputFieldsJson: text("input_fields_json").notNull(), // Input field definitions
+  defaultValuesJson: text("default_values_json"),  // Default input values
+  helpText: text("help_text"),                     // Usage instructions
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("master_calc_trade_idx").on(table.tradeType),
+}));
+
+export const insertMasterCalculatorSchema = createInsertSchema(masterCalculators).omit({ id: true, createdAt: true });
+export type InsertMasterCalculator = z.infer<typeof insertMasterCalculatorSchema>;
+export type MasterCalculator = typeof masterCalculators.$inferSelect;
+
+// ============================================
+// MASTER INSPECTION FORMS (Template Library)
+// Trade-specific inspection/documentation requirements
+// ============================================
+export const masterInspectionForms = pgTable("master_inspection_forms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  name: text("name").notNull(),                    // e.g., "Pre-Pour Inspection Checklist"
+  category: text("category").notNull(),            // e.g., "Quality Control", "Safety"
+  description: text("description"),
+  formFieldsJson: text("form_fields_json").notNull(), // Form field definitions
+  requiresPhotos: boolean("requires_photos").notNull().default(false),
+  requiresSignature: boolean("requires_signature").notNull().default(false),
+  regulatoryReference: text("regulatory_reference"), // e.g., "NFPA 13", "ADA"
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("master_forms_trade_idx").on(table.tradeType),
+}));
+
+export const insertMasterInspectionFormSchema = createInsertSchema(masterInspectionForms).omit({ id: true, createdAt: true });
+export type InsertMasterInspectionForm = z.infer<typeof insertMasterInspectionFormSchema>;
+export type MasterInspectionForm = typeof masterInspectionForms.$inferSelect;
+
+// ============================================
+// TRADE FEATURES - Define what features each trade enables
+// For dynamic UI generation
+// ============================================
+export const tradeFeatures = pgTable("trade_features", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  featureKey: text("feature_key").notNull(),       // e.g., "equipment_tracking", "weather_scheduling"
+  featureName: text("feature_name").notNull(),     // Display name
+  description: text("description"),
+  navSection: text("nav_section"),                 // Where in nav this appears
+  navIcon: text("nav_icon"),                       // Lucide icon name
+  navPath: text("nav_path"),                       // Route path
+  dashboardWidget: text("dashboard_widget"),       // Widget component name
+  sortOrder: integer("sort_order").notNull().default(0),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("trade_features_trade_idx").on(table.tradeType),
+  featureKeyUnique: unique("trade_features_key_unique").on(table.tradeType, table.featureKey),
+}));
+
+export const insertTradeFeatureSchema = createInsertSchema(tradeFeatures).omit({ id: true, createdAt: true });
+export type InsertTradeFeature = z.infer<typeof insertTradeFeatureSchema>;
+export type TradeFeature = typeof tradeFeatures.$inferSelect;
