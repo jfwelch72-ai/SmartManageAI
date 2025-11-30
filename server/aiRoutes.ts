@@ -91,7 +91,11 @@ const onboardingCompleteSchema = z.object({
       unit: z.string().max(20).optional(),
     })).max(10).optional(),
   })).max(20).optional().nullable(),
-});
+}).refine(
+  // For OTHER trade, require tradeName
+  (data) => data.tradeType !== 'OTHER' || (data.tradeName && data.tradeName.length >= 2),
+  { message: "Custom trade name is required for specialty trades", path: ["tradeName"] }
+);
 
 const onboardingChatSchema = z.object({
   message: z.string()
@@ -760,12 +764,18 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       });
     }
 
-    const { companyName, tradeType, tradeName, crewSize, region, materials, workTypes, websiteUrl, suggestedCalculators } = validationResult.data;
+    const { 
+      companyName, tradeType, tradeName, crewSize, region, materials, workTypes, websiteUrl, suggestedCalculators,
+      customSowItems, customWorkTypes, customCalculators 
+    } = validationResult.data;
 
     // Prevent users who already have an organization from creating another
     if (req.user.organizationId) {
       return res.status(400).json({ error: "You already belong to an organization" });
     }
+
+    // Detect if this is a custom trade (OTHER)
+    const isCustomTrade = tradeType === 'OTHER';
 
     // Ensure companyName is defined (should be guaranteed by Zod schema)
     const orgName = companyName || 'My Company';
@@ -792,6 +802,10 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
         materials: sanitizedMaterials, 
         workTypes: sanitizedWorkTypes,
         suggestedCalculators: suggestedCalculators || [],
+        customSowItems: customSowItems || [],
+        customWorkTypes: customWorkTypes || [],
+        customCalculators: customCalculators || [],
+        isCustomTrade,
         completedAt: new Date() 
       }),
     }).returning();
@@ -807,136 +821,286 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
 
     // Copy master SOW items from database template to organization
     // GENERAL_CONTRACTOR gets ALL trade items for multi-trade coordination
+    // CUSTOM (OTHER) trades get items created from user input
     const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
     
-    let masterItems;
-    if (isGeneralContractor) {
-      // GC mode: Load ALL ACTIVE master SOW items from all trades
-      masterItems = await db
-        .select()
-        .from(masterSowItems)
-        .where(eq(masterSowItems.isActive, true))
-        .orderBy(asc(masterSowItems.tradeType), asc(masterSowItems.sortOrder));
-    } else {
-      // Single trade: Load only ACTIVE items for the selected trade
-      masterItems = await db
-        .select()
-        .from(masterSowItems)
-        .where(and(
-          eq(masterSowItems.tradeType, tradeType as any),
-          eq(masterSowItems.isActive, true)
-        ))
-        .orderBy(asc(masterSowItems.sortOrder));
-    }
-
-    // Insert master SOW items as organization SOW items
-    for (const item of masterItems) {
-      // For GC, include trade type in category for better organization
-      const categoryName = isGeneralContractor 
-        ? `${item.tradeType} - ${item.categoryName || 'General'}`
-        : (item.categoryName || 'General');
+    if (isCustomTrade) {
+      // ============================================
+      // CUSTOM TRADE (OTHER) - Create from user input
+      // ============================================
+      const customTradeName = tradeName || 'Custom Trade';
+      let sowItemCount = 0;
       
-      // For GC, namespace code with trade type to avoid collisions
-      const itemCode = isGeneralContractor
-        ? `${item.tradeType}_${item.code}`
-        : item.code;
+      // Create SOW items from customSowItems provided by AI conversation
+      if (customSowItems && customSowItems.length > 0) {
+        for (let i = 0; i < customSowItems.length; i++) {
+          const item = customSowItems[i];
+          if (item && item.name) {
+            const code = item.name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+            await db.insert(organizationSowItems).values({
+              organizationId: newOrg.id,
+              categoryName: item.category || customTradeName,
+              name: item.name,
+              code: `custom_${code}_${i}`,
+              description: item.description || null,
+              unit: item.unit || 'EA',
+              displayOrder: i,
+              isFromTemplate: false,
+              isActive: true,
+            }).onConflictDoNothing();
+            sowItemCount++;
+          }
+        }
+      }
       
-      await db.insert(organizationSowItems).values({
-        organizationId: newOrg.id,
-        categoryName,
-        name: item.name,
-        code: itemCode,
-        description: item.description,
-        unit: item.defaultUomCode || 'EA',
-        displayOrder: item.sortOrder || 0,
-        requiresDimensions: item.requiresDimensions || false,
-        dimensionLabel: item.dimensionLabel,
-        isFromTemplate: true,
-        isActive: true,
-      }).onConflictDoNothing();
-    }
-
-    // Also add any custom user-selected work types that aren't in the master list
-    const masterItemNames = new Set(masterItems.map(m => m.name.toLowerCase()));
-    for (let i = 0; i < sanitizedWorkTypes.length; i++) {
-      const wt = sanitizedWorkTypes[i];
-      if (!masterItemNames.has(wt.toLowerCase())) {
+      // Also add any workTypes from the basic list if provided
+      for (let i = 0; i < sanitizedWorkTypes.length; i++) {
+        const wt = sanitizedWorkTypes[i];
         const code = wt.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
         await db.insert(organizationSowItems).values({
           organizationId: newOrg.id,
-          categoryName: tradeName || tradeType,
+          categoryName: customTradeName,
           name: wt,
-          code: `custom_${code}_${i}`,
-          displayOrder: masterItems.length + i,
+          code: `sow_${code}_${i}`,
+          displayOrder: sowItemCount + i,
           isFromTemplate: false,
           isActive: true,
         }).onConflictDoNothing();
+        sowItemCount++;
       }
-    }
-
-    // Copy trade template configurations to organization
-    // GENERAL_CONTRACTOR gets work types and calculators from ALL trade templates
-    let templates;
-    if (isGeneralContractor) {
-      // GC: Load all ACTIVE trade templates
-      templates = await db.select().from(tradeTemplates).where(eq(tradeTemplates.isActive, true));
-    } else {
-      const [template] = await db.select().from(tradeTemplates).where(
-        and(eq(tradeTemplates.tradeType, tradeType as any), eq(tradeTemplates.isActive, true))
-      );
-      templates = template ? [template] : [];
-    }
-    
-    for (const template of templates) {
-      // Parse and create organization-specific work types from template JSON
-      try {
-        const templateWorkTypes = JSON.parse(template.workTypesJson || '[]');
-        for (let wtIdx = 0; wtIdx < templateWorkTypes.length; wtIdx++) {
-          const wt = templateWorkTypes[wtIdx];
+      
+      // If no SOW items were created, add essential defaults based on trade name
+      if (sowItemCount === 0) {
+        const defaultSowItems = [
+          { name: `${customTradeName} - Standard Service`, category: customTradeName },
+          { name: `${customTradeName} - Repair/Maintenance`, category: customTradeName },
+          { name: `${customTradeName} - Installation`, category: customTradeName },
+          { name: `${customTradeName} - Consultation`, category: customTradeName },
+          { name: `${customTradeName} - Emergency Service`, category: customTradeName },
+        ];
+        for (let i = 0; i < defaultSowItems.length; i++) {
+          const item = defaultSowItems[i];
+          const code = item.name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+          await db.insert(organizationSowItems).values({
+            organizationId: newOrg.id,
+            categoryName: item.category,
+            name: item.name,
+            code: `default_${code}_${i}`,
+            unit: 'EA',
+            displayOrder: i,
+            isFromTemplate: false,
+            isActive: true,
+          }).onConflictDoNothing();
+        }
+      }
+      
+      // Create work types from customWorkTypes provided by AI conversation
+      let workTypeCount = 0;
+      if (customWorkTypes && customWorkTypes.length > 0) {
+        for (const wt of customWorkTypes) {
           if (wt && wt.name) {
-            // For GC, namespace work type names with tradeType code for guaranteed uniqueness
-            const workTypeName = isGeneralContractor 
-              ? `[${template.tradeType}] ${wt.name}`
-              : wt.name;
-            const category = template.displayName || template.tradeType;
-            
             await db.insert(organizationWorkTypes).values({
               organizationId: newOrg.id,
-              name: workTypeName,
-              category,
+              name: wt.name,
+              category: customTradeName,
               unit: wt.unit || 'EA',
-              defaultProductionRate: wt.rate ? String(wt.rate) : null,
+              defaultProductionRate: wt.defaultRate ? String(wt.defaultRate) : null,
             }).onConflictDoNothing();
+            workTypeCount++;
           }
         }
-      } catch (e) {
-        console.error("Error parsing work types:", e);
       }
-
-      // Parse and create organization-specific calculators from template
-      try {
-        const calculators = JSON.parse(template.calculatorConfigJson || '[]');
-        for (let calcIdx = 0; calcIdx < calculators.length; calcIdx++) {
-          const calc = calculators[calcIdx];
+      
+      // Add default work types if none were provided
+      if (workTypeCount === 0) {
+        const defaultWorkTypes = [
+          { name: 'General Work', unit: 'HR' },
+          { name: 'Project Completion', unit: 'EA' },
+          { name: 'Service Call', unit: 'EA' },
+          { name: 'Material Installation', unit: 'SF' },
+        ];
+        for (const wt of defaultWorkTypes) {
+          await db.insert(organizationWorkTypes).values({
+            organizationId: newOrg.id,
+            name: wt.name,
+            category: customTradeName,
+            unit: wt.unit,
+          }).onConflictDoNothing();
+        }
+      }
+      
+      // Create calculators from customCalculators provided by AI conversation
+      if (customCalculators && customCalculators.length > 0) {
+        for (const calc of customCalculators) {
           if (calc && calc.name) {
-            // For GC, namespace calculator names with tradeType code for guaranteed uniqueness
-            const calcName = isGeneralContractor 
-              ? `[${template.tradeType}] ${calc.name}`
-              : calc.name;
-            const category = template.displayName || template.tradeType;
-            
             await db.insert(organizationCalculators).values({
               organizationId: newOrg.id,
-              name: calcName,
-              category,
-              unit: calc.output || 'units',
-              formulaJson: JSON.stringify({ type: calc.type, inputs: calc.inputs, output: calc.output }),
+              name: calc.name,
+              category: customTradeName,
+              unit: calc.outputUnit || 'units',
+              formulaJson: JSON.stringify({ 
+                type: 'custom', 
+                description: calc.description || '',
+                inputs: calc.inputs || [] 
+              }),
               inputFieldsJson: JSON.stringify(calc.inputs || []),
             }).onConflictDoNothing();
           }
         }
-      } catch (e) {
-        console.error("Error parsing calculators:", e);
+      }
+      
+      // Add a default material calculator if none provided
+      if (!customCalculators || customCalculators.length === 0) {
+        await db.insert(organizationCalculators).values({
+          organizationId: newOrg.id,
+          name: 'Material Quantity Calculator',
+          category: customTradeName,
+          unit: 'units',
+          formulaJson: JSON.stringify({ 
+            type: 'custom', 
+            description: 'Calculate material quantity based on area',
+            formula: 'area * coverage_rate'
+          }),
+          inputFieldsJson: JSON.stringify([
+            { name: 'area', label: 'Area (sq ft)', type: 'number' },
+            { name: 'coverage_rate', label: 'Coverage Rate', type: 'number' }
+          ]),
+        }).onConflictDoNothing();
+      }
+      
+    } else {
+      // ============================================
+      // PRESET TRADE - Copy from master templates
+      // ============================================
+      let masterItems;
+      if (isGeneralContractor) {
+        // GC mode: Load ALL ACTIVE master SOW items from all trades
+        masterItems = await db
+          .select()
+          .from(masterSowItems)
+          .where(eq(masterSowItems.isActive, true))
+          .orderBy(asc(masterSowItems.tradeType), asc(masterSowItems.sortOrder));
+      } else {
+        // Single trade: Load only ACTIVE items for the selected trade
+        masterItems = await db
+          .select()
+          .from(masterSowItems)
+          .where(and(
+            eq(masterSowItems.tradeType, tradeType as any),
+            eq(masterSowItems.isActive, true)
+          ))
+          .orderBy(asc(masterSowItems.sortOrder));
+      }
+
+      // Insert master SOW items as organization SOW items
+      for (const item of masterItems) {
+        // For GC, include trade type in category for better organization
+        const categoryName = isGeneralContractor 
+          ? `${item.tradeType} - ${item.categoryName || 'General'}`
+          : (item.categoryName || 'General');
+        
+        // For GC, namespace code with trade type to avoid collisions
+        const itemCode = isGeneralContractor
+          ? `${item.tradeType}_${item.code}`
+          : item.code;
+        
+        await db.insert(organizationSowItems).values({
+          organizationId: newOrg.id,
+          categoryName,
+          name: item.name,
+          code: itemCode,
+          description: item.description,
+          unit: item.defaultUomCode || 'EA',
+          displayOrder: item.sortOrder || 0,
+          requiresDimensions: item.requiresDimensions || false,
+          dimensionLabel: item.dimensionLabel,
+          isFromTemplate: true,
+          isActive: true,
+        }).onConflictDoNothing();
+      }
+
+      // Also add any custom user-selected work types that aren't in the master list
+      const masterItemNames = new Set(masterItems.map(m => m.name.toLowerCase()));
+      for (let i = 0; i < sanitizedWorkTypes.length; i++) {
+        const wt = sanitizedWorkTypes[i];
+        if (!masterItemNames.has(wt.toLowerCase())) {
+          const code = wt.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+          await db.insert(organizationSowItems).values({
+            organizationId: newOrg.id,
+            categoryName: tradeName || tradeType,
+            name: wt,
+            code: `custom_${code}_${i}`,
+            displayOrder: masterItems.length + i,
+            isFromTemplate: false,
+            isActive: true,
+          }).onConflictDoNothing();
+        }
+      }
+
+      // Copy trade template configurations to organization
+      // GENERAL_CONTRACTOR gets work types and calculators from ALL trade templates
+      let templates;
+      if (isGeneralContractor) {
+        // GC: Load all ACTIVE trade templates
+        templates = await db.select().from(tradeTemplates).where(eq(tradeTemplates.isActive, true));
+      } else {
+        const [template] = await db.select().from(tradeTemplates).where(
+          and(eq(tradeTemplates.tradeType, tradeType as any), eq(tradeTemplates.isActive, true))
+        );
+        templates = template ? [template] : [];
+      }
+      
+      for (const template of templates) {
+        // Parse and create organization-specific work types from template JSON
+        try {
+          const templateWorkTypes = JSON.parse(template.workTypesJson || '[]');
+          for (let wtIdx = 0; wtIdx < templateWorkTypes.length; wtIdx++) {
+            const wt = templateWorkTypes[wtIdx];
+            if (wt && wt.name) {
+              // For GC, namespace work type names with tradeType code for guaranteed uniqueness
+              const workTypeName = isGeneralContractor 
+                ? `[${template.tradeType}] ${wt.name}`
+                : wt.name;
+              const category = template.displayName || template.tradeType;
+              
+              await db.insert(organizationWorkTypes).values({
+                organizationId: newOrg.id,
+                name: workTypeName,
+                category,
+                unit: wt.unit || 'EA',
+                defaultProductionRate: wt.rate ? String(wt.rate) : null,
+              }).onConflictDoNothing();
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing work types:", e);
+        }
+
+        // Parse and create organization-specific calculators from template
+        try {
+          const calculators = JSON.parse(template.calculatorConfigJson || '[]');
+          for (let calcIdx = 0; calcIdx < calculators.length; calcIdx++) {
+            const calc = calculators[calcIdx];
+            if (calc && calc.name) {
+              // For GC, namespace calculator names with tradeType code for guaranteed uniqueness
+              const calcName = isGeneralContractor 
+                ? `[${template.tradeType}] ${calc.name}`
+                : calc.name;
+              const category = template.displayName || template.tradeType;
+              
+              await db.insert(organizationCalculators).values({
+                organizationId: newOrg.id,
+                name: calcName,
+                category,
+                unit: calc.output || 'units',
+                formulaJson: JSON.stringify({ type: calc.type, inputs: calc.inputs, output: calc.output }),
+                inputFieldsJson: JSON.stringify(calc.inputs || []),
+              }).onConflictDoNothing();
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing calculators:", e);
+        }
       }
     }
 
