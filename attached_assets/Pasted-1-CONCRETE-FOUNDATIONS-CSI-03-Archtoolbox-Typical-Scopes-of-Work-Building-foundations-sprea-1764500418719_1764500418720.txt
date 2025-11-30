@@ -1,0 +1,925 @@
+1. CONCRETE / FOUNDATIONS (CSI 03) 
+Archtoolbox
+
+Typical Scopes of Work
+
+Building foundations (spread footings, grade beams, stem walls)
+
+Slabs on grade (interior, exterior, thickened edge)
+
+Slabs on deck (structural, metal deck)
+
+Columns, beams, elevated slabs
+
+Equipment pads / housekeeping pads
+
+Concrete stairs & landings
+
+Curbs (stand-up, roll curb)
+
+Curb & gutter
+
+Sidewalks & walkways
+
+Dumpster pads, loading docks
+
+Retaining walls (cast-in-place)
+
+Bollards (embedded or surface mount in concrete)
+
+Site flatwork / plazas
+
+Concrete paving (light duty / heavy duty)
+
+Concrete demo, sawcutting, removal
+
+Rebar fabrication & placement
+
+Post-installed anchors & dowels
+
+Grouting (base plates, machinery)
+
+Units of Measure
+
+CY – cubic yard (foundations, slabs, walls)
+
+SF – square foot (slabs, flatwork)
+
+SY – square yard (paving)
+
+LF – linear foot (curb, beams, thickened edges)
+
+EA – each (pads, bollards, stairs, columns)
+
+TON – reinforcing steel by weight
+
+HR – labor/equipment time
+
+Key Forms / Inspections
+
+Subgrade & compaction test reports
+
+Rebar / embed inspection
+
+Pre-pour inspection checklist
+
+Concrete batch tickets & mix design approvals
+
+Slump & air tests
+
+Cylinder/strength test reports
+
+Surface flatness/levelness (FF/FL) where applicable
+
+As-built elevation/slope verification (especially ADA)
+
+2. EARTHWORK / EXCAVATION (CSI 31) 
+pdc.utah.edu
++1
+
+Scopes
+
+Site stripping/clearing
+
+Cut/fill & mass grading
+
+Trenching for utilities (water, sewer, gas, elec, fiber)
+
+Footing & foundation excavation
+
+Backfill (structural & non-structural)
+
+Compaction & moisture conditioning
+
+Over-excavation and replacement
+
+Rock excavation, ripping, hammering
+
+Hauling & disposal of spoils
+
+Swales, berms, ditches
+
+Temporary access roads & laydown areas
+
+Units
+
+CY – bulk excavation & fill
+
+SF / SY – subgrade prep areas
+
+LF – trenching lengths
+
+TON – imported fill/stone
+
+HR – heavy equipment time
+
+Forms / Inspections
+
+Underground utility locate documentation
+
+Soil classification / geotech reports
+
+Compaction test reports (Proctor/nuclear density)
+
+Trench safety / shoring log
+
+Dewatering plan & inspection (if used)
+
+3. ASPHALT PAVING & STRIPING (CSI 32 12 / 32 17) 
+pdc.utah.edu
++2
+Michigan Technological University
++2
+
+Scopes
+
+New asphalt parking lots & drives
+
+Asphalt overlays (mill & overlay, thin overlay)
+
+Full-depth asphalt reconstruction
+
+Patching / pothole repair
+
+Trench patching for utility cuts
+
+Crack sealing & crack filling
+
+Sealcoating
+
+Speed humps / traffic calming
+
+Curb transitions between asphalt & concrete
+
+Line striping (parking stalls, directional arrows)
+
+Thermoplastic markings
+
+ADA striping and signage pads
+
+Wheel stops, bollards in asphalt
+
+Units
+
+SY / SF – paving area
+
+TON – asphalt placed
+
+LF – crack sealing, joint sealing, striping runs
+
+EA – speed humps, traffic signs, wheel stops
+
+GAL – sealcoat / marking materials
+
+HR – milling, patch crews
+
+Forms / Inspections
+
+Asphalt mix submittals & approvals
+
+Density / compaction test results
+
+Core samples (thickness verification)
+
+Smoothness / grade checks
+
+Striping layout approval (including ADA layout)
+
+Pavement repair detail conformance (per city standard)
+
+4. CARPENTRY / FRAMING & GENERAL BUILDING (CSI 06)
+
+Scopes
+
+Wood stud framing
+
+Metal stud framing (interior & exterior)
+
+Floor & roof framing (joists, rafters, trusses)
+
+Sheathing (wall, roof, floor)
+
+Blocking for fixtures, handrails, cabinets
+
+Rough hardware (hangers, straps, hold-downs)
+
+Decks & exterior stairs
+
+Backing for MEP systems
+
+Temporary protections & temp walls
+
+Finish carpentry (trim, base, casing, crown, wainscot)
+
+Cabinetry & built-ins (if done by carpenter vs. millwork sub)
+
+Units
+
+SF – walls, sheathing
+
+LF – plates, blocking, trim, handrail
+
+EA – doors, windows, headers, beams
+
+BF – board feet (lumber batches)
+
+HR – T&M carpentry
+
+Forms / Inspections
+
+Rough framing inspection
+
+Shear wall / shear panel inspection
+
+Firestopping inspection at penetrations
+
+Moisture barrier / flashing inspection before cladding
+
+Nail/fastener schedule verification
+
+5. DRYWALL, INSULATION, PLASTER & ACOUSTICAL (CSI 09 20 / 07 21 / 09 30 / 09 51) 
+Sundt Construction
++1
+
+Scopes
+
+Batt & blanket insulation (walls, attics)
+
+Rigid insulation at walls/roofs
+
+Spray foam (open/closed cell)
+
+Sound attenuation batts
+
+Gypsum board (walls, ceilings)
+
+Shaftwall assemblies
+
+Moisture-resistant and mold-resistant board
+
+Fire-rated assemblies & shaft enclosures
+
+Taping, finishing (Level 1–5)
+
+Texture & skim coat
+
+Plaster & stucco systems
+
+Acoustical ceilings (ACT, clouds, baffles)
+
+Units
+
+SF – insulation, drywall, plaster, ceilings
+
+LF – control joints, trims, reveals
+
+EA – hatches, access panels, specialty details
+
+Forms / Inspections
+
+Insulation inspection (energy code)
+
+Fire-rated assembly inspection (before cover)
+
+Sound wall details & sealant confirmation
+
+Ceiling grid & seismic brace inspection (where required)
+
+6. FLOORING (CSI 09 60)
+
+Scopes
+
+Carpet (broadloom, tile)
+
+Resilient flooring (LVT, VCT, rubber)
+
+Sheet vinyl
+
+Ceramic/porcelain/stone tile floors
+
+Wood flooring (engineered, solid, prefinished)
+
+Sports floors / rubber flooring
+
+Epoxy/urethane floors (non-traffic-grade vs traffic-grade)
+
+Subfloor leveling / patching
+
+Moisture mitigation systems
+
+Units
+
+SY – carpet, large-area flooring
+
+SF – all flooring types, epoxy
+
+LF – base (rubber, wood, tile base)
+
+EA – transition strips, thresholds
+
+Forms / Inspections
+
+Moisture test results (RH, CaCl)
+
+Flatness/levelness verification
+
+Adhesive compatibility and VOC certifications
+
+Slip resistance where required
+
+7. ROOFING & WATERPROOFING (CSI 07 30 / 07 50 / 07 60 / 07 90)
+
+Roof Systems
+
+Asphalt shingles (steep slope)
+
+Architectural / standing seam metal
+
+EPDM, TPO, PVC single-ply membranes
+
+Modified bitumen & built-up roofing (BUR)
+
+Green roofs / ballasted systems
+
+Roof decking repairs/replacement
+
+Tapered insulation systems
+
+Roof drains, scuppers, overflows
+
+Coatings (as you requested)
+
+Acrylic roof coatings (base, topcoat, reinforced seams)
+
+Silicone roof coatings (full restoration, flashing grade, primers)
+
+Polyurethane / polyurea coatings (traffic-grade, high-build)
+
+Elastomeric wall & roof coatings
+
+Caulking & sealants at:
+
+Penetrations
+
+Curbs & equipment supports
+
+Copings & parapets
+
+Expansion joints
+
+Flashing & Accessories
+
+Sheet metal flashing & trim
+
+Coping caps & counterflashing
+
+Pipe boots, pitch pans
+
+Roof hatches, curbs
+
+Snow guards, walk pads
+
+Gutters, downspouts, conductor heads
+
+Units
+
+SQ (100 SF) – shingles, membranes
+
+SF – coatings, localized membranes
+
+LF – flashing, gutters, sealant joints
+
+EA – drains, boots, hatches, curbs, snow guards
+
+GAL – coating/chemicals used
+
+MIL – finished coating thickness
+
+HR – repair work T&M
+
+Forms / Inspections
+
+Deck/substrate inspection and moisture scan
+
+Fastener pattern & manufacturer’s detail checks
+
+Adhesion tests for coatings
+
+Mil-thickness readings logged
+
+Leak test / flood test where required
+
+Manufacturer inspection for warranty
+
+Warranty registration documents
+
+8. MASONRY (CSI 04)
+
+Scopes
+
+CMU (structural & non-structural)
+
+Brick veneer, cavity walls
+
+Stone veneer, natural & manufactured
+
+Reinforced masonry shear walls
+
+Glass block
+
+Masonry restoration, tuckpointing
+
+Masonry cleaning & sealing
+
+Units
+
+SF – walls, veneers
+
+LF – copings, sills
+
+CY – grouted masonry fills
+
+EA – lintels, piers, pilasters
+
+Forms / Inspections
+
+Mortar & grout mix submittals
+
+Grout placement inspection
+
+Reinforcement inspection in cells
+
+Prism/compressive strength tests
+
+Control joint locations verification
+
+9. STRUCTURAL STEEL & MISC. METALS (CSI 05)
+
+Scopes
+
+Structural steel framing (columns, beams, bracing)
+
+Metal deck (roof/floor)
+
+Stairs & railings (steel)
+
+Ladders, platforms, mezzanines
+
+Canopies, trellises
+
+Ornamental metals (guardrails, grates)
+
+Bollards, embeds, angle frames
+
+Units
+
+TON / LB – structural steel
+
+SF – metal deck
+
+LF – guardrails, handrails
+
+EA – ladders, stairs, embeds
+
+Forms / Inspections
+
+Shop drawings & mill certifications
+
+Weld inspection (VT/UT/RT) reports
+
+Bolt torque testing
+
+Fireproofing application inspection (if required)
+
+10. OPENINGS: DOORS, FRAMES, HARDWARE, GLAZING (CSI 08)
+
+Scopes
+
+Hollow metal / wood door frames
+
+Metal/wood doors installation
+
+Door hardware (closers, locks, panic devices)
+
+Aluminum storefront & curtainwall
+
+Windows (vinyl, aluminum, wood-clad)
+
+Glass & glazing (insulated, tempered, laminated)
+
+Skylights & roof glazing
+
+Louvers & vents
+
+Units
+
+EA – doors, frames, windows, skylights
+
+SF – glass area
+
+LF – storefront runs
+
+Forms / Inspections
+
+Egress / life safety hardware checks
+
+Fire-rated door & frame label verification
+
+Air / water infiltration tests for curtainwall when specified
+
+Security hardware function tests
+
+11. PAINTING & COATINGS (CSI 09 90 / 07 18) 
+Sundt Construction
+
+Scopes
+
+Interior & exterior painting
+
+Priming & sealing of new substrates
+
+High-performance coatings (epoxy, urethane)
+
+Traffic coatings (parking deck coatings)
+
+Stains & clear finishes on wood
+
+Elastomeric wall coatings (vertical)
+
+Abrasive blasting / prep
+
+Anti-graffiti coatings
+
+Units
+
+SF – wall/ceiling/steel areas
+
+LF – trim, railings
+
+GAL – material usage tracking
+
+EA – doors/frames if unit-based
+
+Forms / Inspections
+
+Surface prep verification (SSPC standards)
+
+Mil-thickness checks (where specified)
+
+Moisture readings (CMUs, concrete)
+
+VOC compliance & safety data sheets
+
+12. HVAC / MECHANICAL (CSI 23)
+
+Scopes
+
+Packaged RTUs, splits, VRF/VRV systems
+
+Boilers & hydronic systems
+
+Chillers & cooling towers
+
+Air handlers & fan coil units
+
+Ductwork (rectangular, spiral, flex)
+
+Exhaust & ventilation systems
+
+Louvers, dampers (fire/smoke)
+
+Refrigeration piping & equipment
+
+Controls installation (DDC/BAS)
+
+TAB (Testing, Adjusting, Balancing)
+
+Units
+
+EA – equipment (RTUs, AHUs, pumps, boilers)
+
+LF – ductwork, piping
+
+CF / CFM rating – system capacity tracking
+
+TON – cooling capacity
+
+HR – service / start-up
+
+Forms / Inspections
+
+Mechanical rough-in inspection
+
+Duct leakage test (where required)
+
+Refrigerant log & EPA documentation
+
+TAB report (air and water)
+
+Commissioning checklists
+
+Smoke control and fire damper testing records
+
+13. PLUMBING (CSI 22)
+
+Scopes
+
+Domestic water, hot & cold
+
+Sanitary waste & vent
+
+Storm drainage (interior & roof drains)
+
+Natural gas piping
+
+Medical gas systems (where applicable)
+
+Fixtures (water closets, sinks, showers, eyewash, etc.)
+
+Grease interceptors & oil separators
+
+Sump & ejector pumps
+
+Specialty plumbing (lab, RO/DI, etc.)
+
+Units
+
+LF – piping runs
+
+EA – fixtures, pumps, interceptors
+
+GPM / fixture units – design capacity reference
+
+HR – service work
+
+Forms / Inspections
+
+Rough plumbing inspection
+
+Pressure test logs (water, gas, med gas)
+
+Backflow preventer test certificates
+
+Final plumbing inspection
+
+Insulation and heat trace verification where required
+
+14. FIRE PROTECTION / SPRINKLER (CSI 21)
+
+Scopes
+
+Wet, dry, preaction, deluge systems
+
+Fire pumps & jockey pumps
+
+Standpipes
+
+Clean agent & special hazard systems
+
+Fire department connections
+
+Hangers, seismic bracing
+
+Head layouts & drops
+
+Units
+
+SF – coverage area
+
+LF – mains & branch lines
+
+EA – sprinkler heads, valves, pumps
+
+Forms / Inspections
+
+Hydrostatic test reports
+
+Flushing records
+
+NFPA compliance certificates
+
+Final AHJ acceptance test form (flow alarm, etc.)
+
+15. ELECTRICAL – POWER & LIGHTING (CSI 26)
+
+Scopes
+
+Service entrance & main gear
+
+Transformers & panelboards
+
+Branch circuits & device wiring
+
+Lighting installation (interior/exterior/site)
+
+Emergency/exit lighting
+
+Generator sets & ATS
+
+Grounding & bonding
+
+Raceway/conduit systems
+
+Lightning protection (if included under elec)
+
+Units
+
+EA – panels, fixtures, devices, gear
+
+LF – conduits, feeders
+
+AMP / KVA / KW – system capacity
+
+HR – service/maintenance
+
+Forms / Inspections
+
+Rough and final electrical inspections
+
+Megger / insulation resistance tests
+
+Ground resistance tests
+
+Load calculations and panel schedules
+
+Generator / transfer switch test records
+
+16. LOW VOLTAGE / TECHNOLOGY / SECURITY (CSI 27 / 28)
+
+Scopes
+
+Structured cabling (Cat6/6A/7)
+
+Fiber backbone
+
+Racks, patch panels, cable management
+
+Wi-Fi access points
+
+Audio/visual systems, projectors, displays
+
+Access control (card readers, mag locks)
+
+CCTV / IP camera systems
+
+Intrusion detection
+
+Intercom / paging
+
+Nurse call / specialty systems
+
+Units
+
+LF – cable runs
+
+EA – drops, cameras, readers, APs
+
+HR – programming & commissioning
+
+Forms / Inspections
+
+Cable certification test reports
+
+Fiber OTDR/attenuation reports
+
+System commissioning documents
+
+Security system verification/acceptance with owner
+
+17. LANDSCAPING & IRRIGATION (CSI 32 90)
+
+Scopes
+
+Fine grading / topsoil placement
+
+Seeding & hydroseeding
+
+Sod installation
+
+Trees, shrubs, groundcover
+
+Decorative rock/mulch beds
+
+Retaining walls (segmental block)
+
+Site furnishings (benches, bike racks)
+
+Irrigation: mains, laterals, heads, controllers
+
+Drainage improvements (yard drains, French drains)
+
+Units
+
+CY – topsoil, mulch
+
+SF / SY – lawn areas
+
+EA – trees, shrubs, furnishings, valves, heads
+
+LF – piping, edging
+
+Forms / Inspections
+
+Planting plan conformance inspection
+
+Irrigation pressure & coverage test
+
+Warranty/walk-through punch with owner
+
+Tree staking and protection logs
+
+18. DEMOLITION & HAZMAT / ENVIRONMENTAL (CSI 02)
+
+Scopes
+
+Selective demo (interior build-out)
+
+Structural/demo of full structures
+
+Sawcutting, core drilling
+
+Abatement (asbestos, lead paint – often separate licensed sub)
+
+Mold remediation
+
+Tank removal (UST/AST)
+
+Site clearing / removal of pavements
+
+Units
+
+SF – area demo
+
+LF – wall/curb/etc. demo
+
+EA – fixtures, doors, windows, equipment
+
+CY / TON – debris hauled
+
+Forms / Inspections
+
+Demo permits
+
+Hazardous material survey & clearance reports
+
+Air monitoring data (abatement)
+
+Waste manifests & disposal tickets
+
+Utility disconnect confirmations
+
+19. FULL GENERAL CONTRACTING / CM (CSI 00 / 01)
+
+Scopes
+
+Preconstruction services & budgeting
+
+Bid packaging and subcontract procurement
+
+Master scheduling (baseline & updates)
+
+Site logistics & phasing
+
+Subcontract management
+
+Safety management & toolbox talks
+
+Quality control inspections
+
+RFIs, submittals, shop drawings
+
+Change order management
+
+Cost control, pay apps, lien waivers
+
+Meetings, minutes, reporting
+
+Closeout, O&M manuals, as-builts
+
+Warranty walk-throughs
+
+Units
+
+LS – GC fee
+
+HR – PM/PE/Superintendent time (T&M contexts)
+
+EA – RFIs, submittals, COs (for tracking KPIs)
+
+Forms / Inspections
+
+Preconstruction checklist
+
+Daily reports / daily logs
+
+Safety / JHA / toolbox talk forms
+
+RFI & submittal forms
+
+Change order request/approval forms
+
+Punch list & pre-final inspection forms
+
+Substantial & final completion certificates
+
+Warranty log
