@@ -76,6 +76,18 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 ### Bug Fix: Website URL Validation
 - Auto-prepends "https://" when user enters bare domain in AI onboarding wizard
 
+### Multi-Tenant Security Enhancement
+- Enhanced `getOrgIdForFilter()` helper in `server/orgFilter.ts` with `mustDenyAccess` flag
+- Security pattern: Users without organization (non-SUPER_ADMIN) receive empty data instead of potential cross-tenant leaks
+- Applied to critical endpoints: dashboard stats, users, bids, projects, crews, messaging, equipment, tasks
+- Pattern: `const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req); if (mustDenyAccess) return res.json([]);`
+
+### Walkthrough System Completed
+- All 9 user roles now have role-specific onboarding walkthroughs
+- ADMIN walkthrough expanded to 10 comprehensive steps (team invitation, CRM, equipment, projects, bids, estimates, crews, tasks, messaging, AI)
+- AI Assistant widget auto-opens for new users and guides through walkthrough
+- Progress tracked via walkthroughStep/walkthroughCompleted user fields
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
