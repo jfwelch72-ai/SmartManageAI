@@ -308,6 +308,33 @@ export const NavigationConfig = {
       testId: "nav-subcontractor-payables",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/vendor-pricing",
+      label: "Vendor Pricing Sync",
+      testId: "nav-vendor-pricing",
+      visible: (role?: string) => hasManagementAccess(role),
+    },
+    {
+      href: "/scope-settings",
+      label: "Scope Settings",
+      testId: "nav-scope-settings",
+      visible: (role?: string) => isAdminOrManager(role),
+    },
+  ],
+
+  toolsMenu: [
+    {
+      href: "/mobile-sync",
+      label: "Mobile Sync Status",
+      testId: "nav-mobile-sync",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
+      href: "/equipment",
+      label: "Equipment",
+      testId: "nav-equipment",
+      visible: (role?: string) => hasEquipmentAccess(role),
+    },
   ],
 };
 

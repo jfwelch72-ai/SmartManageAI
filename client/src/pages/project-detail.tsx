@@ -12,6 +12,10 @@ import DailyNoteFeed from "@/components/DailyNoteFeed";
 import MediaGallery from "@/components/MediaGallery";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
+import AiSchedulingPanel from "@/components/AiSchedulingPanel";
+import AiJobsiteAnalysis from "@/components/AiJobsiteAnalysis";
+import ClientPortal from "@/components/ClientPortal";
+import AiChangeOrderGenerator from "@/components/AiChangeOrderGenerator";
 import ProjectLaborHours from "@/components/ProjectLaborHours";
 import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
@@ -1248,11 +1252,12 @@ interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
   projectCode: string;
   projectId: string;
+  projectName: string;
   isLoading: boolean;
   userRole: string;
 }
 
-function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, userRole }: ChangeOrdersTabProps) {
+function ChangeOrdersTab({ changeOrders, projectCode, projectId, projectName, isLoading, userRole }: ChangeOrdersTabProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedChangeOrder, setSelectedChangeOrder] = useState<ChangeOrder | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
@@ -1581,6 +1586,22 @@ function ChangeOrdersTab({ changeOrders, projectCode, projectId, isLoading, user
           )}
         </CardContent>
       </Card>
+
+      {/* AI Change Order Generator */}
+      {canManage && (
+        <div className="mt-6">
+          <AiChangeOrderGenerator
+            projectId={projectId}
+            projectName={projectName}
+            onCreateChangeOrder={(draft) => {
+              setChangeOrderNumber(`CO-${Date.now().toString().slice(-4)}`);
+              setAmount(draft.suggestedAmount.toString());
+              setDescription(draft.aiGeneratedDescription);
+              setShowCreateDialog(true);
+            }}
+          />
+        </div>
+      )}
 
       {/* Change Order View/Edit Dialog */}
       <ChangeOrderDialog
@@ -2280,6 +2301,10 @@ export default function ProjectDetailPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="schedule" data-testid="tab-schedule">
+              <Calendar className="h-4 w-4 mr-1" />
+              Schedule
+            </TabsTrigger>
             <TabsTrigger value="delays" data-testid="tab-delays">
               <CloudRain className="h-4 w-4 mr-1" />
               Delays
@@ -2288,6 +2313,16 @@ export default function ProjectDetailPage() {
               <CalendarCheck className="h-4 w-4 mr-1" />
               Inspections
             </TabsTrigger>
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="jobsite-ai" data-testid="tab-jobsite-ai">
+                AI Jobsite
+              </TabsTrigger>
+            )}
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="client-portal" data-testid="tab-client-portal">
+                Client Portal
+              </TabsTrigger>
+            )}
             <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
             <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
             {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
@@ -2886,9 +2921,18 @@ export default function ProjectDetailPage() {
             changeOrders={changeOrders}
             projectCode={projectCode}
             projectId={project.id}
+            projectName={project.name}
             isLoading={changeOrdersLoading}
             userRole={user?.role || ""}
           />
+
+          <TabsContent value="schedule">
+            <AiSchedulingPanel 
+              projectId={project.id}
+              projectName={project.name}
+              tradeType={project.tradeType}
+            />
+          </TabsContent>
 
           <TabsContent value="delays">
             <DelaysSection 
@@ -2903,6 +2947,20 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               projectCode={projectCode}
               userRole={user?.role || ""}
+            />
+          </TabsContent>
+
+          <TabsContent value="jobsite-ai">
+            <AiJobsiteAnalysis 
+              projectId={project.id}
+              projectName={project.name}
+            />
+          </TabsContent>
+
+          <TabsContent value="client-portal">
+            <ClientPortal 
+              projectId={project.id}
+              projectName={project.name}
             />
           </TabsContent>
 

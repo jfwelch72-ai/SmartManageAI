@@ -42,6 +42,8 @@ import PlatformOrganizations from "@/pages/PlatformOrganizations";
 import PlatformOrganizationDetail from "@/pages/PlatformOrganizationDetail";
 import PlatformAnalytics from "@/pages/PlatformAnalytics";
 import PlatformSupportTools from "@/pages/PlatformSupportTools";
+import VendorPricingPage from "@/pages/vendor-pricing";
+import MobileSyncPage from "@/pages/mobile-sync";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 
 function ProtectedRoute({ 
@@ -140,6 +142,8 @@ function Router() {
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} />} />
       <Route path="/rental-vendors" component={() => <Redirect to="/crm" />} />
+      <Route path="/vendor-pricing" component={() => <ProtectedRoute component={VendorPricingPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/mobile-sync" component={() => <ProtectedRoute component={MobileSyncPage} />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

@@ -113,6 +113,14 @@ The platform utilizes a modern web stack with a client-server architecture, prio
         - Email Notifications: Send inspection requests to stakeholders
         - RBAC: SUPERINTENDENT+ can create/edit/pass/fail, OFFICE_MANAGER can schedule
     -   **AI Integration**: AI Senior PM + CFO System for task generation, profitability analysis, scheduling, and billing automation, including Lead Time Intelligence. AI-powered maintenance recommendations for equipment.
+    -   **AI-Enhanced Features (7 Major Features)**:
+        - **Feature A - AI Auto-Takeoff**: Enhances existing takeoff workspace with AI blueprint analysis. Integrated via AiTakeoffPanel in the right sidebar with "AI Analyze" button for automatic measurement extraction.
+        - **Feature B - AI Scheduling Assistant**: Trade-specific Gantt chart generation with AI-powered schedule optimization. Accessible via "Schedule" tab on project-detail page through AiSchedulingPanel component.
+        - **Feature C - AI Jobsite Camera Analysis**: Safety compliance and progress monitoring using jobsite camera footage. Integrated as "Jobsite AI" tab on project-detail page.
+        - **Feature D - Vendor Pricing Sync**: Automatic synchronization of vendor pricebooks with real-time price updates. Accessible via Admin > Vendor Pricing Sync or /vendor-pricing route.
+        - **Feature E - Client Portal**: External client access for project updates, document sharing, and approvals. Integrated as "Client Portal" tab on project-detail page.
+        - **Feature F - AI Change Order Generator**: AI-powered change order drafting integrated into existing change order workflow. Available via "AI Generate" button in change orders section.
+        - **Feature G - Mobile/Offline Mode**: Comprehensive mobile sync status with offline data persistence. Accessible via Tools > Mobile Sync Status or /mobile-sync route.
     -   **Takeoff & Estimating Engine**: Interactive drawing tools for linear, area, volume, and count measurements, supporting multi-page PDF rendering and a comprehensive material calculator.
     -   **CRM System**: Management for various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
     -   **Time-Clock System**: Native time-clock with GPS, shift management, and project labor hour tracking.

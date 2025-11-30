@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess } from "@/lib/rbac";
@@ -74,11 +74,14 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     await onLogout();
   };
 
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
     setTimeClockOpen(false);
     setAiMenuOpen(false);
     setAdminMenuOpen(false);
+    setToolsMenuOpen(false);
   };
 
   const isActive = (path: string) => location === path || location.startsWith(path + "/");
@@ -87,8 +90,10 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
   const visibleAIItems = NavigationConfig.aiMenu.filter(item => item.visible(userRole));
   const visibleAdminItems = NavigationConfig.adminMenu.filter(item => item.visible(userRole));
+  const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole));
   const hasAdminMenu = visibleAdminItems.length > 0;
   const hasAIMenu = visibleAIItems.length > 0;
+  const hasToolsMenu = visibleToolsItems.length > 0;
 
   // Mobile navigation items for contractors
   const mobileNavItems = [
@@ -174,11 +179,6 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                       <MobileNavLink href="/crm" icon={UsersIcon} label="CRM" />
                     )}
 
-                    {/* Equipment - conditional */}
-                    {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
-                      <MobileNavLink href="/equipment" icon={Truck} label="Equipment" />
-                    )}
-
                     {/* Time Clock - collapsible */}
                     <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen}>
                       <CollapsibleTrigger asChild>
@@ -246,6 +246,30 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                         </CollapsibleTrigger>
                         <CollapsibleContent className="pl-8 space-y-1">
                           {visibleAdminItems.map((item) => (
+                            <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
+                              <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                                {item.label}
+                              </div>
+                            </Link>
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
+                    {/* Tools Menu - collapsible */}
+                    {hasToolsMenu && (
+                      <Collapsible open={toolsMenuOpen} onOpenChange={setToolsMenuOpen}>
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <Wrench className="w-5 h-5" />
+                              <span>Tools</span>
+                            </div>
+                            <ChevronRight className={`w-4 h-4 transition-transform ${toolsMenuOpen ? "rotate-90" : ""}`} />
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pl-8 space-y-1">
+                          {visibleToolsItems.map((item) => (
                             <Link key={item.href} href={item.href} onClick={closeMobileMenu}>
                               <div className={`px-4 py-2 rounded-lg ${isActive(item.href) ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
                                 {item.label}
@@ -445,6 +469,30 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                       <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
                         <Link href={item.href}>
                           <UsersIcon className="mr-2 h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
+              {/* Tools Menu - Only show if user has access to tools features */}
+              {hasToolsMenu && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-tools">
+                      <Wrench className="w-4 h-4" />
+                      Tools
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {visibleToolsItems.map((item) => (
+                      <DropdownMenuItem key={item.href} asChild data-testid={item.testId}>
+                        <Link href={item.href}>
+                          {item.href === "/mobile-sync" && <Smartphone className="mr-2 h-4 w-4" />}
+                          {item.href === "/equipment" && <Truck className="mr-2 h-4 w-4" />}
                           {item.label}
                         </Link>
                       </DropdownMenuItem>

@@ -11,8 +11,9 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight 
 } from "lucide-react";
+import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -163,6 +164,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState("#3b82f6");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  
+  // AI Takeoff panel state
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -1304,6 +1308,23 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             <p>Upload Plan</p>
           </TooltipContent>
         </Tooltip>
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button 
+              variant={aiPanelOpen ? "secondary" : "ghost"} 
+              size="icon" 
+              onClick={() => setAiPanelOpen(!aiPanelOpen)}
+              data-testid="button-ai-takeoff"
+              className="toggle-elevate"
+            >
+              <Sparkles className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>AI Auto-Takeoff</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Center Canvas */}
@@ -1654,8 +1675,38 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         </div>
       </div>
 
+      {/* AI Takeoff Panel - Slide out panel */}
+      {aiPanelOpen && (
+        <div className="w-80 bg-card border-l flex flex-col">
+          <div className="h-14 bg-card border-b px-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              <span className="font-semibold">AI Auto-Takeoff</span>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setAiPanelOpen(false)}
+              data-testid="button-close-ai-panel"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+          <AiTakeoffPanel 
+            projectId={projectId}
+            sheetId={selectedSheet}
+            onItemsImported={(items) => {
+              toast({
+                title: "Items Imported",
+                description: `Successfully imported ${items.length} items to your takeoff`,
+              });
+            }}
+          />
+        </div>
+      )}
+
       {/* Right Sidebar */}
-      <div className="w-80 bg-card border-l flex flex-col">
+      <div className={cn("w-80 bg-card border-l flex flex-col", aiPanelOpen && "hidden md:flex")}>
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
             {/* Calibration Panel */}
