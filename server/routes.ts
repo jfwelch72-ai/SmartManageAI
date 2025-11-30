@@ -64,6 +64,7 @@ import registerEstimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import platformAdminRoutes from "./platformAdminRoutes";
 import calculatorRoutes from "./calculatorRoutes";
+import aiAssistantRoutes from "./aiAssistantRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 
@@ -109,6 +110,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register material calculator routes
   app.use("/api/calculators", calculatorRoutes);
+
+  // Register AI Assistant routes (SOW and UOM management)
+  app.use("/api/ai-assistant", aiAssistantRoutes);
 
   // ====================
   // Auth Routes

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronsUpDown, Building2, User } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Check, ChevronsUpDown, Building2, User, Plus, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -24,6 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { CrmOrganisation, CrmContact } from "@shared/schema";
 
 type OrganisationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP";
@@ -71,11 +83,56 @@ export default function CrmOrganizationSelector({
   disabled = false,
   className,
 }: CrmOrganizationSelectorProps) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<OrganisationWithContacts | null>(null);
+  const [addCrmDialogOpen, setAddCrmDialogOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [newOrgData, setNewOrgData] = useState({
+    name: "",
+    type: filterTypes?.[0] || "CONTRACTOR" as OrganisationType,
+    phone: "",
+    email: "",
+    city: "",
+    state: "",
+  });
 
   const { data: organizations = [] } = useQuery<CrmOrganisation[]>({
     queryKey: ["/api/crm/organisations"],
+  });
+
+  const addOrgMutation = useMutation({
+    mutationFn: async (data: typeof newOrgData) => {
+      const response = await apiRequest("POST", "/api/crm/organisations", {
+        ...data,
+        isActive: true,
+      });
+      return response.json();
+    },
+    onSuccess: (newOrg: CrmOrganisation) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/crm/organisations'] });
+      toast({
+        title: "Organization Added",
+        description: `"${newOrg.name}" has been added to your CRM`,
+      });
+      setAddCrmDialogOpen(false);
+      setNewOrgData({
+        name: "",
+        type: filterTypes?.[0] || "CONTRACTOR" as OrganisationType,
+        phone: "",
+        email: "",
+        city: "",
+        state: "",
+      });
+      handleOrgSelect(newOrg);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Add Organization",
+        description: error.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
   });
 
   const { data: orgDetail } = useQuery<OrganisationWithContacts>({
@@ -151,11 +208,27 @@ export default function CrmOrganizationSelector({
         </PopoverTrigger>
         <PopoverContent className="w-[400px] p-0" align="start">
           <Command>
-            <CommandInput placeholder="Search organizations..." data-testid="input-search-organization" />
+            <CommandInput 
+              placeholder="Search organizations..." 
+              data-testid="input-search-organization"
+              onValueChange={setSearchValue}
+            />
             <CommandList>
               <CommandEmpty>
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  No organizations found.
+                <div className="py-4 text-center text-sm">
+                  <p className="text-muted-foreground mb-3">No organizations found.</p>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setNewOrgData(prev => ({ ...prev, name: searchValue }));
+                      setAddCrmDialogOpen(true);
+                      setOpen(false);
+                    }}
+                    data-testid="button-add-to-crm"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add to CRM
+                  </Button>
                 </div>
               </CommandEmpty>
               <CommandGroup>
@@ -226,6 +299,148 @@ export default function CrmOrganizationSelector({
           </Select>
         </div>
       )}
+
+      <Dialog open={addCrmDialogOpen} onOpenChange={setAddCrmDialogOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-add-to-crm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" />
+              Add Organization to CRM
+            </DialogTitle>
+            <DialogDescription>
+              Add a new organization to your CRM for easy reference in future forms.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="org-name">Organization Name *</Label>
+              <Input
+                id="org-name"
+                value={newOrgData.name}
+                onChange={(e) => setNewOrgData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Company name"
+                data-testid="input-new-org-name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="org-type">Type *</Label>
+              <Select
+                value={newOrgData.type}
+                onValueChange={(value) => setNewOrgData(prev => ({ ...prev, type: value as OrganisationType }))}
+              >
+                <SelectTrigger id="org-type" data-testid="select-new-org-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(filterTypes || Object.keys(TYPE_LABELS) as OrganisationType[]).map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {TYPE_LABELS[type]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="org-phone">Phone</Label>
+                <Input
+                  id="org-phone"
+                  value={newOrgData.phone}
+                  onChange={(e) => setNewOrgData(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="(555) 123-4567"
+                  data-testid="input-new-org-phone"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-email">Email</Label>
+                <Input
+                  id="org-email"
+                  type="email"
+                  value={newOrgData.email}
+                  onChange={(e) => setNewOrgData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="contact@company.com"
+                  data-testid="input-new-org-email"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="org-city">City</Label>
+                <Input
+                  id="org-city"
+                  value={newOrgData.city}
+                  onChange={(e) => setNewOrgData(prev => ({ ...prev, city: e.target.value }))}
+                  placeholder="City"
+                  data-testid="input-new-org-city"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-state">State</Label>
+                <Input
+                  id="org-state"
+                  value={newOrgData.state}
+                  onChange={(e) => setNewOrgData(prev => ({ ...prev, state: e.target.value }))}
+                  placeholder="State"
+                  maxLength={2}
+                  data-testid="input-new-org-state"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-row gap-2 justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setAddCrmDialogOpen(false)}
+              data-testid="button-cancel-add-org"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!newOrgData.name?.trim()) {
+                  toast({
+                    title: "Name Required",
+                    description: "Please enter an organization name",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                if (!newOrgData.type) {
+                  toast({
+                    title: "Type Required",
+                    description: "Please select an organization type",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                addOrgMutation.mutate({
+                  ...newOrgData,
+                  name: newOrgData.name.trim(),
+                });
+              }}
+              disabled={!newOrgData.name?.trim() || addOrgMutation.isPending}
+              data-testid="button-confirm-add-org"
+            >
+              {addOrgMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Organization
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

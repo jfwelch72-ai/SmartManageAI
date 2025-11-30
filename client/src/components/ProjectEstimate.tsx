@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator } from "lucide-react";
+import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator, Sparkles } from "lucide-react";
+import { AISowAssistantDialog } from "@/components/AISowAssistantDialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
@@ -76,6 +77,7 @@ export default function ProjectEstimate() {
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [importTakeoffOpen, setImportTakeoffOpen] = useState(false);
+  const [aiSowAssistantOpen, setAiSowAssistantOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
 
@@ -928,27 +930,56 @@ export default function ProjectEstimate() {
                     )}
                   />
 
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-between items-center gap-3">
                     <Button 
                       type="button" 
-                      variant="outline" 
-                      onClick={() => setAddLineItemOpen(false)}
-                      data-testid="button-cancel-line-item"
+                      variant="secondary" 
+                      onClick={() => {
+                        setAddLineItemOpen(false);
+                        setAiSowAssistantOpen(true);
+                      }}
+                      data-testid="button-open-ai-assistant"
                     >
-                      Cancel
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Add with AI
                     </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={addLineItemMutation.isPending}
-                      data-testid="button-submit-line-item"
-                    >
-                      Add Line Item
-                    </Button>
+                    <div className="flex gap-3">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setAddLineItemOpen(false)}
+                        data-testid="button-cancel-line-item"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={addLineItemMutation.isPending}
+                        data-testid="button-submit-line-item"
+                      >
+                        Add Line Item
+                      </Button>
+                    </div>
                   </div>
                 </form>
               </Form>
             </DialogContent>
           </Dialog>
+
+          <AISowAssistantDialog 
+            open={aiSowAssistantOpen}
+            onOpenChange={setAiSowAssistantOpen}
+            onItemAdded={(item) => {
+              form.setValue('description', item.name);
+              form.setValue('category', item.categoryName);
+              form.setValue('unit', item.unit || 'EA');
+              setAddLineItemOpen(true);
+              toast({
+                title: "Item Selected",
+                description: "SOW item details have been filled in. Complete the remaining fields.",
+              });
+            }}
+          />
         </div>
       )}
 
