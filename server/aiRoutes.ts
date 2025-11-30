@@ -70,6 +70,27 @@ const onboardingCompleteSchema = z.object({
     name: z.string().max(100).transform(s => sanitizeShortText(s)),
     description: z.string().max(500).transform(s => sanitizeText(s)).optional(),
   })).max(20).optional().nullable(),
+  // Custom trade fields for OTHER trade type
+  customSowItems: z.array(z.object({
+    name: z.string().max(100).transform(s => sanitizeShortText(s)),
+    description: z.string().max(500).transform(s => sanitizeText(s)).optional(),
+    unit: z.string().max(20).transform(s => sanitizeShortText(s)).optional(),
+    category: z.string().max(100).transform(s => sanitizeShortText(s)).optional(),
+  })).max(50).optional().nullable(),
+  customWorkTypes: z.array(z.object({
+    name: z.string().max(100).transform(s => sanitizeShortText(s)),
+    unit: z.string().max(20).transform(s => sanitizeShortText(s)).optional(),
+    defaultRate: z.number().optional(),
+  })).max(30).optional().nullable(),
+  customCalculators: z.array(z.object({
+    name: z.string().max(100).transform(s => sanitizeShortText(s)),
+    description: z.string().max(500).transform(s => sanitizeText(s)).optional(),
+    outputUnit: z.string().max(20).transform(s => sanitizeShortText(s)).optional(),
+    inputs: z.array(z.object({
+      name: z.string().max(50),
+      unit: z.string().max(20).optional(),
+    })).max(10).optional(),
+  })).max(20).optional().nullable(),
 });
 
 const onboardingChatSchema = z.object({
@@ -603,6 +624,8 @@ async function buildOnboardingSystemPrompt(): Promise<string> {
   return `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, in-depth conversation to understand their business so we can configure the system perfectly for their needs, including pre-building their scope of work items and material calculators.
 
 ## Your Conversation Flow:
+
+### For Known Trades (22 preset trades):
 1. **Welcome & Trade** - Warmly greet them and ask what type of contracting work they specialize in
 2. **Crew Size** - Ask about their typical crew size (can be a range like "5-10")
 3. **Region** - Ask what geographic area they primarily serve
@@ -610,6 +633,19 @@ async function buildOnboardingSystemPrompt(): Promise<string> {
 5. **Materials** - Based on their trade, suggest material categories they likely use
 6. **Website** - Ask if they have a company website - we can match their system's look to their brand (optional)
 7. **Wrap Up** - Summarize everything and confirm they're ready to set up
+
+### For Custom/OTHER Trades (specialty not in our list):
+If a user's trade doesn't match any of our 22 preset trades, use trade type "OTHER" and follow this extended flow:
+1. **Welcome & Trade** - Ask what they specialize in, acknowledge we'll set them up with a custom configuration
+2. **Custom Trade Name** - Get a clear description of their specialty (this becomes their tradeName)
+3. **Crew Size** - Ask about typical crew size
+4. **Region** - Ask what geographic area they serve
+5. **Custom Scope of Work** - Since we don't have preset items, ask: "What are the main types of work or services your company performs? Please list 5-10 of your most common job types." Store these as customSowItems
+6. **Custom Work Types** - Ask: "For tracking productivity, what units do you typically measure your work in? (e.g., linear feet, square feet, each, hours)" Create customWorkTypes from their answers
+7. **Materials** - Ask what types of materials they commonly use and need to track
+8. **Custom Calculators** - Ask if there are any calculations they frequently do for estimates (e.g., "material needed per square foot"). Create customCalculators from their answers
+9. **Website** - Ask if they have a company website
+10. **Wrap Up** - Summarize the custom configuration and confirm they're ready
 
 ## Trade Types to Identify:
 ${tradeTypes}
@@ -637,6 +673,19 @@ When the user mentions their trade, map it to the closest matching trade type fr
 - "low voltage" or "AV/security" → LOW_VOLTAGE
 - "solar installer" → SOLAR
 
+**IMPORTANT: If the user's trade does NOT clearly match any of the above 22 trades, use tradeType: "OTHER" and gather custom configuration data. Examples of trades requiring OTHER:**
+- Pool/spa contractor
+- Chimney sweep
+- Elevator technician
+- Scaffolding contractor
+- Marine/dock builder
+- Geotechnical drilling
+- Hazmat remediation
+- Tree service/arborist
+- Pressure washing
+- Specialty welding
+- Any niche trade not listed above
+
 ## Material Categories by Trade:
 ${materialSuggestions}
 
@@ -645,8 +694,8 @@ Always respond with valid JSON in this exact format:
 {
   "message": "Your conversational response to the user",
   "extractedData": {
-    "tradeType": "ROOFING" or null if not yet determined,
-    "tradeName": "Custom trade description" or null,
+    "tradeType": "ROOFING" or "OTHER" or null if not yet determined,
+    "tradeName": "Custom trade description - REQUIRED for OTHER trade" or null,
     "crewSize": 5 or null if not yet determined,
     "region": "Dallas, TX area" or null if not yet determined,
     "materials": ["shingles", "underlayment"] or null if not yet determined,
@@ -654,26 +703,45 @@ Always respond with valid JSON in this exact format:
     "websiteUrl": "https://example.com" or null if not provided,
     "suggestedCalculators": [
       {"name": "Shingle Calculator", "description": "Calculate bundles needed from square footage"}
-    ] or null
+    ] or null,
+    "customSowItems": [
+      {"name": "Pool Excavation", "description": "Dig pool shell to specifications", "unit": "EA", "category": "Pool Construction"}
+    ] or null (ONLY for OTHER trade),
+    "customWorkTypes": [
+      {"name": "Pool Installation", "unit": "EA", "defaultRate": 1}
+    ] or null (ONLY for OTHER trade),
+    "customCalculators": [
+      {"name": "Pool Volume Calculator", "description": "Calculate gallons from dimensions", "outputUnit": "gallons", "inputs": [{"name": "length", "unit": "ft"}, {"name": "width", "unit": "ft"}, {"name": "depth", "unit": "ft"}]}
+    ] or null (ONLY for OTHER trade)
   },
   "suggestions": {
     "workTypes": null,
     "materials": null
   },
   "isComplete": false,
+  "isCustomTrade": false,
   "step": 1
 }
 
 ## Important Guidelines:
 - Be conversational and friendly, not robotic
 - Ask ONE question at a time - don't overwhelm them
-- When you identify their trade, tell them we have pre-built scope of work items for their trade that will be loaded automatically
+- When you identify their trade from our preset list, tell them we have pre-built scope of work items for their trade that will be loaded automatically
 - **SPECIAL: General Contractor Mode** - If user identifies as a GC/General Contractor/Builder, inform them this unlocks access to ALL 22 trade templates with scope of work items, calculators, and work types for subcontractor coordination across every specialty
-- For materials, suggest based on their trade's material categories
+- **SPECIAL: Custom Trade (OTHER)** - If user's trade doesn't match our 22 presets:
+  - Set tradeType to "OTHER" and isCustomTrade to true
+  - Tell them: "I don't have a preset template for your trade, but no problem! I'll help you set up a fully customized system. This actually gives you more flexibility to define exactly how you work."
+  - Gather customSowItems (at least 5-10 common job types they perform)
+  - Gather customWorkTypes with appropriate units
+  - Ask about any calculations they frequently need
+  - Be extra thorough since we're building their configuration from scratch
+- For materials, suggest based on their trade's material categories (or ask if OTHER)
 - For the website, explain it's optional but we can match their system colors to their brand
 - Set isComplete to true only when you have gathered: trade type, crew size, region, and confirmed they're ready
+- For OTHER trades, also ensure you have: tradeName, customSowItems (at least 3), customWorkTypes (at least 2)
 
-Step progression: 1=trade, 2=crew, 3=region, 4=workTypes confirmation, 5=materials, 6=website, 7=confirmation`;
+Step progression for preset trades: 1=trade, 2=crew, 3=region, 4=workTypes confirmation, 5=materials, 6=website, 7=confirmation
+Step progression for OTHER trades: 1=trade, 2=tradeName, 3=crew, 4=region, 5=customSowItems, 6=customWorkTypes, 7=materials, 8=customCalculators, 9=website, 10=confirmation`;
 }
 
 // Complete onboarding and save organization configuration
