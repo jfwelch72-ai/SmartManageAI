@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
-import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum } from "@shared/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, organizationSowItems, unitsOfMeasure } from "@shared/schema";
+import { eq, desc, and, sql, asc } from "drizzle-orm";
 import { 
   runAIAnalysis, 
   getLatestAIRun, 
@@ -472,45 +472,166 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
   }
 });
 
-// AI Onboarding System Prompt - Enhanced with SOW suggestions and theme extraction
-const ONBOARDING_SYSTEM_PROMPT = `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, in-depth conversation to understand their business so we can configure the system perfectly for their needs, including pre-building their work type dropdowns and material calculators.
+// Get master SOW items for a trade type (for onboarding suggestions)
+router.get("/ai/onboarding/sow-items/:tradeType", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { tradeType } = req.params;
+    
+    // Validate trade type
+    if (!tradeTypeEnum.enumValues.includes(tradeType as any)) {
+      return res.status(400).json({ error: "Invalid trade type" });
+    }
+
+    // Fetch master SOW items for this trade
+    const items = await db
+      .select()
+      .from(masterSowItems)
+      .where(eq(masterSowItems.tradeType, tradeType as any))
+      .orderBy(asc(masterSowItems.sortOrder));
+
+    // Group by category for easier consumption
+    const grouped: Record<string, any[]> = {};
+    for (const item of items) {
+      const cat = item.categoryName || 'General';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push({
+        id: item.id,
+        name: item.name,
+        code: item.code,
+        description: item.description,
+        defaultUomCode: item.defaultUomCode,
+        csiCode: item.csiCode,
+      });
+    }
+
+    res.json({ 
+      tradeType,
+      items,
+      groupedByCategory: grouped,
+      totalCount: items.length 
+    });
+  } catch (error: any) {
+    console.error("Error fetching master SOW items:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get all trade templates (for onboarding trade selection)
+router.get("/ai/onboarding/trades", async (req: AuthRequest, res) => {
+  try {
+    const templates = await db
+      .select({
+        tradeType: tradeTemplates.tradeType,
+        displayName: tradeTemplates.displayName,
+        description: tradeTemplates.description,
+        csiDivision: tradeTemplates.csiDivision,
+        iconName: tradeTemplates.iconName,
+        colorHex: tradeTemplates.colorHex,
+        isGcTrade: tradeTemplates.isGcTrade,
+      })
+      .from(tradeTemplates)
+      .where(eq(tradeTemplates.isActive, true))
+      .orderBy(asc(tradeTemplates.displayName));
+
+    res.json(templates);
+  } catch (error: any) {
+    console.error("Error fetching trade templates:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get units of measure (for dropdowns)
+router.get("/ai/onboarding/units", async (req: AuthRequest, res) => {
+  try {
+    const units = await db
+      .select()
+      .from(unitsOfMeasure)
+      .where(eq(unitsOfMeasure.isActive, true))
+      .orderBy(asc(unitsOfMeasure.sortOrder));
+
+    res.json(units);
+  } catch (error: any) {
+    console.error("Error fetching units:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Helper to get SOW suggestions for a trade from database
+async function getSowSuggestionsForTrade(tradeType: string): Promise<string[]> {
+  const items = await db
+    .select({ name: masterSowItems.name })
+    .from(masterSowItems)
+    .where(eq(masterSowItems.tradeType, tradeType as any))
+    .orderBy(asc(masterSowItems.sortOrder))
+    .limit(20);
+  
+  return items.map(i => i.name);
+}
+
+// Dynamic onboarding system prompt builder
+async function buildOnboardingSystemPrompt(): Promise<string> {
+  // Fetch all trade templates for the prompt
+  const templates = await db
+    .select({
+      tradeType: tradeTemplates.tradeType,
+      displayName: tradeTemplates.displayName,
+      materialCategories: tradeTemplates.materialCategories,
+    })
+    .from(tradeTemplates)
+    .where(eq(tradeTemplates.isActive, true));
+
+  // Build trade type list
+  const tradeTypes = templates.map(t => t.tradeType).join(', ');
+
+  // Build material suggestions by trade
+  const materialSuggestions = templates
+    .filter(t => t.materialCategories)
+    .map(t => `${t.tradeType}: ${t.materialCategories}`)
+    .join('\n');
+
+  return `You are an AI assistant helping new contractors set up their construction management platform. Your goal is to have a friendly, in-depth conversation to understand their business so we can configure the system perfectly for their needs, including pre-building their scope of work items and material calculators.
 
 ## Your Conversation Flow:
 1. **Welcome & Trade** - Warmly greet them and ask what type of contracting work they specialize in
-2. **Crew Size** - Ask about their typical crew size
+2. **Crew Size** - Ask about their typical crew size (can be a range like "5-10")
 3. **Region** - Ask what geographic area they primarily serve
-4. **Work Types/SOW** - Based on their trade, suggest specific work types (scope of work items) they might perform. Present 5-8 common ones for their trade and ask them to confirm which they do, plus add any others
-5. **Materials** - Based on their work types, suggest materials they likely use and ask them to confirm/add
-6. **Website** - Ask if they have a company website - we can match their system's look to their brand
+4. **Work Types/SOW** - Based on their trade, we have pre-built scope of work items. Ask them to confirm which services they offer
+5. **Materials** - Based on their trade, suggest material categories they likely use
+6. **Website** - Ask if they have a company website - we can match their system's look to their brand (optional)
 7. **Wrap Up** - Summarize everything and confirm they're ready to set up
 
-## Work Type Suggestions by Trade:
-When they identify their trade, suggest these common work types:
-
-ROOFING: ["Shingle Tear-off & Replace", "New Construction Roofing", "Commercial Flat Roof", "Metal Roofing", "Roof Repairs", "Gutter Installation", "Skylight Installation", "Roof Inspection"]
-
-ELECTRICAL: ["Residential Rough-in", "Commercial Wiring", "Panel Upgrade", "EV Charger Installation", "Lighting Installation", "Generator Installation", "Low Voltage/Data", "Service Upgrade"]
-
-PLUMBING: ["New Construction Rough-in", "Fixture Installation", "Water Heater Install", "Drain Cleaning", "Repiping", "Gas Line Work", "Sewer Line Repair", "Backflow Testing"]
-
-HVAC: ["AC Installation", "Furnace Installation", "Duct Installation", "HVAC Repair", "Mini-Split Installation", "Commercial HVAC", "Refrigeration", "Ventilation Systems"]
-
-CONCRETE: ["Sidewalk - 4 inch", "Driveway - 6 inch", "Foundation Pour", "Stamped Concrete", "Curb & Gutter", "Retaining Walls", "Concrete Repairs", "Commercial Flatwork"]
-
-CARPENTRY: ["Framing - Walls", "Framing - Roof", "Finish Carpentry", "Cabinet Installation", "Deck Building", "Door/Window Installation", "Trim Work", "Custom Millwork"]
-
-GENERAL_CONTRACTOR: ["Project Management", "General Construction", "Renovation", "Tenant Improvement", "New Build Coordination", "Site Supervision"]
-
-## Material Calculator Suggestions:
-For each work type they select, suggest relevant calculators:
-- Roofing: Square footage to shingle bundles, underlayment rolls, nails
-- Concrete: Volume calculator (L×W×D), bags per cubic yard, rebar spacing
-- Electrical: Wire length by run, outlets per circuit, panel sizing
-- Plumbing: Pipe length, fitting counts, fixture rough-in materials
-- HVAC: Duct sizing, refrigerant amounts, BTU calculations
-
 ## Trade Types to Identify:
-ROOFING, ELECTRICAL, PLUMBING, HVAC, CARPENTRY, CONCRETE, MASONRY, DRYWALL, PAINTING, FLOORING, LANDSCAPING, EXCAVATION, DEMOLITION, STEEL_ERECTION, GLAZING, INSULATION, FIRE_PROTECTION, WATERPROOFING, GENERAL_CONTRACTOR, OTHER
+${tradeTypes}
+
+When the user mentions their trade, map it to the closest matching trade type from the list above. Examples:
+- "roofer" or "roofing contractor" → ROOFING
+- "electrician" or "electrical contractor" → ELECTRICAL
+- "plumber" → PLUMBING
+- "HVAC tech" or "heating and cooling" → HVAC
+- "concrete contractor" or "flatwork" → CONCRETE
+- "framing" or "trim carpenter" → CARPENTRY
+- "general contractor" or "GC" or "builder" → GENERAL_CONTRACTOR
+- "drywall" or "sheetrock" → DRYWALL
+- "painter" or "painting contractor" → PAINTING
+- "flooring installer" → FLOORING
+- "landscaper" → LANDSCAPING
+- "excavation" or "site work" → EARTHWORK
+- "demo contractor" → DEMOLITION
+- "steel erector" or "ironworker" → STEEL_ERECTION
+- "glazier" or "glass/windows" → GLAZING
+- "insulation contractor" → INSULATION
+- "sprinkler" or "fire sprinklers" → FIRE_PROTECTION
+- "waterproofing" → WATERPROOFING
+- "paving" or "asphalt" → ASPHALT_PAVING
+- "low voltage" or "AV/security" → LOW_VOLTAGE
+- "solar installer" → SOLAR
+
+## Material Categories by Trade:
+${materialSuggestions}
 
 ## Response Format:
 Always respond with valid JSON in this exact format:
@@ -529,8 +650,8 @@ Always respond with valid JSON in this exact format:
     ] or null
   },
   "suggestions": {
-    "workTypes": ["Shingle Tear-off & Replace", "New Construction Roofing"] or null,
-    "materials": ["Shingles", "Underlayment", "Nails"] or null
+    "workTypes": null,
+    "materials": null
   },
   "isComplete": false,
   "step": 1
@@ -539,12 +660,13 @@ Always respond with valid JSON in this exact format:
 ## Important Guidelines:
 - Be conversational and friendly, not robotic
 - Ask ONE question at a time - don't overwhelm them
-- When suggesting work types, present them as options they can select from
-- Let them know they can also add custom work types not in your list
-- For the website, explain we'll use it to match their system colors to their brand
-- Set isComplete to true only when you have gathered all key information
+- When you identify their trade, tell them we have pre-built scope of work items for their trade that will be loaded automatically
+- For materials, suggest based on their trade's material categories
+- For the website, explain it's optional but we can match their system colors to their brand
+- Set isComplete to true only when you have gathered: trade type, crew size, region, and confirmed they're ready
 
-Step progression: 1=trade, 2=crew, 3=region, 4=workTypes, 5=materials, 6=website, 7=confirmation`;
+Step progression: 1=trade, 2=crew, 3=region, 4=workTypes confirmation, 5=materials, 6=website, 7=confirmation`;
+}
 
 // Complete onboarding and save organization configuration
 router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest, res) => {
@@ -569,17 +691,20 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       return res.status(400).json({ error: "You already belong to an organization" });
     }
 
+    // Ensure companyName is defined (should be guaranteed by Zod schema)
+    const orgName = companyName || 'My Company';
+
     // Generate a unique slug from sanitized company name
-    const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
     // Materials are already sanitized by Zod schema
     const sanitizedMaterials = materials || [];
-    const sanitizedWorkTypes = workTypes || [];
+    const sanitizedWorkTypes = (workTypes || []).filter((wt): wt is string => typeof wt === 'string' && wt.length > 0);
 
     // Create the organization with website URL for theme extraction
     const [newOrg] = await db.insert(organizations).values({
-      name: companyName,
+      name: orgName,
       slug,
       tradeType: tradeType as any,
       tradeName: tradeName || null,
@@ -604,21 +729,44 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       })
       .where(eq(users.id, req.user.id));
 
-    // Import organizationSowItems for saving work types
-    const { organizationSowItems } = await import("@shared/schema");
+    // Copy master SOW items from database template to organization
+    const masterItems = await db
+      .select()
+      .from(masterSowItems)
+      .where(eq(masterSowItems.tradeType, tradeType as any))
+      .orderBy(asc(masterSowItems.sortOrder));
 
-    // Save user-selected work types as organization SOW items
-    if (sanitizedWorkTypes.length > 0) {
-      for (let i = 0; i < sanitizedWorkTypes.length; i++) {
-        const wt = sanitizedWorkTypes[i];
+    // Insert master SOW items as organization SOW items
+    for (const item of masterItems) {
+      await db.insert(organizationSowItems).values({
+        organizationId: newOrg.id,
+        categoryName: item.categoryName || 'General',
+        name: item.name,
+        code: item.code,
+        description: item.description,
+        unit: item.defaultUomCode || 'EA',
+        displayOrder: item.sortOrder || 0,
+        requiresDimensions: item.requiresDimensions || false,
+        dimensionLabel: item.dimensionLabel,
+        isFromTemplate: true,
+        isActive: true,
+      }).onConflictDoNothing();
+    }
+
+    // Also add any custom user-selected work types that aren't in the master list
+    const masterItemNames = new Set(masterItems.map(m => m.name.toLowerCase()));
+    for (let i = 0; i < sanitizedWorkTypes.length; i++) {
+      const wt = sanitizedWorkTypes[i];
+      if (!masterItemNames.has(wt.toLowerCase())) {
         const code = wt.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
         await db.insert(organizationSowItems).values({
           organizationId: newOrg.id,
           categoryName: tradeName || tradeType,
           name: wt,
-          code: `${code}_${i}`,
-          displayOrder: i,
+          code: `custom_${code}_${i}`,
+          displayOrder: masterItems.length + i,
           isFromTemplate: false,
+          isActive: true,
         }).onConflictDoNothing();
       }
     }
@@ -627,19 +775,18 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     const [template] = await db.select().from(tradeTemplates).where(eq(tradeTemplates.tradeType, tradeType as any));
     
     if (template) {
-      // Parse and create organization-specific work types from template
+      // Parse and create organization-specific work types from template JSON (legacy support)
       try {
-        const templateWorkTypes = JSON.parse(template.workTypesJson);
+        const templateWorkTypes = JSON.parse(template.workTypesJson || '[]');
         for (const wt of templateWorkTypes) {
-          // Only add if not already selected by user
-          if (!sanitizedWorkTypes.some(sw => sw.toLowerCase() === wt.name.toLowerCase())) {
+          if (wt && wt.name) {
             await db.insert(organizationWorkTypes).values({
               organizationId: newOrg.id,
               name: wt.name,
               category: template.displayName,
-              unit: wt.unit,
+              unit: wt.unit || 'EA',
               defaultProductionRate: wt.rate ? String(wt.rate) : null,
-            });
+            }).onConflictDoNothing();
           }
         }
       } catch (e) {
@@ -648,33 +795,37 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
 
       // Parse and create organization-specific calculators from template
       try {
-        const calculators = JSON.parse(template.calculatorConfigJson);
+        const calculators = JSON.parse(template.calculatorConfigJson || '[]');
         for (const calc of calculators) {
-          await db.insert(organizationCalculators).values({
-            organizationId: newOrg.id,
-            name: calc.name,
-            category: template.displayName,
-            unit: calc.unit,
-            formulaJson: JSON.stringify({ formula: calc.formula, inputs: calc.inputs }),
-            inputFieldsJson: JSON.stringify(calc.inputs),
-          });
+          if (calc && calc.name) {
+            await db.insert(organizationCalculators).values({
+              organizationId: newOrg.id,
+              name: calc.name,
+              category: template.displayName,
+              unit: calc.output || 'units',
+              formulaJson: JSON.stringify({ type: calc.type, inputs: calc.inputs, output: calc.output }),
+              inputFieldsJson: JSON.stringify(calc.inputs || []),
+            }).onConflictDoNothing();
+          }
         }
       } catch (e) {
         console.error("Error parsing calculators:", e);
       }
     }
 
-    // Create calculators from AI suggestions if no template or additional ones suggested
+    // Create calculators from AI suggestions if additional ones suggested
     if (suggestedCalculators && suggestedCalculators.length > 0) {
       for (const calc of suggestedCalculators) {
-        await db.insert(organizationCalculators).values({
-          organizationId: newOrg.id,
-          name: calc.name,
-          category: tradeName || tradeType,
-          unit: 'units',
-          formulaJson: JSON.stringify({ formula: 'quantity * rate', description: calc.description }),
-          inputFieldsJson: JSON.stringify([{ name: 'quantity', label: 'Quantity', type: 'number' }]),
-        });
+        if (calc && calc.name) {
+          await db.insert(organizationCalculators).values({
+            organizationId: newOrg.id,
+            name: calc.name,
+            category: tradeName || tradeType,
+            unit: 'units',
+            formulaJson: JSON.stringify({ formula: 'quantity * rate', description: calc.description || '' }),
+            inputFieldsJson: JSON.stringify([{ name: 'quantity', label: 'Quantity', type: 'number' }]),
+          }).onConflictDoNothing();
+        }
       }
     }
 
@@ -828,16 +979,21 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, re
 
     const { message, conversationHistory } = validationResult.data;
 
+    // Build dynamic system prompt with trade data from database
+    const systemPrompt = await buildOnboardingSystemPrompt();
+
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
-      { role: 'system', content: ONBOARDING_SYSTEM_PROMPT }
+      { role: 'system', content: systemPrompt }
     ];
 
     // Add sanitized conversation history
     for (const msg of conversationHistory.slice(-20)) {
-      messages.push({ role: msg.role, content: msg.content });
+      if (msg.content) {
+        messages.push({ role: msg.role, content: msg.content });
+      }
     }
 
-    messages.push({ role: 'user', content: message });
+    messages.push({ role: 'user', content: message || '' });
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
