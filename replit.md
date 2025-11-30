@@ -7,6 +7,10 @@ The TFR Construction Management Platform is a white-label SaaS solution designed
 The platform now supports multi-tenant organizations with trade-specific configurations:
 - **Organizations**: Each contractor company operates as a separate organization with its own users, settings, and customizations
 - **Trade Templates**: Pre-built configurations for 22 CSI trade divisions (19 CSI divisions + 3 specialized trades)
+- **Self-Service Registration**: New users are auto-approved and immediately redirected to AI onboarding
+  - No admin approval required - users can start using the platform immediately
+  - New registrants are assigned ADMIN role for their organization
+  - After onboarding, admins can invite team members and assign roles
 - **AI Onboarding**: Enhanced AI-driven onboarding conversation that:
   - Gathers trade type, crew size, region, and materials through natural conversation
   - Suggests trade-specific work types (scope of work items) based on the identified trade
