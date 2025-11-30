@@ -63,6 +63,7 @@ import taskRoutes from "./taskRoutes";
 import registerEstimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import platformAdminRoutes from "./platformAdminRoutes";
+import calculatorRoutes from "./calculatorRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 
@@ -105,6 +106,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register platform admin routes (SUPER_ADMIN only)
   app.use("/api", platformAdminRoutes);
+
+  // Register material calculator routes
+  app.use("/api/calculators", calculatorRoutes);
 
   // ====================
   // Auth Routes

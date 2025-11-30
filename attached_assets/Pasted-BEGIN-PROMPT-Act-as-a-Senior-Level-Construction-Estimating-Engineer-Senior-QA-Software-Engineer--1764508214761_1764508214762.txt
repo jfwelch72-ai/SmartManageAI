@@ -1,0 +1,208 @@
+BEGIN PROMPT
+
+Act as a Senior-Level Construction Estimating Engineer + Senior QA Software Engineer.
+Your job is to verify, validate, and mathematically test ALL formulas in the existing Material Calculation Engine already created inside this Replit environment.
+YOU MUST NOT RECREATE ANY FORMULAS — ONLY VERIFY THEM.
+
+You must now generate a full logic validation suite for all 19 trades and all their scopes of work, including:
+
+Formula correctness
+
+Unit conversion checking
+
+Expected output vs actual output
+
+Safety/waste factors
+
+Negative/zero-value protection
+
+Edge-case handling
+
+Extreme-value testing
+
+Cross-trade consistency checks
+
+Human-readable error explanations
+
+Automatic PASS/FAIL reporting
+
+Your output will be a complete Verification & Testing Prompt that Replit uses to mathematically confirm the correctness of every formula already written.
+
+THE VERIFICATION SUITE MUST INCLUDE:
+A. A testing function for each SOW in every trade
+
+For each formula function, generate:
+
+Inputs
+
+Expected output range
+
+Test cases (normal, edge, extreme)
+
+PASS/FAIL rules
+
+Reasoning so Replit can self-check
+
+Example:
+
+TEST: Concrete Footing – Volume
+Input:
+  length = 100 LF
+  width = 24"
+  thickness = 12"
+Expected:
+  VolumeCY ≈ 7.41–7.44
+FAIL if:
+  result < 7.40 or > 7.45
+
+B. Full-industrial REALISTIC test cases
+
+Use realistic values from construction:
+
+Footings
+
+Slabs
+
+CMU walls
+
+Roof coatings (mil → gallon)
+
+HVAC duct SF
+
+Electrical wire/cable LF
+
+Low-voltage drops
+
+Plumbing pipe lengths
+
+Asphalt thickness → tons
+
+Landscaping mulch CY
+
+Demo haul-off CY
+
+C. Extreme & Edge-case Tests
+
+These tests ensure formulas don’t break with bad or unusual input:
+
+Zero values (must error)
+
+Negative values (must error)
+
+Minimum viable sizes
+
+Maximum realistic sizes
+
+Highly irregular values (e.g., 47° roof pitch, 1” slab, 60” wide footing)
+
+D. Cross-checking Formula Consistency
+
+You must check:
+
+Slab area → concrete → rebar → mesh → fiber quantities must SCALE proportionally
+
+CMU wall area must align with CMU block counts
+
+Roof area must align with coating gallons (mil thickness)
+
+Piping LF must match hanger spacing outputs
+
+Electrical circuits must align with conduit runs + wire pulls
+
+Sprinkler coverage must match head spacing patterns
+
+E. Generate PASS/FAIL Output Format
+
+Use a clean testing format:
+
+[TRADE] – [SCOPE] – TEST #
+INPUTS: {...}
+EXPECTED: X – Y
+ACTUAL: Z
+RESULT: PASS/FAIL
+NOTE: Explanation if fail
+
+TRADES AND SOWs REQURED FOR VERIFICATION
+
+You must create a verification suite for ALL SOW items previously generated inside this Replit:
+
+Concrete
+
+Earthwork
+
+Asphalt/Paving
+
+Carpentry/Framing
+
+Drywall/Insulation
+
+Flooring
+
+Roofing (including coatings: silicone, acrylic, polyurea, elastomeric)
+
+Masonry
+
+Structural Steel
+
+Doors/Frames/Hardware/Glazing
+
+Painting & Coatings
+
+HVAC
+
+Plumbing
+
+Fire Protection
+
+Electrical
+
+Low Voltage/Tech
+
+Landscaping
+
+Demolition
+
+General Contracting (admin quantities)
+
+F. REQUIRED OUTPUT FILE
+
+You must output ONE final object:
+
+CALCULATION_VERIFICATION_SUITE = {
+  concrete: [...tests],
+  earthwork: [...tests],
+  paving: [...tests],
+  ...
+  generalContracting: [...tests]
+}
+
+
+Each array contains:
+
+10–40 test cases depending on SOW complexity
+
+Expected ranges
+
+Validate() functions
+
+Error messages
+
+G. FINAL REQUIREMENTS
+
+DO NOT rewrite existing formulas.
+
+ONLY test and validate them.
+
+Use actual real-world numbers.
+
+Create enough test cases to guarantee correctness.
+
+Highlight any formula inconsistencies for developer review.
+
+Replit must be able to run these tests to self-check its own calculations.
+
+**BEGIN WORK NOW.
+
+GENERATE THE COMPLETE MATERIAL CALC VERIFICATION SUITE FOR ALL 19 TRADES.**
+
+END PROMPT
