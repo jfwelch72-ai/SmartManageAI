@@ -4,9 +4,8 @@ import ProjectCard from "@/components/ProjectCard";
 import { 
   Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, 
   AlertTriangle, Users, Bell, HardHat, Check, MessageSquare, Calendar,
-  ChevronRight, Sun, Moon, Sunset, FileText, ClipboardList, Wrench,
-  TrendingUp, CheckCircle2, CloudRain, Thermometer, Truck, ClipboardCheck,
-  Shield, Package, Flame, Droplets, Zap, Wind
+  ChevronRight, Sun, Moon, Sunset, FileText, ClipboardList,
+  TrendingUp, CheckCircle2, CloudRain
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useDashboardStats, useProjects, useBids, useTradeFeatures, TradeFeature } from "@/hooks/use-data";
+import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { FeaturePermissions, hasManagementAccess, isSuperAdmin } from "@/lib/rbac";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -38,66 +37,6 @@ function formatEventDate(dateStr: string | Date): string {
   if (isThisWeek(date)) return format(date, "EEEE 'at' h:mm a");
   return format(date, "MMM d 'at' h:mm a");
 }
-
-// Get icon for trade widget type (matches database PascalCase naming)
-function getWidgetIcon(widgetType: string | null): typeof Sun {
-  switch (widgetType) {
-    case 'WeatherWidget': return CloudRain;
-    case 'EquipmentWidget': return Truck;
-    case 'InspectionWidget': return ClipboardCheck;
-    case 'PermitWidget': return FileText;
-    case 'SubcontractorWidget': return Users;
-    case 'DeliveryWidget': return Package;
-    case 'ComplianceWidget': return Shield;
-    case 'SafetyWidget': return Shield;
-    default: return Wrench;
-  }
-}
-
-// Widget config for trade-specific dashboard widgets (matches database PascalCase naming)
-// Routes point to existing pages: Calendar, Equipment, CRM, Projects
-const widgetConfig: Record<string, { title: string; description: string; stats?: { label: string; value: string }[] }> = {
-  WeatherWidget: {
-    title: "Weather & Scheduling",
-    description: "View calendar to plan around weather conditions",
-    stats: [{ label: "Calendar", value: "View schedule" }]
-  },
-  EquipmentWidget: {
-    title: "Equipment Status",
-    description: "Track equipment locations and maintenance",
-    stats: [{ label: "Status", value: "View equipment" }]
-  },
-  InspectionWidget: {
-    title: "Inspections",
-    description: "View project inspections and certifications",
-    stats: [{ label: "Projects", value: "View details" }]
-  },
-  PermitWidget: {
-    title: "Permits",
-    description: "Track permits within project details",
-    stats: [{ label: "Projects", value: "View details" }]
-  },
-  SubcontractorWidget: {
-    title: "Subcontractors",
-    description: "Manage subcontractors in CRM",
-    stats: [{ label: "CRM", value: "View contacts" }]
-  },
-  DeliveryWidget: {
-    title: "Material Suppliers",
-    description: "Manage suppliers and vendors in CRM",
-    stats: [{ label: "CRM", value: "View contacts" }]
-  },
-  ComplianceWidget: {
-    title: "Compliance Docs",
-    description: "View compliance documents in projects",
-    stats: [{ label: "Projects", value: "View details" }]
-  },
-  SafetyWidget: {
-    title: "Safety",
-    description: "Safety documentation within projects",
-    stats: [{ label: "Projects", value: "View details" }]
-  }
-};
 
 interface ConversationWithDetails {
   id: string;
@@ -168,11 +107,6 @@ export default function DashboardPage() {
   const { data: aiTasks = [] } = useQuery<AITask[]>({
     queryKey: ["/api/ai/tasks"],
   });
-
-  // Fetch trade-specific features for dashboard widgets
-  const { data: tradeFeaturesData, isLoading: tradeFeaturesLoading } = useTradeFeatures();
-  const tradeFeatures = tradeFeaturesData?.features ?? [];
-  const tradeWidgets = tradeFeatures.filter(f => f.dashboardWidget);
   
   const projectAssignmentNotifications = notifications.filter(
     n => n.type === "PROJECT_ASSIGNMENT" && !n.isRead
@@ -767,66 +701,6 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-
-            {/* Trade-Specific Dashboard Widgets */}
-            {hasManagementAccess(user?.role) && tradeWidgets.length > 0 && (
-              <div className="space-y-4" data-testid="trade-widgets-section">
-                <div className="flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">Trade Tools</h2>
-                  {tradeFeaturesData?.tradeType && (
-                    <Badge variant="outline" className="text-xs">
-                      {tradeFeaturesData.tradeType.replace(/_/g, ' ')}
-                    </Badge>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {tradeWidgets.slice(0, 4).map((widget) => {
-                    const WidgetIcon = getWidgetIcon(widget.dashboardWidget);
-                    const config = widgetConfig[widget.dashboardWidget || ''] || {
-                      title: widget.featureName,
-                      description: widget.description || 'Trade-specific tool',
-                    };
-                    
-                    return (
-                      <Card 
-                        key={widget.id}
-                        className="hover-elevate cursor-pointer"
-                        onClick={() => widget.navPath && setLocation(widget.navPath)}
-                        data-testid={`trade-widget-${widget.featureKey}`}
-                      >
-                        <CardContent className="pt-6">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="p-2 rounded-md bg-primary/10">
-                              <WidgetIcon className="w-5 h-5 text-primary" />
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                          <h3 className="font-medium text-sm mb-1">{config.title}</h3>
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {config.description}
-                          </p>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-                
-                {tradeWidgets.length > 4 && (
-                  <div className="flex justify-center">
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => setLocation('/trade-tools')}
-                      data-testid="button-view-all-trade-tools"
-                    >
-                      View All Trade Tools ({tradeWidgets.length})
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Project Assignment Notifications - Full Width Alert */}
             {projectAssignmentNotifications.length > 0 && (
