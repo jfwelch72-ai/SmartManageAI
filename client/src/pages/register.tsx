@@ -2,8 +2,9 @@ import RegisterForm from "@/components/RegisterForm";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
 
 export default function RegisterPage() {
   const [location, setLocation] = useLocation();
@@ -14,7 +15,12 @@ export default function RegisterPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      setLocation('/dashboard');
+      // If user has no organization, redirect to onboarding
+      if (!user.organizationId) {
+        setLocation('/onboarding');
+      } else {
+        setLocation('/dashboard');
+      }
     }
   }, [user, setLocation]);
 
@@ -32,14 +38,15 @@ export default function RegisterPage() {
       setRegistrationComplete(true);
       
       toast({
-        title: "Registration Successful",
-        description: response.message || "Your account is pending admin approval. You will be notified when your account is activated.",
+        title: "Welcome!",
+        description: response.message || "Let's set up your business.",
       });
 
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        setLocation('/login');
-      }, 3000);
+      // Invalidate auth queries to refresh user state with the new session
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+
+      // Redirect to onboarding immediately
+      setLocation('/onboarding');
     } catch (error: any) {
       throw new Error(error.message || "Registration failed");
     }
@@ -49,12 +56,10 @@ export default function RegisterPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="text-center space-y-4">
-          <h2 className="text-2xl font-bold">Registration Complete!</h2>
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <h2 className="text-2xl font-bold">Welcome!</h2>
           <p className="text-muted-foreground">
-            Your account is pending admin approval. You will be able to log in once an administrator activates your account.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Redirecting to login...
+            Setting up your account...
           </p>
         </div>
       </div>

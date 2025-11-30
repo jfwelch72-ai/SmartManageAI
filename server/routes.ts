@@ -154,7 +154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Create new user (inactive by default, awaiting admin approval)
+      // Create new user - auto-approved and ready for onboarding
       const passwordHash = await hashPassword(password);
       
       const [newUser] = await db.insert(users).values({
@@ -162,15 +162,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName,
         email,
         phone,
-        role: "HOURLY_EMPLOYEE", // Default role
-        isActive: false, // Requires admin activation
+        role: "ADMIN", // New registrants become org admins after onboarding
+        isActive: true, // Auto-approved - no admin activation required
         passwordHash,
+        // organizationId is null - user needs to complete onboarding
       }).returning();
 
-      const { passwordHash: _, ...userWithoutPassword } = newUser;
+      // Auto-login the user by setting the auth cookie
+      const token = generateToken(newUser.id, newUser.tokenVersion);
+      setAuthCookie(res, token);
+
+      const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = newUser;
       res.status(201).json({
         user: userWithoutPassword,
-        message: "Registration successful. Your account is pending admin approval."
+        message: "Registration successful! Let's set up your business.",
+        needsOnboarding: true // Flag to redirect to onboarding
       });
     } catch (error) {
       console.error("Registration error:", error);

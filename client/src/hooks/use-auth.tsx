@@ -6,7 +6,7 @@ import type { SelectUser } from "@shared/schema";
 interface AuthContextType {
   user: SelectUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<SelectUser | null>;
   logout: () => Promise<void>;
   organizationName: string | null;
 }
@@ -28,9 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async (credentials: { email: string; password: string }) => {
       return apiRequest("POST", "/api/auth/login", credentials);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-    },
   });
 
   // Logout mutation
@@ -44,8 +41,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const login = async (email: string, password: string) => {
-    await loginMutation.mutateAsync({ email, password });
+  const login = async (email: string, password: string): Promise<SelectUser | null> => {
+    const response = await loginMutation.mutateAsync({ email, password });
+    const data = await response.json();
+    // Invalidate and refetch to get fresh user data
+    await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    return data?.user || null;
   };
 
   const logout = async () => {
