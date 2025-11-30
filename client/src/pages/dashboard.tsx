@@ -55,46 +55,47 @@ function getWidgetIcon(widgetType: string | null): typeof Sun {
 }
 
 // Widget config for trade-specific dashboard widgets (matches database PascalCase naming)
+// Routes point to existing pages: Calendar, Equipment, CRM, Projects
 const widgetConfig: Record<string, { title: string; description: string; stats?: { label: string; value: string }[] }> = {
   WeatherWidget: {
-    title: "Weather Conditions",
-    description: "Monitor weather for outdoor work scheduling",
-    stats: [{ label: "Next 7 Days", value: "Check forecast" }]
+    title: "Weather & Scheduling",
+    description: "View calendar to plan around weather conditions",
+    stats: [{ label: "Calendar", value: "View schedule" }]
   },
   EquipmentWidget: {
     title: "Equipment Status",
     description: "Track equipment locations and maintenance",
-    stats: [{ label: "Status", value: "All operational" }]
+    stats: [{ label: "Status", value: "View equipment" }]
   },
   InspectionWidget: {
-    title: "Inspection Schedule",
-    description: "Upcoming inspections and certifications",
-    stats: [{ label: "Pending", value: "View schedule" }]
+    title: "Inspections",
+    description: "View project inspections and certifications",
+    stats: [{ label: "Projects", value: "View details" }]
   },
   PermitWidget: {
-    title: "Permit Tracking",
-    description: "Active permits and application status",
-    stats: [{ label: "Active", value: "View permits" }]
+    title: "Permits",
+    description: "Track permits within project details",
+    stats: [{ label: "Projects", value: "View details" }]
   },
   SubcontractorWidget: {
-    title: "Subcontractor Status",
-    description: "Coordinate with active subcontractors",
-    stats: [{ label: "Active", value: "View subs" }]
+    title: "Subcontractors",
+    description: "Manage subcontractors in CRM",
+    stats: [{ label: "CRM", value: "View contacts" }]
   },
   DeliveryWidget: {
-    title: "Material Deliveries",
-    description: "Track incoming material shipments",
-    stats: [{ label: "Scheduled", value: "View deliveries" }]
+    title: "Material Suppliers",
+    description: "Manage suppliers and vendors in CRM",
+    stats: [{ label: "CRM", value: "View contacts" }]
   },
   ComplianceWidget: {
-    title: "Compliance Documents",
-    description: "Required certifications and documentation",
-    stats: [{ label: "Status", value: "Review docs" }]
+    title: "Compliance Docs",
+    description: "View compliance documents in projects",
+    stats: [{ label: "Projects", value: "View details" }]
   },
   SafetyWidget: {
-    title: "Safety Management",
-    description: "Safety protocols and incident tracking",
-    stats: [{ label: "Days Safe", value: "View details" }]
+    title: "Safety",
+    description: "Safety documentation within projects",
+    stats: [{ label: "Projects", value: "View details" }]
   }
 };
 
