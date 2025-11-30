@@ -291,14 +291,14 @@ export default function Tasks() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Project (Optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || ""}>
                         <FormControl>
                           <SelectTrigger data-testid="select-task-project">
                             <SelectValue placeholder="Select project" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
                           {projects.map((project: any) => (
                             <SelectItem key={project.id} value={project.id}>
                               {project.code} - {project.name}
@@ -317,14 +317,14 @@ export default function Tasks() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assign To (Optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || ""}>
                         <FormControl>
                           <SelectTrigger data-testid="select-task-assignee">
                             <SelectValue placeholder="Select user" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
                           {users.map((user: any) => (
                             <SelectItem key={user.id} value={user.id}>
                               {user.firstName} {user.lastName}

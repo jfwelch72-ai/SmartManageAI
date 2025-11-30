@@ -975,7 +975,7 @@ export default function BidEstimate() {
                             <FormItem>
                               <FormLabel>Assign to Subcontractor</FormLabel>
                               <Select
-                                onValueChange={field.onChange}
+                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
                                 value={field.value || ""}
                               >
                                 <FormControl>
@@ -984,7 +984,7 @@ export default function BidEstimate() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="">None</SelectItem>
+                                  <SelectItem value="none">None</SelectItem>
                                   {subcontractorQuotes.map((quote) => (
                                     <SelectItem key={quote.id} value={quote.id}>
                                       {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}
@@ -1363,7 +1363,7 @@ export default function BidEstimate() {
                             <FormItem>
                               <FormLabel>Assign to Subcontractor</FormLabel>
                               <Select
-                                onValueChange={field.onChange}
+                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
                                 value={field.value || ""}
                               >
                                 <FormControl>
@@ -1372,7 +1372,7 @@ export default function BidEstimate() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="">None</SelectItem>
+                                  <SelectItem value="none">None</SelectItem>
                                   {subcontractorQuotes.map((quote) => (
                                     <SelectItem key={quote.id} value={quote.id}>
                                       {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}

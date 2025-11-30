@@ -691,12 +691,12 @@ export default function CrewsPage() {
             </div>
             <div>
               <Label htmlFor="crew-lead">Crew Lead</Label>
-              <Select value={crewLeadId} onValueChange={setCrewLeadId}>
+              <Select value={crewLeadId || "none"} onValueChange={(val) => setCrewLeadId(val === "none" ? "" : val)}>
                 <SelectTrigger id="crew-lead" data-testid="select-crew-lead">
                   <SelectValue placeholder="Select a crew lead" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {users
                     .filter((u) => u.role === "SUPERINTENDENT" || u.role === "MANAGER")
                     .map((u) => (

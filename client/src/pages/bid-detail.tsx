@@ -2716,13 +2716,13 @@ export default function BidDetailPage() {
               <Label htmlFor="superintendent">Superintendent</Label>
               <Select 
                 value={selectedSuperintendentId} 
-                onValueChange={setSelectedSuperintendentId}
+                onValueChange={(val) => setSelectedSuperintendentId(val === "none" ? "" : val)}
               >
                 <SelectTrigger id="superintendent" data-testid="select-superintendent">
                   <SelectValue placeholder="Select superintendent (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {superintendents.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.firstName} {user.lastName} ({user.role})
@@ -2736,13 +2736,13 @@ export default function BidDetailPage() {
               <Label htmlFor="projectManager">Project Manager</Label>
               <Select 
                 value={selectedProjectManagerId} 
-                onValueChange={setSelectedProjectManagerId}
+                onValueChange={(val) => setSelectedProjectManagerId(val === "none" ? "" : val)}
               >
                 <SelectTrigger id="projectManager" data-testid="select-project-manager">
                   <SelectValue placeholder="Select project manager (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {managers.map((user) => (
                     <SelectItem key={user.id} value={user.id}>
                       {user.firstName} {user.lastName} ({user.role})
