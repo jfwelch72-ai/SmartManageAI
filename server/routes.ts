@@ -53,7 +53,7 @@ import {
   revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, ne, desc, sql, and, or, isNull, inArray } from "drizzle-orm";
+import { eq, ne, desc, sql, and, or, isNull, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
@@ -75,6 +75,7 @@ import aiAssistantRoutes from "./aiAssistantRoutes";
 import aiFeatureRoutes from "./aiFeatureRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
+import { getOrgIdForFilter } from "./orgFilter";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply auth middleware to all routes
@@ -540,49 +541,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get dashboard statistics
   app.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
     try {
-      // Count active projects
+      // Organization filtering: SUPER_ADMIN sees all, others see only their org's data
+      const { shouldFilter, orgId, isSuperAdmin: isSuperAdminUser, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any dashboard stats
+      if (mustDenyAccess) {
+        return res.json({
+          activeProjectsCount: 0,
+          pendingChangeOrdersCount: 0,
+          pendingTimeOffCount: 0,
+          activeDelaysCount: 0,
+          delaysNeedingAckCount: 0,
+          pendingInspectionsCount: 0,
+          scheduledInspectionsCount: 0,
+          aiTasksCount: 0,
+          openBidsCount: 0,
+          estimatedBidValue: 0
+        });
+      }
+      
+      // Build organization filter condition for projects
+      const orgCondition = shouldFilter && orgId 
+        ? eq(projects.gcOrganizationId, orgId) 
+        : sql`true`;
+
+      // Count active projects (filtered by org)
       const activeProjectsResult = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
-        .where(eq(projects.status, "ACTIVE"));
+        .where(and(eq(projects.status, "ACTIVE"), orgCondition));
       const activeProjectsCount = activeProjectsResult[0]?.count || 0;
 
-      // Count submitted change orders awaiting client response
-      const pendingChangeOrdersResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(changeOrders)
-        .where(eq(changeOrders.status, "SUBMITTED"));
-      const pendingChangeOrdersCount = pendingChangeOrdersResult[0]?.count || 0;
+      // Count submitted change orders awaiting client response (filtered by org via project join)
+      let pendingChangeOrdersCount = 0;
+      if (shouldFilter && orgId) {
+        const pendingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(changeOrders)
+          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+          .where(and(
+            eq(changeOrders.status, "SUBMITTED"),
+            eq(projects.gcOrganizationId, orgId)
+          ));
+        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
+      } else {
+        const pendingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(changeOrders)
+          .where(eq(changeOrders.status, "SUBMITTED"));
+        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
+      }
 
-      // Count pending time-off requests
-      // Use dual check for robustness: eventType = TIME_OFF_REQUEST AND approvedById IS NULL
-      // This ensures we only count truly pending requests that haven't been processed
-      const pendingTimeOffResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(calendarEvents)
-        .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
-      const pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+      // Count pending time-off requests (filtered by user's org)
+      let pendingTimeOffCount = 0;
+      if (shouldFilter && orgId) {
+        const pendingTimeOffResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(calendarEvents)
+          .innerJoin(users, eq(calendarEvents.userId, users.id))
+          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL AND ${users.organizationId} = ${orgId}`);
+        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+      } else {
+        const pendingTimeOffResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(calendarEvents)
+          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
+        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+      }
 
-      // Count active delays (not acknowledged) - requires SUPERINTENDENT+ role visibility
-      const activeDelaysResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
-      const activeDelaysCount = activeDelaysResult[0]?.count || 0;
+      // Count active delays (filtered by org via project join)
+      let activeDelaysCount = 0;
+      if (shouldFilter && orgId) {
+        const activeDelaysResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED') AND ${projects.gcOrganizationId} = ${orgId}`);
+        activeDelaysCount = activeDelaysResult[0]?.count || 0;
+      } else {
+        const activeDelaysResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
+        activeDelaysCount = activeDelaysResult[0]?.count || 0;
+      }
 
-      // Count delays requiring acknowledgment (submitted but not yet acknowledged)
-      const delaysNeedingAckResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(eq(projectDelays.status, "SUBMITTED"));
-      const delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+      // Count delays requiring acknowledgment (filtered by org via project join)
+      let delaysNeedingAckCount = 0;
+      if (shouldFilter && orgId) {
+        const delaysNeedingAckResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(and(
+            eq(projectDelays.status, "SUBMITTED"),
+            eq(projects.gcOrganizationId, orgId)
+          ));
+        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+      } else {
+        const delaysNeedingAckResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(eq(projectDelays.status, "SUBMITTED"));
+        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+      }
 
-      // Count delays requiring change orders (marked as needing change order but not linked)
-      const delaysNeedingCOResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
-      const delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+      // Count delays requiring change orders (filtered by org via project join)
+      let delaysNeedingChangeOrderCount = 0;
+      if (shouldFilter && orgId) {
+        const delaysNeedingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL AND ${projects.gcOrganizationId} = ${orgId}`);
+        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+      } else {
+        const delaysNeedingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
+        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+      }
 
       res.json({
         activeProjectsCount,
@@ -605,7 +684,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all users (Admin/Manager only)
   app.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const allUsers = await db.select().from(users);
+      // Organization filtering: SUPER_ADMIN sees all users, others see only their org's users
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any users
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      let allUsers;
+      if (shouldFilter && orgId) {
+        allUsers = await db.select().from(users).where(eq(users.organizationId, orgId));
+      } else {
+        allUsers = await db.select().from(users);
+      }
       const usersWithoutPasswords = allUsers.map(({ passwordHash, ...user }) => user);
       res.json(usersWithoutPasswords);
     } catch (error) {
@@ -969,7 +1061,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all bids with estimate summaries
   app.get("/api/bids", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const allBids = await db.select().from(bids).orderBy(bids.createdAt);
+      // Organization filtering: SUPER_ADMIN sees all, others see only their org's bids
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any bids
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      let allBids;
+      if (shouldFilter && orgId) {
+        allBids = await db.select().from(bids)
+          .where(eq(bids.gcOrganizationId, orgId))
+          .orderBy(bids.createdAt);
+      } else {
+        allBids = await db.select().from(bids).orderBy(bids.createdAt);
+      }
       
       // Short-circuit if no bids exist
       if (allBids.length === 0) {
@@ -2692,6 +2799,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { page = "1", limit = "50", status } = req.query;
       
+      // Organization filtering: SUPER_ADMIN sees all, others see only their org's projects
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any projects
+      if (mustDenyAccess) {
+        return res.json({
+          data: [],
+          pagination: { page: 1, limit: 50, totalCount: 0, totalPages: 0 }
+        });
+      }
+      
       // Validate and sanitize pagination parameters
       const parsedPage = Number(page);
       const parsedLimit = Number(limit);
@@ -2712,20 +2830,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Build query with optional status filter
-      let query = db.select().from(projects);
+      // Build filter conditions
+      const conditions: SQL[] = [];
       if (status) {
-        query = query.where(eq(projects.status, status as any)) as any;
+        conditions.push(eq(projects.status, status as any));
       }
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const whereCondition = conditions.length > 0 
+        ? (conditions.length === 1 ? conditions[0] : and(...conditions))
+        : undefined;
 
       // Get total count
       const totalResult = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(projects)
-        .where(status ? eq(projects.status, status as any) : sql`true`);
+        .where(whereCondition);
       const totalCount = totalResult[0]?.count || 0;
 
       // Get paginated projects
+      let query = db.select().from(projects);
+      if (whereCondition) {
+        query = query.where(whereCondition) as any;
+      }
       const allProjects = await query
         .orderBy(desc(projects.createdAt))
         .limit(limitNum)
@@ -9451,18 +9580,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all crews
   app.get("/api/crews", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const allCrews = await db
-        .select({
-          crew: crews,
-          lead: {
-            id: users.id,
-            firstName: users.firstName,
-            lastName: users.lastName,
-          }
-        })
-        .from(crews)
-        .leftJoin(users, eq(crews.leadId, users.id))
-        .orderBy(desc(crews.isActive), crews.name);
+      // Organization filtering: SUPER_ADMIN sees all crews, others see only their org's crews
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any crews
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      let allCrews;
+      if (shouldFilter && orgId) {
+        // Filter crews by lead's organization
+        allCrews = await db
+          .select({
+            crew: crews,
+            lead: {
+              id: users.id,
+              firstName: users.firstName,
+              lastName: users.lastName,
+            }
+          })
+          .from(crews)
+          .leftJoin(users, eq(crews.leadId, users.id))
+          .where(eq(users.organizationId, orgId))
+          .orderBy(desc(crews.isActive), crews.name);
+      } else {
+        allCrews = await db
+          .select({
+            crew: crews,
+            lead: {
+              id: users.id,
+              firstName: users.firstName,
+              lastName: users.lastName,
+            }
+          })
+          .from(crews)
+          .leftJoin(users, eq(crews.leadId, users.id))
+          .orderBy(desc(crews.isActive), crews.name);
+      }
 
       // PERFORMANCE: Get member counts efficiently with single query instead of N+1
       let countsMap = new Map<string, number>();
@@ -11624,6 +11779,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/messaging/users", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      
+      // Organization filtering: Only show users from same organization for messaging
+      // SUPER_ADMIN can message anyone
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any messaging users
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+
+      const conditions = [
+        eq(users.isActive, true),
+        sql`${users.id} != ${userId}`
+      ];
+      
+      // Non-SUPER_ADMIN can only message users in their organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(users.organizationId, orgId));
+      }
 
       const availableUsers = await db
         .select({
@@ -11633,12 +11807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           role: users.role,
         })
         .from(users)
-        .where(
-          and(
-            eq(users.isActive, true),
-            sql`${users.id} != ${userId}`
-          )
-        )
+        .where(and(...conditions))
         .orderBy(users.firstName, users.lastName);
 
       res.json(availableUsers);
@@ -11695,6 +11864,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get available projects for equipment assignment (must be before :idOrCode route)
   app.get("/api/equipment/available-projects", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      // Organization filtering: Only show projects from user's organization
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without org can't see any projects
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      const conditions = [eq(projects.status, "ACTIVE")];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
       const activeProjects = await db
         .select({
           id: projects.id,
@@ -11702,7 +11884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           code: projects.code,
         })
         .from(projects)
-        .where(eq(projects.status, "ACTIVE"))
+        .where(and(...conditions))
         .orderBy(projects.name);
       
       res.json(activeProjects);

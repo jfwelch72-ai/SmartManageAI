@@ -91,70 +91,140 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
   ADMIN: {
     role: "ADMIN",
     roleName: "Administrator",
-    welcomeMessage: "Welcome to your new construction management platform! As an Administrator, you have full control over the system. Let me walk you through the key features you'll use to manage your organization.",
+    welcomeMessage: "Welcome to SmartManageAI! As the Administrator of your organization, you have complete control over the system. I'm your AI assistant and I'll guide you through setting up your company and getting your team onboarded. Let's start by building your team!",
     steps: [
       {
         stepNumber: 1,
+        title: "Invite Your Team",
+        description: "The first step is to add your team members. Each person gets their own login and role-appropriate access. Roles include Project Managers, Superintendents, Estimators, and Field Workers.",
+        action: "Go to User Management to add your first team member. Click 'Add User' and fill in their details, email, and select their role.",
+        targetPage: "/users",
+        tips: [
+          "Start with your key people: estimators, superintendents, and project managers",
+          "Each role has specific permissions - Estimators can create bids, Superintendents manage field work",
+          "When they log in for the first time, they'll get their own guided walkthrough",
+          "You can set hourly cost rates for accurate job costing"
+        ]
+      },
+      {
+        stepNumber: 2,
         title: "Dashboard Overview",
-        description: "Your dashboard is your command center. Here you can see active projects, pending bids, recent messages, and key metrics at a glance.",
+        description: "Your dashboard is your command center. Here you'll see active projects, pending bids, messages, and key metrics at a glance.",
         action: "Take a look around your dashboard. Notice the widgets showing project status, upcoming events, and quick actions.",
         targetPage: "/dashboard",
         tips: [
           "Click any widget to dive deeper into that area",
           "The sidebar gives you quick access to all platform features",
-          "Check the notification bell for important updates"
-        ]
-      },
-      {
-        stepNumber: 2,
-        title: "User Management",
-        description: "As an admin, you can add new users, assign roles, and manage permissions. Each role has specific access to different features.",
-        action: "Let's explore the User Management section. You can add team members like estimators, superintendents, and field workers.",
-        targetPage: "/users",
-        tips: [
-          "Assign appropriate roles based on job responsibilities",
-          "You can set hourly rates for employees here",
-          "Deactivate users instead of deleting to preserve history"
+          "Check the notification bell for important updates",
+          "The AI Assistant icon (bottom right) can help you anytime"
         ]
       },
       {
         stepNumber: 3,
-        title: "CRM & Vendors",
-        description: "Build your network of vendors, suppliers, and contacts. Add pricing catalogs to speed up bid creation.",
-        action: "Navigate to the CRM section and explore how to add vendors, suppliers, and their pricing catalogs.",
+        title: "Set Up Your CRM",
+        description: "Build your network of vendors, suppliers, subcontractors, and clients. Add their contact info and pricing catalogs to speed up bid creation.",
+        action: "Navigate to the CRM section. Add your key vendors and suppliers - you'll use their pricing when creating bids.",
         targetPage: "/crm",
         tips: [
-          "Add vendors with their specialty and contact info",
-          "Import material pricing from vendor catalogs",
-          "Link rental equipment to specific vendors"
+          "Add vendors with their specialty, contact info, and payment terms",
+          "Import material pricing from vendor quotes",
+          "Link rental equipment vendors for equipment planning",
+          "Add subcontractors you frequently work with"
         ]
       },
       {
         stepNumber: 4,
-        title: "Equipment Fleet",
-        description: "Track all your company equipment, tools, and vehicles. Assign them to projects and schedule maintenance.",
-        action: "Check out the Equipment section to see how to add and manage your fleet and tools.",
+        title: "Add Your Equipment",
+        description: "Track all your company equipment, tools, and vehicles. Assign them to projects and schedule maintenance to keep everything running smoothly.",
+        action: "Check out the Equipment section. Add your major equipment pieces with details like purchase date, hours, and maintenance schedules.",
         targetPage: "/equipment",
         tips: [
-          "Log equipment hours for accurate depreciation",
+          "Log equipment hours for accurate depreciation and job costing",
           "Set up preventative maintenance schedules",
-          "Assign equipment to specific projects"
+          "Assign equipment to specific projects",
+          "Track repair history and costs"
         ]
       },
       {
         stepNumber: 5,
-        title: "Projects & Bids",
-        description: "View all active projects and pending bids. As admin, you can oversee everything happening across the company.",
-        action: "Browse the Projects and Bids sections to see how work flows through the system.",
+        title: "Create Your First Bid",
+        description: "Bids are how you track potential work. Create detailed estimates with labor, materials, equipment, and overhead to generate accurate pricing.",
+        action: "Go to Bids and create a new bid. The system will guide you through adding scope items and calculating costs.",
+        targetPage: "/bids",
+        tips: [
+          "Use the Cost Builder for step-by-step bid creation",
+          "Import vendor pricing directly into your estimates",
+          "Set overhead and profit percentages for accurate pricing",
+          "Generate professional PDF quotes for clients"
+        ]
+      },
+      {
+        stepNumber: 6,
+        title: "Manage Projects",
+        description: "When you win a bid, convert it to a project. Track progress, manage change orders, record daily activities, and monitor profitability.",
+        action: "Browse the Projects section to understand how work flows from bid to completion.",
         targetPage: "/projects",
         tips: [
+          "Convert won bids directly into projects",
           "Track project status from planning to completion",
-          "Review and approve change orders",
-          "Monitor project profitability in real-time"
+          "Use the AI to generate project schedules automatically",
+          "Record daily logs and field notes"
+        ]
+      },
+      {
+        stepNumber: 7,
+        title: "Build Crews",
+        description: "Organize your field workers into crews. Assign crew leaders and track who's working where.",
+        action: "Navigate to Crews to create your first crew and assign team members.",
+        targetPage: "/crews",
+        tips: [
+          "Create crews based on how you organize your teams",
+          "Assign a crew lead for each crew",
+          "Crews can be assigned to specific projects",
+          "Track crew productivity over time"
+        ]
+      },
+      {
+        stepNumber: 8,
+        title: "Time Tracking",
+        description: "Track employee hours with the built-in time clock. Employees can clock in/out and hours are automatically assigned to projects.",
+        action: "Explore the Time Clock feature to see how your team will log their hours.",
+        targetPage: "/time-clock",
+        tips: [
+          "Employees clock in from their phones or computers",
+          "Hours are tied to specific projects for accurate job costing",
+          "Approve timesheets before payroll",
+          "Track overtime automatically"
+        ]
+      },
+      {
+        stepNumber: 9,
+        title: "Internal Messaging",
+        description: "Communicate with your team securely through the platform. Send messages, share updates, and keep project discussions organized.",
+        action: "Check out Messages to see how team communication works.",
+        targetPage: "/messages",
+        tips: [
+          "Start conversations with individual team members",
+          "Share project updates quickly",
+          "Keep all work communication in one place",
+          "Messages are private to your organization"
+        ]
+      },
+      {
+        stepNumber: 10,
+        title: "Get AI Assistance",
+        description: "Your AI Assistant can help with many tasks - generating schedules, analyzing photos, creating change orders, and answering questions about the platform.",
+        action: "Click the AI Assistant icon (bottom right) anytime you need help with something.",
+        targetPage: "/dashboard",
+        tips: [
+          "Ask the AI to generate project schedules",
+          "Upload jobsite photos for AI analysis",
+          "Get help creating change orders",
+          "Ask any question about how to use the platform"
         ]
       }
     ],
-    completionMessage: "Congratulations! You've completed the Admin walkthrough! You now know how to manage users, vendors, equipment, and oversee all projects. Your platform is ready to use!"
+    completionMessage: "Congratulations! You've completed your initial setup walkthrough. Your platform is now ready to use! Remember, you can always ask the AI Assistant for help, and your team members will get their own guided walkthrough when they log in. Start by creating your first bid or adding more team members!"
   },
 
   MANAGER: {
@@ -545,6 +615,51 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       }
     ],
     completionMessage: "Excellent! You've completed the Maintenance Manager walkthrough. You're ready to manage equipment, schedule maintenance, and keep the fleet running!"
+  },
+
+  VENDOR: {
+    role: "VENDOR",
+    roleName: "Vendor Partner",
+    welcomeMessage: "Welcome to the SmartManageAI vendor portal! As a Vendor Partner, you can update your pricing, view purchase orders, and communicate with your contractor partners. Let me show you around.",
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Your Dashboard",
+        description: "Your dashboard shows your partnership status, recent activity, and pending actions with your contractor partners.",
+        action: "Explore your dashboard to see your active partnerships and recent orders.",
+        targetPage: "/dashboard",
+        tips: [
+          "View your recent transactions at a glance",
+          "Check for pending quote requests",
+          "Monitor your partnership status"
+        ]
+      },
+      {
+        stepNumber: 2,
+        title: "Your Pricing Catalog",
+        description: "Maintain your product and pricing catalog that contractors see when creating estimates.",
+        action: "Navigate to your catalog section to update your product offerings and prices.",
+        targetPage: "/vendor/catalog",
+        tips: [
+          "Keep pricing up to date for accurate contractor estimates",
+          "Add new products as they become available",
+          "Mark discontinued items as inactive"
+        ]
+      },
+      {
+        stepNumber: 3,
+        title: "Communication",
+        description: "Stay connected with your contractor partners through the messaging system.",
+        action: "Check the Messages section to see communications from contractors.",
+        targetPage: "/messages",
+        tips: [
+          "Respond to quote requests promptly",
+          "Clarify pricing or availability questions",
+          "Provide updates on delivery schedules"
+        ]
+      }
+    ],
+    completionMessage: "Great! You've completed the Vendor Partner walkthrough. You're ready to manage your catalog and connect with your contractor partners!"
   }
 };
 

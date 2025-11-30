@@ -2,8 +2,9 @@ import { Router } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects } from "@shared/schema";
 import { eq, and, desc, isNull, or } from "drizzle-orm";
-import { requireAuth } from "./auth";
+import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
+import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
@@ -127,11 +128,19 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req, res
 /**
  * Get all tasks (with filters)
  */
-router.get("/api/tasks", requireAuth, async (req, res) => {
+router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { status, assignedToId, projectId, createdById } = req.query;
     const userRole = req.user!.role;
     const userId = req.user!.id;
+
+    // Organization filtering: SUPER_ADMIN sees all, others see only their org's tasks
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    // SECURITY: Users without org can't see any tasks
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
 
     // Build where conditions
     const conditions: any[] = [];
@@ -152,8 +161,19 @@ router.get("/api/tasks", requireAuth, async (req, res) => {
       conditions.push(eq(tasks.createdById, createdById as string));
     }
 
+    // Organization filter: filter tasks by project's organization
+    // Tasks without projects (company-wide) are filtered by creator's organization
+    if (shouldFilter && orgId) {
+      conditions.push(
+        or(
+          eq(projects.gcOrganizationId, orgId),
+          and(isNull(tasks.projectId), eq(users.organizationId, orgId))
+        )
+      );
+    }
+
     // RBAC: Non-admin users only see tasks assigned to them or created by them
-    if (!["ADMIN", "MANAGER"].includes(userRole)) {
+    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole)) {
       conditions.push(
         or(
           eq(tasks.assignedToId, userId),
