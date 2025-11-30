@@ -614,7 +614,7 @@ When the user mentions their trade, map it to the closest matching trade type fr
 - "HVAC tech" or "heating and cooling" → HVAC
 - "concrete contractor" or "flatwork" → CONCRETE
 - "framing" or "trim carpenter" → CARPENTRY
-- "general contractor" or "GC" or "builder" → GENERAL_CONTRACTOR
+- "general contractor" or "GC" or "builder" → GENERAL_CONTRACTOR (Note: GC mode unlocks ALL trade templates for multi-trade coordination)
 - "drywall" or "sheetrock" → DRYWALL
 - "painter" or "painting contractor" → PAINTING
 - "flooring installer" → FLOORING
@@ -661,6 +661,7 @@ Always respond with valid JSON in this exact format:
 - Be conversational and friendly, not robotic
 - Ask ONE question at a time - don't overwhelm them
 - When you identify their trade, tell them we have pre-built scope of work items for their trade that will be loaded automatically
+- **SPECIAL: General Contractor Mode** - If user identifies as a GC/General Contractor/Builder, inform them this unlocks access to ALL 22 trade templates with scope of work items, calculators, and work types for subcontractor coordination across every specialty
 - For materials, suggest based on their trade's material categories
 - For the website, explain it's optional but we can match their system colors to their brand
 - Set isComplete to true only when you have gathered: trade type, crew size, region, and confirmed they're ready
@@ -730,19 +731,46 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       .where(eq(users.id, req.user.id));
 
     // Copy master SOW items from database template to organization
-    const masterItems = await db
-      .select()
-      .from(masterSowItems)
-      .where(eq(masterSowItems.tradeType, tradeType as any))
-      .orderBy(asc(masterSowItems.sortOrder));
+    // GENERAL_CONTRACTOR gets ALL trade items for multi-trade coordination
+    const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
+    
+    let masterItems;
+    if (isGeneralContractor) {
+      // GC mode: Load ALL ACTIVE master SOW items from all trades
+      masterItems = await db
+        .select()
+        .from(masterSowItems)
+        .where(eq(masterSowItems.isActive, true))
+        .orderBy(asc(masterSowItems.tradeType), asc(masterSowItems.sortOrder));
+    } else {
+      // Single trade: Load only ACTIVE items for the selected trade
+      masterItems = await db
+        .select()
+        .from(masterSowItems)
+        .where(and(
+          eq(masterSowItems.tradeType, tradeType as any),
+          eq(masterSowItems.isActive, true)
+        ))
+        .orderBy(asc(masterSowItems.sortOrder));
+    }
 
     // Insert master SOW items as organization SOW items
     for (const item of masterItems) {
+      // For GC, include trade type in category for better organization
+      const categoryName = isGeneralContractor 
+        ? `${item.tradeType} - ${item.categoryName || 'General'}`
+        : (item.categoryName || 'General');
+      
+      // For GC, namespace code with trade type to avoid collisions
+      const itemCode = isGeneralContractor
+        ? `${item.tradeType}_${item.code}`
+        : item.code;
+      
       await db.insert(organizationSowItems).values({
         organizationId: newOrg.id,
-        categoryName: item.categoryName || 'General',
+        categoryName,
         name: item.name,
-        code: item.code,
+        code: itemCode,
         description: item.description,
         unit: item.defaultUomCode || 'EA',
         displayOrder: item.sortOrder || 0,
@@ -772,18 +800,35 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     }
 
     // Copy trade template configurations to organization
-    const [template] = await db.select().from(tradeTemplates).where(eq(tradeTemplates.tradeType, tradeType as any));
+    // GENERAL_CONTRACTOR gets work types and calculators from ALL trade templates
+    let templates;
+    if (isGeneralContractor) {
+      // GC: Load all ACTIVE trade templates
+      templates = await db.select().from(tradeTemplates).where(eq(tradeTemplates.isActive, true));
+    } else {
+      const [template] = await db.select().from(tradeTemplates).where(
+        and(eq(tradeTemplates.tradeType, tradeType as any), eq(tradeTemplates.isActive, true))
+      );
+      templates = template ? [template] : [];
+    }
     
-    if (template) {
-      // Parse and create organization-specific work types from template JSON (legacy support)
+    for (const template of templates) {
+      // Parse and create organization-specific work types from template JSON
       try {
         const templateWorkTypes = JSON.parse(template.workTypesJson || '[]');
-        for (const wt of templateWorkTypes) {
+        for (let wtIdx = 0; wtIdx < templateWorkTypes.length; wtIdx++) {
+          const wt = templateWorkTypes[wtIdx];
           if (wt && wt.name) {
+            // For GC, namespace work type names with tradeType code for guaranteed uniqueness
+            const workTypeName = isGeneralContractor 
+              ? `[${template.tradeType}] ${wt.name}`
+              : wt.name;
+            const category = template.displayName || template.tradeType;
+            
             await db.insert(organizationWorkTypes).values({
               organizationId: newOrg.id,
-              name: wt.name,
-              category: template.displayName,
+              name: workTypeName,
+              category,
               unit: wt.unit || 'EA',
               defaultProductionRate: wt.rate ? String(wt.rate) : null,
             }).onConflictDoNothing();
@@ -796,12 +841,19 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       // Parse and create organization-specific calculators from template
       try {
         const calculators = JSON.parse(template.calculatorConfigJson || '[]');
-        for (const calc of calculators) {
+        for (let calcIdx = 0; calcIdx < calculators.length; calcIdx++) {
+          const calc = calculators[calcIdx];
           if (calc && calc.name) {
+            // For GC, namespace calculator names with tradeType code for guaranteed uniqueness
+            const calcName = isGeneralContractor 
+              ? `[${template.tradeType}] ${calc.name}`
+              : calc.name;
+            const category = template.displayName || template.tradeType;
+            
             await db.insert(organizationCalculators).values({
               organizationId: newOrg.id,
-              name: calc.name,
-              category: template.displayName,
+              name: calcName,
+              category,
               unit: calc.output || 'units',
               formulaJson: JSON.stringify({ type: calc.type, inputs: calc.inputs, output: calc.output }),
               inputFieldsJson: JSON.stringify(calc.inputs || []),
