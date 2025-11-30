@@ -1,5 +1,6 @@
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
+import { AIInsightsWidget } from "@/components/AIInsightsWidget";
 import { 
   Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, 
   AlertTriangle, Users, Bell, HardHat, Check, MessageSquare, Calendar,
@@ -244,6 +245,13 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* AI Insights Section - Visible to management roles */}
+            {hasManagementAccess(user?.role) && (
+              <div className="mt-6">
+                <AIInsightsWidget compact />
+              </div>
+            )}
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

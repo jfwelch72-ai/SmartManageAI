@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import ProjectsTable from "@/components/ProjectsTable";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -343,17 +344,20 @@ export default function ProjectsPage() {
               </div>
             )}
           </div>
-          {FeaturePermissions.CREATE_PROJECT(user?.role) && (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
-                View Bids
-              </Button>
-              <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-project">
-                <Plus className="w-4 h-4 mr-2" />
-                New Project
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <AIAnalysisButton showDropdown />
+            {FeaturePermissions.CREATE_PROJECT(user?.role) && (
+              <>
+                <Button variant="outline" onClick={() => setLocation('/bids')} data-testid="button-view-bids">
+                  View Bids
+                </Button>
+                <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-project">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Project
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">

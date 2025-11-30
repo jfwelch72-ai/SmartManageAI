@@ -1018,6 +1018,93 @@ export const aiTasks = pgTable("ai_tasks", {
   priorityIdx: index("ai_tasks_priority_idx").on(table.priority),
 }));
 
+// AI Insight Module Types
+export const aiInsightModuleEnum = pgEnum("ai_insight_module", [
+  "SCHEDULING",
+  "DELAYS", 
+  "COSTS",
+  "EQUIPMENT",
+  "VENDOR_PRICING",
+  "PROJECT_HEALTH",
+  "GANTT_CHART",
+  "LABOR",
+  "BIDS",
+  "CHANGE_ORDERS"
+]);
+
+export const aiInsightSeverityEnum = pgEnum("ai_insight_severity", [
+  "INFO",
+  "SUGGESTION",
+  "WARNING",
+  "CRITICAL"
+]);
+
+// AI Insights table (module-specific AI analysis and recommendations)
+export const aiInsights = pgTable("ai_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  module: aiInsightModuleEnum("module").notNull(),
+  severity: aiInsightSeverityEnum("severity").notNull().default("INFO"),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  details: text("details"),
+  recommendations: text("recommendations").array(),
+  metrics: text("metrics"), // JSON string for module-specific metrics
+  affectedEntities: text("affected_entities"), // JSON string for related IDs
+  estimatedImpact: text("estimated_impact"), // Cost/time impact description
+  actionItems: text("action_items"), // JSON string for specific actions
+  isAcknowledged: boolean("is_acknowledged").notNull().default(false),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  triggeredById: varchar("triggered_by_id").references(() => users.id),
+  expiresAt: timestamp("expires_at"), // Insights can auto-expire
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  moduleIdx: index("ai_insights_module_idx").on(table.module),
+  orgIdx: index("ai_insights_org_idx").on(table.organizationId),
+  projectIdx: index("ai_insights_project_idx").on(table.projectId),
+  severityIdx: index("ai_insights_severity_idx").on(table.severity),
+  createdAtIdx: index("ai_insights_created_at_idx").on(table.createdAt),
+}));
+
+// AI Gantt Recommendations (AI-generated scheduling suggestions)
+export const aiGanttRecommendations = pgTable("ai_gantt_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  insightId: varchar("insight_id").references(() => aiInsights.id, { onDelete: "cascade" }),
+  recommendationType: text("recommendation_type").notNull(), // TASK_ORDER, RESOURCE_ALLOCATION, CRITICAL_PATH, PARALLEL_WORK
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  suggestedTasks: text("suggested_tasks"), // JSON array of task suggestions
+  suggestedDependencies: text("suggested_dependencies"), // JSON array of dependencies
+  estimatedDaysImprovement: integer("estimated_days_improvement"),
+  estimatedCostSavings: decimal("estimated_cost_savings", { precision: 12, scale: 2 }),
+  isApplied: boolean("is_applied").notNull().default(false),
+  appliedById: varchar("applied_by_id").references(() => users.id),
+  appliedAt: timestamp("applied_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("ai_gantt_recommendations_project_idx").on(table.projectId),
+}));
+
+// AI Vendor Comparisons (best pricing analysis)
+export const aiVendorComparisons = pgTable("ai_vendor_comparisons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  insightId: varchar("insight_id").references(() => aiInsights.id, { onDelete: "cascade" }),
+  materialCategory: text("material_category").notNull(),
+  analysisData: text("analysis_data").notNull(), // JSON with vendor comparisons
+  recommendedVendorId: varchar("recommended_vendor_id"),
+  recommendedVendorName: text("recommended_vendor_name"),
+  potentialSavings: decimal("potential_savings", { precision: 12, scale: 2 }),
+  priceConfidence: integer("price_confidence"), // 0-100 confidence score
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_vendor_comparisons_org_idx").on(table.organizationId),
+  categoryIdx: index("ai_vendor_comparisons_category_idx").on(table.materialCategory),
+}));
+
 // ==================================================
 // TAKEOFF + ESTIMATING ENGINE TABLES
 // ==================================================
@@ -1671,6 +1758,30 @@ export type AIRun = typeof aiRuns.$inferSelect;
 
 export type InsertAITask = z.infer<typeof insertAITaskSchema>;
 export type AITask = typeof aiTasks.$inferSelect;
+
+// AI Insights schemas and types
+export const insertAIInsightSchema = createInsertSchema(aiInsights).omit({
+  id: true,
+  createdAt: true,
+  acknowledgedAt: true,
+});
+export type InsertAIInsight = z.infer<typeof insertAIInsightSchema>;
+export type AIInsight = typeof aiInsights.$inferSelect;
+
+export const insertAIGanttRecommendationSchema = createInsertSchema(aiGanttRecommendations).omit({
+  id: true,
+  createdAt: true,
+  appliedAt: true,
+});
+export type InsertAIGanttRecommendation = z.infer<typeof insertAIGanttRecommendationSchema>;
+export type AIGanttRecommendation = typeof aiGanttRecommendations.$inferSelect;
+
+export const insertAIVendorComparisonSchema = createInsertSchema(aiVendorComparisons).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertAIVendorComparison = z.infer<typeof insertAIVendorComparisonSchema>;
+export type AIVendorComparison = typeof aiVendorComparisons.$inferSelect;
 
 // Crews table
 export const crews = pgTable("crews", {

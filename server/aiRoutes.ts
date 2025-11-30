@@ -1774,4 +1774,375 @@ Tailor your responses to the user's role and current location in the app.`;
   }
 });
 
+// ============================
+// AI MODULE ANALYSIS ENDPOINTS
+// ============================
+
+import { 
+  analyzeSchedulingModule,
+  analyzeDelaysModule,
+  analyzeCostsModule,
+  analyzeEquipmentModule,
+  analyzeVendorPricingModule,
+  analyzeProjectHealthModule,
+  runComprehensiveAnalysis,
+  saveAnalysisResults,
+} from "./ai/moduleAnalyzers";
+import { aiInsights, aiGanttRecommendations, aiVendorComparisons } from "@shared/schema";
+
+const aiAnalysisSchema = z.object({
+  module: z.enum(['SCHEDULING', 'DELAYS', 'COSTS', 'EQUIPMENT', 'VENDOR_PRICING', 'PROJECT_HEALTH', 'ALL']).optional(),
+  projectId: z.string().optional(),
+  saveResults: z.boolean().optional().default(true),
+});
+
+router.post("/ai-analyze", sensitiveLimiter, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ error: "Admin or Manager access required" });
+    }
+
+    const validationResult = aiAnalysisSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid request", 
+        details: fromZodError(validationResult.error).toString() 
+      });
+    }
+
+    const { module, projectId, saveResults } = validationResult.data;
+    const organizationId = req.user.organizationId;
+
+    console.log(`🔬 [AI Analysis] User ${req.user.email} triggered ${module || 'ALL'} analysis`);
+
+    let result;
+    
+    if (module === 'ALL' || !module) {
+      result = await runComprehensiveAnalysis(organizationId || undefined, projectId);
+    } else {
+      switch (module) {
+        case 'SCHEDULING':
+          result = await analyzeSchedulingModule(projectId, organizationId || undefined);
+          break;
+        case 'DELAYS':
+          result = await analyzeDelaysModule(projectId, organizationId || undefined);
+          break;
+        case 'COSTS':
+          result = await analyzeCostsModule(projectId, organizationId || undefined);
+          break;
+        case 'EQUIPMENT':
+          result = await analyzeEquipmentModule(organizationId || undefined);
+          break;
+        case 'VENDOR_PRICING':
+          result = await analyzeVendorPricingModule(organizationId || undefined);
+          break;
+        case 'PROJECT_HEALTH':
+          if (!projectId) {
+            return res.status(400).json({ error: "Project ID required for project health analysis" });
+          }
+          result = await analyzeProjectHealthModule(projectId);
+          break;
+        default:
+          return res.status(400).json({ error: "Invalid module" });
+      }
+    }
+
+    let savedInsightIds: string[] = [];
+    if (saveResults && result.insights.length > 0) {
+      savedInsightIds = await saveAnalysisResults(
+        result,
+        organizationId || undefined,
+        projectId,
+        req.user.id
+      );
+    }
+
+    await logCreate(req.user.id, 'AI_ANALYSIS', savedInsightIds[0] || 'batch', req);
+
+    res.json({
+      success: true,
+      module: module || 'ALL',
+      insights: result.insights,
+      ganttRecommendations: result.ganttRecommendations,
+      vendorComparisons: result.vendorComparisons,
+      savedInsightIds,
+    });
+  } catch (error: any) {
+    console.error("AI analysis error:", error);
+    res.status(500).json({ error: "Failed to run AI analysis" });
+  }
+});
+
+router.get("/ai-insights/dashboard-summary", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const organizationId = req.user.organizationId;
+
+    const conditions: any[] = [
+      eq(aiInsights.isAcknowledged, false),
+      sql`(${aiInsights.expiresAt} IS NULL OR ${aiInsights.expiresAt} > NOW())`,
+    ];
+
+    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+      conditions.push(
+        sql`(${aiInsights.organizationId} = ${organizationId} OR ${aiInsights.organizationId} IS NULL)`
+      );
+    }
+
+    const recentInsights = await db
+      .select({
+        id: aiInsights.id,
+        module: aiInsights.module,
+        severity: aiInsights.severity,
+        title: aiInsights.title,
+        summary: aiInsights.summary,
+        estimatedImpact: aiInsights.estimatedImpact,
+        isAcknowledged: aiInsights.isAcknowledged,
+        createdAt: aiInsights.createdAt,
+      })
+      .from(aiInsights)
+      .where(and(...conditions))
+      .orderBy(desc(aiInsights.createdAt))
+      .limit(10);
+
+    const countBySeverity = await db
+      .select({
+        severity: aiInsights.severity,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(aiInsights)
+      .where(and(...conditions))
+      .groupBy(aiInsights.severity);
+
+    const countByModule = await db
+      .select({
+        module: aiInsights.module,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(aiInsights)
+      .where(and(...conditions))
+      .groupBy(aiInsights.module);
+
+    res.json({
+      recentInsights,
+      countBySeverity: Object.fromEntries(countBySeverity.map(c => [c.severity, c.count])),
+      countByModule: Object.fromEntries(countByModule.map(c => [c.module, c.count])),
+      totalUnacknowledged: countBySeverity.reduce((sum, c) => sum + c.count, 0),
+    });
+  } catch (error: any) {
+    console.error("Error fetching AI dashboard summary:", error);
+    res.status(500).json({ error: "Failed to fetch AI dashboard summary" });
+  }
+});
+
+router.get("/ai-insights", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { module, projectId, severity, acknowledged } = req.query;
+    const organizationId = req.user.organizationId;
+
+    const conditions: any[] = [];
+    
+    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+      conditions.push(
+        sql`(${aiInsights.organizationId} = ${organizationId} OR ${aiInsights.organizationId} IS NULL)`
+      );
+    }
+
+    if (module) {
+      conditions.push(eq(aiInsights.module, module as any));
+    }
+
+    if (projectId) {
+      conditions.push(eq(aiInsights.projectId, projectId as string));
+    }
+
+    if (severity) {
+      conditions.push(eq(aiInsights.severity, severity as any));
+    }
+
+    if (acknowledged !== undefined) {
+      conditions.push(eq(aiInsights.isAcknowledged, acknowledged === 'true'));
+    }
+
+    conditions.push(
+      sql`(${aiInsights.expiresAt} IS NULL OR ${aiInsights.expiresAt} > NOW())`
+    );
+
+    const insights = await db
+      .select()
+      .from(aiInsights)
+      .where(conditions.length > 0 ? and(...conditions) : sql`1=1`)
+      .orderBy(desc(aiInsights.createdAt))
+      .limit(100);
+
+    const parsedInsights = insights.map(insight => ({
+      ...insight,
+      metrics: insight.metrics ? JSON.parse(insight.metrics) : null,
+      affectedEntities: insight.affectedEntities ? JSON.parse(insight.affectedEntities) : null,
+      actionItems: insight.actionItems ? JSON.parse(insight.actionItems) : null,
+    }));
+
+    res.json(parsedInsights);
+  } catch (error: any) {
+    console.error("Error fetching AI insights:", error);
+    res.status(500).json({ error: "Failed to fetch AI insights" });
+  }
+});
+
+router.get("/ai-insights/:id", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+
+    const [insight] = await db
+      .select()
+      .from(aiInsights)
+      .where(eq(aiInsights.id, id))
+      .limit(1);
+
+    if (!insight) {
+      return res.status(404).json({ error: "Insight not found" });
+    }
+
+    if (req.user.role !== 'SUPER_ADMIN' && 
+        insight.organizationId && 
+        insight.organizationId !== req.user.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const parsedInsight = {
+      ...insight,
+      metrics: insight.metrics ? JSON.parse(insight.metrics) : null,
+      affectedEntities: insight.affectedEntities ? JSON.parse(insight.affectedEntities) : null,
+      actionItems: insight.actionItems ? JSON.parse(insight.actionItems) : null,
+    };
+
+    res.json(parsedInsight);
+  } catch (error: any) {
+    console.error("Error fetching AI insight:", error);
+    res.status(500).json({ error: "Failed to fetch AI insight" });
+  }
+});
+
+router.patch("/ai-insights/:id/acknowledge", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+
+    const [insight] = await db
+      .select()
+      .from(aiInsights)
+      .where(eq(aiInsights.id, id))
+      .limit(1);
+
+    if (!insight) {
+      return res.status(404).json({ error: "Insight not found" });
+    }
+
+    if (req.user.role !== 'SUPER_ADMIN' && 
+        insight.organizationId && 
+        insight.organizationId !== req.user.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [updated] = await db
+      .update(aiInsights)
+      .set({
+        isAcknowledged: true,
+        acknowledgedById: req.user.id,
+        acknowledgedAt: new Date(),
+      })
+      .where(eq(aiInsights.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Error acknowledging AI insight:", error);
+    res.status(500).json({ error: "Failed to acknowledge insight" });
+  }
+});
+
+router.get("/ai-gantt-recommendations/:projectId", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { projectId } = req.params;
+
+    const recommendations = await db
+      .select()
+      .from(aiGanttRecommendations)
+      .where(eq(aiGanttRecommendations.projectId, projectId))
+      .orderBy(desc(aiGanttRecommendations.createdAt))
+      .limit(20);
+
+    const parsedRecommendations = recommendations.map(rec => ({
+      ...rec,
+      suggestedTasks: rec.suggestedTasks ? JSON.parse(rec.suggestedTasks) : null,
+      suggestedDependencies: rec.suggestedDependencies ? JSON.parse(rec.suggestedDependencies) : null,
+    }));
+
+    res.json(parsedRecommendations);
+  } catch (error: any) {
+    console.error("Error fetching Gantt recommendations:", error);
+    res.status(500).json({ error: "Failed to fetch Gantt recommendations" });
+  }
+});
+
+router.get("/ai-vendor-comparisons", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const organizationId = req.user.organizationId;
+    const { category } = req.query;
+
+    const conditions: any[] = [];
+    
+    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+      conditions.push(eq(aiVendorComparisons.organizationId, organizationId));
+    }
+
+    if (category) {
+      conditions.push(eq(aiVendorComparisons.materialCategory, category as string));
+    }
+
+    const comparisons = await db
+      .select()
+      .from(aiVendorComparisons)
+      .where(conditions.length > 0 ? and(...conditions) : sql`1=1`)
+      .orderBy(desc(aiVendorComparisons.createdAt))
+      .limit(50);
+
+    const parsedComparisons = comparisons.map(comp => ({
+      ...comp,
+      analysisData: comp.analysisData ? JSON.parse(comp.analysisData) : null,
+    }));
+
+    res.json(parsedComparisons);
+  } catch (error: any) {
+    console.error("Error fetching vendor comparisons:", error);
+    res.status(500).json({ error: "Failed to fetch vendor comparisons" });
+  }
+});
+
 export default router;

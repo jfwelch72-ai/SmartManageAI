@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import BidCard from "@/components/BidCard";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -372,10 +373,13 @@ export default function BidsPage() {
               Track opportunities and bids in progress
             </p>
           </div>
-          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-bid">
-            <Plus className="w-4 h-4 mr-2" />
-            New Bid
-          </Button>
+          <div className="flex gap-2">
+            <AIAnalysisButton module="BIDS" />
+            <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-bid">
+              <Plus className="w-4 h-4 mr-2" />
+              New Bid
+            </Button>
+          </div>
         </div>
 
         <div className="mb-6 space-y-4">

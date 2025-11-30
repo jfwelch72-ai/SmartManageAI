@@ -4,6 +4,7 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -211,15 +212,18 @@ export default function EquipmentPage() {
             <h1 className="text-3xl font-bold" data-testid="text-page-title">Equipment & Tools</h1>
             <p className="text-muted-foreground">Manage your equipment fleet and track availability</p>
           </div>
-          {canManageEquipment && (
-            <Button 
-              onClick={() => setShowCreateDialog(true)}
-              data-testid="button-add-equipment"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Equipment
-            </Button>
-          )}
+          <div className="flex gap-2">
+            <AIAnalysisButton module="EQUIPMENT" />
+            {canManageEquipment && (
+              <Button 
+                onClick={() => setShowCreateDialog(true)}
+                data-testid="button-add-equipment"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Equipment
+              </Button>
+            )}
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

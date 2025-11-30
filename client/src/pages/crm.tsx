@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -911,10 +912,13 @@ export default function CRMPage() {
                 Manage contractors, subcontractors, suppliers, and vendors
               </p>
             </div>
-            <Button onClick={() => setCreateOrgOpen(true)} data-testid="button-add-organization">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Organization
-            </Button>
+            <div className="flex gap-2">
+              <AIAnalysisButton module="VENDOR_PRICING" />
+              <Button onClick={() => setCreateOrgOpen(true)} data-testid="button-add-organization">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Organization
+              </Button>
+            </div>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
