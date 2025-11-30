@@ -33,7 +33,7 @@ import {
   insertScopeModifierCategorySchema, insertScopeModifierSchema,
   equipmentAssignments, equipmentRepairs, equipmentMaintenanceSchedules,
   equipmentMaintenanceHistory, equipmentHourLogs, equipmentHourReminders,
-  equipmentRateProfiles, insertEquipmentRateProfileSchema,
+  equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema,
   rentalVendors, insertRentalVendorSchema,
   rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema,
   bidEquipmentSelections, insertBidEquipmentSelectionSchema,
@@ -11761,7 +11761,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         body.equipmentCode = `EQ-${String(nextNumber).padStart(4, '0')}`;
       }
       
-      const [newEquipment] = await db.insert(equipment).values(body).returning();
+      // Validate and coerce input using the validated schema
+      // This handles empty strings for numeric fields by converting them to null
+      const validationResult = validatedEquipmentSchema.safeParse(body);
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map(e => ({
+          field: e.path.join('.'),
+          message: e.message
+        }));
+        res.status(400).json({ 
+          error: "Validation failed",
+          details: errors 
+        });
+        return;
+      }
+      
+      const validatedData = validationResult.data;
+      
+      const [newEquipment] = await db.insert(equipment).values(validatedData).returning();
       
       // Audit log
       await db.insert(auditLog).values({
@@ -11789,9 +11806,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const updates = req.body;
       
+      // Validate and coerce numeric fields for partial updates
+      // Create a partial schema that only validates provided fields
+      const partialValidation = validatedEquipmentSchema.partial().safeParse(updates);
+      if (!partialValidation.success) {
+        const errors = partialValidation.error.errors.map(e => ({
+          field: e.path.join('.'),
+          message: e.message
+        }));
+        res.status(400).json({ 
+          error: "Validation failed",
+          details: errors 
+        });
+        return;
+      }
+      
+      const validatedUpdates = partialValidation.data;
+      
       const [updated] = await db
         .update(equipment)
-        .set({ ...updates, updatedAt: new Date() })
+        .set({ ...validatedUpdates, updatedAt: new Date() })
         .where(eq(equipment.id, id))
         .returning();
       

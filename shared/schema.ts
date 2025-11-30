@@ -1785,6 +1785,39 @@ export const insertEquipmentSchema = createInsertSchema(equipment).omit({ id: tr
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type Equipment = typeof equipment.$inferSelect;
 
+// Validated equipment schema with proper coercion for API input
+// Handles empty strings from form inputs by converting to null
+export const validatedEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  // Coerce year: empty string or invalid → null, valid number → number
+  year: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const parsed = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(parsed as number) ? null : parsed;
+    },
+    z.number().int().min(1900).max(2100).nullable().optional()
+  ),
+  // Coerce currentHours: empty string → "0" (default), valid number string → string
+  currentHours: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const parsed = typeof val === 'string' ? parseFloat(val) : val;
+      return isNaN(parsed as number) ? null : String(parsed);
+    },
+    z.string().nullable().optional()
+  ),
+  // Coerce purchasePrice: empty string or invalid → null, valid number string → string
+  purchasePrice: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const parsed = typeof val === 'string' ? parseFloat(val) : val;
+      return isNaN(parsed as number) ? null : String(parsed);
+    },
+    z.string().nullable().optional()
+  ),
+});
+export type ValidatedInsertEquipment = z.infer<typeof validatedEquipmentSchema>;
+
 // Crew Project Assignments table
 export const crewProjectAssignments = pgTable("crew_project_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
