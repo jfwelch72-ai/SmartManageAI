@@ -40,3 +40,23 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Uppy**: For enhanced file uploads.
 *   **node-cron**: For scheduling backend tasks.
 *   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.
+
+## Recent Changes (November 2025)
+
+### E2E Testing Completed
+- Comprehensive E2E testing across all 13 major feature areas with 100% pass rate
+- All 9 user roles verified (SUPER_ADMIN, ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, MAINTENANCE_MANAGER, HOURLY_EMPLOYEE, VENDOR)
+- See `E2E_TEST_REPORT.md` for detailed findings
+
+### Bug Fix: SelectItem Empty Value Error
+- Fixed React runtime error in SelectItem components caused by empty string values
+- Applied sentinel value pattern ("none" → "" conversion) to:
+  - bid-detail.tsx (Award dialog)
+  - tasks.tsx (Project/Assignee selects)
+  - bid-estimate.tsx (Subcontractor quote selects)
+  - crews.tsx (Crew Lead select)
+
+## Known Issues / Design Notes
+- **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
+- **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
+- **SelectItem pattern**: Always use `value="none"` instead of `value=""` for "None" options in Select components
