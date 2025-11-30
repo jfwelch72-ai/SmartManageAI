@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar, User } from "lucide-react";
+import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar, User, Search, X, Filter } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -40,10 +40,25 @@ const taskFormSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
+const PRIORITY_OPTIONS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const CATEGORY_OPTIONS = [
+  { value: "ALL", label: "All Categories" },
+  { value: "SUPPLY_NEED", label: "Supply Need" },
+  { value: "EQUIPMENT_REPAIR", label: "Equipment Repair" },
+  { value: "WEATHER_DELAY", label: "Weather Delay" },
+  { value: "CHANGE_ORDER", label: "Change Order" },
+  { value: "SAFETY", label: "Safety" },
+  { value: "CLIENT_COMMUNICATION", label: "Client Communication" },
+  { value: "OTHER", label: "Other" },
+];
+
 export default function Tasks() {
   const { toast } = useToast();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -139,6 +154,28 @@ export default function Tasks() {
   const getCategoryLabel = (category: string) => {
     return category.replace(/_/g, " ");
   };
+
+  // Filter tasks based on search, priority, and category
+  const filteredTasks = useMemo(() => {
+    return (tasks as any[]).filter(task => {
+      // Search filter
+      const matchesSearch = 
+        task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        task.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (searchTerm && !matchesSearch) return false;
+      
+      // Priority filter
+      if (priorityFilter !== "ALL" && task.priority !== priorityFilter) return false;
+      
+      // Category filter
+      if (categoryFilter !== "ALL" && task.category !== categoryFilter) return false;
+      
+      return true;
+    });
+  }, [tasks, searchTerm, priorityFilter, categoryFilter]);
+
+  const hasActiveFilters = searchTerm || priorityFilter !== "ALL" || categoryFilter !== "ALL" || statusFilter !== null;
 
   return (
     <div className="p-6 space-y-6" data-testid="page-tasks">
@@ -337,56 +374,157 @@ export default function Tasks() {
         </Dialog>
       </div>
 
-      {/* Status Filters */}
-      <div className="flex gap-2">
-        <Button
-          variant={statusFilter === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setStatusFilter(null)}
-          data-testid="filter-all"
-        >
-          All
-        </Button>
-        <Button
-          variant={statusFilter === "PENDING" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setStatusFilter("PENDING")}
-          data-testid="filter-pending"
-        >
-          Pending
-        </Button>
-        <Button
-          variant={statusFilter === "IN_PROGRESS" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setStatusFilter("IN_PROGRESS")}
-          data-testid="filter-in-progress"
-        >
-          In Progress
-        </Button>
-        <Button
-          variant={statusFilter === "COMPLETED" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setStatusFilter("COMPLETED")}
-          data-testid="filter-completed"
-        >
-          Completed
-        </Button>
+      {/* Filters Section */}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px] max-w-[300px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search tasks..."
+              className="pl-9"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              data-testid="input-search-tasks"
+            />
+          </div>
+          
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-[140px]" data-testid="select-priority-filter">
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITY_OPTIONS.map(p => (
+                <SelectItem key={p} value={p}>{p === "ALL" ? "All Priorities" : p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[180px]" data-testid="select-category-filter">
+              <Filter className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORY_OPTIONS.map(c => (
+                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Status Filters */}
+        <div className="flex gap-2">
+          <Button
+            variant={statusFilter === null ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(null)}
+            data-testid="filter-all"
+          >
+            All
+          </Button>
+          <Button
+            variant={statusFilter === "PENDING" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter("PENDING")}
+            data-testid="filter-pending"
+          >
+            Pending
+          </Button>
+          <Button
+            variant={statusFilter === "IN_PROGRESS" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter("IN_PROGRESS")}
+            data-testid="filter-in-progress"
+          >
+            In Progress
+          </Button>
+          <Button
+            variant={statusFilter === "COMPLETED" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter("COMPLETED")}
+            data-testid="filter-completed"
+          >
+            Completed
+          </Button>
+        </div>
+        
+        {/* Active filter badges */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Active filters:</span>
+            {searchTerm && (
+              <Badge variant="secondary" className="gap-1">
+                Search: "{searchTerm}"
+                <X 
+                  className="w-3 h-3 cursor-pointer" 
+                  onClick={() => setSearchTerm("")}
+                  data-testid="button-clear-search"
+                />
+              </Badge>
+            )}
+            {statusFilter && (
+              <Badge variant="secondary" className="gap-1">
+                Status: {statusFilter.replace(/_/g, " ")}
+                <X 
+                  className="w-3 h-3 cursor-pointer" 
+                  onClick={() => setStatusFilter(null)}
+                  data-testid="button-clear-status-filter"
+                />
+              </Badge>
+            )}
+            {priorityFilter !== "ALL" && (
+              <Badge variant="secondary" className="gap-1">
+                {priorityFilter}
+                <X 
+                  className="w-3 h-3 cursor-pointer" 
+                  onClick={() => setPriorityFilter("ALL")}
+                  data-testid="button-clear-priority-filter"
+                />
+              </Badge>
+            )}
+            {categoryFilter !== "ALL" && (
+              <Badge variant="secondary" className="gap-1">
+                {CATEGORY_OPTIONS.find(c => c.value === categoryFilter)?.label}
+                <X 
+                  className="w-3 h-3 cursor-pointer" 
+                  onClick={() => setCategoryFilter("ALL")}
+                  data-testid="button-clear-category-filter"
+                />
+              </Badge>
+            )}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => {
+                setSearchTerm("");
+                setStatusFilter(null);
+                setPriorityFilter("ALL");
+                setCategoryFilter("ALL");
+              }}
+              data-testid="button-clear-all-filters"
+            >
+              Clear all
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Tasks List */}
       {isLoading ? (
         <div className="text-center py-8" data-testid="loading-tasks">Loading tasks...</div>
-      ) : tasks.length === 0 ? (
+      ) : filteredTasks.length === 0 ? (
         <Card>
           <CardContent className="py-8">
             <div className="text-center text-muted-foreground" data-testid="empty-state-tasks">
-              No tasks found. Create your first task to get started.
+              {hasActiveFilters 
+                ? "No tasks match your filters. Try adjusting your search criteria."
+                : "No tasks found. Create your first task to get started."}
             </div>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
-          {tasks.map((task: any) => (
+          {filteredTasks.map((task: any) => (
             <Card key={task.id} data-testid={`task-card-${task.id}`}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-4">

@@ -271,6 +271,7 @@ export default function CRMPage() {
   
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
+  const [specialtyFilter, setSpecialtyFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"organizations" | "contacts">("organizations");
   
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
@@ -834,12 +835,19 @@ export default function CRMPage() {
     });
   };
   
+  // Get unique specialties from all organizations
+  const uniqueSpecialties = useMemo(() => {
+    const allSpecialties = organizations?.flatMap(org => org.specialties || []) || [];
+    return [...new Set(allSpecialties)].sort();
+  }, [organizations]);
+
   const filteredOrganizations = organizations?.filter((org) => {
     const matchesSearch = org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       org.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       org.state?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType === "all" || org.type === selectedType;
-    return matchesSearch && matchesType && org.isActive;
+    const matchesSpecialty = specialtyFilter === "all" || (org.specialties?.includes(specialtyFilter) ?? false);
+    return matchesSearch && matchesType && matchesSpecialty && org.isActive;
   }) || [];
   
   const orgCounts = {
@@ -1022,8 +1030,70 @@ export default function CRMPage() {
                       <SelectItem value="OWNER_REP">Owner Reps</SelectItem>
                     </SelectContent>
                   </Select>
+                  {uniqueSpecialties.length > 0 && (
+                    <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
+                      <SelectTrigger className="w-[180px]" data-testid="select-specialty-filter">
+                        <SelectValue placeholder="Filter by specialty" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Specialties</SelectItem>
+                        {uniqueSpecialties.map(specialty => (
+                          <SelectItem key={specialty} value={specialty}>{specialty}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
+              
+              {/* Active filter badges */}
+              {(searchTerm || selectedType !== "all" || specialtyFilter !== "all") && (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-sm text-muted-foreground">Active filters:</span>
+                  {searchTerm && (
+                    <Badge variant="secondary" className="gap-1">
+                      Search: "{searchTerm}"
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setSearchTerm("")}
+                        data-testid="button-clear-search"
+                      />
+                    </Badge>
+                  )}
+                  {selectedType !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {TYPE_LABELS[selectedType as OrganizationType]}
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setSelectedType("all")}
+                        data-testid="button-clear-type-filter"
+                      />
+                    </Badge>
+                  )}
+                  {specialtyFilter !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {specialtyFilter}
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setSpecialtyFilter("all")}
+                        data-testid="button-clear-specialty-filter"
+                      />
+                    </Badge>
+                  )}
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      setSearchTerm("");
+                      setSelectedType("all");
+                      setSpecialtyFilter("all");
+                    }}
+                    data-testid="button-clear-all-filters"
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {orgsLoading ? (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,17 @@ import {
   useAdjustShift,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase } from "lucide-react";
+import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase, Search, X } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockManagerPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
+  
+  // Filter state
+  const [activeSearchTerm, setActiveSearchTerm] = useState("");
+  const [pendingSearchTerm, setPendingSearchTerm] = useState("");
+  
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<any>(null);
@@ -56,6 +61,44 @@ export default function TimeClockManagerPage() {
   const adjustShift = useAdjustShift();
 
   const isManager = user?.role === "ADMIN" || user?.role === "MANAGER";
+
+  // Filtering logic for active shifts
+  const filteredActiveShifts = useMemo(() => {
+    if (!activeSearchTerm) return activeShifts;
+    
+    const searchLower = activeSearchTerm.toLowerCase();
+    return activeShifts.filter((shift: any) => {
+      // Safely handle optional fields
+      const employeeName = `${shift.user?.firstName ?? ""} ${shift.user?.lastName ?? ""}`.toLowerCase();
+      const projectName = (shift.project?.name ?? "").toLowerCase();
+      const projectCode = (shift.project?.code ?? "").toLowerCase();
+      
+      return (
+        employeeName.includes(searchLower) ||
+        projectName.includes(searchLower) ||
+        projectCode.includes(searchLower)
+      );
+    });
+  }, [activeShifts, activeSearchTerm]);
+
+  // Filtering logic for pending shifts
+  const filteredPendingShifts = useMemo(() => {
+    if (!pendingSearchTerm) return pendingShifts;
+    
+    const searchLower = pendingSearchTerm.toLowerCase();
+    return pendingShifts.filter((shift: any) => {
+      // Safely handle optional fields
+      const employeeName = `${shift.user?.firstName ?? ""} ${shift.user?.lastName ?? ""}`.toLowerCase();
+      const projectName = (shift.project?.name ?? "").toLowerCase();
+      const projectCode = (shift.project?.code ?? "").toLowerCase();
+      
+      return (
+        employeeName.includes(searchLower) ||
+        projectName.includes(searchLower) ||
+        projectCode.includes(searchLower)
+      );
+    });
+  }, [pendingShifts, pendingSearchTerm]);
 
   const getShiftDuration = (clockIn: string, clockOut?: string) => {
     const start = new Date(clockIn);
@@ -224,21 +267,62 @@ export default function TimeClockManagerPage() {
           {/* Live Monitoring Tab */}
           <TabsContent value="live" data-testid="content-live">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
-                  Active Shifts
-                  <Badge variant="secondary" data-testid="badge-active-count">{activeShifts.length}</Badge>
-                </CardTitle>
+              <CardHeader className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    Active Shifts
+                    <Badge variant="secondary" data-testid="badge-active-count">{activeShifts.length}</Badge>
+                  </CardTitle>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search employee or project..."
+                        className="pl-9 w-[250px]"
+                        value={activeSearchTerm}
+                        onChange={(e) => setActiveSearchTerm(e.target.value)}
+                        data-testid="input-search-active-shifts"
+                      />
+                    </div>
+                    {activeSearchTerm && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setActiveSearchTerm("")}
+                        data-testid="button-clear-active-search"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
+                {activeSearchTerm && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Filtering:</span>
+                    <Badge variant="secondary" className="gap-1">
+                      "{activeSearchTerm}"
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setActiveSearchTerm("")}
+                      />
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      ({filteredActiveShifts.length} of {activeShifts.length} shifts)
+                    </span>
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {activeLoading ? (
                   <div className="text-center py-12 text-muted-foreground">
                     Loading active shifts...
                   </div>
-                ) : activeShifts.length === 0 ? (
+                ) : filteredActiveShifts.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    No active shifts at the moment
+                    {activeSearchTerm ? "No shifts match your search" : "No active shifts at the moment"}
                   </div>
                 ) : (
                   <Table>
@@ -252,7 +336,7 @@ export default function TimeClockManagerPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {activeShifts.map((shift: any) => (
+                      {filteredActiveShifts.map((shift: any) => (
                         <TableRow key={shift.id} data-testid={`row-active-${shift.id}`}>
                           <TableCell data-testid={`cell-employee-${shift.id}`}>
                             <div className="space-y-1">
@@ -305,20 +389,61 @@ export default function TimeClockManagerPage() {
           {/* Pending Approvals Tab */}
           <TabsContent value="approvals" data-testid="content-approvals">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5" />
-                  Pending Approvals
-                </CardTitle>
+              <CardHeader className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    Pending Approvals
+                  </CardTitle>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search employee or project..."
+                        className="pl-9 w-[250px]"
+                        value={pendingSearchTerm}
+                        onChange={(e) => setPendingSearchTerm(e.target.value)}
+                        data-testid="input-search-pending-shifts"
+                      />
+                    </div>
+                    {pendingSearchTerm && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setPendingSearchTerm("")}
+                        data-testid="button-clear-pending-search"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
+                {pendingSearchTerm && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Filtering:</span>
+                    <Badge variant="secondary" className="gap-1">
+                      "{pendingSearchTerm}"
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setPendingSearchTerm("")}
+                      />
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      ({filteredPendingShifts.length} of {pendingShifts.length} approvals)
+                    </span>
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {pendingLoading ? (
                   <div className="text-center py-12 text-muted-foreground">
                     Loading pending approvals...
                   </div>
-                ) : pendingShifts.length === 0 ? (
+                ) : filteredPendingShifts.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    No pending approvals
+                    {pendingSearchTerm ? "No approvals match your search" : "No pending approvals"}
                   </div>
                 ) : (
                   <Table>
@@ -334,7 +459,7 @@ export default function TimeClockManagerPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingShifts.map((shift: any) => (
+                      {filteredPendingShifts.map((shift: any) => (
                         <TableRow key={shift.id} data-testid={`row-pending-${shift.id}`}>
                           <TableCell data-testid={`cell-employee-${shift.id}`}>
                             <div className="space-y-1">

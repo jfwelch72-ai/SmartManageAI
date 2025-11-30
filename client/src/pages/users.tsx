@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import AppHeader from "@/components/AppHeader";
@@ -5,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -22,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus } from "lucide-react";
+import { UserPlus, Search, Filter, X } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -43,13 +45,48 @@ const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
   HOURLY_EMPLOYEE: "secondary",
 };
 
+// Status filter options
+const STATUS_FILTERS = [
+  { value: "ALL", label: "All Status" },
+  { value: "ACTIVE", label: "Active" },
+  { value: "INACTIVE", label: "Inactive" },
+];
+
 export default function UsersPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
+  
+  // Filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   const { data: users = [], isLoading } = useQuery<SelectUser[]>({
     queryKey: ["/api/users"],
   });
+  
+  // Filtered users
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      // Search filter
+      const fullName = `${u.firstName} ${u.lastName}`.toLowerCase();
+      const matchesSearch = 
+        fullName.includes(searchTerm.toLowerCase()) ||
+        u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.phone && u.phone.includes(searchTerm));
+      
+      if (!matchesSearch) return false;
+      
+      // Role filter
+      if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
+      
+      // Status filter
+      if (statusFilter === "ACTIVE" && !u.isActive) return false;
+      if (statusFilter === "INACTIVE" && u.isActive) return false;
+      
+      return true;
+    });
+  }, [users, searchTerm, roleFilter, statusFilter]);
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, data }: { userId: string; data: Partial<SelectUser> }) => {
@@ -132,14 +169,104 @@ export default function UsersPage() {
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
             <CardTitle>All Users</CardTitle>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, email, phone..."
+                  className="pl-9 w-[220px]"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search-users"
+                />
+              </div>
+              
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-[160px]" data-testid="select-role-filter">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Roles</SelectItem>
+                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_FILTERS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
+          
+          {/* Active filter badges */}
+          {(searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL") && (
+            <div className="px-6 pb-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">Active filters:</span>
+              {searchTerm && (
+                <Badge variant="secondary" className="gap-1">
+                  Search: "{searchTerm}"
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setSearchTerm("")}
+                    data-testid="button-clear-search"
+                  />
+                </Badge>
+              )}
+              {roleFilter !== "ALL" && (
+                <Badge variant="secondary" className="gap-1">
+                  {ROLE_LABELS[roleFilter]}
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setRoleFilter("ALL")}
+                    data-testid="button-clear-role-filter"
+                  />
+                </Badge>
+              )}
+              {statusFilter !== "ALL" && (
+                <Badge variant="secondary" className="gap-1">
+                  {statusFilter === "ACTIVE" ? "Active" : "Inactive"}
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setStatusFilter("ALL")}
+                    data-testid="button-clear-status-filter"
+                  />
+                </Badge>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  setSearchTerm("");
+                  setRoleFilter("ALL");
+                  setStatusFilter("ALL");
+                }}
+                data-testid="button-clear-all-filters"
+              >
+                Clear all
+              </Button>
+            </div>
+          )}
+          
           <CardContent>
             {isLoading ? (
               <div className="text-center py-8" data-testid="text-loading">Loading users...</div>
-            ) : users.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No users found</div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL" 
+                  ? "No users match your filters" 
+                  : "No users found"}
+              </div>
             ) : (
               <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <Table className="min-w-[700px]">
@@ -154,7 +281,7 @@ export default function UsersPage() {
                     </TableRow>
                   </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {filteredUsers.map((u) => (
                     <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                       <TableCell className="font-medium" data-testid={`text-name-${u.id}`}>
                         {u.firstName} {u.lastName}

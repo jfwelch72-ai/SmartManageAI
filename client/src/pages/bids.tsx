@@ -4,13 +4,22 @@ import BidCard from "@/components/BidCard";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, AlertTriangle, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
-import type { Bid, CrmOrganisation, CrmContact } from "@shared/schema";
+import { format, isAfter, isBefore, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays } from "date-fns";
+import type { Bid, CrmOrganisation, CrmContact, SelectUser } from "@shared/schema";
 import { insertBidSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -53,16 +62,44 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 
+// Due date filter options
+const DUE_DATE_FILTERS = [
+  { value: "ALL", label: "All Due Dates" },
+  { value: "OVERDUE", label: "Overdue" },
+  { value: "THIS_WEEK", label: "Due This Week" },
+  { value: "THIS_MONTH", label: "Due This Month" },
+  { value: "NO_DATE", label: "No Due Date" },
+];
+
+// Estimate status filter options
+const ESTIMATE_STATUS_FILTERS = [
+  { value: "ALL", label: "All Statuses" },
+  { value: "DRAFT", label: "Draft" },
+  { value: "SUBMITTED", label: "Submitted" },
+  { value: "PENDING_APPROVAL", label: "Pending Approval" },
+  { value: "APPROVED", label: "Approved" },
+  { value: "WON", label: "Won" },
+  { value: "LOST", label: "Lost" },
+];
+
 export default function BidsPage() {
   const [, setLocation] = useLocation();
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [dueDateFilter, setDueDateFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [estimatorFilter, setEstimatorFilter] = useState("ALL");
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   
   const { data: bidsData = [], isLoading } = useBids();
+  
+  // Fetch users for estimator filter
+  const { data: users = [] } = useQuery<SelectUser[]>({
+    queryKey: ["/api/users"],
+  });
   const convertBid = useConvertBidToProject();
   const createBid = useCreateBid();
   const deleteBid = useDeleteBid();
@@ -181,12 +218,55 @@ export default function BidsPage() {
   };
 
   const filteredBids = useMemo(() => {
-    return bids.filter(bid => 
-      bid.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      bid.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      bid.clientName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [bids, searchTerm]);
+    const today = new Date();
+    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+    const monthStart = startOfMonth(today);
+    const monthEnd = endOfMonth(today);
+    
+    return bids.filter(bid => {
+      // Search filter
+      const matchesSearch = 
+        bid.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bid.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bid.clientName.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (!matchesSearch) return false;
+      
+      // Due date filter
+      if (dueDateFilter !== "ALL") {
+        const dueDate = bid.dueDate ? new Date(bid.dueDate) : null;
+        
+        switch (dueDateFilter) {
+          case "OVERDUE":
+            if (!dueDate || !isBefore(dueDate, today)) return false;
+            break;
+          case "THIS_WEEK":
+            if (!dueDate || isBefore(dueDate, weekStart) || isAfter(dueDate, weekEnd)) return false;
+            break;
+          case "THIS_MONTH":
+            if (!dueDate || isBefore(dueDate, monthStart) || isAfter(dueDate, monthEnd)) return false;
+            break;
+          case "NO_DATE":
+            if (dueDate) return false;
+            break;
+        }
+      }
+      
+      // Estimate status filter
+      if (statusFilter !== "ALL") {
+        const estimateStatus = bid.estimateSummary?.status;
+        if (estimateStatus !== statusFilter) return false;
+      }
+      
+      // Estimator filter
+      if (estimatorFilter !== "ALL") {
+        if (bid.estimatorId !== estimatorFilter) return false;
+      }
+      
+      return true;
+    });
+  }, [bids, searchTerm, dueDateFilter, statusFilter, estimatorFilter]);
 
   const handleConvertToProject = async (bidCode: string) => {
     // Check if bid has budget data
@@ -306,17 +386,106 @@ export default function BidsPage() {
           </Button>
         </div>
 
-        <div className="mb-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search bids by name, code, or client..."
-              className="pl-9"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              data-testid="input-search-bids"
-            />
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search bids by name, code, or client..."
+                className="pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-bids"
+              />
+            </div>
+            
+            <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
+              <SelectTrigger className="w-[160px]" data-testid="select-due-date-filter">
+                <Calendar className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Due Date" />
+              </SelectTrigger>
+              <SelectContent>
+                {DUE_DATE_FILTERS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[160px]" data-testid="select-status-filter">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {ESTIMATE_STATUS_FILTERS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Select value={estimatorFilter} onValueChange={setEstimatorFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-estimator-filter">
+                <SelectValue placeholder="Estimator" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Estimators</SelectItem>
+                {users.map(u => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName} {u.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+          
+          {/* Active filter badges */}
+          {(dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">Active filters:</span>
+              {dueDateFilter !== "ALL" && (
+                <Badge variant="secondary" className="gap-1">
+                  {DUE_DATE_FILTERS.find(f => f.value === dueDateFilter)?.label}
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setDueDateFilter("ALL")}
+                    data-testid="button-clear-due-date-filter"
+                  />
+                </Badge>
+              )}
+              {statusFilter !== "ALL" && (
+                <Badge variant="secondary" className="gap-1">
+                  {ESTIMATE_STATUS_FILTERS.find(f => f.value === statusFilter)?.label}
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setStatusFilter("ALL")}
+                    data-testid="button-clear-status-filter"
+                  />
+                </Badge>
+              )}
+              {estimatorFilter !== "ALL" && (
+                <Badge variant="secondary" className="gap-1">
+                  {users.find(u => u.id === estimatorFilter)?.firstName} {users.find(u => u.id === estimatorFilter)?.lastName}
+                  <X 
+                    className="w-3 h-3 cursor-pointer" 
+                    onClick={() => setEstimatorFilter("ALL")}
+                    data-testid="button-clear-estimator-filter"
+                  />
+                </Badge>
+              )}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => {
+                  setDueDateFilter("ALL");
+                  setStatusFilter("ALL");
+                  setEstimatorFilter("ALL");
+                }}
+                data-testid="button-clear-all-filters"
+              >
+                Clear all
+              </Button>
+            </div>
+          )}
         </div>
 
         {isLoading ? (
@@ -325,7 +494,9 @@ export default function BidsPage() {
           </div>
         ) : filteredBids.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            {searchTerm ? "No bids match your search" : "No bids found"}
+            {searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL" 
+              ? "No bids match your filters" 
+              : "No bids found. Click 'New Bid' to create your first bid."}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

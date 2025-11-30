@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Plus, Trash2, Edit, UserPlus, Award, X } from "lucide-react";
+import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter } from "lucide-react";
 
 interface Crew {
   id: string;
@@ -58,6 +58,12 @@ export default function CrewsPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
 
+  // Filter state
+  const [crewSearchTerm, setCrewSearchTerm] = useState("");
+  const [crewStatusFilter, setCrewStatusFilter] = useState("ALL");
+  const [skillSearchTerm, setSkillSearchTerm] = useState("");
+  const [skillCategoryFilter, setSkillCategoryFilter] = useState("ALL");
+
   // Crews state
   const [showCrewDialog, setShowCrewDialog] = useState(false);
   const [selectedCrew, setSelectedCrew] = useState<Crew | null>(null);
@@ -96,6 +102,65 @@ export default function CrewsPage() {
     queryKey: ["/api/crews", selectedCrewForMembers?.id, "members"],
     enabled: !!selectedCrewForMembers,
   });
+
+  // Filtering logic
+  const filteredCrews = useMemo(() => {
+    const searchLower = crewSearchTerm.toLowerCase();
+    
+    return crews.filter(crew => {
+      // Search filter - safely handle optional fields
+      const crewName = (crew.name ?? "").toLowerCase();
+      const crewDescription = (crew.description ?? "").toLowerCase();
+      const leadName = crew.lead 
+        ? `${crew.lead.firstName ?? ""} ${crew.lead.lastName ?? ""}`.toLowerCase() 
+        : "";
+      
+      const matchesSearch = 
+        crewName.includes(searchLower) ||
+        crewDescription.includes(searchLower) ||
+        leadName.includes(searchLower);
+      
+      if (crewSearchTerm && !matchesSearch) return false;
+      
+      // Status filter
+      if (crewStatusFilter === "ACTIVE" && !crew.isActive) return false;
+      if (crewStatusFilter === "INACTIVE" && crew.isActive) return false;
+      
+      return true;
+    });
+  }, [crews, crewSearchTerm, crewStatusFilter]);
+
+  // Get unique skill categories
+  const uniqueSkillCategories = useMemo(() => {
+    const categories = skills.map(s => s.category).filter(Boolean) as string[];
+    return [...new Set(categories)].sort();
+  }, [skills]);
+
+  const filteredSkills = useMemo(() => {
+    const searchLower = skillSearchTerm.toLowerCase();
+    
+    return skills.filter(skill => {
+      // Search filter - safely handle optional fields
+      const skillNameVal = (skill.name ?? "").toLowerCase();
+      const skillDescVal = (skill.description ?? "").toLowerCase();
+      const skillCatVal = (skill.category ?? "").toLowerCase();
+      
+      const matchesSearch = 
+        skillNameVal.includes(searchLower) ||
+        skillDescVal.includes(searchLower) ||
+        skillCatVal.includes(searchLower);
+      
+      if (skillSearchTerm && !matchesSearch) return false;
+      
+      // Category filter
+      if (skillCategoryFilter !== "ALL" && skill.category !== skillCategoryFilter) return false;
+      
+      return true;
+    });
+  }, [skills, skillSearchTerm, skillCategoryFilter]);
+
+  const hasCrewFilters = crewSearchTerm || crewStatusFilter !== "ALL";
+  const hasSkillFilters = skillSearchTerm || skillCategoryFilter !== "ALL";
 
   // Crew mutations
   const createCrewMutation = useMutation({
@@ -320,26 +385,90 @@ export default function CrewsPage() {
           </TabsList>
 
           <TabsContent value="crews" className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap justify-between items-center gap-4">
               <h2 className="text-xl font-semibold">Crews</h2>
-              <Button
-                onClick={() => {
-                  resetCrewForm();
-                  setShowCrewDialog(true);
-                }}
-                data-testid="button-create-crew"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Crew
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search crews..."
+                    className="pl-9 w-[200px]"
+                    value={crewSearchTerm}
+                    onChange={(e) => setCrewSearchTerm(e.target.value)}
+                    data-testid="input-search-crews"
+                  />
+                </div>
+                
+                <Select value={crewStatusFilter} onValueChange={setCrewStatusFilter}>
+                  <SelectTrigger className="w-[130px]" data-testid="select-crew-status-filter">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Status</SelectItem>
+                    <SelectItem value="ACTIVE">Active</SelectItem>
+                    <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Button
+                  onClick={() => {
+                    resetCrewForm();
+                    setShowCrewDialog(true);
+                  }}
+                  data-testid="button-create-crew"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Crew
+                </Button>
+              </div>
             </div>
+            
+            {/* Active filter badges for crews */}
+            {hasCrewFilters && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Active filters:</span>
+                {crewSearchTerm && (
+                  <Badge variant="secondary" className="gap-1">
+                    Search: "{crewSearchTerm}"
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => setCrewSearchTerm("")}
+                      data-testid="button-clear-crew-search"
+                    />
+                  </Badge>
+                )}
+                {crewStatusFilter !== "ALL" && (
+                  <Badge variant="secondary" className="gap-1">
+                    {crewStatusFilter}
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => setCrewStatusFilter("ALL")}
+                      data-testid="button-clear-crew-status-filter"
+                    />
+                  </Badge>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    setCrewSearchTerm("");
+                    setCrewStatusFilter("ALL");
+                  }}
+                  data-testid="button-clear-all-crew-filters"
+                >
+                  Clear all
+                </Button>
+              </div>
+            )}
 
             <Card>
               <CardContent className="p-0">
                 {crewsLoading ? (
                   <div className="p-8 text-center text-muted-foreground">Loading crews...</div>
-                ) : crews.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">No crews found</div>
+                ) : filteredCrews.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">
+                    {hasCrewFilters ? "No crews match your filters" : "No crews found"}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -353,7 +482,7 @@ export default function CrewsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {crews.map((crew) => (
+                      {filteredCrews.map((crew) => (
                         <TableRow key={crew.id} data-testid={`crew-row-${crew.id}`}>
                           <TableCell className="font-medium">{crew.name}</TableCell>
                           <TableCell>
@@ -411,23 +540,91 @@ export default function CrewsPage() {
           </TabsContent>
 
           <TabsContent value="skills" className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap justify-between items-center gap-4">
               <h2 className="text-xl font-semibold">Skills</h2>
-              <Button
-                onClick={() => setShowSkillDialog(true)}
-                data-testid="button-create-skill"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Skill
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search skills..."
+                    className="pl-9 w-[200px]"
+                    value={skillSearchTerm}
+                    onChange={(e) => setSkillSearchTerm(e.target.value)}
+                    data-testid="input-search-skills"
+                  />
+                </div>
+                
+                {uniqueSkillCategories.length > 0 && (
+                  <Select value={skillCategoryFilter} onValueChange={setSkillCategoryFilter}>
+                    <SelectTrigger className="w-[160px]" data-testid="select-skill-category-filter">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Categories</SelectItem>
+                      {uniqueSkillCategories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                
+                <Button
+                  onClick={() => setShowSkillDialog(true)}
+                  data-testid="button-create-skill"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Skill
+                </Button>
+              </div>
             </div>
+            
+            {/* Active filter badges for skills */}
+            {hasSkillFilters && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Active filters:</span>
+                {skillSearchTerm && (
+                  <Badge variant="secondary" className="gap-1">
+                    Search: "{skillSearchTerm}"
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => setSkillSearchTerm("")}
+                      data-testid="button-clear-skill-search"
+                    />
+                  </Badge>
+                )}
+                {skillCategoryFilter !== "ALL" && (
+                  <Badge variant="secondary" className="gap-1">
+                    {skillCategoryFilter}
+                    <X 
+                      className="w-3 h-3 cursor-pointer" 
+                      onClick={() => setSkillCategoryFilter("ALL")}
+                      data-testid="button-clear-skill-category-filter"
+                    />
+                  </Badge>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    setSkillSearchTerm("");
+                    setSkillCategoryFilter("ALL");
+                  }}
+                  data-testid="button-clear-all-skill-filters"
+                >
+                  Clear all
+                </Button>
+              </div>
+            )}
 
             <Card>
               <CardContent className="p-0">
                 {skillsLoading ? (
                   <div className="p-8 text-center text-muted-foreground">Loading skills...</div>
-                ) : skills.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">No skills found</div>
+                ) : filteredSkills.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">
+                    {hasSkillFilters ? "No skills match your filters" : "No skills found"}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -439,7 +636,7 @@ export default function CrewsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {skills.map((skill) => (
+                      {filteredSkills.map((skill) => (
                         <TableRow key={skill.id} data-testid={`skill-row-${skill.id}`}>
                           <TableCell className="font-medium">{skill.name}</TableCell>
                           <TableCell>
