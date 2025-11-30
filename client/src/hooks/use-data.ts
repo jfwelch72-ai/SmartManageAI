@@ -1063,3 +1063,31 @@ export function useDeleteTMTicket() {
     },
   });
 }
+
+// Trade Features
+export interface TradeFeature {
+  id: string;
+  tradeType: string;
+  featureKey: string;
+  featureName: string;
+  description: string | null;
+  navSection: string | null;
+  navIcon: string | null;
+  navPath: string | null;
+  dashboardWidget: string | null;
+  sortOrder: number;
+  isEnabled: boolean;
+  createdAt: string; // ISO string from server
+}
+
+export interface TradeFeatureResponse {
+  features: TradeFeature[];
+  tradeType: string | null;
+}
+
+export function useTradeFeatures() {
+  return useQuery<TradeFeatureResponse>({
+    queryKey: ["/api/trade-features"],
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
+}

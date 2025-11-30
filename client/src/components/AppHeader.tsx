@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,13 +22,28 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Cloud, ClipboardCheck, FileCheck, Package, HardHat, Wrench } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
-import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount, useTradeFeatures, type TradeFeature } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
+
+const getFeatureIcon = (iconName: string | null) => {
+  switch (iconName) {
+    case "Cloud": return Cloud;
+    case "Truck": return Truck;
+    case "ClipboardCheck": return ClipboardCheck;
+    case "FileCheck": return FileCheck;
+    case "Package": return Package;
+    case "Shield": return Shield;
+    case "HardHat": return HardHat;
+    case "Users": return UsersIcon;
+    case "Wrench": return Wrench;
+    default: return Wrench;
+  }
+};
 
 interface AppHeaderProps {
   userName: string;
@@ -43,7 +58,25 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   const [timeClockOpen, setTimeClockOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [location] = useLocation();
+
+  const { data: tradeFeatureData } = useTradeFeatures();
+  
+  const tradeNavFeatures = useMemo(() => {
+    if (!tradeFeatureData?.features) return [];
+    return tradeFeatureData.features.filter(f => f.navPath && f.navSection);
+  }, [tradeFeatureData?.features]);
+
+  const groupedFeatures = useMemo(() => {
+    const groups: Record<string, TradeFeature[]> = {};
+    for (const feature of tradeNavFeatures) {
+      const section = feature.navSection || "tools";
+      if (!groups[section]) groups[section] = [];
+      groups[section].push(feature);
+    }
+    return groups;
+  }, [tradeNavFeatures]);
 
   const initials = userName
     .split(" ")
@@ -79,6 +112,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     setTimeClockOpen(false);
     setAiMenuOpen(false);
     setAdminMenuOpen(false);
+    setToolsMenuOpen(false);
   };
 
   const isActive = (path: string) => location === path || location.startsWith(path + "/");
@@ -228,6 +262,34 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                               </div>
                             </Link>
                           ))}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
+                    {/* Trade-Specific Tools Menu - collapsible */}
+                    {tradeNavFeatures.length > 0 && hasManagementAccess(userRole) && (
+                      <Collapsible open={toolsMenuOpen} onOpenChange={setToolsMenuOpen}>
+                        <CollapsibleTrigger asChild>
+                          <div className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-accent cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <Wrench className="w-5 h-5" />
+                              <span>Trade Tools</span>
+                            </div>
+                            <ChevronRight className={`w-4 h-4 transition-transform ${toolsMenuOpen ? "rotate-90" : ""}`} />
+                          </div>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pl-8 space-y-1">
+                          {tradeNavFeatures.map((feature) => {
+                            const FeatureIcon = getFeatureIcon(feature.navIcon);
+                            return (
+                              <Link key={feature.id} href={feature.navPath || "#"} onClick={closeMobileMenu}>
+                                <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${isActive(feature.navPath || "") ? "bg-primary/10 text-primary" : "hover:bg-accent"}`}>
+                                  <FeatureIcon className="w-4 h-4" />
+                                  {feature.featureName}
+                                </div>
+                              </Link>
+                            );
+                          })}
                         </CollapsibleContent>
                       </Collapsible>
                     )}
@@ -424,6 +486,41 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                             {item.label}
                           </Link>
                         </DropdownMenuItem>
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
+              {/* Trade-Specific Tools Menu */}
+              {tradeNavFeatures.length > 0 && hasManagementAccess(userRole) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="gap-2 whitespace-nowrap" data-testid="nav-trade-tools">
+                      <Wrench className="w-4 h-4" />
+                      Trade Tools
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {Object.entries(groupedFeatures).map(([section, features]) => (
+                      <div key={section}>
+                        {Object.keys(groupedFeatures).length > 1 && (
+                          <DropdownMenuLabel className="text-xs text-muted-foreground capitalize">
+                            {section}
+                          </DropdownMenuLabel>
+                        )}
+                        {features.map((feature) => {
+                          const FeatureIcon = getFeatureIcon(feature.navIcon);
+                          return (
+                            <DropdownMenuItem key={feature.id} asChild data-testid={`nav-trade-${feature.featureKey}`}>
+                              <Link href={feature.navPath || "#"}>
+                                <FeatureIcon className="mr-2 h-4 w-4" />
+                                {feature.featureName}
+                              </Link>
+                            </DropdownMenuItem>
+                          );
+                        })}
                       </div>
                     ))}
                   </DropdownMenuContent>

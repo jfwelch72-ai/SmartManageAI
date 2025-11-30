@@ -31,7 +31,8 @@ import {
   rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema,
   bidEquipmentSelections, insertBidEquipmentSelectionSchema,
   projectEquipmentPlans, insertProjectEquipmentPlanSchema,
-  rentalEquipmentUsages, insertRentalEquipmentUsageSchema
+  rentalEquipmentUsages, insertRentalEquipmentUsageSchema,
+  tradeFeatures, organizations
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -238,6 +239,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user org:", error);
       res.json({ user: req.user, organizationName: null });
+    }
+  });
+
+  // Get trade features for current user's organization
+  app.get("/api/trade-features", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+
+      const [user] = await db
+        .select({ organizationId: users.organizationId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user?.organizationId) {
+        res.json({ features: [], tradeType: null });
+        return;
+      }
+
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, user.organizationId))
+        .limit(1);
+
+      if (!org?.tradeType) {
+        res.json({ features: [], tradeType: null });
+        return;
+      }
+
+      let features;
+      
+      if (org.tradeType === "GENERAL_CONTRACTOR") {
+        // GC mode: Return all unique features across all trades (deduplicated by featureKey)
+        // Get all enabled features and deduplicate by featureKey, keeping first occurrence
+        const allFeatures = await db
+          .select()
+          .from(tradeFeatures)
+          .where(eq(tradeFeatures.isEnabled, true))
+          .orderBy(tradeFeatures.sortOrder, tradeFeatures.tradeType);
+
+        // Deduplicate by featureKey (keep first occurrence which has lowest sortOrder)
+        const seenKeys = new Set<string>();
+        features = allFeatures.filter(f => {
+          if (seenKeys.has(f.featureKey)) return false;
+          seenKeys.add(f.featureKey);
+          return true;
+        });
+      } else {
+        // Single trade mode: Return features for the specific trade only
+        features = await db
+          .select()
+          .from(tradeFeatures)
+          .where(
+            and(
+              eq(tradeFeatures.tradeType, org.tradeType),
+              eq(tradeFeatures.isEnabled, true)
+            )
+          )
+          .orderBy(tradeFeatures.sortOrder);
+      }
+
+      res.json({ features, tradeType: org.tradeType });
+    } catch (error) {
+      console.error("Error fetching trade features:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
