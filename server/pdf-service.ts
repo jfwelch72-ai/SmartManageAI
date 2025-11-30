@@ -708,3 +708,246 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   doc.end();
   return stream;
 }
+
+// Inspection Request PDF Data Interface
+interface InspectionRequestData {
+  inspection: {
+    inspectionNumber: string;
+    title: string;
+    description: string | null;
+    inspectionType: string;
+    typeLabel: string;
+    requestMethod: string | null;
+    requestMethodLabel: string | null;
+    requestedDate: Date;
+    scheduledDate: Date | null;
+    status: string;
+    statusLabel: string;
+    inspectorName: string | null;
+    inspectorCompany: string | null;
+    inspectorPhone: string | null;
+    inspectorEmail: string | null;
+    gcRepName: string | null;
+    gcRepCompany: string | null;
+    gcRepPhone: string | null;
+    gcRepEmail: string | null;
+    ownerRepName: string | null;
+    ownerRepCompany: string | null;
+    ownerRepPhone: string | null;
+    ownerRepEmail: string | null;
+  };
+  project: {
+    name: string;
+    code: string;
+    clientName: string;
+    locationAddress: string | null;
+    city: string | null;
+    state: string | null;
+  };
+  createdBy: {
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+  };
+  organizationName?: string;
+}
+
+export function generateInspectionRequestPDF(data: InspectionRequestData): PassThrough {
+  const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+  const stream = new PassThrough();
+  doc.pipe(stream);
+
+  const primaryColor = '#1a365d';
+  const accentColor = '#0284c7';
+
+  // Company Letterhead
+  const orgName = data.organizationName || 'SmartManageAI';
+  doc.fontSize(24).fillColor(primaryColor).text(orgName.toUpperCase(), { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('CONSTRUCTION MANAGEMENT', { align: 'center' });
+  doc.moveDown();
+
+  // Decorative line
+  doc.strokeColor(primaryColor).lineWidth(2)
+    .moveTo(50, doc.y)
+    .lineTo(562, doc.y)
+    .stroke();
+  doc.moveDown();
+
+  // Document Title
+  doc.fontSize(18).fillColor(accentColor).text('INSPECTION REQUEST', { align: 'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(11).fillColor('#374151').text(`Reference: ${data.inspection.inspectionNumber}`, { align: 'center' });
+  doc.moveDown();
+
+  // Date
+  const formattedDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  doc.fontSize(11).fillColor('#374151').text(formattedDate, { align: 'right' });
+  doc.moveDown();
+
+  // Inspection Type Badge
+  doc.fontSize(12).fillColor(primaryColor).text(`Inspection Type: `, { continued: true });
+  doc.fillColor(accentColor).text(data.inspection.typeLabel);
+  doc.moveDown();
+
+  // Project Information Box
+  const projectBoxTop = doc.y;
+  doc.rect(50, projectBoxTop, 512, 80).fillAndStroke('#f0f9ff', '#bae6fd');
+  
+  doc.fontSize(12).fillColor(primaryColor).text('PROJECT INFORMATION', 60, projectBoxTop + 10);
+  doc.fontSize(10).fillColor('#374151');
+  doc.text(`Project Name: ${data.project.name}`, 60, projectBoxTop + 30);
+  doc.text(`Project Code: ${data.project.code}`, 60, projectBoxTop + 45);
+  doc.text(`Client: ${data.project.clientName}`, 60, projectBoxTop + 60);
+  
+  // Location on right side
+  if (data.project.locationAddress) {
+    const location = [
+      data.project.locationAddress,
+      [data.project.city, data.project.state].filter(Boolean).join(', ')
+    ].filter(Boolean).join(', ');
+    doc.text(`Location: ${location}`, 300, projectBoxTop + 30);
+  }
+
+  doc.y = projectBoxTop + 90;
+  doc.moveDown();
+
+  // Inspection Details Section
+  doc.fontSize(14).fillColor(primaryColor).text('INSPECTION DETAILS');
+  doc.moveDown(0.5);
+  
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y)
+    .lineTo(562, doc.y)
+    .stroke();
+  doc.moveDown(0.5);
+
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`Inspection Title: `, { continued: true });
+  doc.fillColor('#111827').text(data.inspection.title);
+  
+  if (data.inspection.description) {
+    doc.moveDown(0.3);
+    doc.fillColor('#374151').text(`Description: `, { continued: true });
+    doc.fillColor('#111827').text(data.inspection.description);
+  }
+  
+  doc.moveDown(0.3);
+  doc.fillColor('#374151').text(`Requested Date: `, { continued: true });
+  doc.fillColor('#111827').text(new Date(data.inspection.requestedDate).toLocaleDateString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }));
+  
+  if (data.inspection.scheduledDate) {
+    doc.moveDown(0.3);
+    doc.fillColor('#374151').text(`Scheduled Date: `, { continued: true });
+    doc.fillColor(accentColor).text(new Date(data.inspection.scheduledDate).toLocaleDateString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }));
+  }
+  
+  if (data.inspection.requestMethod) {
+    doc.moveDown(0.3);
+    doc.fillColor('#374151').text(`Request Method: `, { continued: true });
+    doc.fillColor('#111827').text(data.inspection.requestMethodLabel || data.inspection.requestMethod);
+  }
+  
+  doc.moveDown(0.3);
+  doc.fillColor('#374151').text(`Status: `, { continued: true });
+  const statusColor = data.inspection.status === 'PASSED' ? '#059669' : 
+                      data.inspection.status === 'FAILED' ? '#dc2626' : 
+                      data.inspection.status === 'SCHEDULED' ? '#2563eb' : '#6b7280';
+  doc.fillColor(statusColor).text(data.inspection.statusLabel);
+  doc.moveDown();
+
+  // Contacts Section
+  if (data.inspection.inspectorName || data.inspection.gcRepName || data.inspection.ownerRepName) {
+    doc.fontSize(14).fillColor(primaryColor).text('CONTACTS');
+    doc.moveDown(0.5);
+    
+    doc.strokeColor('#e5e7eb').lineWidth(1)
+      .moveTo(50, doc.y)
+      .lineTo(562, doc.y)
+      .stroke();
+    doc.moveDown(0.5);
+
+    // Inspector Contact
+    if (data.inspection.inspectorName) {
+      doc.fontSize(11).fillColor(accentColor).text('Inspector:');
+      doc.fillColor('#374151').text(`  ${data.inspection.inspectorName}`);
+      if (data.inspection.inspectorCompany) doc.text(`  ${data.inspection.inspectorCompany}`);
+      if (data.inspection.inspectorPhone) doc.text(`  Phone: ${data.inspection.inspectorPhone}`);
+      if (data.inspection.inspectorEmail) doc.text(`  Email: ${data.inspection.inspectorEmail}`);
+      doc.moveDown(0.5);
+    }
+
+    // GC Representative
+    if (data.inspection.gcRepName) {
+      doc.fillColor(accentColor).text('GC Representative:');
+      doc.fillColor('#374151').text(`  ${data.inspection.gcRepName}`);
+      if (data.inspection.gcRepCompany) doc.text(`  ${data.inspection.gcRepCompany}`);
+      if (data.inspection.gcRepPhone) doc.text(`  Phone: ${data.inspection.gcRepPhone}`);
+      if (data.inspection.gcRepEmail) doc.text(`  Email: ${data.inspection.gcRepEmail}`);
+      doc.moveDown(0.5);
+    }
+
+    // Owner Representative
+    if (data.inspection.ownerRepName) {
+      doc.fillColor(accentColor).text('Owner Representative:');
+      doc.fillColor('#374151').text(`  ${data.inspection.ownerRepName}`);
+      if (data.inspection.ownerRepCompany) doc.text(`  ${data.inspection.ownerRepCompany}`);
+      if (data.inspection.ownerRepPhone) doc.text(`  Phone: ${data.inspection.ownerRepPhone}`);
+      if (data.inspection.ownerRepEmail) doc.text(`  Email: ${data.inspection.ownerRepEmail}`);
+      doc.moveDown(0.5);
+    }
+    doc.moveDown();
+  }
+
+  // Signature Section
+  if (doc.y > 600) doc.addPage();
+
+  doc.fontSize(11).fillColor('#374151')
+    .text('This inspection request has been submitted for your review and scheduling.');
+  doc.moveDown(2);
+
+  doc.text('Requested by:');
+  doc.moveDown(2);
+
+  // Signature line
+  doc.strokeColor('#374151').lineWidth(0.5)
+    .moveTo(50, doc.y)
+    .lineTo(250, doc.y)
+    .stroke();
+  doc.moveDown(0.3);
+
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`${data.createdBy.firstName} ${data.createdBy.lastName}`);
+  doc.fontSize(10).fillColor('#6b7280');
+  doc.text(orgName);
+  if (data.createdBy.phone) {
+    doc.text(`Phone: ${data.createdBy.phone}`);
+  }
+  if (data.createdBy.email) {
+    doc.text(`Email: ${data.createdBy.email}`);
+  }
+
+  // Footer
+  doc.moveDown(2);
+  doc.fontSize(8).fillColor('#9ca3af')
+    .text('This document serves as a formal inspection request for project documentation purposes.', { align: 'center' })
+    .text(`Generated on ${new Date().toLocaleString()} | Reference: ${data.inspection.inspectionNumber}`, { align: 'center' });
+
+  doc.end();
+  return stream;
+}

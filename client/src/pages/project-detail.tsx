@@ -17,6 +17,7 @@ import ProjectEstimate from "@/components/ProjectEstimate";
 import JobInformationForm from "@/components/JobInformationForm";
 import TMTicketsSection from "@/components/TMTicketsSection";
 import DelaysSection from "@/components/DelaysSection";
+import InspectionsSection from "@/components/InspectionsSection";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -2283,6 +2284,10 @@ export default function ProjectDetailPage() {
               <CloudRain className="h-4 w-4 mr-1" />
               Delays
             </TabsTrigger>
+            <TabsTrigger value="inspections" data-testid="tab-inspections">
+              <CalendarCheck className="h-4 w-4 mr-1" />
+              Inspections
+            </TabsTrigger>
             <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
             <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
             {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
@@ -2887,6 +2892,14 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="delays">
             <DelaysSection 
+              projectId={project.id}
+              projectCode={projectCode}
+              userRole={user?.role || ""}
+            />
+          </TabsContent>
+
+          <TabsContent value="inspections">
+            <InspectionsSection 
               projectId={project.id}
               projectCode={projectCode}
               userRole={user?.role || ""}

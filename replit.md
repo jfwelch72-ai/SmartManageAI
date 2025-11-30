@@ -98,6 +98,16 @@ The platform utilizes a modern web stack with a client-server architecture, prio
         - Change Order Integration: Auto-link delays to change orders for cost recovery
         - CRM Integration: Link Owner Rep and GC Rep contacts from CRM
         - RBAC: SUPERINTENDENT+ can create/edit delays, ADMIN/MANAGER can acknowledge
+    -   **Inspection Scheduling System**: Schedule and track inspections with city officials, GC representatives, and owner representatives:
+        - Inspection Types: CITY_OFFICIAL, GC_REPRESENTATIVE, OWNER_REPRESENTATIVE
+        - Status Workflow: REQUESTED → SCHEDULED → PASSED/FAILED/CANCELLED
+        - Request Methods: CALL, EMAIL, PORTAL, OTHER
+        - Inspector Contact Management: Track inspector name, company, phone, email
+        - GC Rep and Owner Rep Contact Integration
+        - Result Tracking: Notes, punch list items, reinspection requirements
+        - PDF Generation: Generate professional inspection request documents
+        - Email Notifications: Send inspection requests to stakeholders
+        - RBAC: SUPERINTENDENT+ can create/edit/pass/fail, OFFICE_MANAGER can schedule
     -   **AI Integration**: AI Senior PM + CFO System for task generation, profitability analysis, scheduling, and billing automation, including Lead Time Intelligence. AI-powered maintenance recommendations for equipment.
     -   **Takeoff & Estimating Engine**: Interactive drawing tools for linear, area, volume, and count measurements, supporting multi-page PDF rendering and a comprehensive material calculator.
     -   **CRM System**: Management for various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.

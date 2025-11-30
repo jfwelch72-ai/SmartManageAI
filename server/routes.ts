@@ -55,6 +55,7 @@ import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from ".
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
+import inspectionRoutes from "./inspectionRoutes";
 import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
@@ -80,6 +81,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register delay tracking routes
   app.use("/api", delayRoutes);
+
+  // Register inspection scheduling routes
+  app.use("/api", inspectionRoutes);
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);

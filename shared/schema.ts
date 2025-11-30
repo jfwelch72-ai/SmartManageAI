@@ -52,6 +52,11 @@ export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", 
 export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
 export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
+// Inspection Scheduling Enums
+export const inspectionTypeEnum = pgEnum("inspection_type", ["CITY_OFFICIAL", "GC_REPRESENTATIVE", "OWNER_REPRESENTATIVE"]);
+export const inspectionStatusEnum = pgEnum("inspection_status", ["REQUESTED", "SCHEDULED", "PASSED", "FAILED", "CANCELLED"]);
+export const inspectionRequestMethodEnum = pgEnum("inspection_request_method", ["CALL", "EMAIL", "PORTAL", "OTHER"]);
+
 // White-Label / Multi-Tenant Enums - All 19 CSI Trade Divisions
 export const tradeTypeEnum = pgEnum("trade_type", [
   "GENERAL_CONTRACTOR",    // CSI 00/01 - Full GC/CM
@@ -779,6 +784,71 @@ export const delayNotifications = pgTable("delay_notifications", {
 }, (table) => ({
   delayIdIdx: index("delay_notifications_delay_id_idx").on(table.delayId),
 }));
+
+// Project Inspections table - tracks scheduled inspections with city officials, GC reps, owner reps
+export const projectInspections = pgTable("project_inspections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  inspectionNumber: text("inspection_number").notNull(), // e.g., INSP-260009-001
+  inspectionType: inspectionTypeEnum("inspection_type").notNull(),
+  title: text("title").notNull(), // e.g., "Footing Inspection", "Rough Electrical"
+  description: text("description"),
+  requestMethod: inspectionRequestMethodEnum("request_method"),
+  requestedDate: timestamp("requested_date").notNull(), // When inspection was requested
+  scheduledDate: timestamp("scheduled_date"), // When inspection is scheduled
+  completedDate: timestamp("completed_date"),
+  status: inspectionStatusEnum("status").notNull().default("REQUESTED"),
+  
+  // Inspector Contact Information (from CRM or manual entry)
+  inspectorContactId: varchar("inspector_contact_id"), // CRM contact ID if from CRM
+  inspectorName: text("inspector_name"),
+  inspectorCompany: text("inspector_company"),
+  inspectorPhone: text("inspector_phone"),
+  inspectorEmail: text("inspector_email"),
+  
+  // GC Representative (from CRM or manual entry)
+  gcRepContactId: varchar("gc_rep_contact_id"), // CRM contact ID
+  gcRepName: text("gc_rep_name"),
+  gcRepCompany: text("gc_rep_company"),
+  gcRepPhone: text("gc_rep_phone"),
+  gcRepEmail: text("gc_rep_email"),
+  
+  // Owner Representative (from CRM or manual entry)
+  ownerRepContactId: varchar("owner_rep_contact_id"), // CRM contact ID
+  ownerRepName: text("owner_rep_name"),
+  ownerRepCompany: text("owner_rep_company"),
+  ownerRepPhone: text("owner_rep_phone"),
+  ownerRepEmail: text("owner_rep_email"),
+  
+  // Result information
+  resultNotes: text("result_notes"),
+  punchListItems: text("punch_list_items"), // Items to fix if failed
+  reinspectionRequired: boolean("reinspection_required").notNull().default(false),
+  reinspectionDate: timestamp("reinspection_date"),
+  
+  // PDF and email tracking
+  requestPdfUrl: text("request_pdf_url"), // Generated PDF of inspection request
+  emailSentAt: timestamp("email_sent_at"),
+  emailRecipients: text("email_recipients"), // Comma-separated list of emails
+  
+  // Metadata
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("project_inspections_project_id_idx").on(table.projectId),
+  statusIdx: index("project_inspections_status_idx").on(table.status),
+  typeIdx: index("project_inspections_type_idx").on(table.inspectionType),
+  scheduledDateIdx: index("project_inspections_scheduled_date_idx").on(table.scheduledDate),
+}));
+
+export const insertProjectInspectionSchema = createInsertSchema(projectInspections).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+export type InsertProjectInspection = z.infer<typeof insertProjectInspectionSchema>;
+export type ProjectInspection = typeof projectInspections.$inferSelect;
 
 // Calendar Events table
 export const calendarEvents = pgTable("calendar_events", {
