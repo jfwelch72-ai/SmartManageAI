@@ -15,7 +15,7 @@ import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
 import { type AuthRequest } from "./auth";
-import { openai } from "./ai/openaiClient";
+import { openai, researchCustomTrade, TradeResearchResult } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
 import { getWalkthroughForRole, getTotalStepsForRole, getWalkthroughStep, generateWalkthroughPrompt } from "./ai/walkthroughContent";
@@ -109,6 +109,46 @@ const onboardingChatSchema = z.object({
       .pipe(z.string().max(5000))
       .transform(s => sanitizeText(s)),
   })).max(30).optional().default([]),
+  tradeResearch: z.object({
+    tradeName: z.string(),
+    tradeDescription: z.string().optional(),
+    scopeOfWorkItems: z.array(z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      unit: z.string().optional(),
+      category: z.string().optional(),
+    })).optional(),
+    commonMaterials: z.array(z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      unit: z.string().optional(),
+      category: z.string().optional(),
+    })).optional(),
+    workTypes: z.array(z.object({
+      name: z.string(),
+      unit: z.string().optional(),
+      typicalProductionRate: z.string().optional(),
+      description: z.string().optional(),
+    })).optional(),
+    calculators: z.array(z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      outputUnit: z.string().optional(),
+      inputs: z.array(z.object({
+        name: z.string(),
+        unit: z.string().optional(),
+      })).optional(),
+    })).optional(),
+    vendorCategories: z.array(z.string()).optional(),
+    industryNotes: z.string().optional(),
+  }).optional().nullable(),
+});
+
+const tradeResearchSchema = z.object({
+  tradeName: z.string()
+    .transform(s => s?.trim() || '')
+    .pipe(z.string().min(2, "Trade name must be at least 2 characters").max(100))
+    .transform(s => sanitizeShortText(s)),
 });
 
 const router = Router();
@@ -1252,6 +1292,91 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
   }
 }
 
+// Trade Research endpoint - researches an unknown trade using AI
+router.post("/ai/onboarding/research-trade", sensitiveLimiter, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const validationResult = tradeResearchSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid input", 
+        details: fromZodError(validationResult.error).toString() 
+      });
+    }
+
+    const { tradeName } = validationResult.data;
+    
+    console.log(`[Trade Research API] Researching trade: ${tradeName}`);
+    const research = await researchCustomTrade(tradeName);
+    
+    res.json({
+      success: true,
+      research,
+    });
+  } catch (error: any) {
+    console.error("Trade research error:", error.message || "Unknown error");
+    res.status(500).json({ error: "Failed to research trade. Please try again." });
+  }
+});
+
+// Helper to build enhanced system prompt with trade research data
+function buildTradeResearchContext(research: TradeResearchResult): string {
+  const sowItems = research.scopeOfWorkItems
+    ?.slice(0, 12)
+    .map(item => `- ${item.name} (${item.unit}): ${item.description || ''}`)
+    .join('\n') || '';
+  
+  const materials = research.commonMaterials
+    ?.slice(0, 10)
+    .map(m => `- ${m.name} (${m.unit}): ${m.description || ''}`)
+    .join('\n') || '';
+  
+  const workTypes = research.workTypes
+    ?.slice(0, 6)
+    .map(wt => `- ${wt.name} (${wt.unit})${wt.typicalProductionRate ? ` - typical rate: ${wt.typicalProductionRate}` : ''}`)
+    .join('\n') || '';
+  
+  const calculators = research.calculators
+    ?.slice(0, 4)
+    .map(c => `- ${c.name}: ${c.description || ''}`)
+    .join('\n') || '';
+
+  return `
+## IMPORTANT: Research Data for "${research.tradeName}"
+
+You have access to RESEARCHED INDUSTRY DATA for this specialty trade. Use this information to make educated suggestions during the conversation.
+
+**Trade Description:** ${research.tradeDescription || ''}
+
+**Common Scope of Work Items (suggest these):**
+${sowItems}
+
+**Common Materials:**
+${materials}
+
+**Work Types with Typical Units:**
+${workTypes}
+
+**Useful Calculators:**
+${calculators}
+
+**Vendor Categories:** ${research.vendorCategories?.join(', ') || 'General suppliers'}
+
+**Industry Notes:** ${research.industryNotes || ''}
+
+INSTRUCTIONS:
+- Use this research to make informed suggestions
+- Present the SOW items as "Based on ${research.tradeName} industry standards, here are common services..."
+- Offer the materials list as suggestions they can confirm
+- Suggest the work types with appropriate units
+- Recommend the calculators that would be helpful
+- The user can accept, modify, or add to these suggestions
+`;
+}
+
 // AI Onboarding Chat endpoint
 router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
@@ -1268,10 +1393,16 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, re
       });
     }
 
-    const { message, conversationHistory } = validationResult.data;
+    const { message, conversationHistory, tradeResearch } = validationResult.data;
 
     // Build dynamic system prompt with trade data from database
-    const systemPrompt = await buildOnboardingSystemPrompt();
+    let systemPrompt = await buildOnboardingSystemPrompt();
+    
+    // If trade research data is available, append it to provide context
+    if (tradeResearch && tradeResearch.tradeName) {
+      const researchContext = buildTradeResearchContext(tradeResearch as TradeResearchResult);
+      systemPrompt += researchContext;
+    }
 
     const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
       { role: 'system', content: systemPrompt }
@@ -1290,7 +1421,7 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, re
       model: 'gpt-4o-mini',
       messages,
       temperature: 0.7,
-      max_tokens: 500,
+      max_tokens: 800, // Increased for more detailed responses with research context
       response_format: { type: "json_object" },
     });
 

@@ -38,6 +38,17 @@ interface Suggestions {
   materials: string[] | null;
 }
 
+interface TradeResearchResult {
+  tradeName: string;
+  tradeDescription?: string;
+  scopeOfWorkItems?: { name: string; description?: string; unit?: string; category?: string }[];
+  commonMaterials?: { name: string; description?: string; unit?: string; category?: string }[];
+  workTypes?: { name: string; unit?: string; typicalProductionRate?: string; description?: string }[];
+  calculators?: { name: string; description?: string; outputUnit?: string; inputs?: { name: string; unit?: string }[] }[];
+  vendorCategories?: string[];
+  industryNotes?: string;
+}
+
 export default function OnboardingPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -66,8 +77,36 @@ export default function OnboardingPage() {
   const [websiteInput, setWebsiteInput] = useState("");
   const [showCompanyInput, setShowCompanyInput] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tradeResearch, setTradeResearch] = useState<TradeResearchResult | null>(null);
+  const [isResearching, setIsResearching] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const researchTrade = async (tradeName: string): Promise<TradeResearchResult | null> => {
+    try {
+      setIsResearching(true);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `One moment while I research "${tradeName}" to provide you with industry-specific suggestions...` 
+      }]);
+      
+      const res = await apiRequest("POST", "/api/ai/onboarding/research-trade", {
+        tradeName,
+      });
+      const data = await res.json();
+      
+      if (data.success && data.research) {
+        setTradeResearch(data.research);
+        return data.research;
+      }
+      return null;
+    } catch (error) {
+      console.error("Trade research error:", error);
+      return null;
+    } finally {
+      setIsResearching(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) {
@@ -109,7 +148,7 @@ export default function OnboardingPage() {
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isResearching) return;
 
     const userMessage = input.trim();
     setInput("");
@@ -125,16 +164,26 @@ export default function OnboardingPage() {
       const res = await apiRequest("POST", "/api/ai/onboarding/chat", {
         message: userMessage,
         conversationHistory,
+        tradeResearch: tradeResearch,
       });
       const data = await res.json();
       
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
       
+      let newTradeType: string | null = null;
+      let newTradeName: string | null = null;
+      
       if (data.extractedData) {
         setExtractedData(prev => {
           const updated = { ...prev };
-          if (data.extractedData.tradeType) updated.tradeType = data.extractedData.tradeType;
-          if (data.extractedData.tradeName) updated.tradeName = data.extractedData.tradeName;
+          if (data.extractedData.tradeType) {
+            updated.tradeType = data.extractedData.tradeType;
+            newTradeType = data.extractedData.tradeType;
+          }
+          if (data.extractedData.tradeName) {
+            updated.tradeName = data.extractedData.tradeName;
+            newTradeName = data.extractedData.tradeName;
+          }
           if (data.extractedData.crewSize) updated.crewSize = data.extractedData.crewSize;
           if (data.extractedData.region) updated.region = data.extractedData.region;
           if (data.extractedData.materials) updated.materials = data.extractedData.materials;
@@ -143,6 +192,32 @@ export default function OnboardingPage() {
           if (data.extractedData.suggestedCalculators) updated.suggestedCalculators = data.extractedData.suggestedCalculators;
           return updated;
         });
+        
+        // If we just identified a custom trade (OTHER) with a trade name, trigger research
+        if (newTradeType === 'OTHER' && newTradeName && !tradeResearch) {
+          setIsLoading(false);
+          const research = await researchTrade(newTradeName);
+          if (research) {
+            // Send a follow-up message with the research context
+            const followUpRes = await apiRequest("POST", "/api/ai/onboarding/chat", {
+              message: "I've provided my trade type. Please continue with the setup using the industry research you've gathered.",
+              conversationHistory: [...conversationHistory, 
+                { role: 'user', content: userMessage },
+                { role: 'assistant', content: data.message },
+                { role: 'assistant', content: `One moment while I research "${newTradeName}" to provide you with industry-specific suggestions...` }
+              ],
+              tradeResearch: research,
+            });
+            const followUpData = await followUpRes.json();
+            setMessages(prev => [...prev, { role: 'assistant', content: followUpData.message }]);
+            if (followUpData.step) setStep(followUpData.step);
+            if (followUpData.isComplete) {
+              setIsComplete(true);
+              setShowCompanyInput(true);
+            }
+          }
+          return;
+        }
       }
       
       if (data.suggestions) {
@@ -277,13 +352,14 @@ export default function OnboardingPage() {
                       )}
                     </div>
                   ))}
-                  {isLoading && (
+                  {(isLoading || isResearching) && (
                     <div className="flex gap-3 justify-start">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
                         <Bot className="h-4 w-4 text-primary" />
                       </div>
-                      <div className="rounded-lg px-4 py-2 bg-muted">
+                      <div className="rounded-lg px-4 py-2 bg-muted flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
+                        {isResearching && <span className="text-sm text-muted-foreground">Researching industry data...</span>}
                       </div>
                     </div>
                   )}
@@ -298,12 +374,12 @@ export default function OnboardingPage() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={handleKeyPress}
                     placeholder="Type your response..."
-                    disabled={isLoading}
+                    disabled={isLoading || isResearching}
                     data-testid="input-onboarding-message"
                   />
                   <Button 
                     onClick={sendMessage} 
-                    disabled={isLoading || !input.trim()}
+                    disabled={isLoading || isResearching || !input.trim()}
                     data-testid="button-send-message"
                   >
                     <Send className="h-4 w-4" />
