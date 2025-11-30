@@ -55,6 +55,13 @@ const onboardingCompleteSchema = z.object({
   ).max(50).optional().nullable(),
   websiteUrl: z.string()
     .transform(s => s?.trim() || '')
+    .transform(s => {
+      // Auto-prepend https:// if user enters URL without protocol
+      if (s && s.length > 0 && !s.startsWith('http://') && !s.startsWith('https://')) {
+        return `https://${s}`;
+      }
+      return s;
+    })
     .pipe(z.string().url().max(500).or(z.literal('')))
     .transform(s => s ? sanitizeShortText(s) : null)
     .optional()
