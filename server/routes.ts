@@ -65,6 +65,7 @@ import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import platformAdminRoutes from "./platformAdminRoutes";
 import calculatorRoutes from "./calculatorRoutes";
 import aiAssistantRoutes from "./aiAssistantRoutes";
+import aiFeatureRoutes from "./aiFeatureRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 
@@ -113,6 +114,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI Assistant routes (SOW and UOM management)
   app.use("/api/ai-assistant", aiAssistantRoutes);
+
+  // Register AI Feature routes (7 major AI-enhanced features)
+  app.use("/api/ai-features", aiFeatureRoutes);
 
   // ====================
   // Auth Routes

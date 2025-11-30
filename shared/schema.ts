@@ -3072,3 +3072,378 @@ export const tradeFeatures = pgTable("trade_features", {
 export const insertTradeFeatureSchema = createInsertSchema(tradeFeatures).omit({ id: true, createdAt: true });
 export type InsertTradeFeature = z.infer<typeof insertTradeFeatureSchema>;
 export type TradeFeature = typeof tradeFeatures.$inferSelect;
+
+// ============================================
+// FEATURE A: AI AUTO-TAKEOFF ANALYSES
+// AI-powered blueprint/photo analysis for quantity takeoffs
+// ============================================
+export const aiTakeoffStatusEnum = pgEnum("ai_takeoff_status", ["PENDING", "PROCESSING", "COMPLETE", "FAILED"]);
+export const aiTakeoffModeEnum = pgEnum("ai_takeoff_mode", ["QUICK", "DETAILED"]);
+
+export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  takeoffSheetId: varchar("takeoff_sheet_id").references(() => takeoffSheets.id, { onDelete: "set null" }),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  status: aiTakeoffStatusEnum("status").notNull().default("PENDING"),
+  analysisMode: aiTakeoffModeEnum("analysis_mode").notNull().default("QUICK"),
+  fileKey: text("file_key"),
+  fileName: text("file_name"),
+  detectedItemsJson: text("detected_items_json"),     // AI-detected measurements
+  metadataJson: text("metadata_json"),                // Scale, title block, etc.
+  aiNotes: text("ai_notes"),
+  errorMessage: text("error_message"),
+  processingTimeMs: integer("processing_time_ms"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("ai_takeoff_project_idx").on(table.projectId),
+  orgIdx: index("ai_takeoff_org_idx").on(table.organizationId),
+}));
+
+export const insertAiTakeoffAnalysisSchema = createInsertSchema(aiTakeoffAnalyses).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiTakeoffAnalysis = z.infer<typeof insertAiTakeoffAnalysisSchema>;
+export type AiTakeoffAnalysis = typeof aiTakeoffAnalyses.$inferSelect;
+
+// ============================================
+// FEATURE B: PROJECT SCHEDULES
+// AI-powered scheduling with Gantt-style task management
+// ============================================
+export const scheduleGeneratedByEnum = pgEnum("schedule_generated_by", ["AI", "MANUAL"]);
+export const scheduleTaskStatusEnum = pgEnum("schedule_task_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "DELAYED", "ON_HOLD"]);
+
+export const projectSchedules = pgTable("project_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull().default("Master Schedule"),
+  generatedBy: scheduleGeneratedByEnum("generated_by").notNull().default("MANUAL"),
+  baselineStartDate: date("baseline_start_date"),
+  baselineEndDate: date("baseline_end_date"),
+  actualStartDate: date("actual_start_date"),
+  actualEndDate: date("actual_end_date"),
+  workingDays: integer("working_days").array().default(sql`'{1,2,3,4,5}'`),
+  optionsJson: text("options_json"),                  // Buffer days, weather contingency, etc.
+  aiNotes: text("ai_notes"),
+  version: integer("version").notNull().default(1),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("project_schedules_project_idx").on(table.projectId),
+  orgIdx: index("project_schedules_org_idx").on(table.organizationId),
+}));
+
+export const insertProjectScheduleSchema = createInsertSchema(projectSchedules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectSchedule = z.infer<typeof insertProjectScheduleSchema>;
+export type ProjectSchedule = typeof projectSchedules.$inferSelect;
+
+export const projectScheduleTasks = pgTable("project_schedule_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => projectSchedules.id, { onDelete: "cascade" }),
+  parentTaskId: varchar("parent_task_id").references((): any => projectScheduleTasks.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  tradeType: tradeTypeEnum("trade_type"),
+  plannedStartDate: date("planned_start_date"),
+  plannedEndDate: date("planned_end_date"),
+  actualStartDate: date("actual_start_date"),
+  actualEndDate: date("actual_end_date"),
+  durationDays: integer("duration_days"),
+  dependencies: varchar("dependencies").array(),      // Array of task IDs
+  percentComplete: integer("percent_complete").notNull().default(0),
+  isCriticalPath: boolean("is_critical_path").notNull().default(false),
+  isMilestone: boolean("is_milestone").notNull().default(false),
+  crewId: varchar("crew_id").references(() => crews.id),
+  sowItemIds: varchar("sow_item_ids").array(),
+  inspectionId: varchar("inspection_id").references(() => projectInspections.id),
+  delayIds: varchar("delay_ids").array(),
+  status: scheduleTaskStatusEnum("status").notNull().default("NOT_STARTED"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  scheduleIdx: index("schedule_tasks_schedule_idx").on(table.scheduleId),
+  parentIdx: index("schedule_tasks_parent_idx").on(table.parentTaskId),
+}));
+
+export const insertProjectScheduleTaskSchema = createInsertSchema(projectScheduleTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectScheduleTask = z.infer<typeof insertProjectScheduleTaskSchema>;
+export type ProjectScheduleTask = typeof projectScheduleTasks.$inferSelect;
+
+// ============================================
+// FEATURE C: AI JOBSITE CAMERA ANALYSIS
+// Vision AI for safety, progress, and compliance analysis
+// ============================================
+export const jobsiteAnalysisStatusEnum = pgEnum("jobsite_analysis_status", ["PENDING", "PROCESSING", "COMPLETE", "PARTIAL", "FAILED"]);
+export const safetySeverityEnum = pgEnum("safety_severity", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+
+export const jobsiteAnalysisBatches = pgTable("jobsite_analysis_batches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  analysisDate: date("analysis_date").notNull(),
+  tradeType: tradeTypeEnum("trade_type"),
+  status: jobsiteAnalysisStatusEnum("status").notNull().default("PENDING"),
+  analysisTypes: text("analysis_types").array().default(sql`'{SAFETY,PROGRESS}'`),
+  summaryJson: text("summary_json"),                  // Overall scores and summary
+  safetyFindingsJson: text("safety_findings_json"),   // Safety issues detected
+  progressFindingsJson: text("progress_findings_json"), // Progress observations
+  materialFindingsJson: text("material_findings_json"), // Material tracking
+  crewFindingsJson: text("crew_findings_json"),       // Crew count/PPE
+  aiNotes: text("ai_notes"),
+  errorMessage: text("error_message"),
+  processingTimeMs: integer("processing_time_ms"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("jobsite_analysis_project_idx").on(table.projectId),
+  dateIdx: index("jobsite_analysis_date_idx").on(table.analysisDate),
+}));
+
+export const insertJobsiteAnalysisBatchSchema = createInsertSchema(jobsiteAnalysisBatches).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertJobsiteAnalysisBatch = z.infer<typeof insertJobsiteAnalysisBatchSchema>;
+export type JobsiteAnalysisBatch = typeof jobsiteAnalysisBatches.$inferSelect;
+
+export const jobsiteAnalysisPhotos = pgTable("jobsite_analysis_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId: varchar("batch_id").notNull().references(() => jobsiteAnalysisBatches.id, { onDelete: "cascade" }),
+  fileKey: text("file_key").notNull(),
+  fileUrl: text("file_url").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  originalFilename: text("original_filename"),
+  capturedAt: timestamp("captured_at"),
+  gpsLatitude: decimal("gps_latitude", { precision: 10, scale: 8 }),
+  gpsLongitude: decimal("gps_longitude", { precision: 11, scale: 8 }),
+  aiAnnotationsJson: text("ai_annotations_json"),     // Per-photo AI findings
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  batchIdx: index("jobsite_photos_batch_idx").on(table.batchId),
+}));
+
+export const insertJobsiteAnalysisPhotoSchema = createInsertSchema(jobsiteAnalysisPhotos).omit({ id: true, createdAt: true });
+export type InsertJobsiteAnalysisPhoto = z.infer<typeof insertJobsiteAnalysisPhotoSchema>;
+export type JobsiteAnalysisPhoto = typeof jobsiteAnalysisPhotos.$inferSelect;
+
+// ============================================
+// FEATURE D: VENDOR PRICING SYNC
+// Pricebook import and material pricing management
+// ============================================
+export const pricebookStatusEnum = pgEnum("pricebook_status", ["PENDING", "PROCESSING", "ACTIVE", "EXPIRED", "SUPERSEDED"]);
+
+export const vendorPricebooks = pgTable("vendor_pricebooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name"),
+  fileType: text("file_type").notNull(),              // CSV, XLSX
+  effectiveDate: date("effective_date"),
+  expirationDate: date("expiration_date"),
+  tradeType: tradeTypeEnum("trade_type"),
+  mappingPresetJson: text("mapping_preset_json"),     // Saved column mappings
+  status: pricebookStatusEnum("status").notNull().default("PENDING"),
+  itemCount: integer("item_count").notNull().default(0),
+  importedAt: timestamp("imported_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  uploadedByUserId: varchar("uploaded_by_user_id").references(() => users.id),
+}, (table) => ({
+  vendorIdx: index("pricebooks_vendor_idx").on(table.vendorId),
+  orgIdx: index("pricebooks_org_idx").on(table.organizationId),
+}));
+
+export const insertVendorPricebookSchema = createInsertSchema(vendorPricebooks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorPricebook = z.infer<typeof insertVendorPricebookSchema>;
+export type VendorPricebook = typeof vendorPricebooks.$inferSelect;
+
+export const vendorPricebookItems = pgTable("vendor_pricebook_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pricebookId: varchar("pricebook_id").notNull().references(() => vendorPricebooks.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").notNull().references(() => crmOrganisations.id),
+  vendorCode: text("vendor_code").notNull(),
+  vendorDescription: text("vendor_description").notNull(),
+  vendorUnit: text("vendor_unit"),
+  category: text("category").notNull(),
+  unit: text("unit").notNull(),                       // Standardized UOM
+  unitPrice: decimal("unit_price", { precision: 12, scale: 4 }).notNull(),
+  markupPercent: decimal("markup_percent", { precision: 5, scale: 2 }).default("0"),
+  sowItemId: varchar("sow_item_id").references(() => organizationSowItems.id),
+  calculatorKey: text("calculator_key"),
+  isActive: boolean("is_active").notNull().default(true),
+  effectiveDate: date("effective_date"),
+  expirationDate: date("expiration_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  pricebookIdx: index("pricebook_items_pricebook_idx").on(table.pricebookId),
+  vendorIdx: index("pricebook_items_vendor_idx").on(table.vendorId),
+  categoryIdx: index("pricebook_items_category_idx").on(table.category),
+}));
+
+export const insertVendorPricebookItemSchema = createInsertSchema(vendorPricebookItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorPricebookItem = z.infer<typeof insertVendorPricebookItemSchema>;
+export type VendorPricebookItem = typeof vendorPricebookItems.$inferSelect;
+
+export const vendorPriceHistory = pgTable("vendor_price_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pricebookItemId: varchar("pricebook_item_id").notNull().references(() => vendorPricebookItems.id, { onDelete: "cascade" }),
+  oldPrice: decimal("old_price", { precision: 12, scale: 4 }),
+  newPrice: decimal("new_price", { precision: 12, scale: 4 }).notNull(),
+  changePercent: decimal("change_percent", { precision: 6, scale: 2 }),
+  effectiveDate: date("effective_date").notNull(),
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+}, (table) => ({
+  itemIdx: index("price_history_item_idx").on(table.pricebookItemId),
+}));
+
+export const insertVendorPriceHistorySchema = createInsertSchema(vendorPriceHistory).omit({ id: true, recordedAt: true });
+export type InsertVendorPriceHistory = z.infer<typeof insertVendorPriceHistorySchema>;
+export type VendorPriceHistory = typeof vendorPriceHistory.$inferSelect;
+
+// ============================================
+// FEATURE E: CLIENT PORTAL
+// Secure read-only project access for clients/owners
+// ============================================
+export const clientPortalAccess = pgTable("client_portal_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  name: text("name"),
+  accessTokenHash: text("access_token_hash"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("portal_access_project_idx").on(table.projectId),
+  emailIdx: index("portal_access_email_idx").on(table.email),
+}));
+
+export const insertClientPortalAccessSchema = createInsertSchema(clientPortalAccess).omit({ id: true, createdAt: true });
+export type InsertClientPortalAccess = z.infer<typeof insertClientPortalAccessSchema>;
+export type ClientPortalAccess = typeof clientPortalAccess.$inferSelect;
+
+export const clientPortalActivity = pgTable("client_portal_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  accessId: varchar("access_id").notNull().references(() => clientPortalAccess.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),                   // VIEW_SUMMARY, VIEW_PHOTOS, APPROVE_CO, etc.
+  detailsJson: text("details_json"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  accessIdx: index("portal_activity_access_idx").on(table.accessId),
+  projectIdx: index("portal_activity_project_idx").on(table.projectId),
+}));
+
+export const insertClientPortalActivitySchema = createInsertSchema(clientPortalActivity).omit({ id: true, createdAt: true });
+export type InsertClientPortalActivity = z.infer<typeof insertClientPortalActivitySchema>;
+export type ClientPortalActivity = typeof clientPortalActivity.$inferSelect;
+
+// ============================================
+// FEATURE F: AI CHANGE ORDER DRAFTS
+// AI-generated change order content before finalization
+// ============================================
+export const aiCoDraftStatusEnum = pgEnum("ai_co_draft_status", ["DRAFT", "CONVERTED", "DISCARDED"]);
+
+export const aiCoDrafts = pgTable("ai_co_drafts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  tradeType: tradeTypeEnum("trade_type"),
+  linkedItemsJson: text("linked_items_json"),         // Delay IDs, inspection IDs, etc.
+  draftContentJson: text("draft_content_json").notNull(), // Title, description, scope, etc.
+  pricingJson: text("pricing_json"),                  // Line items with pricing
+  aiConfidence: integer("ai_confidence"),
+  aiNotes: text("ai_notes"),
+  status: aiCoDraftStatusEnum("status").notNull().default("DRAFT"),
+  convertedToCoId: varchar("converted_to_co_id").references(() => changeOrders.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+}, (table) => ({
+  projectIdx: index("ai_co_drafts_project_idx").on(table.projectId),
+  orgIdx: index("ai_co_drafts_org_idx").on(table.organizationId),
+}));
+
+export const insertAiCoDraftSchema = createInsertSchema(aiCoDrafts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiCoDraft = z.infer<typeof insertAiCoDraftSchema>;
+export type AiCoDraft = typeof aiCoDrafts.$inferSelect;
+
+// ============================================
+// FEATURE G: MOBILE DEVICES & SYNC
+// Device registration and offline sync support
+// ============================================
+export const mobilePlatformEnum = pgEnum("mobile_platform", ["IOS", "ANDROID", "WEB"]);
+export const syncStatusEnum = pgEnum("sync_status", ["IN_PROGRESS", "COMPLETE", "FAILED"]);
+
+export const mobileDevices = pgTable("mobile_devices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deviceId: text("device_id").notNull().unique(),
+  platform: mobilePlatformEnum("platform").notNull(),
+  appVersion: text("app_version"),
+  deviceModel: text("device_model"),
+  pushToken: text("push_token"),
+  lastSyncAt: timestamp("last_sync_at"),
+  syncToken: text("sync_token"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("mobile_devices_user_idx").on(table.userId),
+  orgIdx: index("mobile_devices_org_idx").on(table.organizationId),
+}));
+
+export const insertMobileDeviceSchema = createInsertSchema(mobileDevices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMobileDevice = z.infer<typeof insertMobileDeviceSchema>;
+export type MobileDevice = typeof mobileDevices.$inferSelect;
+
+export const mobileSyncLog = pgTable("mobile_sync_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: varchar("device_id").notNull().references(() => mobileDevices.id, { onDelete: "cascade" }),
+  syncType: text("sync_type").notNull(),              // PULL, PUSH, FULL
+  syncStartedAt: timestamp("sync_started_at").notNull(),
+  syncCompletedAt: timestamp("sync_completed_at"),
+  recordsDownloaded: integer("records_downloaded").notNull().default(0),
+  recordsUploaded: integer("records_uploaded").notNull().default(0),
+  conflicts: integer("conflicts").notNull().default(0),
+  status: syncStatusEnum("status").notNull().default("IN_PROGRESS"),
+  errorMessage: text("error_message"),
+  metadataJson: text("metadata_json"),
+}, (table) => ({
+  deviceIdx: index("sync_log_device_idx").on(table.deviceId),
+}));
+
+export const insertMobileSyncLogSchema = createInsertSchema(mobileSyncLog).omit({ id: true });
+export type InsertMobileSyncLog = z.infer<typeof insertMobileSyncLogSchema>;
+export type MobileSyncLog = typeof mobileSyncLog.$inferSelect;
+
+export const mobilePendingUploads = pgTable("mobile_pending_uploads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: varchar("device_id").notNull().references(() => mobileDevices.id, { onDelete: "cascade" }),
+  localId: text("local_id").notNull(),
+  recordType: text("record_type").notNull(),
+  recordDataJson: text("record_data_json").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  processedAt: timestamp("processed_at"),
+  status: text("status").notNull().default("PENDING"),
+  errorMessage: text("error_message"),
+}, (table) => ({
+  deviceIdx: index("pending_uploads_device_idx").on(table.deviceId),
+}));
+
+export const insertMobilePendingUploadSchema = createInsertSchema(mobilePendingUploads).omit({ id: true, createdAt: true });
+export type InsertMobilePendingUpload = z.infer<typeof insertMobilePendingUploadSchema>;
+export type MobilePendingUpload = typeof mobilePendingUploads.$inferSelect;

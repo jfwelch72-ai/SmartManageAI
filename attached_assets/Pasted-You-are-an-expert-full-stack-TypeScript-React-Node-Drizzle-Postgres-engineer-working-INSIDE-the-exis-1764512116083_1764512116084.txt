@@ -1,0 +1,494 @@
+You are an expert full-stack TypeScript/React/Node/Drizzle/Postgres engineer working INSIDE the existing “TFR Construction Management Platform” Replit project.
+
+You MUST:
+- Read and respect ALL existing architecture and patterns.
+- Preserve ALL existing features and behavior.
+- Integrate new features cleanly and incrementally.
+- Follow existing conventions for:
+  - Multi-tenant orgs (organizations, organizationId)
+  - Role-based access (RBAC, SUPER_ADMIN, ADMIN, MANAGER, etc.)
+  - Trade templates, trade_features, master_sow_items, calculators, organization_calculators, inspection_templates, etc.
+  - API style (Express + TypeScript)
+  - DB (PostgreSQL + Drizzle ORM)
+  - Frontend (React + TS + Wouter + TanStack Query + Tailwind + shadcn/ui)
+  - AI endpoints (existing OpenAI/GPT integration patterns)
+  - Security (rate limiting, JWT, org scoping, SSRF protections, etc.)
+
+DO NOT:
+- Create a new project or new stack.
+- Break any existing routes, tables, or components.
+- Duplicate features already present (e.g., takeoff tools, inspection system, time clock, messaging, etc.)
+- Hard-code test data beyond minimal seeds/migrations.
+
+=====================================================================
+HIGH-LEVEL GOAL
+=====================================================================
+
+Design and integrate **seven major new features** INTO the existing system:
+
+A. AI Auto-Takeoff From Blueprints & Photos  
+B. AI Scheduling Assistant  
+C. AI Jobsite Camera Analysis  
+D. Vendor Pricing Sync  
+E. Customer/Client Portal  
+F. AI Change Order Generator  
+G. Mobile App / Offline Field Mode (initial backend & API support + basic client scaffolding)
+
+For EACH feature (A–G), you must produce ALL of the following:
+
+1. Technical spec (as a markdown file in /docs)  
+2. API design (Express routes, handlers, types)  
+3. Database design (new tables/migrations, updates to existing tables)  
+4. UI design (React routes/components, basic layout, where it fits in navigation)  
+5. Development roadmap (phased implementation steps, dependencies, risks)  
+6. Integration notes (how it plugs into existing modules, RBAC, orgId scoping, trades, calculators, inspections, delays, messaging, etc.)
+
+Your work MUST be structured, precise, and fully aligned with existing system behavior.
+
+=====================================================================
+STEP 0 – DISCOVER EXISTING CODEBASE
+=====================================================================
+
+1. Scan the repository to understand:
+   - Multi-tenant architecture (organizations, organizationId usage, trade_templates, trade_features, master_sow_items, master_uom, calculators, organization_calculators, organization_sow_items, inspection_templates, conversations, time clock, equipment, etc.)
+   - Existing AI routes and patterns (aiRoutes, CFO/PM AI, any AI helpers).
+   - Existing takeoff engine (react-konva, pdfjs-dist, etc.) and how measurements are stored.
+   - Existing API structure (server/index.ts, server/routes.ts, etc.).
+   - Existing frontend structure:
+     - App layout
+     - AppHeader and Trade Tools navigation
+     - Dashboard widgets
+     - Project/Bid/Estimate/CRM/Time-Clock/Delay/Inspection modules.
+   - RBAC helpers in client/src/lib/rbac.ts.
+
+2. Based on your scan, design everything to plug into:
+   - The existing multi-tenant org model.
+   - The existing “Trade Tools / Operations / Scheduling / Compliance” nav paradigm.
+   - The existing “GC mode vs single-trade mode” logic.
+
+DO NOT skip this discovery. Use existing patterns.
+
+=====================================================================
+FEATURE A – AI AUTO-TAKEOFF FROM BLUEPRINTS & PHOTOS
+=====================================================================
+
+GOAL:
+Allow users to upload blueprint PDFs (and optionally photos), run AI computer-vision/LLM analysis, and auto-generate takeoff quantities that feed into existing calculators, SOW items, and the takeoff UI.
+
+1) TECHNICAL SPEC (/docs/feature-A-ai-auto-takeoff.md)
+   - Describe:
+     - Supported inputs: PDF plans, PNG/JPG images.
+     - Use of vision-capable LLM to:
+       - Detect drawing scale, title block, legends.
+       - Identify areas, linear runs, counts (walls, doors, windows, fixtures, slabs, roofs, etc.).
+       - Output normalized JSON with standard units (SF, LF, EA, CY).
+     - Integration with:
+       - calculators and organization_calculators
+       - master_sow_items and organization_sow_items
+       - existing takeoff engine data structure.
+     - Security (SSRF, file size limits, mime types, org scoping).
+   - Clearly define failure modes and fallback (manual takeoff continues to work).
+
+2) API DESIGN
+   - New endpoints (examples):
+     - POST /api/ai/auto-takeoff/upload
+       - Body: { projectId, tradeType, sheetName, fileId or file upload }
+       - Behavior: store file, enqueue AI analysis job.
+     - GET /api/ai/auto-takeoff/results?projectId=...&sheetId=...
+       - Returns AI-generated takeoff JSON: areas, lengths, counts, metadata (confidence, annotations).
+   - Reuse existing file-upload patterns (Uppy / object storage).
+   - Ensure all requests require authenticated user and organizationId scoping.
+
+3) DATABASE DESIGN
+   - New table (through Drizzle migration):
+     - auto_takeoff_sheets
+       - id (PK)
+       - organizationId (FK)
+       - projectId (FK)
+       - fileUrl / fileKey
+       - sheetName
+       - status: PENDING / PROCESSING / COMPLETE / FAILED
+       - aiResultJson (JSONB)
+       - createdAt, updatedAt
+   - Optional: auto_takeoff_items (if you want to store each AI-detected measurement as a row).
+
+4) FRONTEND / UI
+   - New screen under an existing project:
+     - “AI Takeoff” tab for each project.
+   - UI flow:
+     - Upload plan sheet(s) for AI analysis.
+     - Show status per sheet.
+     - When COMPLETE, show AI-identified measurements in a table alongside drawing preview.
+     - Allow user to:
+       - Accept/reject items
+       - Map items to SOW/calculator line items
+   - Integrate with existing takeoff UI:
+     - Option to “Import AI quantities” into calculators/material takeoff.
+
+5) DEVELOPMENT ROADMAP
+   - Phase 1: Backend endpoints + DB table + stub AI integration (mock results).
+   - Phase 2: Wire frontend UI to results.
+   - Phase 3: Replace mocks with real vision API calls.
+   - Phase 4: Add trade-specific parsing logic and user feedback loop.
+
+6) INTEGRATION
+   - Ensure GC mode vs single-trade mode is respected (different SOW mappings).
+   - Use existing master_uom and standard UOMs.
+   - Respect RBAC: Only management roles can access AI auto-takeoff.
+
+=====================================================================
+FEATURE B – AI SCHEDULING ASSISTANT
+=====================================================================
+
+GOAL:
+Automatically generate, update, and optimize project schedules (Gantt-style) based on SOW, production rates, crew sizes, delays, and inspections.
+
+1) TECHNICAL SPEC (/docs/feature-B-ai-scheduling-assistant.md)
+   - Inputs: SOW items, project start date, crew sizes, trade types, production rates, inspection requirements, delays.
+   - Outputs: Structured schedule:
+     - Tasks, durations, dependencies, milestones, critical path hints.
+   - AI logic:
+     - Use LLM to suggest task breakdown and dependencies.
+     - Convert AI suggestions to structured tasks persisted in DB.
+
+2) API DESIGN
+   - POST /api/schedule/ai-generate
+     - Body: { projectId, strategyOptions, includeTrades?, existingTasks? }
+     - Output: proposed schedule structure in JSON.
+   - POST /api/schedule/ai-update
+     - Recalculate schedule on delay, added SOW, etc.
+   - GET /api/schedule?projectId=...
+     - Return current schedule.
+
+3) DATABASE
+   - New tables:
+     - project_schedules
+       - id, projectId, organizationId
+       - generatedBy: 'AI' | 'MANUAL'
+       - baselineStartDate, baselineEndDate, etc.
+     - project_schedule_tasks
+       - id, scheduleId
+       - name, description
+       - tradeType
+       - startDate, endDate
+       - durationDays
+       - dependencies (array of taskIds or JSON)
+       - percentComplete
+       - isCriticalPath (bool)
+   - Migrations via Drizzle.
+
+4) FRONTEND
+   - New tab in project: “Schedule”
+   - Simple Gantt-like view (can be table-based initially).
+   - “Generate AI Schedule” button:
+     - Calls /api/schedule/ai-generate
+     - Shows diff vs existing schedule before applying.
+   - Integration with delays and inspections:
+     - Show icons for tasks impacted by delays.
+     - Provide quick jump to delay or inspection records.
+
+5) ROADMAP
+   - Phase 1: DB + minimal endpoints + basic table view.
+   - Phase 2: AI schedule generation.
+   - Phase 3: Visual Gantt view + critical path highlighting.
+   - Phase 4: Integration with delays, inspections, and notifications.
+
+6) INTEGRATION
+   - Use production rate tracking to estimate task durations.
+   - Respect RBAC and organizationId scoping.
+   - GC mode: tasks per trade with subcontractor attribution.
+
+=====================================================================
+FEATURE C – AI JOBSITE CAMERA ANALYSIS
+=====================================================================
+
+GOAL:
+User uploads jobsite photos; AI analyzes for:
+- Safety issues
+- % complete
+- Material usage
+- Crew presence
+- Cleanliness / housekeeping
+- Weather conditions, etc.
+
+1) TECHNICAL SPEC (/docs/feature-C-ai-jobsite-analysis.md)
+   - Vision AI used to tag images:
+     - PPE compliance, fall hazards, trip hazards, etc.
+     - Approximate completion by trade (subjective but useful).
+     - Flag issues for daily log or safety report.
+
+2) API DESIGN
+   - POST /api/ai/jobsite-analysis/upload
+     - Body: { projectId, date, fileIds[] }
+     - Behavior: store refs, trigger async analysis.
+   - GET /api/ai/jobsite-analysis/results?projectId=...&date=...
+     - Returns detection summary and structured findings.
+
+3) DATABASE
+   - jobsite_analysis_batches
+     - id, projectId, organizationId
+     - date
+     - status
+     - aiSummaryText
+     - aiFindingsJson (JSONB: flags, tags, issue list)
+   - jobsite_analysis_photos
+     - id, batchId
+     - fileKey / url
+     - aiPerPhotoJson (optional)
+
+4) FRONTEND
+   - “Jobsite AI” tab under a project or under Daily Log.
+   - Upload photos UI (reuse existing Uppy integration).
+   - Show summary:
+     - Safety flags
+     - Work progress notes
+     - AI observations list.
+
+5) ROADMAP
+   - Phase 1: DB + endpoints + stub AI.
+   - Phase 2: Vision AI integration.
+   - Phase 3: Tie into Safety/Compliance and Daily Reports.
+
+6) INTEGRATION
+   - Link analysis to existing delay, safety, and inspection modules.
+   - Respect org and RBAC (Superintendent and above).
+
+=====================================================================
+FEATURE D – VENDOR PRICING SYNC
+=====================================================================
+
+GOAL:
+Allow vendors/suppliers to upload pricing (materials, rentals, trucking) and sync it into calculators and bids.
+
+1) TECH SPEC (/docs/feature-D-vendor-pricing-sync.md)
+   - Support CSV/XLSX uploads of pricebooks.
+   - Map vendor codes to internal material categories, SOW items, and calculator items.
+   - Maintain history of price updates and effective dates.
+
+2) API DESIGN
+   - POST /api/vendors/pricebook/upload
+     - Body: { vendorId, fileId, mappingOptions } or file upload.
+   - GET /api/vendors/pricebook?vendorId=...
+   - GET /api/vendors/pricebook/materials?vendorId=...
+   - Optional: POST /api/vendors/pricebook/preview-mapping
+
+3) DATABASE
+   - vendor_pricebooks
+     - id, organizationId, vendorId
+     - fileKey
+     - uploadedByUserId
+     - status, importedAt
+   - vendor_pricebook_items
+     - id, pricebookId
+     - externalCode, description
+     - unit (ties to master_uom if possible)
+     - unitPrice
+     - materialCategory, sowItemId?, calculatorKey?
+
+4) FRONTEND
+   - Extend CRM Vendor detail page with “Pricebook” tab.
+   - Upload pricebook UI with mapping preview.
+   - Option in calculators and Bid Cost Builder to “Use Vendor Pricing”.
+
+5) ROADMAP
+   - Phase 1: DB + import + view only.
+   - Phase 2: Binding to calculators and estimates.
+   - Phase 3: Price change alerts / notifications.
+
+6) INTEGRATION
+   - Use master_uom for consistent units.
+   - Integrate with Bid Cost Builder workflow for cost calculations.
+
+=====================================================================
+FEATURE E – CUSTOMER / CLIENT PORTAL
+=====================================================================
+
+GOAL:
+Provide a read-only portal for clients/owners to view:
+- Project status
+- Schedule
+- Photos
+- Change orders
+- Invoices/financial summary (light)
+- Key documents
+
+1) TECH SPEC (/docs/feature-E-client-portal.md)
+   - Client-facing, secure access with token or separate login.
+   - Read-only access (no internal data like wages, internal notes).
+
+2) API DESIGN
+   - New client-facing route group: /client/api/...
+   - GET /client/api/projects/:publicId/summary
+   - GET /client/api/projects/:publicId/schedule
+   - GET /client/api/projects/:publicId/photos
+   - GET /client/api/projects/:publicId/change-orders
+
+3) DATABASE
+   - projects table: add:
+     - clientPortalEnabled (bool)
+     - clientPortalPublicId (secure, non-guessable string)
+   - Optional: client_users table if you want full accounts.
+
+4) FRONTEND
+   - New lightweight client portal frontend (could be under /client path with its own minimalist layout).
+   - Views:
+     - Project Overview
+     - AI Summary (optional reuse of AI PM summary)
+     - Schedule
+     - COs
+     - Photos
+
+5) ROADMAP
+   - Phase 1: Basic summary read-only portal.
+   - Phase 2: Notifications + doc downloads.
+   - Phase 3: Client comments / approvals (optional).
+
+6) INTEGRATION
+   - Tie access to project and organization.
+   - Ensure no internal messaging, internal cost breakdowns, or sensitive details leak.
+
+=====================================================================
+FEATURE F – AI CHANGE ORDER GENERATOR
+=====================================================================
+
+GOAL:
+Generate change orders automatically using SOW changes, delays, material/labor inputs, and AI language for clear, contract-grade descriptions.
+
+1) TECH SPEC (/docs/feature-F-ai-change-orders.md)
+   - Inputs:
+     - ProjectId
+     - Related delays, inspections, RFI, SOW additions
+     - Material + labor deltas from calculators
+   - Outputs:
+     - Change Order record with:
+       - Title, description, justification, scope, exclusions
+       - Pricing breakdown (materials, labor, equipment)
+       - Ties to existing CO workflow.
+
+2) API DESIGN
+   - POST /api/ai/change-orders/generate
+     - Body: { projectId, baseScopeItems, newScopeItems, reasonCodes, attachments? }
+     - Uses LLM to produce narrative + justification.
+   - POST /api/change-orders
+     - Store final CO using existing CO tables (reuse current schema if already present).
+
+3) DATABASE
+   - If change_orders table already exists: extend with:
+     - aiGenerated (bool)
+     - sourceDelayId? / sourceInspectionId?
+   - If not, create change_orders and change_order_line_items tables.
+
+4) FRONTEND
+   - In CO module or project financials tab:
+     - “AI Generate CO” button.
+     - Wizard: select scope additions, delays, reason.
+     - Preview screen to edit AI text before saving.
+
+5) ROADMAP
+   - Phase 1: Basic AI CO text generation only (no pricing).
+   - Phase 2: Integrate calculators to auto-price.
+   - Phase 3: Client portal integration for CO approvals.
+
+6) INTEGRATION
+   - Use delay system and inspection system to justify CO’s.
+   - Respect RBAC: Only management roles can generate COs.
+   - Log AI usage in audit logs.
+
+=====================================================================
+FEATURE G – MOBILE APP / OFFLINE FIELD MODE (BACKEND + SCAFFOLD)
+=====================================================================
+
+GOAL:
+Prepare backend and basic client scaffolding for mobile/field use (future React Native app) with offline mode support.
+
+1) TECH SPEC (/docs/feature-G-mobile-offline.md)
+   - Backend:
+     - Provide synced endpoints for:
+       - Projects list
+       - Assignments
+       - Time clock
+       - Daily logs
+       - Photos
+     - “Sync token” per device for incremental updates.
+   - Client:
+     - For now, create a /mobile folder with a minimal React Native or Expo app skeleton structure (no heavy implementation yet).
+     - Document offline sync strategy.
+
+2) API DESIGN
+   - GET /api/mobile/sync
+     - Input: lastSyncAt, deviceId
+     - Output: changes since lastSyncAt (projects, assignments, tasks).
+   - POST /api/mobile/sync
+     - Pushes local changes (timeclock entries, logs, photos) to server.
+
+3) DATABASE
+   - mobile_devices
+     - id, organizationId, userId
+     - deviceId, platform
+     - lastSyncAt
+   - Optionally, server_sync_log for debugging.
+
+4) FRONTEND / CLIENT SCAFFOLD
+   - A README and sample Expo/React Native project in /mobile or /clients/mobile with:
+     - Basic navigation
+     - Placeholder screens for:
+       - Time clock
+       - Projects
+       - Daily log
+       - Photo capture
+     - Comments describing where to call /api/mobile/sync.
+
+5) ROADMAP
+   - Phase 1: Backend sync endpoints + device registration.
+   - Phase 2: Basic mobile client scaffolding.
+   - Phase 3: Full offline support with queued requests and conflict handling.
+
+6) INTEGRATION
+   - All API operations must enforce organizationId and RBAC as usual.
+   - Coordinate time clock with existing time_clock system.
+
+=====================================================================
+GLOBAL REQUIREMENTS
+=====================================================================
+
+1. All new DB work MUST use Drizzle migrations and types.
+2. All new APIs must:
+   - Enforce JWT auth
+   - Filter by organizationId
+   - Respect RBAC and role helpers
+   - Follow existing Express patterns.
+3. All new UI:
+   - Use existing layout, Tailwind, and shadcn/ui
+   - Use TanStack Query for data fetching
+   - Integrate into AppHeader/Trade Tools or existing nav sections logically
+   - Be responsive and usable on tablets.
+4. All AI calls:
+   - Reuse existing OpenAI integration where possible
+   - Log errors gracefully
+   - Provide fallback behavior if AI is unavailable.
+5. Code quality:
+   - Fully typed (TypeScript) with meaningful interfaces/types
+   - Clear comments for all major components and functions
+   - No breaking changes to existing features.
+
+=====================================================================
+FINAL DELIVERABLES
+=====================================================================
+
+When you are done, the repo should contain at minimum:
+
+- /docs/feature-A-ai-auto-takeoff.md  
+- /docs/feature-B-ai-scheduling-assistant.md  
+- /docs/feature-C-ai-jobsite-analysis.md  
+- /docs/feature-D-vendor-pricing-sync.md  
+- /docs/feature-E-client-portal.md  
+- /docs/feature-F-ai-change-orders.md  
+- /docs/feature-G-mobile-offline.md  
+
+Plus:
+- All necessary Drizzle migrations for new tables/columns.
+- New or updated API route files implementing endpoints for A–G.
+- New or updated frontend components and routes to expose these features in the UI.
+- A short /docs/roadmap-ai-features.md summarizing phased rollout for all seven features.
+
+BEGIN NOW. Carefully read the existing codebase, then design and implement the above features INTEGRATED with all current functionality, without breaking anything.
