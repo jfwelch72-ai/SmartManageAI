@@ -1,0 +1,64 @@
+You are a Senior Full-Stack Engineer reviewing my entire Management Suite application.
+
+===============================
+PRIMARY OBJECTIVE
+===============================
+Extract, analyze, and summarize **ALL code** in this Replit project, including:  
+- frontend (React, TSX, CSS, components, UI logic)  
+- backend (Node/Express/TS, controllers, services)  
+- database schema and migrations  
+- API routes & integrations  
+- utilities, helpers, config  
+- state management and global stores  
+- all existing features, tools, and modules  
+- AI agent logic  
+- authentication, permissions, roles  
+- any hidden, nested, or orphaned files
+
+Produce a clean, organized engineering summary describing:
+1. **All existing features**
+2. **All integrated services or APIs**  
+3. **The current UX/UI layout and user flow**
+4. **How each module talks to backend + DB**
+5. **Where logic gaps or incomplete features exist**
+6. **What code is redundant, duplicated, or legacy**
+7. **Any critical issues, missing error handling, or breaking points**
+8. **Which files control which parts of the Management Suite**
+9. **Suggested enhancements or refactors**
+
+===============================
+INSTRUCTIONS
+===============================
+1. Read the entire codebase before summarizing.
+2. DO NOT generate new code yet — this step is for **audit and documentation only**.
+3. Produce the final output in the following format:
+
+-------------------------------------------
+### 🔵 SYSTEM ARCHITECTURE SUMMARY
+- High-level overview of architecture  
+- Frameworks, modules, dependencies  
+
+### 🔵 FEATURE INVENTORY
+(List every feature in the app, grouped logically)
+
+### 🔵 API & INTEGRATION MAP
+(Show all existing API integrations and what they do)
+
+### 🔵 DATABASE MAP
+(Explain all tables, relationships, and flows)
+
+### 🔵 BACKEND MECHANICS
+(Controllers, services, routes, logic pipelines)
+
+### 🔵 FRONTEND / UI SUMMARY
+(Page-by-page overview of user interface)
+
+### 🔵 CURRENT LIMITATIONS / BUGS
+(Anything broken, incomplete, or contradictory)
+
+### 🔵 RECOMMENDED IMPROVEMENTS
+(Prioritized: critical → major → quality-of-life)
+
+-------------------------------------------
+
+When finished, return the entire structured summary in a well-formatted, easy-to-read document.
