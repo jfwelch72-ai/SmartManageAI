@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -137,13 +136,6 @@ export default function TimeClockPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground mb-1">Time Clock</h1>

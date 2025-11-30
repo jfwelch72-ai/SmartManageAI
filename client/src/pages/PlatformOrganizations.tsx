@@ -10,7 +10,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, Users, Search, ExternalLink, ChevronLeft } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
@@ -70,7 +69,7 @@ export default function PlatformOrganizations() {
     return matchesSearch && matchesTrade;
   });
 
-  const uniqueTrades = [...new Set(organizations?.map((org) => org.tradeType) || [])];
+  const uniqueTrades = Array.from(new Set(organizations?.map((org) => org.tradeType) || []));
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -85,7 +84,6 @@ export default function PlatformOrganizations() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin">

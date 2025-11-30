@@ -10,7 +10,6 @@ import { Bot, CheckCircle, Clock, AlertCircle, XCircle, Play, TrendingUp, ArrowL
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
 import type { AITask, AIRun } from "@shared/schema";
-import AppHeader from "@/components/AppHeader";
 
 export default function AIPMDashboard() {
   const { user, logout, organizationName } = useAuth();
@@ -111,12 +110,6 @@ export default function AIPMDashboard() {
   if (!user) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName="Guest"
-          userRole=""
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Please log in to view your AI-generated tasks</p>
         </main>
@@ -126,13 +119,6 @@ export default function AIPMDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
-        userRole={user.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8">
         {/* Back Button */}
         <Button

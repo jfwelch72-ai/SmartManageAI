@@ -1,4 +1,3 @@
-import AppHeader from "@/components/AppHeader";
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
 import { 
@@ -151,13 +150,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8">
         {/* Welcome Section */}
         <div className="mb-8" data-testid="welcome-section">

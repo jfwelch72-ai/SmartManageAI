@@ -4,7 +4,6 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,13 +205,6 @@ export default function EquipmentPage() {
   
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName} ${user.lastName}`}
-        userRole={user.role}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>

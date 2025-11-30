@@ -5,7 +5,6 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 interface PlatformStats {
@@ -62,7 +61,6 @@ export default function PlatformAdminDashboard() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="p-6 space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -90,7 +88,6 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>

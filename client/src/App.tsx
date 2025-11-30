@@ -5,6 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { RoutePermissions } from "@/lib/rbac";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/AppSidebar";
+import TopHeader from "@/components/TopHeader";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
@@ -166,13 +169,63 @@ function Router() {
   );
 }
 
+function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <>{children}</>;
+  }
+
+  const sidebarStyle = {
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3rem",
+  } as React.CSSProperties;
+
+  return (
+    <SidebarProvider style={sidebarStyle}>
+      <AppSidebar />
+      <SidebarInset className="flex flex-col min-h-screen">
+        <TopHeader />
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+function AppContent() {
+  const [location] = useLocation();
+  const isPublicRoute = ['/login', '/register', '/forgot-password', '/reset-password'].some(
+    route => location.startsWith(route)
+  );
+  
+  if (isPublicRoute) {
+    return <Router />;
+  }
+  
+  return (
+    <AuthenticatedLayout>
+      <Router />
+    </AuthenticatedLayout>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AppContent />
           <AIAssistantWidget />
         </TooltipProvider>
       </AuthProvider>

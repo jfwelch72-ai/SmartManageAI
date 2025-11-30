@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { Package, Building2, DollarSign, Clock, ChevronRight, Plus } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isVendor } from "@/lib/rbac";
 import { Redirect } from "wouter";
@@ -51,12 +50,6 @@ export default function VendorDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Vendor"}
-        userRole={user?.role || "VENDOR"}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="container mx-auto px-4 py-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground" data-testid="text-vendor-dashboard-title">

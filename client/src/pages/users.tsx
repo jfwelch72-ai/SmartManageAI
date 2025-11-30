@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -130,12 +129,6 @@ export default function UsersPage() {
   if (user.role !== "ADMIN") {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user.firstName} ${user.lastName}`}
-          userRole={user.role}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -150,12 +143,6 @@ export default function UsersPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName} ${user.lastName}`}
-        userRole={user.role}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>

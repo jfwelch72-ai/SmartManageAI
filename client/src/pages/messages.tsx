@@ -1,4 +1,3 @@
-import AppHeader from "@/components/AppHeader";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -219,13 +218,6 @@ export default function MessagesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-
       <main className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-8">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div>

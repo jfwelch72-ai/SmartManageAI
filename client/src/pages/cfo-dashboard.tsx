@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Truck, Clock, Package, AlertCircle, Wrench } from "lucide-react";
 import { useLocation } from "wouter";
-import AppHeader from "@/components/AppHeader";
 
 interface ProjectProfitability {
   project_code: string;
@@ -90,12 +89,6 @@ export default function CFODashboard() {
   if (!user) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName="Guest"
-          userRole=""
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Please log in to view profitability data</p>
         </main>
@@ -106,12 +99,6 @@ export default function CFODashboard() {
   if (user.role !== 'ADMIN' && user.role !== 'MANAGER') {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
-          userRole={user.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="p-8 text-center">
           <p className="text-muted-foreground">Admin or Manager access required</p>
         </main>
@@ -168,13 +155,6 @@ export default function CFODashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
-        userRole={user.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold flex items-center gap-2">

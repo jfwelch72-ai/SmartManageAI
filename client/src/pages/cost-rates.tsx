@@ -1,5 +1,4 @@
 import { useState } from "react";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,12 +81,6 @@ export default function CostRatesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground mb-2">Labor Cost Rates</h1>

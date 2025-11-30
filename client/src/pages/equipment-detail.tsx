@@ -4,7 +4,6 @@ import { useParams, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -837,7 +836,6 @@ export default function EquipmentDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="text-center text-muted-foreground">Loading equipment...</div>
         </main>
@@ -848,7 +846,6 @@ export default function EquipmentDetailPage() {
   if (error || !equipment) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="text-center">
             <h2 className="text-xl font-semibold text-destructive">Equipment Not Found</h2>
@@ -864,13 +861,6 @@ export default function EquipmentDetailPage() {
   
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName} ${user.lastName}`}
-        userRole={user.role}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="flex flex-wrap items-center gap-4">
           <Button variant="ghost" size="icon" asChild>

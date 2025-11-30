@@ -47,7 +47,6 @@ import type {
   EstimateLineItem, 
   BidSubcontractorQuote,
 } from "@shared/schema";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 const lineItemSchema = z.object({
@@ -449,12 +448,6 @@ export default function BidEstimate() {
   if (bidLoading || estimateLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-          userRole={user?.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <div className="flex items-center justify-center py-12">
           <p className="text-muted-foreground">Loading...</p>
         </div>
@@ -465,12 +458,6 @@ export default function BidEstimate() {
   if (!bid || !estimate) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-          userRole={user?.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <div className="mx-auto max-w-7xl px-6 py-8">
           <Button variant="ghost" onClick={() => setLocation(`/bids/${bidCode}`)} data-testid="button-back">
             ← Back to Bid
@@ -485,13 +472,6 @@ export default function BidEstimate() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="mb-6">
           <Button variant="ghost" onClick={() => setLocation(`/bids/${bidCode}`)} data-testid="button-back">

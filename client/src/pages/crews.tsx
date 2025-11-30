@@ -3,7 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import AppHeader from "@/components/AppHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -341,12 +340,6 @@ export default function CrewsPage() {
   if (!isManagerOrAdmin) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user.firstName} ${user.lastName}`}
-          userRole={user.role}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -361,12 +354,6 @@ export default function CrewsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName} ${user.lastName}`}
-        userRole={user.role}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">

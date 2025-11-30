@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
@@ -135,7 +134,6 @@ export default function PlatformOrganizationDetail() {
   if (!organization) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
         <main className="p-6 space-y-6">
           <div className="flex items-center gap-4">
             <Link href="/admin/organizations">
@@ -165,7 +163,6 @@ export default function PlatformOrganizationDetail() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin/organizations">

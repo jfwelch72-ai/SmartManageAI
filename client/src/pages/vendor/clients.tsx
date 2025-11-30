@@ -13,7 +13,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Search, Building2, CheckCircle, Clock, XCircle, Package } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
 import { Link, Redirect } from "wouter";
@@ -83,12 +82,6 @@ export default function VendorClients() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Vendor"}
-        userRole={user?.role || "VENDOR"}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="container mx-auto px-4 py-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground" data-testid="text-vendor-clients-title">

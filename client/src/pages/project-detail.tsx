@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import AppHeader from "@/components/AppHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -2218,12 +2217,6 @@ export default function ProjectDetailPage() {
   if (projectLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={user?.firstName || "User"}
-          userRole={user?.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <div className="flex items-center justify-center h-96">
           <div className="text-muted-foreground">Loading project...</div>
         </div>
@@ -2234,12 +2227,6 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={user?.firstName || "User"}
-          userRole={user?.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <div className="flex flex-col items-center justify-center h-96">
           <p className="text-muted-foreground mb-4">Project not found</p>
           <Button onClick={() => setLocation(backPath)} data-testid="button-back-to-projects">
@@ -2252,13 +2239,6 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={user?.firstName || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">

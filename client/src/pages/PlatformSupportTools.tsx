@@ -24,7 +24,6 @@ import {
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
@@ -170,7 +169,6 @@ export default function PlatformSupportTools() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin">

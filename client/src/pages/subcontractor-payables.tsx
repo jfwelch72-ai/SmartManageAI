@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -128,12 +127,6 @@ export default function SubcontractorPayablesPage() {
   if (!user || (user.role !== "ADMIN" && user.role !== "MANAGER")) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader
-          userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-          userRole={user?.role || ""}
-          onLogout={logout}
-          organizationName={organizationName || undefined}
-        />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <Card>
             <CardContent className="p-8 text-center">
@@ -150,13 +143,6 @@ export default function SubcontractorPayablesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"}
-        userRole={user.role}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2">

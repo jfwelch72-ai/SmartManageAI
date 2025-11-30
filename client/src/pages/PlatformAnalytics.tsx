@@ -7,7 +7,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChevronLeft, Activity, FileText, Hammer, Clock, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 
 interface PlatformAnalytics {
@@ -58,7 +57,6 @@ export default function PlatformAnalytics() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={userName} userRole={userRole} onLogout={logout} organizationName={organizationName || undefined} />
       <main className="p-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin">

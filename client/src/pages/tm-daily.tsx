@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import AppHeader from "@/components/AppHeader";
 import TMDailyForm, { TMDailyFormRef } from "@/components/TMDailyForm";
 import { useAuth } from "@/hooks/use-auth";
 import { useProjects, useProjectTMSheets, useCreateTMSheet } from "@/hooks/use-data";
@@ -72,13 +71,6 @@ export default function TMDailyPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "User"}
-        userRole={user?.role || ""}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
-      
       <main className="mx-auto max-w-4xl px-6 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground mb-1">Daily T&M Sheet</h1>

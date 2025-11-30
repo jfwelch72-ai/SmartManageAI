@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -901,8 +900,6 @@ export default function CRMPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <AppHeader userName={`${user.firstName || ""} ${user.lastName || ""}`.trim() || "User"} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
-      
       <main className="flex-1 container mx-auto px-4 py-6">
         <div className="flex flex-col gap-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

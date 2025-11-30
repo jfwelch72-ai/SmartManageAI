@@ -1,5 +1,4 @@
 import { useState } from "react";
-import AppHeader from "@/components/AppHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -405,8 +404,6 @@ export default function RentalVendorsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader userName={`${user.firstName} ${user.lastName}`} userRole={user.role} onLogout={logout} organizationName={organizationName || undefined} />
-      
       <main className="container mx-auto px-4 py-6 max-w-7xl">
         <div className="flex items-center justify-between mb-6">
           <div>

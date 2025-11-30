@@ -32,7 +32,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Search, Package, Filter, Loader2 } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -212,12 +211,6 @@ export default function VendorPricing() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        userName={`${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Vendor"}
-        userRole={user?.role || "VENDOR"}
-        onLogout={logout}
-        organizationName={organizationName || undefined}
-      />
       <main className="container mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-6">
           <div>
