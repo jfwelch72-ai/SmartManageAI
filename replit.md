@@ -6,15 +6,31 @@ The TFR Construction Management Platform is a white-label SaaS solution designed
 ### Multi-Tenant Architecture (White-Label SaaS)
 The platform now supports multi-tenant organizations with trade-specific configurations:
 - **Organizations**: Each contractor company operates as a separate organization with its own users, settings, and customizations
-- **Trade Templates**: Pre-built configurations for 7+ common trades (Roofing, Electrical, Plumbing, HVAC, Carpentry, Concrete, General Contractor)
+- **Trade Templates**: Pre-built configurations for 22 CSI trade divisions (19 CSI divisions + 3 specialized trades)
 - **AI Onboarding**: Enhanced AI-driven onboarding conversation that:
   - Gathers trade type, crew size, region, and materials through natural conversation
   - Suggests trade-specific work types (scope of work items) based on the identified trade
   - Allows users to select from suggestions and add custom work items
   - Optionally extracts brand colors from the contractor's website for theme customization
-  - Auto-creates material calculators relevant to the contractor's specific work types
+  - Auto-copies master SOW items from database templates on organization creation
+- **General Contractor (GC) Mode**: When a user selects General Contractor trade type, they receive all 22 trade templates with subcontractor coordination features (deduplicated by featureKey)
 - **Messaging Isolation**: Conversations and company channels are scoped by organizationId to prevent cross-tenant communication
 - **Existing TFR Users**: Migrate seamlessly with organizationId = 'tfr-default-org' and unchanged experience
+
+### Trade-Specific Features System
+The platform provides dynamic, trade-aware functionality:
+- **Trade Features** (/api/trade-features): Fetches enabled features for the organization's trade type
+  - GC mode returns all features across 22 trades (deduplicated by featureKey)
+  - Single-trade mode returns features specific to that trade only
+- **Dynamic Navigation**: Trade Tools dropdown menu in AppHeader shows trade-specific sections
+  - Only visible to management-level roles (ADMIN, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER)
+  - Features grouped by navSection (e.g., Operations, Scheduling, Compliance)
+- **Dashboard Widgets**: Trade-specific widget cards on dashboard
+  - WeatherWidget, EquipmentWidget, InspectionWidget, PermitWidget
+  - SubcontractorWidget, DeliveryWidget, ComplianceWidget, SafetyWidget
+- **Standardized UOM**: 18 standard units of measure (SF, SY, SQ, LF, CY, EA, TON, LB, GAL, HR, LS, etc.)
+  - UomSelect component pulls from master_uom table for platform-wide consistency
+- **Master SOW Items**: 393 pre-seeded scope of work items across all 22 trades with proper CSI codes
 
 ### Website Theme Extraction
 The platform can optionally extract brand colors from a contractor's website during onboarding:
@@ -25,7 +41,12 @@ The platform can optionally extract brand colors from a contractor's website dur
 
 ### Key Database Tables for Multi-Tenancy
 - `organizations`: Core tenant table with trade type, name, slug, onboarding status, theme colors (primaryColor, secondaryColor, accentColor), websiteUrl
-- `trade_templates`: Pre-built configurations for common trades with work types, calculators, terminology
+- `trade_templates`: Pre-built configurations for 22 trades with work types, calculators, terminology
+- `trade_features`: Trade-specific navigation features with navSection, navIcon, navPath, and dashboardWidget fields
+- `master_uom`: 18 standardized units of measure for platform-wide consistency
+- `master_sow_items`: 393 pre-seeded scope of work items across all trades with CSI codes
+- `inspection_templates`: Trade-specific inspection/certification forms and requirements
+- `calculators`: Trade-specific material calculators (concrete volume, roofing squares, etc.)
 - `organization_calculators`: Organization-specific material calculators
 - `organization_work_types`: Organization-specific work types and production rates
 - `organization_sow_items`: Organization-specific scope of work items with categories, codes, and display order
