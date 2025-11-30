@@ -88,6 +88,20 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - AI Assistant widget auto-opens for new users and guides through walkthrough
 - Progress tracked via walkthroughStep/walkthroughCompleted user fields
 
+### AI Module Analyzers - Comprehensive OpenAI Integration
+- Created 5 AI module analyzers in `server/ai/moduleAnalyzers.ts`:
+  - **analyzeSchedulingModule**: Evaluates project timelines, task dependencies, generates Gantt chart recommendations
+  - **analyzeDelaysModule**: Reviews delays, calculates financial impacts, identifies patterns, suggests preventive actions
+  - **analyzeCostsModule**: Analyzes equipment/delay/labor costs, provides optimization recommendations
+  - **analyzeEquipmentModule**: Tracks utilization, maintenance, rental vs purchase decisions
+  - **analyzeVendorPricingModule**: Compares vendor prices, identifies best deals, recommends preferred vendors
+  - **analyzeProjectHealthModule**: Evaluates individual project health with comprehensive scoring
+- New database tables: `ai_insights`, `ai_gantt_recommendations`, `ai_vendor_comparisons`
+- Frontend components: `AIInsightsWidget.tsx` (dashboard), `AIAnalysisButton.tsx` (feature pages)
+- AI analysis buttons integrated into Projects, Bids, Equipment, and CRM pages
+- **Multi-Tenant Security**: All analyzers require `organizationId` and verify project ownership before querying data
+- Development mode: Auto-scan schedulers disabled; use manual "Run AI Analysis" buttons
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
