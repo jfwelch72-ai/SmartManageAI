@@ -2656,6 +2656,50 @@ export type InsertScopeModifier = z.infer<typeof insertScopeModifierSchema>;
 export type ScopeModifier = typeof scopeModifiers.$inferSelect;
 
 // ============================================================
+// MASTER MODIFIERS BY TRADE (Template Library)
+// Trade-specific modifiers for scope standardization
+// ============================================================
+
+// Master Modifier Categories by Trade
+export const masterModifierCategories = pgTable("master_modifier_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("master_mod_cat_trade_idx").on(table.tradeType),
+  nameTradeUnique: unique("master_mod_cat_name_trade_unique").on(table.tradeType, table.name),
+}));
+
+// Master Modifiers by Trade
+export const masterModifiers = pgTable("master_modifiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  categoryId: varchar("category_id").notNull().references(() => masterModifierCategories.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  code: text("code").notNull(),
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tradeIdx: index("master_mod_trade_idx").on(table.tradeType),
+  categoryIdx: index("master_mod_category_idx").on(table.categoryId),
+  codeTradeUnique: unique("master_mod_code_trade_unique").on(table.tradeType, table.code),
+}));
+
+export const insertMasterModifierCategorySchema = createInsertSchema(masterModifierCategories).omit({ id: true, createdAt: true });
+export type InsertMasterModifierCategory = z.infer<typeof insertMasterModifierCategorySchema>;
+export type MasterModifierCategory = typeof masterModifierCategories.$inferSelect;
+
+export const insertMasterModifierSchema = createInsertSchema(masterModifiers).omit({ id: true, createdAt: true });
+export type InsertMasterModifier = z.infer<typeof insertMasterModifierSchema>;
+export type MasterModifier = typeof masterModifiers.$inferSelect;
+
+// ============================================================
 // INTERNAL MESSAGING SYSTEM
 // Company-wide chat, group channels, and direct messages
 // ============================================================

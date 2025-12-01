@@ -39,7 +39,8 @@ import {
   bidEquipmentSelections, insertBidEquipmentSelectionSchema,
   projectEquipmentPlans, insertProjectEquipmentPlanSchema,
   rentalEquipmentUsages, insertRentalEquipmentUsageSchema,
-  tradeFeatures, organizations, organizationSowItems, masterSowItems
+  tradeFeatures, organizations, organizationSowItems, masterSowItems,
+  masterModifierCategories, masterModifiers
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -7475,28 +7476,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all modifier categories with their modifiers
+  // Get all modifier categories with their modifiers - organization trade-specific
   app.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const categories = await db
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+
+      // Get organization to determine trade type
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+
+      if (!org) {
+        res.status(404).json({ error: "Organization not found" });
+        return;
+      }
+
+      // Try to get trade-specific modifiers from master tables
+      const masterCategories = await db
         .select()
-        .from(scopeModifierCategories)
-        .where(eq(scopeModifierCategories.isActive, true))
-        .orderBy(scopeModifierCategories.displayOrder);
+        .from(masterModifierCategories)
+        .where(
+          and(
+            eq(masterModifierCategories.tradeType, org.tradeType),
+            eq(masterModifierCategories.isActive, true)
+          )
+        )
+        .orderBy(masterModifierCategories.displayOrder);
 
-      const modifiers = await db
-        .select()
-        .from(scopeModifiers)
-        .where(eq(scopeModifiers.isActive, true))
-        .orderBy(scopeModifiers.displayOrder);
+      if (masterCategories.length > 0) {
+        // Get all modifiers for this trade
+        const masterMods = await db
+          .select()
+          .from(masterModifiers)
+          .where(
+            and(
+              eq(masterModifiers.tradeType, org.tradeType),
+              eq(masterModifiers.isActive, true)
+            )
+          )
+          .orderBy(masterModifiers.displayOrder);
 
-      // Group modifiers by category
-      const categoriesWithModifiers = categories.map(cat => ({
-        ...cat,
-        modifiers: modifiers.filter(m => m.categoryId === cat.id)
-      }));
+        // Group modifiers by category and format response
+        const categoriesWithModifiers = masterCategories.map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          displayOrder: cat.displayOrder,
+          isActive: cat.isActive,
+          modifiers: masterMods
+            .filter(m => m.categoryId === cat.id)
+            .map(m => ({
+              id: m.id,
+              categoryId: m.categoryId,
+              name: m.name,
+              code: m.code,
+              displayOrder: m.displayOrder,
+              isActive: m.isActive,
+              isCustom: false
+            }))
+        }));
 
-      res.json(categoriesWithModifiers);
+        res.json(categoriesWithModifiers);
+        return;
+      }
+
+      // No trade-specific modifiers found - return empty array for multi-tenant isolation
+      // Note: Legacy fallback to shared tables removed to prevent cross-trade data leakage
+      console.log(`[Modifiers] No trade-specific modifiers found for trade: ${org.tradeType}`);
+      res.json([]);
     } catch (error) {
       console.error("Get scope modifiers error:", error);
       res.status(500).json({ error: "Internal server error" });
