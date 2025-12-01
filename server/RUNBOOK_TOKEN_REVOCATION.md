@@ -1,7 +1,7 @@
 # Token Revocation System - Operational Runbook
 
 ## Overview
-The TFR Construction platform implements JWT token versioning to enable "logout all devices" functionality. When an admin revokes a user's tokens, all existing sessions are invalidated and the user must re-authenticate.
+The SmartManageAI platform implements JWT token versioning to enable "logout all devices" functionality. When an admin revokes a user's tokens, all existing sessions are invalidated and the user must re-authenticate.
 
 ## Architecture
 

@@ -298,7 +298,7 @@ export default function DashboardPage() {
                             >
                               <Avatar className="h-8 w-8">
                                 <AvatarFallback className="text-xs">
-                                  {conv.isCompanyChannel ? 'TFR' : otherParticipants[0]?.user.firstName?.[0]}
+                                  {conv.isCompanyChannel ? 'Co' : otherParticipants[0]?.user.firstName?.[0]}
                                 </AvatarFallback>
                               </Avatar>
                               <div className="flex-1 min-w-0">

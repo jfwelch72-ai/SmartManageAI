@@ -313,7 +313,7 @@ export function ActualMaterialsInput({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="PENDING">Pending Decision</SelectItem>
-                      <SelectItem value="TFR">TFR (Absorb Cost)</SelectItem>
+                      <SelectItem value="TFR">Contractor (Absorb Cost)</SelectItem>
                       {isSubcontracted && (
                         <SelectItem value="SUBCONTRACTOR">Subcontractor (Deduct)</SelectItem>
                       )}
@@ -338,7 +338,7 @@ export function ActualMaterialsInput({
                       {isSubcontracted && (
                         <SelectItem value="DEDUCTED">Deducted from Sub</SelectItem>
                       )}
-                      <SelectItem value="ABSORBED">Absorbed by TFR</SelectItem>
+                      <SelectItem value="ABSORBED">Absorbed by Contractor</SelectItem>
                       <SelectItem value="RESOLVED">Resolved</SelectItem>
                     </SelectContent>
                   </Select>

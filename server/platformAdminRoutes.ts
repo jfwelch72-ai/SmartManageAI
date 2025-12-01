@@ -385,7 +385,7 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
 
     await sendEmail({
       to: user.email,
-      subject: 'Password Reset Required - TFR Construction',
+      subject: 'Password Reset Required - SmartManageAI',
       html: getAdminPasswordResetEmailHtml(resetLink, user.firstName),
       text: getPasswordResetEmailText(resetLink, user.firstName),
     });

@@ -1,5 +1,5 @@
 /**
- * Geometry Utilities for TFR Takeoff Engine
+ * Geometry Utilities for SmartManageAI Takeoff Engine
  * 
  * Provides robust, production-grade geometric calculations for:
  * - Distance measurements (linear feet)

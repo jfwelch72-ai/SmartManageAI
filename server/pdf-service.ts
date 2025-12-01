@@ -78,7 +78,7 @@ export function generateInternalBidSummaryPDF(data: BidData): PassThrough {
   const accentColor = '#2563eb';
   const lightGray = '#f3f4f6';
 
-  doc.fontSize(24).fillColor(primaryColor).text('TFR CONSTRUCTION', { align: 'center' });
+  doc.fontSize(24).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
   doc.fontSize(18).fillColor('#374151').text('Internal Bid Summary', { align: 'center' });
   doc.moveDown(0.5);
 
@@ -326,11 +326,11 @@ export function generateDelayNotificationPDF(data: DelayNotificationData): PassT
   const primaryColor = '#1a365d';
   const accentColor = '#dc2626';
 
-  // TFR Letterhead
-  doc.fontSize(28).fillColor(primaryColor).text('TFR CONSTRUCTION', { align: 'center' });
-  doc.fontSize(10).fillColor('#6b7280').text('LICENSED CONCRETE CONTRACTOR', { align: 'center' });
+  // Company Letterhead
+  doc.fontSize(28).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('Construction Management Platform', { align: 'center' });
   doc.moveDown(0.3);
-  doc.fontSize(9).text('Phone: (XXX) XXX-XXXX | Email: info@tfrconstruction.com', { align: 'center' });
+  doc.fontSize(9).text('Contact your company administrator for details', { align: 'center' });
   doc.moveDown();
 
   // Decorative line
@@ -446,7 +446,7 @@ export function generateDelayNotificationPDF(data: DelayNotificationData): PassT
   doc.fontSize(11).fillColor('#374151');
   doc.text(`${data.createdBy.firstName} ${data.createdBy.lastName}`);
   doc.fontSize(10).fillColor('#6b7280');
-  doc.text('TFR Construction');
+  doc.text('SmartManageAI');
   if (data.createdBy.phone) {
     doc.text(`Phone: ${data.createdBy.phone}`);
   }
@@ -471,10 +471,10 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
 
   const primaryColor = '#1a365d';
 
-  doc.fontSize(28).fillColor(primaryColor).text('TFR CONSTRUCTION', { align: 'center' });
-  doc.fontSize(10).fillColor('#6b7280').text('LICENSED CONCRETE CONTRACTOR', { align: 'center' });
+  doc.fontSize(28).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('Construction Management Platform', { align: 'center' });
   doc.moveDown(0.3);
-  doc.fontSize(9).text('Phone: (XXX) XXX-XXXX | Email: info@tfrconstruction.com', { align: 'center' });
+  doc.fontSize(9).text('Powered by SmartManageAI', { align: 'center' });
   doc.moveDown();
 
   doc.strokeColor('#e5e7eb').lineWidth(1)
@@ -617,7 +617,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   const terms = [
     {
       title: 'LICENSES & INSURANCE',
-      content: 'TFR Construction is a fully licensed and insured concrete contractor. Proof of insurance and licensing available upon request.'
+      content: 'Company is fully licensed and insured. Proof of insurance and licensing available upon request.'
     },
     {
       title: 'COMPENSATION',
@@ -637,7 +637,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
     },
     {
       title: 'WARRANTY',
-      content: 'TFR Construction provides a one-year warranty on workmanship. Material warranties are per manufacturer specifications.'
+      content: 'We provide a one-year warranty on workmanship. Material warranties are per manufacturer specifications.'
     }
   ];
 
@@ -654,7 +654,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   doc.moveDown();
 
   doc.fontSize(10).fillColor('#374151')
-    .text('By signing below, the Client accepts this quote and authorizes TFR Construction to proceed with the work described herein. This signature constitutes a binding agreement between the parties.');
+    .text('By signing below, the Client accepts this quote and authorizes the Contractor to proceed with the work described herein. This signature constitutes a binding agreement between the parties.');
   doc.moveDown(2);
 
   doc.text('The above prices, specifications, and conditions are satisfactory and are hereby accepted.');
@@ -686,7 +686,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
     .stroke();
 
   doc.moveDown(3);
-  doc.text('TFR Construction Representative:', 50, doc.y);
+  doc.text('Contractor Representative:', 50, doc.y);
   doc.moveDown();
   const tfrSigY = doc.y;
   doc.text('Signature:', 50, tfrSigY);
@@ -702,7 +702,7 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
 
   doc.moveDown(3);
   doc.fontSize(8).fillColor('#9ca3af')
-    .text('TFR Construction | Licensed Concrete Contractor', { align: 'center' })
+    .text('SmartManageAI | Construction Management Platform', { align: 'center' })
     .text(`Quote #${data.bid.code} | Generated ${new Date().toLocaleDateString()}`, { align: 'center' });
 
   doc.end();

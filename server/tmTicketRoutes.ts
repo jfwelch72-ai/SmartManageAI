@@ -677,7 +677,7 @@ export function registerTMTicketRoutes(app: Express) {
 </head>
 <body>
   <div class="header">
-    <h1>TFR CONSTRUCTION</h1>
+    <h1>SmartManageAI</h1>
     <h2>TIME AND MATERIAL WORK TICKET</h2>
   </div>
   
@@ -705,7 +705,7 @@ export function registerTMTicketRoutes(app: Express) {
       <span class="info-value">${project?.clientName || 'N/A'}</span>
     </div>
     <div class="info-row">
-      <span class="info-label">TFR Rep:</span>
+      <span class="info-label">Company Rep:</span>
       <span class="info-value">${rep ? `${rep.firstName} ${rep.lastName}` : 'N/A'}</span>
     </div>
     ${ticket.workOrderReference ? `
@@ -834,7 +834,7 @@ export function registerTMTicketRoutes(app: Express) {
   
   <div class="signatures">
     <div>
-      <p><strong>TFR Representative</strong></p>
+      <p><strong>Contractor Representative</strong></p>
       <div class="signature-line">
         <p>Name: ${rep ? `${rep.firstName} ${rep.lastName}` : '_________________'}</p>
         <p>Date: _________________</p>
@@ -850,7 +850,7 @@ export function registerTMTicketRoutes(app: Express) {
   </div>
   
   <div style="margin-top: 30px; font-size: 10px; color: #666; text-align: center;">
-    <p>Generated on ${new Date().toLocaleString()} | TFR Construction Management Platform</p>
+    <p>Generated on ${new Date().toLocaleString()} | SmartManageAI Construction Management Platform</p>
   </div>
 </body>
 </html>

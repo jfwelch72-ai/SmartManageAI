@@ -32,7 +32,7 @@ const RESPONSIBILITY_LABELS: Record<string, string> = {
   OWNER: "Owner",
   GC: "General Contractor",
   SUBCONTRACTOR: "Subcontractor",
-  TFR: "TFR Construction",
+  TFR: "Contractor (Self)",
   FORCE_MAJEURE: "Force Majeure (Weather/Act of God)"
 };
 
@@ -1016,8 +1016,8 @@ router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, as
         state: project.state,
       },
       createdBy: {
-        firstName: createdByUser?.firstName || "TFR",
-        lastName: createdByUser?.lastName || "Construction",
+        firstName: createdByUser?.firstName || "System",
+        lastName: createdByUser?.lastName || "User",
         email: createdByUser?.email || null,
         phone: createdByUser?.phone || null,
       },

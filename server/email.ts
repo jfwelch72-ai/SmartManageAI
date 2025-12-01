@@ -82,7 +82,7 @@ export function getPasswordResetEmailHtml(resetLink: string, userName: string): 
     </div>
     <div style="background-color: #f9fafb; padding: 16px 24px; text-align: center;">
       <p style="color: #999999; font-size: 12px; margin: 0;">
-        TFR Construction Management Platform
+        SmartManageAI Construction Management Platform
       </p>
     </div>
   </div>
@@ -104,7 +104,7 @@ This link will expire in 30 minutes for security reasons.
 If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
 
 ---
-TFR Construction Management Platform
+SmartManageAI Construction Management Platform
 `;
 }
 
@@ -148,7 +148,7 @@ export function getAdminPasswordResetEmailHtml(resetLink: string, userName: stri
     </div>
     <div style="background-color: #f9fafb; padding: 16px 24px; text-align: center;">
       <p style="color: #999999; font-size: 12px; margin: 0;">
-        TFR Construction Management Platform
+        SmartManageAI Construction Management Platform
       </p>
     </div>
   </div>

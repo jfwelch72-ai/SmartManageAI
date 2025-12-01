@@ -133,7 +133,7 @@ export function SubcontractorScopeReport({
       <div className="bg-background p-6 border rounded-lg" data-testid="report-content">
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">TFR CONSTRUCTION</h1>
+            <h1 className="text-2xl font-bold text-foreground">SmartManageAI</h1>
             <p className="text-muted-foreground">Subcontractor Scope & Materials Report</p>
           </div>
           <div className="text-right">
@@ -233,7 +233,7 @@ export function SubcontractorScopeReport({
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2 text-green-700 dark:text-green-400">
                 <Truck className="h-5 w-5" />
-                Materials Provided By: TFR Construction
+                Materials Provided By: Contractor
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -318,7 +318,7 @@ export function SubcontractorScopeReport({
 
         <div className="text-center text-sm text-muted-foreground">
           <p>This document is for internal use only and subject to the terms of the subcontractor agreement.</p>
-          <p className="mt-1">Generated on {reportDate} by TFR Construction Management Platform</p>
+          <p className="mt-1">Generated on {reportDate} by SmartManageAI Construction Management Platform</p>
         </div>
       </div>
     </div>

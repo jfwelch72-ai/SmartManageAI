@@ -239,7 +239,7 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
                 id="scopeOfWorkSummary"
                 value={formData.scopeOfWorkSummary || ""}
                 onChange={(e) => handleChange("scopeOfWorkSummary", e.target.value)}
-                placeholder="Summary of TFR's scope on this project..."
+                placeholder="Summary of your company's scope on this project..."
                 disabled={readOnly}
                 rows={4}
                 data-testid="input-scope-summary"
@@ -759,7 +759,7 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
                   id="projectManager"
                   value={formData.projectManager || ""}
                   onChange={(e) => handleChange("projectManager", e.target.value)}
-                  placeholder="TFR Project Manager"
+                  placeholder="Company Project Manager"
                   disabled={readOnly}
                   data-testid="input-project-manager"
                 />
@@ -770,7 +770,7 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
                   id="superintendent"
                   value={formData.superintendent || ""}
                   onChange={(e) => handleChange("superintendent", e.target.value)}
-                  placeholder="TFR Superintendent"
+                  placeholder="Company Superintendent"
                   disabled={readOnly}
                   data-testid="input-superintendent"
                 />

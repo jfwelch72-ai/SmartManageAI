@@ -1,7 +1,7 @@
-# TFR Construction Management Platform
+# SmartManageAI Construction Management Platform
 
 ## Overview
-The TFR Construction Management Platform is a white-label SaaS solution designed to manage the entire construction project lifecycle, from bid tracking to project completion. It supports multiple contracting specialties with trade-specific customizations, centralizing project data, user management, and daily operations to enhance efficiency, compliance, and oversight. The platform features a multi-tenant architecture with AI-driven onboarding, dynamic navigation, trade-specific dashboards, and a comprehensive suite of tools for project management, estimating, CRM, and compliance.
+SmartManageAI is a white-label SaaS construction management platform designed to manage the entire construction project lifecycle, from bid tracking to project completion. It supports multiple contracting specialties with trade-specific customizations, centralizing project data, user management, and daily operations to enhance efficiency, compliance, and oversight. The platform features a multi-tenant architecture with AI-driven onboarding, dynamic navigation, trade-specific dashboards, and a comprehensive suite of tools for project management, estimating, CRM, and compliance.
 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
@@ -103,6 +103,15 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - Development mode: Auto-scan schedulers disabled; use manual "Run AI Analysis" buttons
 
 ## Recent Changes (December 2025)
+
+### System Rebranding to SmartManageAI
+- Comprehensive rebranding from "TFR Construction" to "SmartManageAI"
+- Updated all frontend components: login form, sidebar, dashboard, subcontractor reports
+- Updated backend services: PDF generation, email templates, AI prompts, delay routes
+- Updated file names in PDF exports (SmartManageAI-Internal-Summary, SmartManageAI-Quote)
+- Maintained database enum values (e.g., "TFR" responsibility) for backward compatibility
+- Updated display labels to use generic "Company" or "Contractor" terminology
+- White-label approach allows platform to be adapted for any construction company
 
 ### Time Clock Approval Workflow
 - Added `approvalStatus` enum to time_entries schema (PENDING, APPROVED, REJECTED)

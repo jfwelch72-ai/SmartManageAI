@@ -412,7 +412,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         await sendEmail({
           to: user.email,
-          subject: 'Password Reset Request - TFR Construction',
+          subject: 'Password Reset Request - SmartManageAI',
           html: getPasswordResetEmailHtml(resetLink, user.firstName),
           text: getPasswordResetEmailText(resetLink, user.firstName),
         });
@@ -2689,7 +2689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pdfStream = generateInternalBidSummaryPDF(pdfData);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="TFR-Internal-Summary-${bid.code}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="SmartManageAI-Internal-Summary-${bid.code}.pdf"`);
 
       pdfStream.pipe(res);
     } catch (error) {
@@ -2778,7 +2778,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pdfStream = generateCustomerQuotePDF(pdfData);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="TFR-Quote-${bid.code}.pdf"`);
+      res.setHeader('Content-Disposition', `attachment; filename="SmartManageAI-Quote-${bid.code}.pdf"`);
 
       pdfStream.pipe(res);
     } catch (error) {

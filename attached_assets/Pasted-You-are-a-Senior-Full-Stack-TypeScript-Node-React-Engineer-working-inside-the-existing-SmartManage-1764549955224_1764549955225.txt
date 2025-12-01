@@ -1,0 +1,236 @@
+You are a Senior Full-Stack TypeScript/Node/React Engineer working inside the existing **SmartManageAI** codebase.
+
+DO NOT create a new project.
+Modify the existing codebase IN PLACE.
+Preserve all multi-tenant logic, RBAC, existing routes, AI modules, storage, and audit logging.
+
+This prompt includes ONLY Tasks 0–5.
+Tasks 6–10 should NOT be included or altered.
+
+============================================================
+TASK GROUP 0 – RENAME SYSTEM REFERENCES TO “SmartManageAI”
+============================================================
+- Update all UI branding and system label references from the old name to **SmartManageAI**.
+- Keep database schemas unchanged.
+- Update branding in:
+  - Login/Register pages
+  - Dashboard header
+  - Sidebar title
+  - PDF headers (bids, subcontracts, SOV exports)
+  - Vendor & Client portals
+
+============================================================
+TASK GROUP 1 – ADMIN ONBOARDING:
+COMPANY DOCUMENTS, TEMPLATES, LOGO, COLORS, MISSION STATEMENT
+============================================================
+
+Add a NEW admin onboarding step after trade onboarding:
+
+### “Upload Your Company Templates & Branding”
+
+Admins must upload:
+
+1. **Company Templates & Manuals**
+   - Safety Manual  
+   - Employee Handbook  
+   - Safety/Environmental Handbook  
+   - QC Manual  
+   - Incident Report Templates  
+   - General Company Forms  
+   - Subcontract Agreement Template  
+   - SOV Template (fillable or static)  
+
+2. **Branding**
+   - Company Logo upload (image)  
+   - Mission Statement (text)  
+   - Auto-detected colors from website (existing)
+   - **Manual Color Overrides**:
+       - primaryColor
+       - secondaryColor
+       - accentColor
+       - backgroundColor
+       - textColor
+
+### Database
+
+Create table: company_documents  
+(id, organizationId, type enum, fileKey, originalFileName, contentType, uploadedByUserId, uploadedAt)
+
+Create table: company_document_structures  
+(id, organizationId, documentId, documentType, parsedSectionsJson, fieldMappingsJson, createdAt)
+
+Extend organization settings table:
+- logoFileKey
+- missionStatement
+- primaryColor
+- secondaryColor
+- accentColor
+- backgroundColor
+- textColor
+
+### Backend API
+
+- POST /api/company-documents  
+- POST /api/company-documents/:id/analyze  
+- POST /api/organization/branding/logo  
+- POST /api/organization/branding/mission-statement  
+- POST /api/organization/branding/colors  
+- GET /api/organization/branding  
+
+Company document analysis should:
+- Extract structure  
+- Identify headings/sections  
+- Prepare for future document generation (subcontracts, SOVs, safety plans)
+
+### Frontend
+
+Add onboarding pages:
+- Template upload
+- Document list + analysis status
+- Logo upload preview
+- Mission statement input
+- Color picker UI with:
+  - “Use AI extracted colors”
+  - “Manual override”
+- Save to organization branding settings
+
+============================================================
+TASK GROUP 2 – AI BID DOCUMENT REVIEW (Pre-Bid)
+============================================================
+
+### Database
+Create table: bid_documents  
+(id, bidId, organizationId, fileKey, originalFileName, contentType, uploadedByUserId, uploadedAt)
+
+Use ai_insights with new module: "BID_DOCUMENTS_SUMMARY"
+
+### Endpoints
+- POST /api/bids/:bidId/documents  
+- POST /api/bids/:bidId/ai/bid-docs-review  
+- GET /api/bids/:bidId/ai/bid-docs-review  
+- POST /api/bids/:bidId/ai/create-bid-prep-tasks  
+
+AI must extract:
+- Work scope summary  
+- Requirements (bonds, insurance, dates, submittals)  
+- Key risks  
+- Key dates  
+- Document checklist  
+
+Task generation must create tasks tied to bidId for Estimator/PM.
+
+### Frontend
+Add Bid Detail tab: **“AI Bid Review”**
+- Upload documents
+- Run AI Review
+- Display structured summary
+- Button: “Create Bid Prep Tasks”
+
+============================================================
+TASK GROUP 3 – AI AWARD / CONTRACT DOCUMENT REVIEW (Post-Award)
+============================================================
+
+### Database
+Create table: project_award_documents  
+(id, projectId, organizationId, fileKey, originalFileName, contentType, uploadedByUserId, uploadedAt)
+
+Extend ai_insights with module: "AWARD_DOCUMENTS_SUMMARY"
+
+### Endpoints
+- POST /api/projects/:projectId/award-documents  
+- POST /api/projects/:projectId/ai/award-docs-review  
+- GET /api/projects/:projectId/ai/award-docs-review  
+- POST /api/projects/:projectId/ai/create-contract-execution-tasks  
+
+AI must extract:
+- Contract summary  
+- Required documents  
+- Milestones & timelines  
+- Responsibilities by role (PM, Office Manager, Estimator)  
+- Risks & recommendations  
+
+Task generation:
+- Create a contract execution task list based on AI insights.
+
+### Frontend
+Add Project tab: **“Contract / Award Docs”**
+- Upload award documents
+- Run AI review
+- Show structured summary
+- “Create Contract Execution Tasks” button
+
+============================================================
+TASK GROUP 4 – SOV GENERATION + FILLABLE PDF SUPPORT
+============================================================
+
+### Database
+Create table: project_sov_items  
+(id, projectId, organizationId, description, cost, percentageOfTotal, sortOrder, source, createdAt, createdByUserId)
+
+### Endpoints
+- POST /api/projects/:projectId/ai/generate-sov  
+- POST /api/projects/:projectId/ai/fill-sov-pdf  
+- GET /api/projects/:projectId/sov/export-pdf  
+- GET /api/projects/:projectId/sov/export-excel  
+
+Logic:
+- If company uploaded SOV_TEMPLATE → use it as base  
+- If not → AI generates structure from estimates  
+- Map SOV items into fillable PDF if fields exist  
+- Apply branding (logo + colors) to exported PDFs  
+
+### Frontend
+Add SOV UI section in Project Detail:
+- Generate SOV (AI)
+- Edit SOV table
+- Upload SOV PDF and let AI fill it
+- Export PDF / Excel
+
+============================================================
+TASK GROUP 5 – SUBCONTRACT AGREEMENT GENERATION
+============================================================
+
+### Database
+Create tables:
+- subcontracts  
+- subcontract_sov_items (optional)
+
+### Endpoints
+POST /api/projects/:projectId/subcontracts/generate  
+Inputs:
+- subcontractorOrganisationId  
+- SOW items or free text scope  
+- contractValue  
+- retainagePercent  
+- flow-down options  
+
+Logic:
+1. Load company SUBCONTRACT_TEMPLATE (if uploaded)
+2. Apply project branding (logo, mission statement, colors)
+3. Apply award doc AI risks (flow-down)
+4. Generate subcontract using OpenAI
+5. Render PDF with company branding
+6. Save PDF to object storage
+7. Return subcontract record
+
+### Frontend
+Project Tab: **“Subcontracts”**
+- List subcontracts
+- Generate new subcontract
+- View/download PDF
+
+============================================================
+FINAL REQUIREMENTS
+============================================================
+
+When finished:
+1. List all modified backend files  
+2. List all new backend files  
+3. List all modified frontend files  
+4. Provide all new Drizzle migrations  
+5. Provide usage instructions for each new feature  
+
+Write **real, production-ready code**.  
+Do NOT produce pseudo-code.  
+Do NOT modify tasks 6–10 in any way.  
+Maintain full compatibility with existing SmartManageAI architecture.

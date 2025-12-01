@@ -1218,7 +1218,7 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
     const response = await fetch(websiteUrl, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'TFR-Construction-Theme-Extractor/1.0',
+        'User-Agent': 'SmartManageAI-Theme-Extractor/1.0',
         'Accept': 'text/html',
       },
     });

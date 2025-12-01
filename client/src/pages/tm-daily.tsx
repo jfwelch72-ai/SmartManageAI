@@ -145,7 +145,7 @@ export default function TMDailyPage() {
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground mb-1">
-                              <strong>TFR Rep:</strong> {sheet.tfrRepName}
+                              <strong>Company Rep:</strong> {sheet.tfrRepName}
                               {sheet.clientRepName && (
                                 <> | <strong>Client Rep:</strong> {sheet.clientRepName}</>
                               )}

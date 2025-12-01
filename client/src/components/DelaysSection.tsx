@@ -42,7 +42,7 @@ const RESPONSIBILITY_OPTIONS = [
   { value: "OWNER", label: "Owner" },
   { value: "GC", label: "General Contractor" },
   { value: "SUBCONTRACTOR", label: "Subcontractor" },
-  { value: "TFR", label: "TFR Construction" },
+  { value: "TFR", label: "Contractor (Self)" },
   { value: "FORCE_MAJEURE", label: "Force Majeure (Weather/Act of God)" },
 ];
 

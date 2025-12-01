@@ -86,7 +86,7 @@ const TMDailyForm = forwardRef<TMDailyFormRef, TMDailyFormProps>(({ projectName,
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tfrRepName">TFR Representative</Label>
+              <Label htmlFor="tfrRepName">Company Representative</Label>
               <Input
                 id="tfrRepName"
                 placeholder="John Smith"

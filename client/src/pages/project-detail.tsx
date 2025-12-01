@@ -3502,7 +3502,7 @@ export default function ProjectDetailPage() {
                         <div key={sheet.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`tm-sheet-${sheet.id}`}>
                           <div>
                             <p className="text-sm font-medium">{format(new Date(sheet.date), "MMM d, yyyy")}</p>
-                            <p className="text-xs text-muted-foreground">TFR Rep: {sheet.tfrRepName}</p>
+                            <p className="text-xs text-muted-foreground">Company Rep: {sheet.tfrRepName}</p>
                             {sheet.clientRepName && (
                               <p className="text-xs text-muted-foreground">Client Rep: {sheet.clientRepName}</p>
                             )}

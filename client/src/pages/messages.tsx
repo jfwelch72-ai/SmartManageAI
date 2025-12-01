@@ -167,7 +167,7 @@ export default function MessagesPage() {
   };
 
   const getConversationName = (conversation: Conversation): string => {
-    if (conversation.isCompanyChannel) return "TFR Company Chat";
+    if (conversation.isCompanyChannel) return "Company Chat";
     if (conversation.name) return conversation.name;
     if (conversation.type === "DIRECT") {
       const otherParticipant = conversation.participants.find(p => p.userId !== user?.id);

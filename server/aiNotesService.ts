@@ -125,7 +125,7 @@ Text: ${note.text}
 ---`
     ).join('\n\n');
 
-    const systemPrompt = `You are an AI assistant for a construction management company (TFR Construction). Your job is to analyze daily field notes and identify actionable items that require attention from management or specific team members.
+    const systemPrompt = `You are an AI assistant for a construction management platform (SmartManageAI). Your job is to analyze daily field notes and identify actionable items that require attention from management or specific team members.
 
 Categories to identify:
 1. SUPPLY_NEED - Materials or supplies needed (gloves, PPE, lumber, concrete, etc.)
