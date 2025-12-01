@@ -90,6 +90,25 @@ export const tradeTypeEnum = pgEnum("trade_type", [
 ]);
 export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
 
+// Organization Document Enums
+export const organizationDocumentTypeEnum = pgEnum("organization_document_type", [
+  "LOGO_PRIMARY",
+  "LOGO_SECONDARY",
+  "LETTERHEAD",
+  "INSURANCE_CERT_GENERAL_LIABILITY",
+  "INSURANCE_CERT_WORKERS_COMP",
+  "INSURANCE_CERT_AUTO",
+  "INSURANCE_CERT_UMBRELLA",
+  "W9",
+  "LICENSE",
+  "BONDING_LETTER",
+  "BANKING_INFO",
+  "SAFETY_PROGRAM",
+  "COMPANY_PROFILE",
+  "TEMPLATE_OTHER"
+]);
+export const organizationDocumentVisibilityEnum = pgEnum("organization_document_visibility", ["PUBLIC", "INTERNAL", "CONFIDENTIAL"]);
+
 // Organizations table (tenants/companies)
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3206,6 +3225,40 @@ export const organizationSowItems = pgTable("organization_sow_items", {
 export const insertOrganizationSowItemSchema = createInsertSchema(organizationSowItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationSowItem = z.infer<typeof insertOrganizationSowItemSchema>;
 export type OrganizationSowItem = typeof organizationSowItems.$inferSelect;
+
+// ============================================
+// ORGANIZATION DOCUMENTS
+// Company branding assets and compliance documents
+// ============================================
+export const organizationDocuments = pgTable("organization_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  type: organizationDocumentTypeEnum("type").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  fileUrl: text("file_url").notNull(),
+  objectKey: text("object_key"),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  visibility: organizationDocumentVisibilityEnum("visibility").notNull().default("INTERNAL"),
+  version: integer("version").notNull().default(1),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  effectiveDate: date("effective_date"),
+  expiresAt: date("expires_at"),
+  notes: text("notes"),
+  replacesDocumentId: varchar("replaces_document_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_docs_org_idx").on(table.organizationId),
+  typeIdx: index("org_docs_type_idx").on(table.type),
+  activeTypeOrgUnique: unique("org_docs_active_type_org_unique").on(table.organizationId, table.type, table.isActive),
+}));
+
+export const insertOrganizationDocumentSchema = createInsertSchema(organizationDocuments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationDocument = z.infer<typeof insertOrganizationDocumentSchema>;
+export type OrganizationDocument = typeof organizationDocuments.$inferSelect;
 
 // ============================================
 // STANDARDIZED UNITS OF MEASURE (UOM)
