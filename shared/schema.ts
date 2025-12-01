@@ -1153,6 +1153,54 @@ export const aiVendorComparisons = pgTable("ai_vendor_comparisons", {
   categoryIdx: index("ai_vendor_comparisons_category_idx").on(table.materialCategory),
 }));
 
+// AI Bid Document Analysis (AI-powered bid invitation/scope document review)
+export const aiBidDocumentAnalysisStatusEnum = pgEnum("ai_bid_document_analysis_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
+
+export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  documentUrl: text("document_url").notNull(),
+  documentName: text("document_name").notNull(),
+  documentType: text("document_type"), // PDF, IMAGE, etc.
+  status: aiBidDocumentAnalysisStatusEnum("status").notNull().default("PENDING"),
+  
+  // Extracted information
+  projectName: text("project_name"),
+  clientName: text("client_name"),
+  bidDueDate: timestamp("bid_due_date"),
+  projectLocation: text("project_location"),
+  projectScope: text("project_scope"), // Full scope description
+  scopeSummary: text("scope_summary"), // Short summary
+  
+  // Extracted line items as JSON array
+  lineItems: text("line_items"), // JSON: [{description, quantity, unit, notes}]
+  
+  // Special requirements/qualifications
+  requirements: text("requirements"), // JSON array of requirements
+  qualifications: text("qualifications"), // JSON array of qualifications needed
+  insuranceRequirements: text("insurance_requirements"),
+  bondingRequirements: text("bonding_requirements"),
+  
+  // Pricing guidance
+  suggestedPricingFactors: text("suggested_pricing_factors"), // JSON with pricing considerations
+  riskFactors: text("risk_factors"), // JSON array of potential risks
+  
+  // Raw AI response for debugging
+  rawAiResponse: text("raw_ai_response"),
+  confidenceScore: integer("confidence_score"), // 0-100
+  
+  analyzedById: varchar("analyzed_by_id").references(() => users.id),
+  analyzedAt: timestamp("analyzed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  bidIdx: index("ai_bid_document_analysis_bid_idx").on(table.bidId),
+  orgIdx: index("ai_bid_document_analysis_org_idx").on(table.organizationId),
+  statusIdx: index("ai_bid_document_analysis_status_idx").on(table.status),
+}));
+
 // ==================================================
 // TAKEOFF + ESTIMATING ENGINE TABLES
 // ==================================================
@@ -1841,6 +1889,14 @@ export const insertAIVendorComparisonSchema = createInsertSchema(aiVendorCompari
 });
 export type InsertAIVendorComparison = z.infer<typeof insertAIVendorComparisonSchema>;
 export type AIVendorComparison = typeof aiVendorComparisons.$inferSelect;
+
+export const insertAIBidDocumentAnalysisSchema = createInsertSchema(aiBidDocumentAnalysis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAIBidDocumentAnalysis = z.infer<typeof insertAIBidDocumentAnalysisSchema>;
+export type AIBidDocumentAnalysis = typeof aiBidDocumentAnalysis.$inferSelect;
 
 // Crews table
 export const crews = pgTable("crews", {

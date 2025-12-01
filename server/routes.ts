@@ -74,6 +74,7 @@ import calculatorRoutes from "./calculatorRoutes";
 import aiAssistantRoutes from "./aiAssistantRoutes";
 import aiFeatureRoutes from "./aiFeatureRoutes";
 import organizationDocumentRoutes from "./organizationDocumentRoutes";
+import aiBidDocumentRoutes from "./aiBidDocumentRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -129,6 +130,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register organization document routes
   app.use("/api", organizationDocumentRoutes);
+
+  // Register AI bid document analysis routes
+  app.use("/api", aiBidDocumentRoutes);
 
   // ====================
   // Auth Routes
