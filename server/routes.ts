@@ -5012,11 +5012,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // List all CRM organisations with optional filters
   app.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { type, search, active } = req.query;
       
       let query = db
         .select({
           id: crmOrganisations.id,
+          organizationId: crmOrganisations.organizationId,
           type: crmOrganisations.type,
           name: crmOrganisations.name,
           address: crmOrganisations.address,
@@ -5037,6 +5044,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(crmOrganisations);
       
       const conditions: any[] = [];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
       
       if (type) {
         conditions.push(sql`${crmOrganisations.type} = ${type}`);
@@ -5067,10 +5079,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get single organisation with contacts
   app.get("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      const conditions = [eq(crmOrganisations.id, req.params.id)];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
       const [organisation] = await db
         .select()
         .from(crmOrganisations)
-        .where(eq(crmOrganisations.id, req.params.id))
+        .where(and(...conditions))
         .limit(1);
       
       if (!organisation) {
@@ -5094,8 +5119,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create organisation (ADMIN, MANAGER only)
   app.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const validationResult = insertCrmOrganisationSchema.safeParse({
         ...req.body,
+        organizationId: orgId,  // SECURITY: Set to user's organization
         createdById: req.user!.id,
       });
       
@@ -5128,10 +5160,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update organisation (ADMIN, MANAGER only)
   app.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      const conditions = [eq(crmOrganisations.id, req.params.id)];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
       const [existing] = await db
         .select()
         .from(crmOrganisations)
-        .where(eq(crmOrganisations.id, req.params.id))
+        .where(and(...conditions))
         .limit(1);
       
       if (!existing) {
@@ -5146,10 +5191,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
+      // SECURITY: Don't allow changing organizationId
+      const { organizationId: _, ...safeData } = validationResult.data;
+      
       const [updated] = await db
         .update(crmOrganisations)
         .set({
-          ...validationResult.data,
+          ...safeData,
           updatedAt: new Date(),
         })
         .where(eq(crmOrganisations.id, req.params.id))
@@ -5175,10 +5223,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete organisation (ADMIN only)
   app.delete("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      const conditions = [eq(crmOrganisations.id, req.params.id)];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
       const [existing] = await db
         .select()
         .from(crmOrganisations)
-        .where(eq(crmOrganisations.id, req.params.id))
+        .where(and(...conditions))
         .limit(1);
       
       if (!existing) {
@@ -5186,7 +5247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
-      await db.delete(crmOrganisations).where(eq(crmOrganisations.id, req.params.id));
+      // SECURITY: Delete with organization filter applied
+      await db.delete(crmOrganisations).where(and(...conditions));
       
       // Log to audit
       await db.insert(auditLog).values({
@@ -5207,6 +5269,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get contacts for an organisation
   app.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify the parent organisation belongs to user's org
+      const orgConditions = [eq(crmOrganisations.id, req.params.id)];
+      if (shouldFilter && orgId) {
+        orgConditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
+      const [parentOrg] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(...orgConditions))
+        .limit(1);
+      
+      if (!parentOrg) {
+        return res.status(404).json({ error: "Organisation not found" });
+      }
+      
       const contacts = await db
         .select()
         .from(crmContacts)
@@ -5223,8 +5307,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create contact (ADMIN, MANAGER only)
   app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify the parent organisation belongs to user's org
+      const orgConditions = [eq(crmOrganisations.id, req.body.organisationId)];
+      if (shouldFilter && orgId) {
+        orgConditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
+      const [parentOrg] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(...orgConditions))
+        .limit(1);
+      
+      if (!parentOrg) {
+        return res.status(404).json({ error: "Parent organisation not found" });
+      }
+      
       const validationResult = insertCrmContactSchema.safeParse({
         ...req.body,
+        organizationId: orgId,  // SECURITY: Set to user's organization
         createdById: req.user!.id,
       });
       
@@ -5265,10 +5372,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update contact (ADMIN, MANAGER only)
   app.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Filter contact by organization
+      const conditions = [eq(crmContacts.id, req.params.id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmContacts.organizationId, orgId));
+      }
+      
       const [existing] = await db
         .select()
         .from(crmContacts)
-        .where(eq(crmContacts.id, req.params.id))
+        .where(and(...conditions))
         .limit(1);
       
       if (!existing) {
@@ -5283,21 +5402,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
-      // If this is set as primary, unset other primaries for this org
-      if (validationResult.data.isPrimary) {
+      // SECURITY: Don't allow changing organizationId
+      const { organizationId: _, ...safeData } = validationResult.data;
+      
+      // If this is set as primary, unset other primaries for this org (with org filter)
+      if (safeData.isPrimary) {
+        const primaryConditions = [
+          eq(crmContacts.organisationId, existing.organisationId),
+          sql`${crmContacts.id} != ${req.params.id}`
+        ];
+        if (shouldFilter && orgId) {
+          primaryConditions.push(eq(crmContacts.organizationId, orgId));
+        }
         await db
           .update(crmContacts)
           .set({ isPrimary: false })
-          .where(and(
-            eq(crmContacts.organisationId, existing.organisationId),
-            sql`${crmContacts.id} != ${req.params.id}`
-          ));
+          .where(and(...primaryConditions));
       }
       
       const [updated] = await db
         .update(crmContacts)
         .set({
-          ...validationResult.data,
+          ...safeData,
           updatedAt: new Date(),
         })
         .where(eq(crmContacts.id, req.params.id))
@@ -5323,10 +5449,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete contact (ADMIN, MANAGER only)
   app.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Filter contact by organization
+      const conditions = [eq(crmContacts.id, req.params.id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmContacts.organizationId, orgId));
+      }
+      
       const [existing] = await db
         .select()
         .from(crmContacts)
-        .where(eq(crmContacts.id, req.params.id))
+        .where(and(...conditions))
         .limit(1);
       
       if (!existing) {
@@ -5334,7 +5472,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
-      await db.delete(crmContacts).where(eq(crmContacts.id, req.params.id));
+      // SECURITY: Delete with organization filter applied
+      await db.delete(crmContacts).where(and(...conditions));
       
       // Log to audit
       await db.insert(auditLog).values({
@@ -5359,6 +5498,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get notes for an organisation (most recent first)
   app.get("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify the parent organisation belongs to user's org
+      const orgConditions = [eq(crmOrganisations.id, req.params.id)];
+      if (shouldFilter && orgId) {
+        orgConditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
+      const [parentOrg] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(...orgConditions))
+        .limit(1);
+      
+      if (!parentOrg) {
+        return res.status(404).json({ error: "Organisation not found" });
+      }
+      
       const notes = await db
         .select({
           id: crmOrganisationNotes.id,
@@ -5389,11 +5550,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create a note for an organisation
   app.post("/api/crm/organisations/:id/notes", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
-      // Verify organisation exists
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify the parent organisation belongs to user's org
+      const orgConditions = [eq(crmOrganisations.id, req.params.id)];
+      if (shouldFilter && orgId) {
+        orgConditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      
       const [organisation] = await db
         .select()
         .from(crmOrganisations)
-        .where(eq(crmOrganisations.id, req.params.id))
+        .where(and(...orgConditions))
         .limit(1);
 
       if (!organisation) {
@@ -5403,6 +5575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validationResult = insertCrmOrganisationNoteSchema.safeParse({
         ...req.body,
+        organizationId: orgId,  // SECURITY: Set to user's organization
         organisationId: req.params.id,
         createdById: req.user!.id,
       });
@@ -5447,13 +5620,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete a note
   app.delete("/api/crm/organisations/:orgId/notes/:noteId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Filter note by organization
+      const conditions = [
+        eq(crmOrganisationNotes.id, req.params.noteId),
+        eq(crmOrganisationNotes.organisationId, req.params.orgId)
+      ];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisationNotes.organizationId, orgId));
+      }
+      
       const [existing] = await db
         .select()
         .from(crmOrganisationNotes)
-        .where(and(
-          eq(crmOrganisationNotes.id, req.params.noteId),
-          eq(crmOrganisationNotes.organisationId, req.params.orgId)
-        ))
+        .where(and(...conditions))
         .limit(1);
 
       if (!existing) {
@@ -5461,7 +5646,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      await db.delete(crmOrganisationNotes).where(eq(crmOrganisationNotes.id, req.params.noteId));
+      // SECURITY: Delete with organization filter applied
+      await db.delete(crmOrganisationNotes).where(and(...conditions));
 
       res.json({ success: true });
     } catch (error) {
@@ -5473,6 +5659,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search CRM for form auto-populate (simplified endpoint)
   app.get("/api/crm/search", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { type, query } = req.query;
       
       if (!query || (query as string).length < 2) {
@@ -5484,6 +5676,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         eq(crmOrganisations.isActive, true),
         sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + query + '%'})`,
       ];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
       
       if (type) {
         conditions.push(sql`${crmOrganisations.type} = ${type}`);

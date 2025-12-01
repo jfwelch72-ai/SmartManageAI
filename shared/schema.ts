@@ -2403,6 +2403,7 @@ export type CrmOrganisation = typeof crmOrganisations.$inferSelect;
 // CRM Contacts table - People associated with organisations
 export const crmContacts = pgTable("crm_contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
@@ -2420,6 +2421,7 @@ export const crmContacts = pgTable("crm_contacts", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
+  organizationIdx: index("crm_contacts_org_idx").on(table.organizationId),
   organisationIdx: index("crm_contacts_organisation_idx").on(table.organisationId),
 }));
 
@@ -2431,6 +2433,7 @@ export type CrmContact = typeof crmContacts.$inferSelect;
 // Auto-timestamps to track when managers contact organizations/people
 export const crmOrganisationNotes = pgTable("crm_organisation_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   organisationId: varchar("organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
   contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }), // Optional: link to specific contact
   noteType: crmNoteTypeEnum("note_type").notNull().default("GENERAL"),
@@ -2438,6 +2441,7 @@ export const crmOrganisationNotes = pgTable("crm_organisation_notes", {
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
+  organizationIdx: index("crm_org_notes_org_idx").on(table.organizationId),
   organisationIdx: index("crm_org_notes_organisation_idx").on(table.organisationId),
   createdAtIdx: index("crm_org_notes_created_at_idx").on(table.createdAt),
 }));
