@@ -7409,27 +7409,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
       }
 
-      // If still no items, fall back to old scope tables (for backward compatibility)
+      // If still no org-specific or trade-specific items, return empty array
+      // Note: Legacy fallback to shared scope tables removed for multi-tenant isolation
       if (sowItems.length === 0) {
-        const categories = await db
-          .select()
-          .from(scopeWorkTypeCategories)
-          .where(eq(scopeWorkTypeCategories.isActive, true))
-          .orderBy(scopeWorkTypeCategories.displayOrder);
-
-        const workTypes = await db
-          .select()
-          .from(scopeWorkTypes)
-          .where(eq(scopeWorkTypes.isActive, true))
-          .orderBy(scopeWorkTypes.displayOrder);
-
-        // Group work types by category
-        const categoriesWithTypes = categories.map(cat => ({
-          ...cat,
-          workTypes: workTypes.filter(wt => wt.categoryId === cat.id)
-        }));
-
-        res.json(categoriesWithTypes);
+        console.log(`[WorkTypes] No SOW items found for organization ${organizationId} (trade: ${org.tradeType})`);
+        res.json([]);
         return;
       }
 
