@@ -349,6 +349,10 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 router.post("/assistant/ask", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { message, context } = req.body;
 
     if (!message) {
@@ -407,6 +411,10 @@ Be helpful, professional, and focused on helping contractors present themselves 
 router.post("/assistant/generate-page", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { pageType, context } = req.body;
 
     if (!pageType) {
@@ -482,6 +490,11 @@ Return a JSON object with:
 // POST /api/website/assistant/suggest-colors - AI color scheme suggestions
 router.post("/assistant/suggest-colors", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { logoUrl, industry, mood } = req.body;
 
     const prompt = `Suggest a professional color scheme for a ${industry || 'construction'} company website.
@@ -548,8 +561,8 @@ router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) =
 router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
     }
 
     const orgId = user.organizationId;
@@ -624,8 +637,8 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
   try {
     const { id } = req.params;
     const user = req.user!;
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
     }
 
     const orgId = user.organizationId;
@@ -660,8 +673,22 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
   try {
     const { id } = req.params;
     const user = req.user!;
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    
+    // Verify post belongs to user's organization
+    const existing = await db.query.websiteBlogPosts.findFirst({
+      where: and(
+        eq(websiteBlogPosts.id, id),
+        orgId ? eq(websiteBlogPosts.organizationId, orgId) : undefined
+      ),
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Blog post not found" });
     }
 
     const [updated] = await db.update(websiteBlogPosts)
@@ -672,6 +699,8 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
       })
       .where(eq(websiteBlogPosts.id, id))
       .returning();
+
+    await logUpdate(user.id, "website_blog_posts", id, existing, updated, req);
 
     res.json(updated);
   } catch (error) {
@@ -684,6 +713,10 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
 router.post("/blog/posts/generate", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { topic, tone, keywords, length } = req.body;
 
     if (!topic) {
@@ -768,8 +801,8 @@ router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => 
 router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
     }
 
     const orgId = user.organizationId;
@@ -848,14 +881,30 @@ router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Respons
   try {
     const { id } = req.params;
     const user = req.user!;
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    
+    // Verify project belongs to user's organization
+    const existing = await db.query.websiteProjects.findFirst({
+      where: and(
+        eq(websiteProjects.id, id),
+        orgId ? eq(websiteProjects.organizationId, orgId) : undefined
+      ),
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Project not found" });
     }
 
     const [updated] = await db.update(websiteProjects)
       .set({ ...req.body, updatedAt: new Date() })
       .where(eq(websiteProjects.id, id))
       .returning();
+
+    await logUpdate(user.id, "website_projects", id, existing, updated, req);
 
     res.json(updated);
   } catch (error) {
@@ -869,6 +918,23 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
   try {
     const { id } = req.params;
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    
+    // Verify project belongs to user's organization
+    const project = await db.query.websiteProjects.findFirst({
+      where: and(
+        eq(websiteProjects.id, id),
+        orgId ? eq(websiteProjects.organizationId, orgId) : undefined
+      ),
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
     
     const imageData = {
       projectId: id,
@@ -878,6 +944,8 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
     const [image] = await db.insert(websiteProjectImages)
       .values(imageData)
       .returning();
+
+    await logCreate(user.id, "website_project_images", image.id, imageData, req);
 
     res.status(201).json(image);
   } catch (error) {
@@ -889,6 +957,11 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
 // POST /api/website/projects/generate-description - AI generate project description
 router.post("/projects/generate-description", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { title, serviceType, projectType, highlights } = req.body;
 
     const prompt = `Write a professional project description for a construction portfolio:
@@ -972,11 +1045,13 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
         .where(eq(organizationSocialLinks.id, existing.id))
         .returning();
       links = updated;
+      await logUpdate(user.id, "organization_social_links", existing.id, existing, updated, req);
     } else {
       const [created] = await db.insert(organizationSocialLinks)
         .values({ ...req.body, organizationId: orgId })
         .returning();
       links = created;
+      await logCreate(user.id, "organization_social_links", created.id, req.body, req);
     }
 
     res.json(links);
@@ -990,6 +1065,10 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 router.post("/social/generate-post", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const { platform, topic, sourceType, sourceId, tone } = req.body;
 
     if (!platform || !topic) {
@@ -1094,6 +1173,10 @@ router.get("/social/history", requireAuth, async (req: AuthRequest, res: Respons
 router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     const orgId = user.organizationId;
 
     if (!orgId && user.role !== "SUPER_ADMIN") {
@@ -1181,9 +1264,17 @@ router.post("/seo/optimize/:pageId", requireAuth, async (req: AuthRequest, res: 
   try {
     const { pageId } = req.params;
     const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
 
+    const orgId = user.organizationId;
+    
     const page = await db.query.organizationWebsitePages.findFirst({
-      where: eq(organizationWebsitePages.id, pageId),
+      where: and(
+        eq(organizationWebsitePages.id, pageId),
+        orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined
+      ),
     });
 
     if (!page) {
