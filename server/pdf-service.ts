@@ -1,6 +1,27 @@
 import PDFDocument from 'pdfkit';
 import { PassThrough } from 'stream';
 
+export interface OrganizationBrandingPDF {
+  organizationName: string;
+  primaryColor?: string;
+  accentColor?: string;
+}
+
+function renderPDFHeader(
+  doc: PDFKit.PDFDocument, 
+  branding?: OrganizationBrandingPDF,
+  subtitle?: string
+) {
+  const companyName = branding?.organizationName || 'SmartManageAI';
+  const primaryColor = branding?.primaryColor || '#1a365d';
+
+  doc.fontSize(24).fillColor(primaryColor).text(companyName, { align: 'center' });
+  if (subtitle) {
+    doc.fontSize(18).fillColor('#374151').text(subtitle, { align: 'center' });
+  }
+  doc.moveDown(0.5);
+}
+
 interface ScopeItem {
   description: string;
   category: string;
@@ -67,6 +88,7 @@ interface BidData {
     taxRate?: number;
     taxAmount?: number;
   };
+  branding?: OrganizationBrandingPDF;
 }
 
 export function generateInternalBidSummaryPDF(data: BidData): PassThrough {
@@ -74,13 +96,11 @@ export function generateInternalBidSummaryPDF(data: BidData): PassThrough {
   const stream = new PassThrough();
   doc.pipe(stream);
 
-  const primaryColor = '#1a365d';
-  const accentColor = '#2563eb';
+  const primaryColor = data.branding?.primaryColor || '#1a365d';
+  const accentColor = data.branding?.accentColor || '#2563eb';
   const lightGray = '#f3f4f6';
 
-  doc.fontSize(24).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
-  doc.fontSize(18).fillColor('#374151').text('Internal Bid Summary', { align: 'center' });
-  doc.moveDown(0.5);
+  renderPDFHeader(doc, data.branding, 'Internal Bid Summary');
 
   doc.fontSize(14).fillColor(primaryColor).text(`Bid: ${data.bid.name}`);
   doc.fontSize(10).fillColor('#374151').text(`Bid Code: ${data.bid.code}`);
@@ -316,6 +336,7 @@ interface DelayNotificationData {
     email: string | null;
     phone: string | null;
   };
+  branding?: OrganizationBrandingPDF;
 }
 
 export function generateDelayNotificationPDF(data: DelayNotificationData): PassThrough {
@@ -323,12 +344,13 @@ export function generateDelayNotificationPDF(data: DelayNotificationData): PassT
   const stream = new PassThrough();
   doc.pipe(stream);
 
-  const primaryColor = '#1a365d';
+  const primaryColor = data.branding?.primaryColor || '#1a365d';
   const accentColor = '#dc2626';
+  const companyName = data.branding?.organizationName || 'SmartManageAI';
 
   // Company Letterhead
-  doc.fontSize(28).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
-  doc.fontSize(10).fillColor('#6b7280').text('Construction Management Platform', { align: 'center' });
+  doc.fontSize(28).fillColor(primaryColor).text(companyName, { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('Construction Management', { align: 'center' });
   doc.moveDown(0.3);
   doc.fontSize(9).text('Contact your company administrator for details', { align: 'center' });
   doc.moveDown();
@@ -446,7 +468,7 @@ export function generateDelayNotificationPDF(data: DelayNotificationData): PassT
   doc.fontSize(11).fillColor('#374151');
   doc.text(`${data.createdBy.firstName} ${data.createdBy.lastName}`);
   doc.fontSize(10).fillColor('#6b7280');
-  doc.text('SmartManageAI');
+  doc.text(companyName);
   if (data.createdBy.phone) {
     doc.text(`Phone: ${data.createdBy.phone}`);
   }
@@ -469,12 +491,13 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   const stream = new PassThrough();
   doc.pipe(stream);
 
-  const primaryColor = '#1a365d';
+  const primaryColor = data.branding?.primaryColor || '#1a365d';
+  const companyName = data.branding?.organizationName || 'SmartManageAI';
 
-  doc.fontSize(28).fillColor(primaryColor).text('SmartManageAI', { align: 'center' });
-  doc.fontSize(10).fillColor('#6b7280').text('Construction Management Platform', { align: 'center' });
+  doc.fontSize(28).fillColor(primaryColor).text(companyName, { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('Construction Management', { align: 'center' });
   doc.moveDown(0.3);
-  doc.fontSize(9).text('Powered by SmartManageAI', { align: 'center' });
+  doc.fontSize(9).text(`Powered by ${companyName}`, { align: 'center' });
   doc.moveDown();
 
   doc.strokeColor('#e5e7eb').lineWidth(1)
@@ -751,6 +774,7 @@ interface InspectionRequestData {
     phone: string | null;
   };
   organizationName?: string;
+  branding?: OrganizationBrandingPDF;
 }
 
 export function generateInspectionRequestPDF(data: InspectionRequestData): PassThrough {
@@ -758,11 +782,11 @@ export function generateInspectionRequestPDF(data: InspectionRequestData): PassT
   const stream = new PassThrough();
   doc.pipe(stream);
 
-  const primaryColor = '#1a365d';
-  const accentColor = '#0284c7';
+  const primaryColor = data.branding?.primaryColor || '#1a365d';
+  const accentColor = data.branding?.accentColor || '#0284c7';
 
   // Company Letterhead
-  const orgName = data.organizationName || 'SmartManageAI';
+  const orgName = data.branding?.organizationName || data.organizationName || 'SmartManageAI';
   doc.fontSize(24).fillColor(primaryColor).text(orgName.toUpperCase(), { align: 'center' });
   doc.fontSize(10).fillColor('#6b7280').text('CONSTRUCTION MANAGEMENT', { align: 'center' });
   doc.moveDown();

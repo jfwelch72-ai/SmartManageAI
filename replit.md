@@ -152,6 +152,32 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - Returns structured findings with severity levels, recommendations
 - Graceful fallback to mock data if Vision fails or no photos available
 
+### Organization Documents & White-Label Branding System
+- **Database Schema**: New `organization_documents` table with document types enum:
+  - Branding: LOGO_PRIMARY, LOGO_SECONDARY, LETTERHEAD
+  - Insurance: INSURANCE_CERT_GENERAL_LIABILITY, INSURANCE_CERT_WORKERS_COMP, INSURANCE_CERT_AUTO, INSURANCE_CERT_UMBRELLA
+  - Compliance: W9, LICENSE, BONDING_LETTER, BANKING_INFO, SAFETY_PROGRAM, COMPANY_PROFILE, TEMPLATE_OTHER
+- **Visibility Levels**: PUBLIC, INTERNAL, CONFIDENTIAL with proper access control
+- **Versioning System**: Automatic version increment, tracks replacesDocumentId, soft-delete with rollback to previous version
+- **Expiration Tracking**: Insurance certificates track expiration dates with "expiring soon" (30 days) alerts
+- **Backend Routes** (`server/organizationDocumentRoutes.ts`):
+  - CRUD operations with mustDenyAccess multi-tenant security
+  - Document type and summary endpoints
+  - Version history per document type
+- **Frontend** (`client/src/pages/company-settings.tsx`):
+  - Tabbed interface for Branding, Insurance, Compliance categories
+  - Document upload with ObjectUploader integration
+  - Expiration warnings and version history dialogs
+  - Admin-only access (ADMIN role required)
+- **PDF White-Labeling** (`server/pdf-service.ts`):
+  - `OrganizationBrandingPDF` interface for passing org name/colors to PDF generators
+  - All PDF generators updated to accept optional branding parameter
+  - Falls back to "SmartManageAI" when no branding provided
+- **Branding Helper** (`server/organizationBranding.ts`):
+  - `getOrganizationBranding()`: Fetches org name, logo URL, colors
+  - `getOrganizationDocumentUrl()`: Gets specific document URL by type
+  - `getInsuranceCertificateStatus()`: Returns all insurance certs with expiration status
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created

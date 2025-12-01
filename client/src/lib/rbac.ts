@@ -103,6 +103,7 @@ export const RoutePermissions = {
   COST_RATES: (role?: string) => isOrganizationAdmin(role),
   CREWS: (role?: string) => isOrganizationAdmin(role),
   SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
+  COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role),
 
   // Management routes (blocked for hourly employees and SUPER_ADMIN)
   BIDS: (role?: string) => hasManagementAccess(role),
@@ -327,6 +328,12 @@ export const NavigationConfig = {
       label: "Scope Settings",
       testId: "nav-scope-settings",
       visible: (role?: string) => isAdminOrManager(role),
+    },
+    {
+      href: "/company-settings",
+      label: "Company Settings",
+      testId: "nav-company-settings",
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
   ],
 

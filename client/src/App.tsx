@@ -47,6 +47,7 @@ import PlatformAnalytics from "@/pages/PlatformAnalytics";
 import PlatformSupportTools from "@/pages/PlatformSupportTools";
 import VendorPricingPage from "@/pages/vendor-pricing";
 import MobileSyncPage from "@/pages/mobile-sync";
+import CompanySettingsPage from "@/pages/company-settings";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 import VendorDashboard from "@/pages/vendor/index";
 import VendorPortalPricing from "@/pages/vendor/pricing";
@@ -133,6 +134,7 @@ function Router() {
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} />} />
       <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} permission={RoutePermissions.SUBCONTRACTOR_PAYABLES} />} />
+      <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />

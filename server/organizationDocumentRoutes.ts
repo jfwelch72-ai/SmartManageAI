@@ -50,6 +50,142 @@ const COMPLIANCE_DOCUMENT_TYPES = [
   "TEMPLATE_OTHER"
 ];
 
+router.get("/organization-documents/types", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const types = Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => ({
+      value,
+      label,
+      category: BRANDING_DOCUMENT_TYPES.includes(value) 
+        ? "BRANDING" 
+        : INSURANCE_DOCUMENT_TYPES.includes(value) 
+          ? "INSURANCE" 
+          : "COMPLIANCE"
+    }));
+
+    res.json({
+      types,
+      visibilities: Object.entries(VISIBILITY_LABELS).map(([value, label]) => ({ value, label })),
+      categories: [
+        { value: "BRANDING", label: "Branding & Identity", types: BRANDING_DOCUMENT_TYPES },
+        { value: "INSURANCE", label: "Insurance Certificates", types: INSURANCE_DOCUMENT_TYPES },
+        { value: "COMPLIANCE", label: "Compliance & Other", types: COMPLIANCE_DOCUMENT_TYPES }
+      ]
+    });
+  } catch (error) {
+    console.error("Get document types error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/organization-documents/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess || !orgId) {
+      return res.json({
+        branding: { total: 0, uploaded: 0 },
+        insurance: { total: 0, uploaded: 0, expiringSoon: 0, expired: 0 },
+        compliance: { total: 0, uploaded: 0 }
+      });
+    }
+
+    const documents = await db
+      .select()
+      .from(organizationDocuments)
+      .where(
+        and(
+          eq(organizationDocuments.organizationId, orgId),
+          eq(organizationDocuments.isActive, true)
+        )
+      );
+
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const summary = {
+      branding: {
+        total: BRANDING_DOCUMENT_TYPES.length,
+        uploaded: documents.filter(d => BRANDING_DOCUMENT_TYPES.includes(d.type)).length,
+      },
+      insurance: {
+        total: INSURANCE_DOCUMENT_TYPES.length,
+        uploaded: documents.filter(d => INSURANCE_DOCUMENT_TYPES.includes(d.type)).length,
+        expiringSoon: documents.filter(d => 
+          INSURANCE_DOCUMENT_TYPES.includes(d.type) && 
+          d.expiresAt && 
+          new Date(d.expiresAt) > now && 
+          new Date(d.expiresAt) <= thirtyDaysFromNow
+        ).length,
+        expired: documents.filter(d => 
+          INSURANCE_DOCUMENT_TYPES.includes(d.type) && 
+          d.expiresAt && 
+          new Date(d.expiresAt) < now
+        ).length,
+      },
+      compliance: {
+        total: COMPLIANCE_DOCUMENT_TYPES.length,
+        uploaded: documents.filter(d => COMPLIANCE_DOCUMENT_TYPES.includes(d.type)).length,
+      }
+    };
+
+    res.json(summary);
+  } catch (error) {
+    console.error("Get document summary error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/organization-documents/history/:type", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { type } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization required" });
+    }
+
+    const documents = await db
+      .select({
+        id: organizationDocuments.id,
+        organizationId: organizationDocuments.organizationId,
+        type: organizationDocuments.type,
+        name: organizationDocuments.name,
+        fileUrl: organizationDocuments.fileUrl,
+        version: organizationDocuments.version,
+        uploadedById: organizationDocuments.uploadedById,
+        isActive: organizationDocuments.isActive,
+        createdAt: organizationDocuments.createdAt,
+        uploadedByFirstName: users.firstName,
+        uploadedByLastName: users.lastName,
+      })
+      .from(organizationDocuments)
+      .leftJoin(users, eq(organizationDocuments.uploadedById, users.id))
+      .where(
+        and(
+          eq(organizationDocuments.organizationId, orgId),
+          eq(organizationDocuments.type, type as any)
+        )
+      )
+      .orderBy(desc(organizationDocuments.version));
+
+    const enrichedDocuments = documents.map(doc => ({
+      ...doc,
+      uploadedByName: doc.uploadedByFirstName && doc.uploadedByLastName 
+        ? `${doc.uploadedByFirstName} ${doc.uploadedByLastName}` 
+        : null,
+    }));
+
+    res.json(enrichedDocuments);
+  } catch (error) {
+    console.error("Get document history error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/organization-documents", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -70,13 +206,13 @@ router.get("/organization-documents", requireAuth, async (req: AuthRequest, res:
         mimeType: organizationDocuments.mimeType,
         fileSize: organizationDocuments.fileSize,
         visibility: organizationDocuments.visibility,
-        version: organizationDocuments.version,
         uploadedById: organizationDocuments.uploadedById,
         effectiveDate: organizationDocuments.effectiveDate,
         expiresAt: organizationDocuments.expiresAt,
         notes: organizationDocuments.notes,
         replacesDocumentId: organizationDocuments.replacesDocumentId,
         isActive: organizationDocuments.isActive,
+        version: organizationDocuments.version,
         createdAt: organizationDocuments.createdAt,
         updatedAt: organizationDocuments.updatedAt,
         uploadedByFirstName: users.firstName,
@@ -113,33 +249,6 @@ router.get("/organization-documents", requireAuth, async (req: AuthRequest, res:
     res.json(enrichedDocuments);
   } catch (error) {
     console.error("Get organization documents error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/organization-documents/types", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const types = Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => ({
-      value,
-      label,
-      category: BRANDING_DOCUMENT_TYPES.includes(value) 
-        ? "BRANDING" 
-        : INSURANCE_DOCUMENT_TYPES.includes(value) 
-          ? "INSURANCE" 
-          : "COMPLIANCE"
-    }));
-
-    res.json({
-      types,
-      visibilities: Object.entries(VISIBILITY_LABELS).map(([value, label]) => ({ value, label })),
-      categories: [
-        { value: "BRANDING", label: "Branding & Identity", types: BRANDING_DOCUMENT_TYPES },
-        { value: "INSURANCE", label: "Insurance Certificates", types: INSURANCE_DOCUMENT_TYPES },
-        { value: "COMPLIANCE", label: "Compliance & Other", types: COMPLIANCE_DOCUMENT_TYPES }
-      ]
-    });
-  } catch (error) {
-    console.error("Get document types error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -250,8 +359,8 @@ router.post("/organization-documents", requireAuth, requireRole(["SUPER_ADMIN", 
 
     const data = validationResult.data;
 
-    if (shouldFilter && orgId && data.organizationId !== orgId) {
-      return res.status(403).json({ error: "Cannot create document for another organization" });
+    if (shouldFilter && orgId) {
+      data.organizationId = orgId;
     }
 
     const existingActiveDoc = await db
@@ -406,115 +515,6 @@ router.delete("/organization-documents/:id", requireAuth, requireRole(["SUPER_AD
     res.json({ success: true, message: "Document deactivated" });
   } catch (error) {
     console.error("Delete organization document error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/organization-documents/history/:type", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { type } = req.params;
-    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    
-    if (mustDenyAccess) {
-      return res.json([]);
-    }
-
-    if (!orgId) {
-      return res.status(400).json({ error: "Organization required" });
-    }
-
-    const documents = await db
-      .select({
-        id: organizationDocuments.id,
-        organizationId: organizationDocuments.organizationId,
-        type: organizationDocuments.type,
-        name: organizationDocuments.name,
-        fileUrl: organizationDocuments.fileUrl,
-        version: organizationDocuments.version,
-        uploadedById: organizationDocuments.uploadedById,
-        isActive: organizationDocuments.isActive,
-        createdAt: organizationDocuments.createdAt,
-        uploadedByFirstName: users.firstName,
-        uploadedByLastName: users.lastName,
-      })
-      .from(organizationDocuments)
-      .leftJoin(users, eq(organizationDocuments.uploadedById, users.id))
-      .where(
-        and(
-          eq(organizationDocuments.organizationId, orgId),
-          eq(organizationDocuments.type, type as any)
-        )
-      )
-      .orderBy(desc(organizationDocuments.version));
-
-    const enrichedDocuments = documents.map(doc => ({
-      ...doc,
-      uploadedByName: doc.uploadedByFirstName && doc.uploadedByLastName 
-        ? `${doc.uploadedByFirstName} ${doc.uploadedByLastName}` 
-        : null,
-    }));
-
-    res.json(enrichedDocuments);
-  } catch (error) {
-    console.error("Get document history error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/organization-documents/summary", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    
-    if (mustDenyAccess || !orgId) {
-      return res.json({
-        branding: { total: 0, uploaded: 0 },
-        insurance: { total: 0, uploaded: 0, expiringSoon: 0, expired: 0 },
-        compliance: { total: 0, uploaded: 0 }
-      });
-    }
-
-    const documents = await db
-      .select()
-      .from(organizationDocuments)
-      .where(
-        and(
-          eq(organizationDocuments.organizationId, orgId),
-          eq(organizationDocuments.isActive, true)
-        )
-      );
-
-    const now = new Date();
-    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    const summary = {
-      branding: {
-        total: BRANDING_DOCUMENT_TYPES.length,
-        uploaded: documents.filter(d => BRANDING_DOCUMENT_TYPES.includes(d.type)).length,
-      },
-      insurance: {
-        total: INSURANCE_DOCUMENT_TYPES.length,
-        uploaded: documents.filter(d => INSURANCE_DOCUMENT_TYPES.includes(d.type)).length,
-        expiringSoon: documents.filter(d => 
-          INSURANCE_DOCUMENT_TYPES.includes(d.type) && 
-          d.expiresAt && 
-          new Date(d.expiresAt) > now && 
-          new Date(d.expiresAt) <= thirtyDaysFromNow
-        ).length,
-        expired: documents.filter(d => 
-          INSURANCE_DOCUMENT_TYPES.includes(d.type) && 
-          d.expiresAt && 
-          new Date(d.expiresAt) < now
-        ).length,
-      },
-      compliance: {
-        total: COMPLIANCE_DOCUMENT_TYPES.length,
-        uploaded: documents.filter(d => COMPLIANCE_DOCUMENT_TYPES.includes(d.type)).length,
-      }
-    };
-
-    res.json(summary);
-  } catch (error) {
-    console.error("Get document summary error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
