@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, CheckCheck, User, LogOut, MessageSquare } from "lucide-react";
+import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
@@ -18,9 +18,23 @@ import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useState, useEffect } from "react";
+
+const AI_ASSISTANT_STORAGE_KEY = "smartmanage-ai-assistant-enabled";
 
 export default function TopHeader() {
   const { user, logout } = useAuth();
+  const [isAIAssistantEnabled, setIsAIAssistantEnabled] = useState(() => {
+    const stored = localStorage.getItem(AI_ASSISTANT_STORAGE_KEY);
+    return stored !== "false";
+  });
+
+  const handleToggleAIAssistant = () => {
+    const newValue = !isAIAssistantEnabled;
+    setIsAIAssistantEnabled(newValue);
+    localStorage.setItem(AI_ASSISTANT_STORAGE_KEY, String(newValue));
+    window.dispatchEvent(new Event("storage"));
+  };
 
   if (!user) return null;
 
@@ -179,6 +193,10 @@ export default function TopHeader() {
               <DropdownMenuItem data-testid="menu-profile">
                 <User className="mr-2 h-4 w-4" />
                 Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleToggleAIAssistant} data-testid="menu-toggle-ai">
+                <Bot className="mr-2 h-4 w-4" />
+                {isAIAssistantEnabled ? "Hide AI Assistant" : "Show AI Assistant"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} data-testid="menu-logout">

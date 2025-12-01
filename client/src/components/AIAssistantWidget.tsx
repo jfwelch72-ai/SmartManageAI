@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, X, Send, Loader2, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin } from "lucide-react";
+import { Bot, X, Send, Loader2, Minimize2, Maximize2, Sparkles, ChevronRight, CheckCircle2, SkipForward, RotateCcw, PartyPopper, Trophy, Lightbulb, Target, MapPin, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -88,6 +88,15 @@ export function AIAssistantWidget() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(isEnabled));
   }, [isEnabled]);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      setIsEnabled(stored !== "false");
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
@@ -309,6 +318,7 @@ export function AIAssistantWidget() {
                 variant="ghost" 
                 className="h-7 w-7"
                 onClick={() => setIsMinimized(!isMinimized)}
+                title={isMinimized ? "Expand" : "Minimize"}
                 data-testid="button-ai-assistant-minimize"
               >
                 {isMinimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
@@ -318,9 +328,23 @@ export function AIAssistantWidget() {
                 variant="ghost" 
                 className="h-7 w-7"
                 onClick={() => setIsOpen(false)}
+                title="Close"
                 data-testid="button-ai-assistant-close"
               >
                 <X className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  setIsEnabled(false);
+                  setIsOpen(false);
+                }}
+                title="Hide AI Assistant completely (re-enable in Settings)"
+                data-testid="button-ai-assistant-hide"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
