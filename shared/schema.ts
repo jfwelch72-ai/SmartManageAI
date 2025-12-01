@@ -2134,6 +2134,10 @@ export type UserSkill = typeof userSkills.$inferSelect;
 // Equipment table - comprehensive equipment and tool management
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Multi-tenant isolation
+  organizationId: varchar("organization_id").references(() => organizations.id),
+  
   // Identification
   name: text("name").notNull(), // Display name: "CAT 320 Excavator #1"
   equipmentCode: text("equipment_code").notNull().unique(), // Internal code: "EQ-001"
@@ -2182,15 +2186,16 @@ export const equipment = pgTable("equipment", {
   statusIdx: index("equipment_status_idx").on(table.status),
   typeIdx: index("equipment_type_idx").on(table.type),
   codeIdx: index("equipment_code_idx").on(table.equipmentCode),
+  organizationIdx: index("equipment_organization_idx").on(table.organizationId),
 }));
 
-export const insertEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true });
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type Equipment = typeof equipment.$inferSelect;
 
 // Validated equipment schema with proper coercion for API input
 // Handles empty strings from form inputs by converting to null
-export const validatedEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+export const validatedEquipmentSchema = createInsertSchema(equipment).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true }).extend({
   // Coerce year: empty string or invalid → null, valid number → number
   year: z.preprocess(
     (val) => {
@@ -3029,7 +3034,10 @@ export type EquipmentRateProfile = typeof equipmentRateProfiles.$inferSelect;
 export const rentalVendors = pgTable("rental_vendors", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  code: text("code").notNull().unique(), // Short code: "CAT-RENTAL", "SUNBELT"
+  code: text("code").notNull(), // Short code: "CAT-RENTAL", "SUNBELT" - unique per org
+  
+  // Multi-tenant isolation
+  organizationId: varchar("organization_id").notNull().default("tfr-default-org"),
   
   // Contact Info
   contactName: text("contact_name"),
@@ -3050,7 +3058,9 @@ export const rentalVendors = pgTable("rental_vendors", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("rental_vendors_org_idx").on(table.organizationId),
+]);
 
 export const insertRentalVendorSchema = createInsertSchema(rentalVendors).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRentalVendor = z.infer<typeof insertRentalVendorSchema>;

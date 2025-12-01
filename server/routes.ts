@@ -12120,10 +12120,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all equipment with optional filters
   app.get("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without organization can't see any equipment
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { status, type, search } = req.query;
       
-      let query = db.select().from(equipment);
       const conditions: any[] = [];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
       
       if (status && status !== "ALL") {
         conditions.push(eq(equipment.status, status as string));
@@ -12193,15 +12204,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get single equipment by ID or code
   app.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without organization can't access equipment
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { idOrCode } = req.params;
+      
+      const conditions = [
+        or(
+          eq(equipment.id, idOrCode),
+          eq(equipment.equipmentCode, idOrCode)
+        )
+      ];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
       
       const result = await db
         .select()
         .from(equipment)
-        .where(or(
-          eq(equipment.id, idOrCode),
-          eq(equipment.equipmentCode, idOrCode)
-        ))
+        .where(and(...conditions))
         .limit(1);
       
       if (result.length === 0) {
@@ -12219,6 +12246,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new equipment
   app.post("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without organization can't create equipment
+      if (mustDenyAccess || !req.user?.organizationId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const body = req.body;
       
       // Generate equipment code if not provided
@@ -12256,7 +12290,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedData = validationResult.data;
       
-      const [newEquipment] = await db.insert(equipment).values(validatedData).returning();
+      // SECURITY: Set organizationId from authenticated user
+      const [newEquipment] = await db.insert(equipment).values({
+        ...validatedData,
+        organizationId: req.user.organizationId
+      }).returning();
       
       // Audit log
       await db.insert(auditLog).values({
@@ -12281,8 +12319,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update equipment
   app.patch("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without organization can't update equipment
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       const updates = req.body;
+      
+      // SECURITY: Verify ownership before update
+      const conditions = [eq(equipment.id, id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [existing] = await db
+        .select()
+        .from(equipment)
+        .where(and(...conditions))
+        .limit(1);
+      
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       // Validate and coerce numeric fields for partial updates
       // Create a partial schema that only validates provided fields
@@ -12301,10 +12362,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedUpdates = partialValidation.data;
       
+      // SECURITY: Prevent changing organizationId
+      delete (validatedUpdates as any).organizationId;
+      
       const [updated] = await db
         .update(equipment)
         .set({ ...validatedUpdates, updatedAt: new Date() })
-        .where(eq(equipment.id, id))
+        .where(and(...conditions))
         .returning();
       
       if (!updated) {
@@ -12331,11 +12395,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete equipment
   app.delete("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      // SECURITY: Users without organization can't delete equipment
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       
+      // SECURITY: Build conditions with org filter
+      const conditions = [eq(equipment.id, id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      // SECURITY: Delete with organization filter applied
       const [deleted] = await db
         .delete(equipment)
-        .where(eq(equipment.id, id))
+        .where(and(...conditions))
         .returning();
       
       if (!deleted) {
@@ -12362,7 +12440,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get equipment assignments for a piece of equipment
   app.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify parent equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db
+        .select()
+        .from(equipment)
+        .where(and(...equipConditions))
+        .limit(1);
+      
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const assignments = await db
         .select({
@@ -12397,11 +12497,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Assign equipment to project
   app.post("/api/equipment/:equipmentId/assign", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const { projectId, expectedReturnDate, notes } = req.body;
       
-      // Check if equipment exists
-      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      // SECURITY: Check if equipment exists AND belongs to user's org
+      const conditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...conditions));
       if (!equipmentItem) {
         res.status(404).json({ error: "Equipment not found" });
         return;
@@ -12452,8 +12563,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Return equipment from assignment
   app.post("/api/equipment/:equipmentId/return", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const { returnCondition, endingHours, notes } = req.body;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       // Find active assignment
       const [activeAssignment] = await db
@@ -12509,7 +12637,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get equipment repairs
   app.get("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const repairs = await db
         .select({
@@ -12543,11 +12688,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Report equipment repair
   app.post("/api/equipment/:equipmentId/repairs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const { description, problemDescription, repairLocation, estimatedCost, estimatedCompletionDate } = req.body;
       
-      // Check if equipment exists
-      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      // SECURITY: Check if equipment exists AND belongs to user's org
+      const conditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...conditions));
       if (!equipmentItem) {
         res.status(404).json({ error: "Equipment not found" });
         return;
@@ -12599,6 +12755,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update repair status
   app.patch("/api/equipment/repairs/:repairId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { repairId } = req.params;
       const updates = req.body;
       
@@ -12607,6 +12769,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!repair) {
         res.status(404).json({ error: "Repair not found" });
         return;
+      }
+      
+      // SECURITY: Verify parent equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, repair.equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
       }
       
       // Handle status change to COMPLETED
@@ -12637,7 +12810,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get maintenance schedules for equipment
   app.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const schedules = await db
         .select()
@@ -12655,8 +12845,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create maintenance schedule
   app.post("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const body = req.body;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       // Calculate next due date based on interval
       let nextDueAt = null;
@@ -12668,10 +12875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (body.intervalHours) {
-        const [equipmentItem] = await db.select({ currentHours: equipment.currentHours }).from(equipment).where(eq(equipment.id, equipmentId));
-        if (equipmentItem) {
-          nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + body.intervalHours).toString();
-        }
+        nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + body.intervalHours).toString();
       }
       
       const [schedule] = await db.insert(equipmentMaintenanceSchedules).values({
@@ -12691,11 +12895,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Record maintenance completion
   app.post("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const { scheduleId, maintenanceType, description, performedByVendor, laborCost, partsCost, notes, partsUsed } = req.body;
       
-      // Get current equipment hours
-      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
       if (!equipmentItem) {
         res.status(404).json({ error: "Equipment not found" });
         return;
@@ -12762,7 +12977,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get maintenance history for equipment
   app.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const history = await db
         .select()
@@ -12780,9 +13012,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get upcoming maintenance due (for alerts)
   app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const now = new Date();
       const alertWindow = new Date();
       alertWindow.setDate(alertWindow.getDate() + 14); // 2 weeks ahead
+      
+      // SECURITY: Build conditions with org filter
+      const conditions = [
+        eq(equipmentMaintenanceSchedules.isActive, true),
+        or(
+          // Date-based maintenance due within window
+          and(
+            sql`${equipmentMaintenanceSchedules.nextDueAt} IS NOT NULL`,
+            sql`${equipmentMaintenanceSchedules.nextDueAt} <= ${alertWindow}`
+          ),
+          // Hours-based maintenance due (within 50 hours)
+          sql`(${equipmentMaintenanceSchedules.nextDueHours}::numeric - COALESCE(${equipment.currentHours}::numeric, 0)) <= 50`
+        )
+      ];
+      
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
       
       const upcomingMaintenance = await db
         .select({
@@ -12798,20 +13054,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .from(equipmentMaintenanceSchedules)
         .innerJoin(equipment, eq(equipmentMaintenanceSchedules.equipmentId, equipment.id))
-        .where(
-          and(
-            eq(equipmentMaintenanceSchedules.isActive, true),
-            or(
-              // Date-based maintenance due within window
-              and(
-                sql`${equipmentMaintenanceSchedules.nextDueAt} IS NOT NULL`,
-                sql`${equipmentMaintenanceSchedules.nextDueAt} <= ${alertWindow}`
-              ),
-              // Hours-based maintenance due (within 50 hours)
-              sql`(${equipmentMaintenanceSchedules.nextDueHours}::numeric - COALESCE(${equipment.currentHours}::numeric, 0)) <= 50`
-            )
-          )
-        )
+        .where(and(...conditions))
         .orderBy(equipmentMaintenanceSchedules.nextDueAt);
       
       res.json(upcomingMaintenance);
@@ -12824,7 +13067,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get equipment assigned to a project
   app.get("/api/projects/:projectId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { projectId } = req.params;
+      
+      // SECURITY: Verify project belongs to user's org
+      const projectConditions = [eq(projects.id, projectId)];
+      if (shouldFilter && orgId) {
+        projectConditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const [project] = await db.select().from(projects).where(and(...projectConditions));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // SECURITY: Also filter equipment by org to prevent cross-org data leakage
+      const equipmentConditions = [eq(equipmentAssignments.projectId, projectId)];
+      if (shouldFilter && orgId) {
+        equipmentConditions.push(eq(equipment.organizationId, orgId));
+      }
       
       const projectEquipment = await db
         .select({
@@ -12844,7 +13110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .from(equipmentAssignments)
         .innerJoin(equipment, eq(equipmentAssignments.equipmentId, equipment.id))
-        .where(eq(equipmentAssignments.projectId, projectId))
+        .where(and(...equipmentConditions))
         .orderBy(desc(equipmentAssignments.assignedAt));
       
       res.json(projectEquipment);
@@ -12857,7 +13123,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get project equipment plans (from bid or manually added)
   app.get("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { projectId } = req.params;
+      
+      // SECURITY: Verify project belongs to user's org
+      const projectConditions = [eq(projects.id, projectId)];
+      if (shouldFilter && orgId) {
+        projectConditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const [project] = await db.select().from(projects).where(and(...projectConditions));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
       
       const plans = await db
         .select()
@@ -12875,11 +13158,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Add equipment plan to project
   app.post("/api/projects/:projectId/equipment-plans", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { projectId } = req.params;
       const userId = req.user?.id;
       
-      // Verify project exists
-      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      // SECURITY: Verify project exists AND belongs to user's org
+      const projectConditions = [eq(projects.id, projectId)];
+      if (shouldFilter && orgId) {
+        projectConditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const [project] = await db.select().from(projects).where(and(...projectConditions));
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
@@ -12923,15 +13217,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update project equipment plan
   app.patch("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { projectId, planId } = req.params;
       const userId = req.user?.id;
       
+      // SECURITY: Verify project belongs to user's org
+      const projectConditions = [eq(projects.id, projectId)];
+      if (shouldFilter && orgId) {
+        projectConditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const [project] = await db.select().from(projects).where(and(...projectConditions));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // SECURITY: Define conditions for both SELECT and UPDATE to prevent TOCTOU
+      const planConditions = and(
+        eq(projectEquipmentPlans.id, planId),
+        eq(projectEquipmentPlans.projectId, projectId)
+      );
+      
       const [existing] = await db.select()
         .from(projectEquipmentPlans)
-        .where(and(
-          eq(projectEquipmentPlans.id, planId),
-          eq(projectEquipmentPlans.projectId, projectId)
-        ));
+        .where(planConditions);
       
       if (!existing) {
         return res.status(404).json({ error: "Equipment plan not found" });
@@ -12961,10 +13275,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.body.rentalConfirmationNumber !== undefined) updateData.rentalConfirmationNumber = req.body.rentalConfirmationNumber || null;
       if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
       
+      // SECURITY: Use same conditions in UPDATE to prevent TOCTOU race condition
       const [updated] = await db
         .update(projectEquipmentPlans)
         .set(updateData)
-        .where(eq(projectEquipmentPlans.id, planId))
+        .where(planConditions)
         .returning();
       
       await logUpdate("project_equipment_plans", planId, userId!, JSON.stringify(existing), JSON.stringify(updated));
@@ -12979,21 +13294,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete project equipment plan
   app.delete("/api/projects/:projectId/equipment-plans/:planId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { projectId, planId } = req.params;
       const userId = req.user?.id;
       
+      // SECURITY: Verify project belongs to user's org
+      const projectConditions = [eq(projects.id, projectId)];
+      if (shouldFilter && orgId) {
+        projectConditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
+      const [project] = await db.select().from(projects).where(and(...projectConditions));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // SECURITY: Include projectId in both SELECT and DELETE to prevent TOCTOU
+      const planConditions = and(
+        eq(projectEquipmentPlans.id, planId),
+        eq(projectEquipmentPlans.projectId, projectId)
+      );
+      
       const [existing] = await db.select()
         .from(projectEquipmentPlans)
-        .where(and(
-          eq(projectEquipmentPlans.id, planId),
-          eq(projectEquipmentPlans.projectId, projectId)
-        ));
+        .where(planConditions);
       
       if (!existing) {
         return res.status(404).json({ error: "Equipment plan not found" });
       }
       
-      await db.delete(projectEquipmentPlans).where(eq(projectEquipmentPlans.id, planId));
+      // SECURITY: Use same conditions in DELETE to prevent TOCTOU race condition
+      await db.delete(projectEquipmentPlans).where(planConditions);
       
       await logDelete("project_equipment_plans", planId, userId!, { equipmentName: existing.equipmentName });
       
@@ -13007,8 +13343,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Submit weekly hour log for equipment
   app.post("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const { projectId, weekStartDate, weekEndDate, startingHours, endingHours, notes, fuelUsed } = req.body;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const hoursUsed = (parseFloat(endingHours) - parseFloat(startingHours)).toString();
       
@@ -13056,7 +13409,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get hour logs for equipment
   app.get("/api/equipment/:equipmentId/hour-logs", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const logs = await db
         .select({
@@ -13549,7 +13919,24 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get rate profiles for equipment
   app.get("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { equipmentId } = req.params;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const profiles = await db
         .select({
@@ -13611,11 +13998,22 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Create rate profile for equipment
   app.post("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
       const userId = req.user?.id;
       
-      // Verify equipment exists
-      const [equipmentItem] = await db.select().from(equipment).where(eq(equipment.id, equipmentId));
+      // SECURITY: Verify equipment exists AND belongs to user's org
+      const conditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...conditions));
       if (!equipmentItem) {
         return res.status(404).json({ error: "Equipment not found" });
       }
@@ -13663,8 +14061,25 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Update rate profile
   app.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId, profileId } = req.params;
       const userId = req.user?.id;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const [existingProfile] = await db.select().from(equipmentRateProfiles).where(
         and(
@@ -13708,8 +14123,25 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Activate rate profile (deactivates others for same equipment)
   app.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId, profileId } = req.params;
       const userId = req.user?.id;
+      
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const [existingProfile] = await db.select().from(equipmentRateProfiles).where(
         and(
@@ -13747,11 +14179,33 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Delete rate profile
   app.delete("/api/equipment/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { profileId } = req.params;
       const userId = req.user?.id;
       
-      const [existingProfile] = await db.select().from(equipmentRateProfiles).where(eq(equipmentRateProfiles.id, profileId));
-      if (!existingProfile) {
+      // SECURITY: Join to equipment to verify rate profile belongs to user's org
+      const profileWithEquip = await db
+        .select({
+          profileId: equipmentRateProfiles.id,
+          equipmentId: equipmentRateProfiles.equipmentId,
+          organizationId: equipment.organizationId,
+        })
+        .from(equipmentRateProfiles)
+        .innerJoin(equipment, eq(equipmentRateProfiles.equipmentId, equipment.id))
+        .where(eq(equipmentRateProfiles.id, profileId))
+        .limit(1);
+      
+      if (profileWithEquip.length === 0) {
+        return res.status(404).json({ error: "Rate profile not found" });
+      }
+      
+      // SECURITY: Verify equipment belongs to user's org
+      if (shouldFilter && orgId && profileWithEquip[0].organizationId !== orgId) {
         return res.status(404).json({ error: "Rate profile not found" });
       }
       
@@ -13773,9 +14227,21 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get all rental vendors
   app.get("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      const conditions = [];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
       const vendors = await db
         .select()
         .from(rentalVendors)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(rentalVendors.name);
       
       res.json(vendors);
@@ -13788,9 +14254,20 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get single rental vendor
   app.get("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
+      
       const { id } = req.params;
       
-      const [vendor] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      const conditions = [eq(rentalVendors.id, id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const [vendor] = await db.select().from(rentalVendors).where(and(...conditions));
       
       if (!vendor) {
         return res.status(404).json({ error: "Rental vendor not found" });
@@ -13806,11 +14283,23 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Create rental vendor
   app.post("/api/rental-vendors", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const userId = req.user?.id;
       
       const validatedData = insertRentalVendorSchema.parse(req.body);
       
-      const [newVendor] = await db.insert(rentalVendors).values(validatedData).returning();
+      // Set organizationId to user's org
+      const dataWithOrg = {
+        ...validatedData,
+        organizationId: shouldFilter && orgId ? orgId : (validatedData.organizationId || "tfr-default-org"),
+      };
+      
+      const [newVendor] = await db.insert(rentalVendors).values(dataWithOrg).returning();
       
       await logCreate("rental_vendors", newVendor.id, userId!, { name: validatedData.name });
       
@@ -13827,17 +14316,29 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Update rental vendor
   app.patch("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       const userId = req.user?.id;
       
-      const [existing] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      // SECURITY: Verify vendor belongs to user's org
+      const conditions = [eq(rentalVendors.id, id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const [existing] = await db.select().from(rentalVendors).where(and(...conditions));
       if (!existing) {
         return res.status(404).json({ error: "Rental vendor not found" });
       }
       
       const [updated] = await db.update(rentalVendors)
         .set({ ...req.body, updatedAt: new Date() })
-        .where(eq(rentalVendors.id, id))
+        .where(and(...conditions))
         .returning();
       
       await logUpdate(userId!, "rental_vendors", id, req.body);
@@ -13852,15 +14353,27 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Delete rental vendor
   app.delete("/api/rental-vendors/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       const userId = req.user?.id;
       
-      const [existing] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, id));
+      // SECURITY: Verify vendor belongs to user's org
+      const conditions = [eq(rentalVendors.id, id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const [existing] = await db.select().from(rentalVendors).where(and(...conditions));
       if (!existing) {
         return res.status(404).json({ error: "Rental vendor not found" });
       }
       
-      await db.delete(rentalVendors).where(eq(rentalVendors.id, id));
+      await db.delete(rentalVendors).where(and(...conditions));
       
       await logDelete(userId!, "rental_vendors", id);
       
@@ -13878,7 +14391,24 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get equipment catalog for a vendor
   app.get("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { vendorId } = req.params;
+      
+      // SECURITY: Verify vendor belongs to user's org
+      const vendorConditions = [eq(rentalVendors.id, vendorId)];
+      if (shouldFilter && orgId) {
+        vendorConditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const [vendor] = await db.select().from(rentalVendors).where(and(...vendorConditions));
+      if (!vendor) {
+        return res.status(404).json({ error: "Rental vendor not found" });
+      }
       
       const catalog = await db
         .select()
@@ -13896,9 +14426,21 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get all rental equipment (across all vendors)
   app.get("/api/rental-equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { type, vendorId } = req.query;
       
-      let query = db
+      // SECURITY: Filter by vendor's org
+      const conditions = [eq(rentalEquipmentCatalog.isActive, true)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const results = await db
         .select({
           id: rentalEquipmentCatalog.id,
           name: rentalEquipmentCatalog.name,
@@ -13917,9 +14459,8 @@ If the make/model is unknown, provide general best practices for the equipment t
         })
         .from(rentalEquipmentCatalog)
         .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
-        .where(eq(rentalEquipmentCatalog.isActive, true));
-      
-      const results = await query.orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
+        .where(and(...conditions))
+        .orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
       
       // Filter in memory if needed
       let filtered = results;
@@ -13940,11 +14481,22 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Add equipment to vendor catalog
   app.post("/api/rental-vendors/:vendorId/catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { vendorId } = req.params;
       const userId = req.user?.id;
       
-      // Verify vendor exists
-      const [vendor] = await db.select().from(rentalVendors).where(eq(rentalVendors.id, vendorId));
+      // SECURITY: Verify vendor exists AND belongs to user's org
+      const vendorConditions = [eq(rentalVendors.id, vendorId)];
+      if (shouldFilter && orgId) {
+        vendorConditions.push(eq(rentalVendors.organizationId, orgId));
+      }
+      
+      const [vendor] = await db.select().from(rentalVendors).where(and(...vendorConditions));
       if (!vendor) {
         return res.status(404).json({ error: "Rental vendor not found" });
       }
@@ -13971,11 +14523,33 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Update catalog item
   app.patch("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       const userId = req.user?.id;
       
-      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
-      if (!existing) {
+      // SECURITY: Join to verify catalog item belongs to vendor in user's org
+      const catalogWithVendor = await db
+        .select({
+          catalogId: rentalEquipmentCatalog.id,
+          vendorId: rentalEquipmentCatalog.vendorId,
+          organizationId: rentalVendors.organizationId,
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
+        .where(eq(rentalEquipmentCatalog.id, id))
+        .limit(1);
+      
+      if (catalogWithVendor.length === 0) {
+        return res.status(404).json({ error: "Catalog item not found" });
+      }
+      
+      // SECURITY: Verify vendor belongs to user's org
+      if (shouldFilter && orgId && catalogWithVendor[0].organizationId !== orgId) {
         return res.status(404).json({ error: "Catalog item not found" });
       }
       
@@ -13996,11 +14570,33 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Delete catalog item
   app.delete("/api/rental-equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { id } = req.params;
       const userId = req.user?.id;
       
-      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
-      if (!existing) {
+      // SECURITY: Join to verify catalog item belongs to vendor in user's org
+      const catalogWithVendor = await db
+        .select({
+          catalogId: rentalEquipmentCatalog.id,
+          vendorId: rentalEquipmentCatalog.vendorId,
+          organizationId: rentalVendors.organizationId,
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
+        .where(eq(rentalEquipmentCatalog.id, id))
+        .limit(1);
+      
+      if (catalogWithVendor.length === 0) {
+        return res.status(404).json({ error: "Catalog item not found" });
+      }
+      
+      // SECURITY: Verify vendor belongs to user's org
+      if (shouldFilter && orgId && catalogWithVendor[0].organizationId !== orgId) {
         return res.status(404).json({ error: "Catalog item not found" });
       }
       
@@ -14022,10 +14618,21 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get equipment selections for a bid
   app.get("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { bidId } = req.params;
       
-      // Verify bid exists
-      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
+      // SECURITY: Verify bid exists AND belongs to user's org
+      const bidConditions = [eq(bids.id, bidId)];
+      if (shouldFilter && orgId) {
+        bidConditions.push(eq(bids.gcOrganizationId, orgId));
+      }
+      
+      const [bid] = await db.select().from(bids).where(and(...bidConditions));
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
@@ -14046,11 +14653,22 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Add equipment selection to bid
   app.post("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { bidId } = req.params;
       const userId = req.user?.id;
       
-      // Verify bid exists
-      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId));
+      // SECURITY: Verify bid exists AND belongs to user's org
+      const bidConditions = [eq(bids.id, bidId)];
+      if (shouldFilter && orgId) {
+        bidConditions.push(eq(bids.gcOrganizationId, orgId));
+      }
+      
+      const [bid] = await db.select().from(bids).where(and(...bidConditions));
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
@@ -14095,16 +14713,35 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Update bid equipment selection
   app.patch("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
       
-      // Verify selection exists and belongs to bid
+      // SECURITY: Verify bid belongs to user's org
+      const bidConditions = [eq(bids.id, bidId)];
+      if (shouldFilter && orgId) {
+        bidConditions.push(eq(bids.gcOrganizationId, orgId));
+      }
+      
+      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+      
+      // SECURITY: Define conditions for both SELECT and UPDATE to prevent TOCTOU
+      const selectionConditions = and(
+        eq(bidEquipmentSelections.id, selectionId),
+        eq(bidEquipmentSelections.bidId, bidId)
+      );
+      
       const [existing] = await db.select()
         .from(bidEquipmentSelections)
-        .where(and(
-          eq(bidEquipmentSelections.id, selectionId),
-          eq(bidEquipmentSelections.bidId, bidId)
-        ));
+        .where(selectionConditions);
       
       if (!existing) {
         return res.status(404).json({ error: "Equipment selection not found" });
@@ -14127,9 +14764,10 @@ If the make/model is unknown, provide general best practices for the equipment t
       if (req.body.deliveryFee !== undefined) updateData.deliveryFee = req.body.deliveryFee != null ? String(req.body.deliveryFee) : null;
       if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
       
+      // SECURITY: Use same conditions in UPDATE to prevent TOCTOU race condition
       const [updated] = await db.update(bidEquipmentSelections)
         .set(updateData)
-        .where(eq(bidEquipmentSelections.id, selectionId))
+        .where(selectionConditions)
         .returning();
       
       await logUpdate(userId!, "bid_equipment_selections", selectionId, req.body);
@@ -14144,22 +14782,42 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Delete bid equipment selection
   app.delete("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
       
-      // Verify selection exists and belongs to bid
+      // SECURITY: Verify bid belongs to user's org
+      const bidConditions = [eq(bids.id, bidId)];
+      if (shouldFilter && orgId) {
+        bidConditions.push(eq(bids.gcOrganizationId, orgId));
+      }
+      
+      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+      
+      // SECURITY: Define conditions for both SELECT and DELETE to prevent TOCTOU
+      const selectionConditions = and(
+        eq(bidEquipmentSelections.id, selectionId),
+        eq(bidEquipmentSelections.bidId, bidId)
+      );
+      
       const [existing] = await db.select()
         .from(bidEquipmentSelections)
-        .where(and(
-          eq(bidEquipmentSelections.id, selectionId),
-          eq(bidEquipmentSelections.bidId, bidId)
-        ));
+        .where(selectionConditions);
       
       if (!existing) {
         return res.status(404).json({ error: "Equipment selection not found" });
       }
       
-      await db.delete(bidEquipmentSelections).where(eq(bidEquipmentSelections.id, selectionId));
+      // SECURITY: Use same conditions in DELETE to prevent TOCTOU race condition
+      await db.delete(bidEquipmentSelections).where(selectionConditions);
       
       await logDelete(userId!, "bid_equipment_selections", selectionId);
       
@@ -14173,6 +14831,18 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get available equipment for bid selection (owned + rental catalog)
   app.get("/api/equipment-for-selection", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json({ owned: [], rental: [] });
+      }
+      
+      // SECURITY: Filter owned equipment by org
+      const equipConditions = [ne(equipment.status, "RETIRED")];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
       // Get owned equipment with active rate profiles (exclude RETIRED status)
       const ownedEquipment = await db
         .select({
@@ -14193,8 +14863,17 @@ If the make/model is unknown, provide general best practices for the equipment t
           eq(equipmentRateProfiles.equipmentId, equipment.id),
           eq(equipmentRateProfiles.isActive, true)
         ))
-        .where(ne(equipment.status, "RETIRED"))
+        .where(and(...equipConditions))
         .orderBy(equipment.type, equipment.name);
+      
+      // SECURITY: Filter rental catalog by vendor's org
+      const rentalConditions = [
+        eq(rentalEquipmentCatalog.isActive, true),
+        eq(rentalVendors.isActive, true)
+      ];
+      if (shouldFilter && orgId) {
+        rentalConditions.push(eq(rentalVendors.organizationId, orgId));
+      }
       
       // Get rental equipment catalog (active items)
       const rentalCatalog = await db
@@ -14215,10 +14894,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         })
         .from(rentalEquipmentCatalog)
         .innerJoin(rentalVendors, eq(rentalEquipmentCatalog.vendorId, rentalVendors.id))
-        .where(and(
-          eq(rentalEquipmentCatalog.isActive, true),
-          eq(rentalVendors.isActive, true)
-        ))
+        .where(and(...rentalConditions))
         .orderBy(rentalEquipmentCatalog.equipmentType, rentalEquipmentCatalog.name);
       
       res.json({
