@@ -116,15 +116,18 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-// Middleware to require specific roles (all 8 roles supported)
-export function requireRole(...roles: Array<"ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR">) {
+// Type for all valid user roles (must match userRoleEnum in schema.ts)
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR";
+
+// Middleware to require specific roles (all 9 roles supported including SUPER_ADMIN)
+export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });
       return;
     }
 
-    if (!roles.includes(req.user.role as any)) {
+    if (!roles.includes(req.user.role as UserRole)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }

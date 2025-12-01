@@ -702,13 +702,13 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     recommendation: string;
   }[] = [];
 
-  for (const [type, rentalRates] of rentalRatesByType.entries()) {
+  for (const [type, rentalRates] of Array.from(rentalRatesByType.entries())) {
     const ownedRates = ownedEquipmentByType.get(type);
     if (!ownedRates || ownedRates.length === 0) continue;
     if (rentalRates.dailyRates.length === 0) continue;
 
-    const avgRentalDaily = rentalRates.dailyRates.reduce((a, b) => a + b, 0) / rentalRates.dailyRates.length;
-    const avgOwnedDaily = ownedRates.reduce((a, b) => a + b, 0) / ownedRates.length;
+    const avgRentalDaily = rentalRates.dailyRates.reduce((a: number, b: number) => a + b, 0) / rentalRates.dailyRates.length;
+    const avgOwnedDaily = ownedRates.reduce((a: number, b: number) => a + b, 0) / ownedRates.length;
 
     // Find an example owned equipment of this type for purchase price
     const exampleEquip = allEquipment.find(e => e.type === type && e.purchasePrice);

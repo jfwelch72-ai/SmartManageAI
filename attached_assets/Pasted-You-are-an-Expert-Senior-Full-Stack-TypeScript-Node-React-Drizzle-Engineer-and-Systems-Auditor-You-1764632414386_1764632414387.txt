@@ -1,0 +1,165 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React/Drizzle Engineer and Systems Auditor.
+
+Your task is to:
+
+1) Bring the ENTIRE SmartManageAI codebase to a HIGH-CONFIDENCE, STRICT TYPESCRIPT state (Phase 1 TypeScript correction).
+2) THEN generate an UPDATED, FULL FUNCTIONALITY + PRODUCTION READINESS AUDIT REPORT reflecting the corrected state.
+
+Treat this ENTIRE message as ONE unified instruction. Do NOT ask questions. Do NOT split into phases. Execute everything as a single workflow.
+
+=================================================================
+CONTEXT & CURRENT STATE (ASSUME TRUE)
+=================================================================
+
+- Phase 0 critical blockers have already been fixed:
+  - SOV transaction issue in sovRoutes.ts is resolved and now compatible with Neon HTTP (no db.transaction).
+  - requireRole() misuse (array vs spread) is fixed for all known routes.
+  - Audit log schema mismatches have been corrected (oldValue/newValue, field names, enums).
+  - AuthRequest typing is in place for laborRateRoutes.ts.
+- The app currently starts successfully and may already pass a basic TypeScript build, but there may still be:
+  - Weak typing (unknown, implicit any, sloppy generics).
+  - Mismatches between backend response types and frontend expectations.
+  - Hidden TS issues not yet fully addressed.
+
+Your job is to do a **deep TypeScript hardening pass (Phase 1)** and then rerun a **full audit**.
+
+=================================================================
+PHASE 1 – FULL TYPESCRIPT HARDENING (BACKEND + FRONTEND)
+=================================================================
+
+1. Run a complete TypeScript check:
+   - Use the project’s standard command (`npm run typecheck` or equivalent).
+   - Capture ALL errors and warnings internally. Do not stop at the first.
+
+2. Fix ALL TypeScript issues in the entire repo, including but not limited to:
+   - Missing or incorrect types for `req.user` and AuthRequest across all route files.
+   - All remaining implicit `any` types (parameters, callbacks, map/filter reducers, etc.).
+   - All `unknown`-typed values coming from React Query (especially `useQuery`, `useMutation`):
+     - Add accurate generics for queryFn and mutationFn return types.
+     - Ensure `data`, `error`, `variables`, and `context` are all properly typed.
+   - All enum mismatches (values must match schema/enums exactly).
+   - All mismatches between backend response shapes and frontend assumptions:
+     - Adjust either the backend responses or frontend typings so they match reality.
+   - All Drizzle ORM typing issues:
+     - Ensure `.insert()`, `.update()`, `.delete()`, `.select()` calls use correct shapes (InferInsertModel / InferSelectModel).
+     - Fix `.where`, `.and`, `.or` usage where types don’t line up.
+   - Any “downlevel iteration” or iterator issues in server/ai modules (e.g., snapshotBuilder, etc.):
+     - Use Array.from(map.entries()) or equivalent where necessary.
+
+3. Strengthen typing beyond just “no errors”:
+   - Eliminate **all uses of `any`** unless absolutely unavoidable. If you must use `any`, document why in a short comment.
+   - Avoid broad `unknown` or `{}[]` types; replace them with accurate interfaces or type aliases based on real data.
+   - Ensure all React components have well-typed props and state.
+   - Ensure all shared types between client and server live in a shared typings module where appropriate (e.g., shared/ or types/).
+   - Ensure all audit logging helper functions and their call sites use consistent, well-typed interfaces.
+
+4. Pay special attention to the following high-risk files/modules (fix ALL issues in them):
+   - `client/src/pages/website-builder.tsx`
+   - `client/src/pages/dashboard.tsx`
+   - `client/src/pages/time-clock-manager.tsx`
+   - `client/src/pages/time-clock.tsx`
+   - `client/src/components/examples/AppHeader.tsx`
+   - `client/src/components/examples/ProjectsTable.tsx`
+   - `server/routes.ts`
+   - `server/laborRateRoutes.ts`
+   - `server/delayRoutes.ts`
+   - `server/sovRoutes.ts`
+   - Any AI-related modules under `server/ai/` or similar.
+
+5. After you believe all issues are fixed:
+   - Re-run the TypeScript checker (`npm run typecheck` or tsc --noEmit).
+   - There must be **ZERO TypeScript errors** across:
+     - server/*
+     - client/*
+     - shared/* or schema/*
+   - If any errors remain, fix them as well until TypeScript passes cleanly without error.
+
+=================================================================
+PHASE 2 – REGENERATE FULL SMARTMANAGEAI AUDIT REPORT (UPDATED STATE)
+=================================================================
+
+After Phase 1 TypeScript hardening is COMPLETE and TypeScript passes with 0 errors:
+
+You must generate a NEW, UPDATED full audit report that reflects the **current corrected state** of the system.
+
+1. Create or overwrite the file at the project root:
+
+   SMARTMANAGE_AI_FULL_AUDIT_REPORT.md
+
+2. This NEW report must include, at minimum:
+
+   A. Executive Summary
+      - Updated Production Readiness Score (0–100)
+      - Explicit note that TypeScript compilation now passes with 0 errors.
+      - Statement on whether any runtime or architectural issues remain.
+
+   B. Module-by-module status:
+      - For each module (Projects, Bids, Estimates, Change Orders, Time Clock, Crews, Skills, AI modules, SOV, Website Builder, Labor Rates, T&M, Delays, Inspections, Platform Admin, etc.):
+        • Mark as: WORKING / PARTIALLY WORKING / BROKEN / NOT IMPLEMENTED  
+        • Brief explanation for each.
+
+   C. Backend Routes
+      - Total count of routes.
+      - Summary of which are fully type-safe and aligned with schema.
+      - Any remaining potential contract mismatches or TODOs (if any).
+
+   D. Frontend Pages
+      - List of major pages (especially those previously problematic, like website-builder).
+      - Their current status after TS fixes.
+      - Any lingering UX or contract risks (if any).
+
+   E. TypeScript Status (UPDATED)
+      - Explicit confirmation that `npm run typecheck` passes with 0 errors.
+      - A short summary of categories of issues that were fixed:
+        • React Query `unknown` → strongly typed  
+        • Implicit any → removed  
+        • Enum mismatches → fixed  
+        • Schema mismatches → corrected  
+        • Audit logging typing → standardized  
+      - Note if any deliberately retained `any` exist (and why).
+
+   F. Security & Multi-tenant Assessment (high level)
+      - Confirm that Phase 0 fixes (requireRole, SOV transaction, audit log schema) are still intact.
+      - Confirm multi-tenant guards are in place and type-safe.
+      - Highlight any remaining security concerns, if found.
+
+   G. AI Features Assessment (quick pass)
+      - Confirm that AI route types are correct and compile.
+      - Note any areas where types are still approximate but not dangerous.
+
+   H. Priority Fix List (Post-TS Phase)
+      - High / Medium / Low priority items that are still worth addressing (even if not blocking deployment).
+      - These may be architectural improvements, tests, docs, or polish—not TypeScript blockers.
+
+   I. Final Statement
+      - Clearly state whether the codebase is now:
+        • Ready for production deployment from a TypeScript & contract standpoint, and  
+        • What (if anything) still needs attention on the functional or operational side.
+
+3. The report must be formatted cleanly in Markdown and readable by a senior engineer (no gibberish, no partial sentences).
+
+=================================================================
+FINAL VERIFICATION & OUTPUT
+=================================================================
+
+When ALL work is done:
+
+1. Ensure:
+   - `npm run typecheck` → 0 errors.
+   - `npm run build` → successful build.
+   - `npm run dev` (or equivalent) → starts without runtime TypeScript-related crashes.
+
+2. Confirm:
+   - There are no remaining `any` or `unknown` types in critical paths, except where absolutely necessary and documented.
+   - Backend and frontend share consistent types for major entities (projects, bids, SOVs, COs, rates, etc.).
+
+3. Save and close:
+   - SMARTMANAGE_AI_FULL_AUDIT_REPORT.md with the updated findings.
+
+4. As your final console/editor output, print a short summary:
+
+   - "TypeScript Phase 1 hardening complete – 0 TS errors."
+   - "Updated SMARTMANAGE_AI_FULL_AUDIT_REPORT.md generated."
+   - List of key files changed.
+
+Then stop.

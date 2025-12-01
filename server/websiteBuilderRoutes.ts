@@ -33,7 +33,7 @@ import {
   WebsiteProject
 } from "@shared/schema";
 import { requireAuth, AuthRequest } from "./auth";
-import { mustDenyAccess, orgFilter } from "./orgFilter";
+import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import OpenAI from "openai";
 
@@ -1531,24 +1531,33 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
     }
 
     // Create CRM organization if company provided
-    let crmOrgId = null;
+    let crmOrgId: string | null = null;
     if (submission.company) {
       const [crmOrg] = await db.insert(crmOrganisations).values({
         organizationId: orgId,
-        companyName: submission.company,
+        name: submission.company,
         type: "CONTRACTOR",
-        email: submission.email,
-        phone: submission.phone,
       }).returning();
       crmOrgId = crmOrg.id;
     }
 
-    // Create CRM contact
+    // Create CRM contact - organisationId is required, so only create if we have an org
+    if (!crmOrgId) {
+      // If no company provided, create a placeholder CRM org first
+      const [placeholderOrg] = await db.insert(crmOrganisations).values({
+        organizationId: orgId,
+        name: submission.name || "Contact Lead",
+        type: "CONTRACTOR",
+      }).returning();
+      crmOrgId = placeholderOrg.id;
+    }
+
+    const nameParts = (submission.name || '').split(' ');
     const [crmContact] = await db.insert(crmContacts).values({
       organizationId: orgId,
-      crmOrganisationId: crmOrgId,
-      firstName: submission.name.split(' ')[0],
-      lastName: submission.name.split(' ').slice(1).join(' ') || '',
+      organisationId: crmOrgId,
+      firstName: nameParts[0] || 'Unknown',
+      lastName: nameParts.slice(1).join(' ') || '',
       email: submission.email,
       phone: submission.phone,
     }).returning();

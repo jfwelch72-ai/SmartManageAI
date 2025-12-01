@@ -1309,6 +1309,10 @@ router.post("/ai/onboarding/research-trade", sensitiveLimiter, async (req: AuthR
 
     const { tradeName } = validationResult.data;
     
+    if (!tradeName) {
+      return res.status(400).json({ error: "Trade name is required" });
+    }
+    
     console.log(`[Trade Research API] Researching trade: ${tradeName}`);
     const research = await researchCustomTrade(tradeName);
     
