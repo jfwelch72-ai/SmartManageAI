@@ -595,6 +595,7 @@ export default function BidsPage() {
                       <FormControl>
                         <Input
                           type="date"
+                          className="[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-100"
                           {...field}
                           value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ""}
                           onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
