@@ -12,6 +12,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { generateSubcontractPDF } from "./subcontract-pdf-service";
+import { createAutoPayableFromContract } from "./subcontractorPayablesRoutes";
 
 const router = Router();
 
@@ -260,6 +261,8 @@ router.patch("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMI
     if (data.notes !== undefined) updates.notes = data.notes;
     if (data.status !== undefined) updates.status = data.status;
 
+    const oldStatus = contract.status;
+    
     const [updated] = await db
       .update(subcontractorContracts)
       .set(updates)
@@ -271,6 +274,28 @@ router.patch("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMI
       .from(subcontractors)
       .where(eq(subcontractors.id, updated.subcontractorId))
       .limit(1);
+
+    // Auto-create payable when contract status changes to COMPLETED
+    if (data.status === "COMPLETED" && oldStatus !== "COMPLETED") {
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, contract.projectId))
+        .limit(1);
+      
+      if (project?.gcOrganizationId) {
+        const result = await createAutoPayableFromContract(
+          id,
+          project.gcOrganizationId,
+          req.user!.id
+        );
+        if (result.success) {
+          console.log(`Auto-created payable ${result.paymentId} for completed contract ${contract.contractNumber}`);
+        } else if (result.error) {
+          console.log(`Auto-payable creation skipped: ${result.error}`);
+        }
+      }
+    }
 
     res.json({
       ...updated,
