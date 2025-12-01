@@ -303,7 +303,7 @@ const createAnalysisSchemaExtended = z.object({
   documentType: z.string().optional(),
 });
 
-router.post("/ai/bid-document-analysis", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -416,7 +416,7 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole(["SUPER_ADMIN"
   }
 });
 
-router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -508,7 +508,7 @@ router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(
   }
 });
 
-router.delete("/ai/bid-document-analysis/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.delete("/ai/bid-document-analysis/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -566,7 +566,7 @@ function isValidObjectStorageUrl(url: string): boolean {
   }
 }
 
-router.post("/ai-bid-wizard/analyze", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]), async (req: AuthRequest, res: Response) => {
+router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const validationResult = wizardAnalyzeSchema.safeParse(req.body);
     if (!validationResult.success) {
