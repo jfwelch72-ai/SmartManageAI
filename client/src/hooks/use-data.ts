@@ -278,6 +278,7 @@ export function useApproveTimeEntry() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries/pending-approvals"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
@@ -764,6 +765,131 @@ export function useAdjustShift() {
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
     },
+  });
+}
+
+// Time Entry Approvals (for PM-reviewed time)
+export interface PendingTimeEntry {
+  id: string;
+  userId: string;
+  projectId: string;
+  date: string;
+  hoursRegular: string | null;
+  hoursOvertime: string | null;
+  notes: string | null;
+  approvalStatus: string;
+  userName: string;
+  userEmail: string | null;
+  userRole: string | null;
+  projectName: string | null;
+  projectCode: string | null;
+}
+
+export function usePendingTimeEntryApprovals() {
+  return useQuery<PendingTimeEntry[]>({
+    queryKey: ["/api/time-entries/pending-approvals"],
+  });
+}
+
+export function useRejectTimeEntry() {
+  return useMutation({
+    mutationFn: async ({ entryId, reason }: { entryId: string; reason: string }) => {
+      const response = await apiRequest("POST", `/api/time-entries/${entryId}/reject`, { reason });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries/pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+    },
+  });
+}
+
+export function useBulkApproveTimeEntries() {
+  return useMutation({
+    mutationFn: async (entryIds: string[]) => {
+      const response = await apiRequest("POST", "/api/time-entries/bulk-approve", { entryIds });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries/pending-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+    },
+  });
+}
+
+// Payroll Notifications
+export interface PayrollNotification {
+  id: string;
+  organizationId: string;
+  periodStart: string;
+  periodEnd: string;
+  projectId: string | null;
+  approvingManagerId: string;
+  officeManagerId: string | null;
+  status: string;
+  totalShiftsApproved: number;
+  totalTimeEntriesApproved: number;
+  totalHours: string | null;
+  processedAt: Date | null;
+  processedById: string | null;
+  createdAt: Date;
+  managerName: string;
+  projectName: string | null;
+  projectCode: string | null;
+}
+
+export function usePayrollNotifications() {
+  return useQuery<PayrollNotification[]>({
+    queryKey: ["/api/payroll-notifications"],
+  });
+}
+
+export function useCreatePayrollNotification() {
+  return useMutation({
+    mutationFn: async (data: {
+      periodStart: string;
+      periodEnd: string;
+      projectId?: string | null;
+      totalShiftsApproved?: number;
+      totalTimeEntriesApproved?: number;
+      totalHours?: string | null;
+    }) => {
+      const response = await apiRequest("POST", "/api/payroll-notifications", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-notifications"] });
+    },
+  });
+}
+
+export function useProcessPayrollNotification() {
+  return useMutation({
+    mutationFn: async (notificationId: string) => {
+      const response = await apiRequest("PATCH", `/api/payroll-notifications/${notificationId}/process`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-notifications"] });
+    },
+  });
+}
+
+// Time Clock Approval Summary
+export interface ApprovalSummary {
+  period: { start: string; end: string };
+  shifts: { pending: number; approved: number; rejected: number; totalHours: number };
+  entries: { pending: number; approved: number; rejected: number; totalHours: number };
+  totals: { pendingItems: number; approvedItems: number; rejectedItems: number; totalHours: number };
+}
+
+export function useApprovalSummary(startDate: string, endDate: string, projectId?: string) {
+  const searchParams = new URLSearchParams({ startDate, endDate });
+  if (projectId) searchParams.append("projectId", projectId);
+  
+  return useQuery<ApprovalSummary>({
+    queryKey: ["/api/time-clock/approval-summary", startDate, endDate, projectId],
+    enabled: !!startDate && !!endDate,
   });
 }
 

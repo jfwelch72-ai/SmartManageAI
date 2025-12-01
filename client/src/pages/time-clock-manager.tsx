@@ -18,12 +18,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
 import { 
   useActiveShifts, 
@@ -31,9 +31,13 @@ import {
   useApproveShift,
   useRejectShift,
   useAdjustShift,
+  usePendingTimeEntryApprovals,
+  useApproveTimeEntry,
+  useRejectTimeEntry,
+  useBulkApproveTimeEntries,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase, Search, X } from "lucide-react";
+import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase, Search, X, FileText, DollarSign } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockManagerPage() {
@@ -43,11 +47,16 @@ export default function TimeClockManagerPage() {
   // Filter state
   const [activeSearchTerm, setActiveSearchTerm] = useState("");
   const [pendingSearchTerm, setPendingSearchTerm] = useState("");
+  const [entrySearchTerm, setEntrySearchTerm] = useState("");
   
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [rejectEntryDialogOpen, setRejectEntryDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<any>(null);
+  const [selectedEntry, setSelectedEntry] = useState<any>(null);
+  const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
   const [rejectReason, setRejectReason] = useState("");
+  const [entryRejectReason, setEntryRejectReason] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustClockIn, setAdjustClockIn] = useState("");
   const [adjustClockOut, setAdjustClockOut] = useState("");
@@ -55,11 +64,15 @@ export default function TimeClockManagerPage() {
 
   const { data: activeShifts = [], isLoading: activeLoading, refetch: refetchActive } = useActiveShifts();
   const { data: pendingShifts = [], isLoading: pendingLoading, refetch: refetchPending } = usePendingShiftApprovals();
+  const { data: pendingEntries = [], isLoading: entriesLoading, refetch: refetchEntries } = usePendingTimeEntryApprovals();
   const approveShift = useApproveShift();
   const rejectShift = useRejectShift();
   const adjustShift = useAdjustShift();
+  const approveTimeEntry = useApproveTimeEntry();
+  const rejectTimeEntry = useRejectTimeEntry();
+  const bulkApproveTimeEntries = useBulkApproveTimeEntries();
 
-  const isManager = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const isManager = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT";
 
   // Filtering logic for active shifts
   const filteredActiveShifts = useMemo(() => {
@@ -86,7 +99,6 @@ export default function TimeClockManagerPage() {
     
     const searchLower = pendingSearchTerm.toLowerCase();
     return pendingShifts.filter((shift: any) => {
-      // Safely handle optional fields
       const employeeName = `${shift.user?.firstName ?? ""} ${shift.user?.lastName ?? ""}`.toLowerCase();
       const projectName = (shift.project?.name ?? "").toLowerCase();
       const projectCode = (shift.project?.code ?? "").toLowerCase();
@@ -98,6 +110,24 @@ export default function TimeClockManagerPage() {
       );
     });
   }, [pendingShifts, pendingSearchTerm]);
+
+  // Filtering logic for pending time entries
+  const filteredPendingEntries = useMemo(() => {
+    if (!entrySearchTerm) return pendingEntries;
+    
+    const searchLower = entrySearchTerm.toLowerCase();
+    return pendingEntries.filter((entry: any) => {
+      const employeeName = (entry.userName ?? "").toLowerCase();
+      const projectName = (entry.projectName ?? "").toLowerCase();
+      const projectCode = (entry.projectCode ?? "").toLowerCase();
+      
+      return (
+        employeeName.includes(searchLower) ||
+        projectName.includes(searchLower) ||
+        projectCode.includes(searchLower)
+      );
+    });
+  }, [pendingEntries, entrySearchTerm]);
 
   const getShiftDuration = (clockIn: string, clockOut?: string) => {
     const start = new Date(clockIn);
@@ -206,6 +236,104 @@ export default function TimeClockManagerPage() {
     setRejectDialogOpen(true);
   };
 
+  // Time entry approval handlers
+  const handleApproveEntry = async (entryId: string) => {
+    try {
+      await approveTimeEntry.mutateAsync(entryId);
+      toast({
+        title: "Time Entry Approved",
+        description: "Time entry has been approved for payroll",
+      });
+      refetchEntries();
+    } catch (error: any) {
+      toast({
+        title: "Approval Failed",
+        description: error.message || "Failed to approve time entry",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRejectEntry = async () => {
+    if (!selectedEntry || !entryRejectReason.trim()) {
+      toast({
+        title: "Reason Required",
+        description: "Please provide a reason for rejection",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await rejectTimeEntry.mutateAsync({ 
+        entryId: selectedEntry.id, 
+        reason: entryRejectReason 
+      });
+      toast({
+        title: "Time Entry Rejected",
+        description: "Time entry has been rejected",
+      });
+      setRejectEntryDialogOpen(false);
+      setSelectedEntry(null);
+      setEntryRejectReason("");
+      refetchEntries();
+    } catch (error: any) {
+      toast({
+        title: "Rejection Failed",
+        description: error.message || "Failed to reject time entry",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedEntryIds.length === 0) {
+      toast({
+        title: "No Entries Selected",
+        description: "Please select at least one entry to approve",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await bulkApproveTimeEntries.mutateAsync(selectedEntryIds);
+      toast({
+        title: "Entries Approved",
+        description: `Successfully approved ${selectedEntryIds.length} time entries`,
+      });
+      setSelectedEntryIds([]);
+      refetchEntries();
+    } catch (error: any) {
+      toast({
+        title: "Bulk Approval Failed",
+        description: error.message || "Failed to approve entries",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openRejectEntryDialog = (entry: any) => {
+    setSelectedEntry(entry);
+    setRejectEntryDialogOpen(true);
+  };
+
+  const toggleEntrySelection = (entryId: string) => {
+    setSelectedEntryIds(prev => 
+      prev.includes(entryId) 
+        ? prev.filter(id => id !== entryId) 
+        : [...prev, entryId]
+    );
+  };
+
+  const toggleAllEntries = () => {
+    if (selectedEntryIds.length === filteredPendingEntries.length) {
+      setSelectedEntryIds([]);
+    } else {
+      setSelectedEntryIds(filteredPendingEntries.map((e: any) => e.id));
+    }
+  };
+
   if (!isManager) {
     return (
       <div className="min-h-screen bg-background">
@@ -241,10 +369,19 @@ export default function TimeClockManagerPage() {
             </TabsTrigger>
             <TabsTrigger value="approvals" data-testid="tab-approvals">
               <CheckCircle className="w-4 h-4 mr-2" />
-              Pending Approvals
+              Shift Approvals
               {pendingShifts.length > 0 && (
                 <Badge variant="destructive" className="ml-2" data-testid="badge-pending-count">
                   {pendingShifts.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="time-entries" data-testid="tab-time-entries">
+              <FileText className="w-4 h-4 mr-2" />
+              Time Entry Approvals
+              {pendingEntries.length > 0 && (
+                <Badge variant="destructive" className="ml-2" data-testid="badge-entry-count">
+                  {pendingEntries.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -531,9 +668,189 @@ export default function TimeClockManagerPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Time Entry Approvals Tab */}
+          <TabsContent value="time-entries" data-testid="content-time-entries">
+            <Card>
+              <CardHeader className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    Time Entry Approvals
+                    <Badge variant="secondary" data-testid="badge-entries-total">{pendingEntries.length}</Badge>
+                  </CardTitle>
+                  
+                  <div className="flex items-center gap-2">
+                    {selectedEntryIds.length > 0 && (
+                      <Button
+                        variant="default"
+                        onClick={handleBulkApprove}
+                        disabled={bulkApproveTimeEntries.isPending}
+                        data-testid="button-bulk-approve"
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Approve Selected ({selectedEntryIds.length})
+                      </Button>
+                    )}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search employee or project..."
+                        className="pl-9 w-[250px]"
+                        value={entrySearchTerm}
+                        onChange={(e) => setEntrySearchTerm(e.target.value)}
+                        data-testid="input-search-entries"
+                      />
+                    </div>
+                    {entrySearchTerm && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setEntrySearchTerm("")}
+                        data-testid="button-clear-entry-search"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                
+                {entrySearchTerm && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Filtering:</span>
+                    <Badge variant="secondary" className="gap-1">
+                      "{entrySearchTerm}"
+                      <X 
+                        className="w-3 h-3 cursor-pointer" 
+                        onClick={() => setEntrySearchTerm("")}
+                      />
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      ({filteredPendingEntries.length} of {pendingEntries.length} entries)
+                    </span>
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent>
+                {entriesLoading ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    Loading pending time entries...
+                  </div>
+                ) : filteredPendingEntries.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    {entrySearchTerm ? "No entries match your search" : "No pending time entry approvals"}
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={selectedEntryIds.length === filteredPendingEntries.length && filteredPendingEntries.length > 0}
+                            onCheckedChange={toggleAllEntries}
+                            data-testid="checkbox-select-all"
+                          />
+                        </TableHead>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Regular</TableHead>
+                        <TableHead>Overtime</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPendingEntries.map((entry: any) => (
+                        <TableRow key={entry.id} data-testid={`row-entry-${entry.id}`}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedEntryIds.includes(entry.id)}
+                              onCheckedChange={() => toggleEntrySelection(entry.id)}
+                              data-testid={`checkbox-entry-${entry.id}`}
+                            />
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-employee-${entry.id}`}>
+                            <div className="space-y-1">
+                              <p className="font-medium">{entry.userName}</p>
+                              <p className="text-sm text-muted-foreground">{entry.userRole}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-project-${entry.id}`}>
+                            <div className="space-y-1">
+                              <p className="font-medium">{entry.projectName || "Unknown"}</p>
+                              {entry.projectCode && (
+                                <Badge variant="outline">{entry.projectCode}</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-date-${entry.id}`}>
+                            {format(new Date(entry.date), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-regular-${entry.id}`}>
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-muted-foreground" />
+                              {entry.hoursRegular || "0"}h
+                            </div>
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-overtime-${entry.id}`}>
+                            {entry.hoursOvertime && parseFloat(entry.hoursOvertime) > 0 ? (
+                              <Badge variant="outline" className="text-amber-600">
+                                +{entry.hoursOvertime}h OT
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-notes-${entry.id}`}>
+                            <span className="text-sm text-muted-foreground max-w-[200px] truncate block">
+                              {entry.notes || "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell data-testid={`cell-entry-actions-${entry.id}`}>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={() => handleApproveEntry(entry.id)}
+                                disabled={approveTimeEntry.isPending}
+                                data-testid={`button-approve-entry-${entry.id}`}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => openRejectEntryDialog(entry)}
+                                disabled={rejectTimeEntry.isPending}
+                                data-testid={`button-reject-entry-${entry.id}`}
+                              >
+                                <XCircle className="w-4 h-4 mr-1" />
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+
+                {pendingEntries.length > 0 && (
+                  <div className="mt-6 p-4 bg-accent/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      <DollarSign className="inline w-4 h-4 mr-1" />
+                      Approved time entries will be forwarded to the Office Manager for payroll processing.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
-        {/* Reject Dialog */}
+        {/* Reject Shift Dialog */}
         <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
           <DialogContent data-testid="dialog-reject">
             <DialogHeader>
@@ -621,6 +938,43 @@ export default function TimeClockManagerPage() {
                 data-testid="button-confirm-adjust"
               >
                 {adjustShift.isPending ? "Adjusting..." : "Save Adjustment"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reject Time Entry Dialog */}
+        <Dialog open={rejectEntryDialogOpen} onOpenChange={setRejectEntryDialogOpen}>
+          <DialogContent data-testid="dialog-reject-entry">
+            <DialogHeader>
+              <DialogTitle>Reject Time Entry</DialogTitle>
+              <DialogDescription>
+                Please provide a reason for rejecting this time entry. The employee will be notified.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="entry-reject-reason">Reason for Rejection</Label>
+                <Textarea
+                  id="entry-reject-reason"
+                  placeholder="e.g., Hours recorded do not match project records..."
+                  value={entryRejectReason}
+                  onChange={(e) => setEntryRejectReason(e.target.value)}
+                  data-testid="textarea-entry-reject-reason"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejectEntryDialogOpen(false)} data-testid="button-cancel-entry-reject">
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleRejectEntry}
+                disabled={!entryRejectReason.trim() || rejectTimeEntry.isPending}
+                data-testid="button-confirm-entry-reject"
+              >
+                {rejectTimeEntry.isPending ? "Rejecting..." : "Reject Entry"}
               </Button>
             </DialogFooter>
           </DialogContent>

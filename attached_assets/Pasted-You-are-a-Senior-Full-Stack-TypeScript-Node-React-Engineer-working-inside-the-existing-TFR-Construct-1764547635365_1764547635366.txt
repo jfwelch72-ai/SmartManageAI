@@ -1,0 +1,217 @@
+You are a Senior Full-Stack TypeScript/Node/React Engineer working inside the existing TFR Construction Management Suite codebase.
+
+Do NOT create a new project.  
+Modify the code IN PLACE and ensure all existing features remain functional.
+
+============================================================
+PRIMARY TASK GROUPS
+============================================================
+
+Implement ALL of the following tasks in the CURRENT codebase:
+
+############################################################
+TASK GROUP A — TIME CLOCK APPROVAL WORKFLOW UPGRADE
+############################################################
+
+GOAL:
+Create a proper approval chain:
+1. Employee clocks IN/OUT or enters manual time.
+2. Assigned Project Manager (project.superintendentId OR project.managerId or project.pmUserId) becomes the required approver.
+3. Approvals must be completed BEFORE **Monday at 8:00 AM** following the work week.
+4. Once PM approves all entries → The Office Manager is automatically notified to run payroll.
+
+A1. DATABASE UPDATES
+--------------------
+Modify schema (Drizzle) to add:
+
+- time_clock_shifts:
+    - approvedByUserId (nullable)
+    - approvedAt (timestamp, nullable)
+    - approvalStatus enum("PENDING","APPROVED","REJECTED") default "PENDING"
+
+- time_entries:
+    - same approval fields as above
+
+- Add new table: payroll_notifications
+    - id
+    - periodStart
+    - periodEnd
+    - projectId
+    - approvingManagerId
+    - officeManagerId
+    - createdAt
+    - sentToOfficeManagerAt
+
+A2. BACKEND API CHANGES
+-----------------------
+Modify timeClockRoutes.ts and timeEntryRoutes.ts to include:
+
+- GET /api/time-clock/pending-approvals
+    → Returns all shifts grouped by project where user is project manager.
+
+- POST /api/time-clock/:id/approve
+    → Marks shift/time entry APPROVED by PM.
+
+- POST /api/time-clock/:id/reject
+    → Marks shift/time entry REJECTED.
+
+- Automatic Monday 8AM check:
+    Add a scheduler (node-cron or existing AI scheduler module):
+        - For each project:
+            - If PM has not approved shifts/time entries for the previous week:
+                 send PM reminder notification.
+        - If all entries approved:
+                 create payroll_notifications row and notify Office Manager.
+
+A3. NOTIFICATION LOGIC
+----------------------
+Add office-manager notification via existing:
+- database notifications table
+- in-app messaging (optional: DM)
+- email via nodemailer/resend
+
+Notification text:
+“Time entries for [ProjectName] have been approved by [ManagerName] and are ready for payroll processing.”
+
+A4. FRONTEND UI CHANGES
+------------------------
+Add new pages:
+- /time-clock/manager-review
+  - Table grouped by project
+  - Shifts + time entries with:
+        [Approve] [Reject] buttons
+        Worker name
+        Hours worked
+        Project assignment
+
+- Add badges:
+    - PENDING (yellow)
+    - APPROVED (green)
+    - REJECTED (red)
+
+- Add Monday 8AM warning banner for PMs.
+
+- Add notification banner for Office Manager:
+    “Payroll for week [date-range] is ready to process.”
+
+############################################################
+TASK GROUP B — COMPLETE THE MUSTDENYACCESS SECURITY RULE
+############################################################
+
+Apply orgFilter.mustDenyAccess logic to ALL missing backend routes:
+
+The following route modules MUST correctly enforce:
+- organizationId filtering
+- mustDenyAccess blocking for users without an organization
+- SUPER_ADMIN bypass
+
+Update the following files:
+- changeOrderRoutes.ts
+- delayRoutes.ts
+- inspectionRoutes.ts
+- timeClockRoutes.ts
+- estimateRoutes.ts
+- tmTicketRoutes.ts
+
+Add defensive checks to ensure NO cross-tenant leakage.
+
+############################################################
+TASK GROUP C — ENABLE AI SCHEDULERS FOR PRODUCTION
+############################################################
+
+Update server/index.ts:
+
+- Detect NODE_ENV === "production"
+- Enable AI schedulers ONLY in production
+- Schedulers include:
+    - AI PM analysis
+    - AI CFO analysis
+    - AI delay analysis
+    - Vendor pricing scanning
+    - Project health scoring
+- Ensure safe rate limiting and concurrency control
+
+############################################################
+TASK GROUP D — COMPLETE AI AUTO-TAKEOFF PIPELINE (SCaffold)
+############################################################
+
+Implement the following (minimal functional version):
+
+D1. FRONTEND
+-------------
+Inside TakeoffWorkspace:
+Add new button:
+“AI Auto-Measure (Beta)”
+
+When clicked:
+- Upload selected PDF page image to backend
+- Display loading UI
+- When backend returns measurement predictions:
+    - Render predicted lines/areas/counts as ghosted overlays
+    - Allow user to confirm or adjust
+    - Save as real measurements
+
+D2. BACKEND
+------------
+New endpoint:
+POST /api/ai-features/takeoff/auto
+
+Steps:
+1. Accept plan image
+2. Send to OpenAI Vision API
+3. Parse returned JSON into:
+    - measurement type
+    - coordinates
+    - unit (default feet)
+    - scale reference if detected
+4. Save results to takeoff_measurements table (flag as aiGenerated)
+
+############################################################
+TASK GROUP E — COMPLETE AI JOBSITE CAMERA ANALYSIS
+############################################################
+
+Provide working end-to-end pipeline:
+
+E1. FRONTEND:
+- Add “Jobsite Photo Analysis” page under each project
+- Upload multiple photos
+- Display list of analyzed photos with:
+    - Safety issues
+    - Progress status
+    - Material stockpile detection
+
+E2. BACKEND:
+Implement endpoints:
+- POST /api/ai-features/jobsite/upload
+- GET /api/ai-features/jobsite/:projectId
+
+Pipeline:
+1. Save uploaded photos to object storage
+2. Run OpenAI Vision to detect safety risks, % work complete, materials
+3. Save results to:
+   - jobsite_analysis_batches
+   - jobsite_analysis_photos
+
+############################################################
+TASK GROUP F — GENERAL STABILITY & INTEGRATION CHECKS
+############################################################
+
+- Ensure all new routes use Zod validation
+- Ensure all notifications are tenant-isolated
+- Verify all new scheduler functions are logged via auditLogger
+- Drizzle migrations must be generated and pushed correctly
+- All UI elements must use shadcn components and match current UI/UX
+
+============================================================
+FINAL OUTPUT REQUIREMENT
+============================================================
+
+After implementing:
+- Provide me with a summary of all files modified
+- Provide me with all new endpoints and UI pages added
+- Provide the migration file(s)
+- Provide any new utility functions
+- Confirm no existing functionality has been broken.
+
+Do NOT produce pseudo-code.  
+Write the real, production-ready code directly into the project files.

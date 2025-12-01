@@ -302,14 +302,19 @@ export const timeEntries = pgTable("time_entries", {
   hoursOvertime: decimal("hours_overtime", { precision: 4, scale: 2 }).notNull().default("0"),
   costCode: text("cost_code"),
   notes: text("notes"),
+  approvalStatus: shiftApprovalStatusEnum("approval_status").notNull().default("PENDING"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
+  rejectedById: varchar("rejected_by_id").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   userIdIdx: index("time_entries_user_id_idx").on(table.userId),
   projectIdIdx: index("time_entries_project_id_idx").on(table.projectId),
   dateIdx: index("time_entries_date_idx").on(table.date),
+  approvalStatusIdx: index("time_entries_approval_status_idx").on(table.approvalStatus),
 }));
 
 // Project Labor Rates table - stores default rates and burden multiplier for a project
@@ -884,6 +889,30 @@ export const notifications = pgTable("notifications", {
   relatedEntityType: text("related_entity_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// Payroll Notifications table - tracks when time entries are ready for payroll processing
+export const payrollNotifications = pgTable("payroll_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  approvingManagerId: varchar("approving_manager_id").notNull().references(() => users.id),
+  officeManagerId: varchar("office_manager_id").references(() => users.id),
+  status: text("status").notNull().default("PENDING"),
+  totalShiftsApproved: integer("total_shifts_approved").notNull().default(0),
+  totalTimeEntriesApproved: integer("total_time_entries_approved").notNull().default(0),
+  totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
+  sentToOfficeManagerAt: timestamp("sent_to_office_manager_at"),
+  processedAt: timestamp("processed_at"),
+  processedById: varchar("processed_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("payroll_notifications_org_idx").on(table.organizationId),
+  periodIdx: index("payroll_notifications_period_idx").on(table.periodStart, table.periodEnd),
+  statusIdx: index("payroll_notifications_status_idx").on(table.status),
+}));
 
 // File Permissions table
 export const filePermissions = pgTable("file_permissions", {
@@ -1467,6 +1496,7 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   createdAt: true,
   updatedAt: true,
   approvedAt: true,
+  rejectedAt: true,
 });
 
 export const insertProjectLaborRateSchema = createInsertSchema(projectLaborRates).omit({
@@ -1695,6 +1725,16 @@ export type CalendarEvent = typeof calendarEvents.$inferSelect;
 
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+
+export const insertPayrollNotificationSchema = createInsertSchema(payrollNotifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentToOfficeManagerAt: true,
+  processedAt: true,
+});
+export type InsertPayrollNotification = z.infer<typeof insertPayrollNotificationSchema>;
+export type PayrollNotification = typeof payrollNotifications.$inferSelect;
 
 export type InsertFilePermission = z.infer<typeof insertFilePermissionSchema>;
 export type FilePermission = typeof filePermissions.$inferSelect;
