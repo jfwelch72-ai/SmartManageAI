@@ -1,0 +1,362 @@
+You are a Senior Full-Stack TypeScript/Node/React engineer operating inside the existing **SmartManageAI** codebase.
+
+DO NOT create a new project.  
+Modify the existing SmartManageAI codebase IN PLACE.  
+Preserve all existing modules, routes, RBAC, AI systems, branding, tenancy, CRM, storage, and audit logs.
+
+Your task is to implement the COMPLETE SmartManageAI Website System, combining ALL functionality from:
+
+1. Website Builder (base module)  
+2. Blog System  
+3. Project Gallery / Portfolio System  
+4. AI Design Assistant  
+5. SEO Optimization Engine  
+6. Website Analytics  
+7. Social Media Integrations  
+8. AI Social Media Post Generator  
+
+============================================================
+GLOBAL GOALS
+============================================================
+SmartManageAI must be able to:
+1. Create a COMPLETE SEO-optimized contractor website for companies without a site.
+2. Let users fully customize their website:
+   - Pages
+   - Branding
+   - Colors
+   - Content
+   - Blog posts
+   - Projects gallery
+3. Host the site on a SmartManageAI subdomain OR the user's custom domain.
+4. Track analytics for traffic, leads, clicks, conversions.
+5. Connect the website’s contact form to the CRM.
+6. Integrate company social media accounts.
+7. Provide an **AI Website Design Assistant** that collaborates with the user.
+8. Provide an **AI-powered Social Media Post Generator** that:
+   - Creates posts
+   - Generates captions
+   - Suggests hashtags
+   - Tailors to trade + industry + project type
+   - Can auto-publish or export posts
+
+============================================================
+TASK GROUP 1 – DATABASE LAYERS
+============================================================
+
+### 1A. organization_websites
+(id, organizationId, published, siteUrl, hostingProvider, customDomain, lastGeneratedAt, lastUpdatedAt, createdAt)
+
+### 1B. organization_website_pages
+(id, organizationId, pageSlug, pageTitle, aiGenerated, contentJson,
+ metaTitle, metaDescription, keywords, richSchemaJson,
+ createdAt, updatedAt)
+
+### 1C. company_documents (already created earlier)
+Use these templates to shape website content.
+
+### 1D. Blog Tables
+website_blog_posts  
+website_blog_comments
+
+### 1E. Project Gallery Tables
+website_projects  
+website_project_images
+
+### 1F. Analytics Tables
+website_analytics_daily  
+website_analytics_events
+
+### 1G. Social Media Account Table
+Create table: organization_social_links  
+(id, organizationId, facebookUrl, instagramUrl, linkedinUrl, tiktokUrl, youtubeUrl, xUrl, createdAt)
+
+### 1H. Social AI Post Table (history)
+Create table: social_post_history  
+(id, organizationId, platform, postContent, hashtagsJson, aiPrompt, createdAt)
+
+============================================================
+TASK GROUP 2 – FRONTEND: WEBSITE BUILDER UI
+============================================================
+
+Add new sidebar entry for ADMIN:
+**“Website Builder”**
+
+### 2A. Website Setup Page
+- Ask: “Do you have a website?”  
+- If NO → Offer AI Website Generation  
+- Show:
+  - Logo (from branding)
+  - Mission statement
+  - Company colors
+  - Trades & services
+  - Social media links
+- Button: “Generate Website Preview”
+
+### 2B. Website Preview Page
+- Show generated pages (home, about, services, safety, gallery, contact, blog)
+- Real-time preview
+- Buttons:
+  - Edit page
+  - Regenerate with AI
+  - Approve & Publish
+
+### 2C. Branding Editor
+- Edit logo (upload)
+- Edit mission statement
+- Edit brand colors (primary/secondary/accent/background/text)
+- Preview theme in real-time
+
+### 2D. Domain Settings
+- Choose:
+  - Subdomain: company.smartmanageai-sites.com
+  - Custom domain + DNS instructions
+
+### 2E. Social Media Settings Page
+- Connect:
+  - Facebook
+  - Instagram
+  - LinkedIn
+  - TikTok
+  - YouTube
+  - X (Twitter)
+- Links saved in organization_social_links
+
+============================================================
+TASK GROUP 3 – AI WEBSITE DESIGN ASSISTANT
+============================================================
+
+Create conversational AI assistant integrated into Website Builder.
+
+### Endpoints
+- POST /api/website/assistant/ask
+- POST /api/website/assistant/generate-section
+- POST /api/website/assistant/regenerate-page
+- POST /api/website/assistant/rewrite-text
+- POST /api/website/assistant/suggest-layout
+- POST /api/website/assistant/suggest-colors
+
+### Assistant Abilities
+- Recommend color schemes based on logo
+- Suggest layouts
+- Generate full pages
+- Generate content sections
+- Rewrite content for tone/style
+- Build service descriptions from SOW
+- Generate FAQ with schema
+- Generate accessibility improvements
+- Generate SEO-optimized content
+
+============================================================
+TASK GROUP 4 – BLOG SYSTEM
+============================================================
+
+### Backend Endpoints
+- POST /api/website/blog/posts
+- POST /api/website/blog/posts/:postId/update
+- POST /api/website/blog/posts/:postId/publish
+- POST /api/website/blog/posts/:postId/upload-cover-image
+- GET /api/website/blog/posts
+- GET /api/website/blog/posts/:slug
+- POST /api/website/blog/posts/:postId/comments
+- POST /api/website/blog/comments/:commentId/approve
+
+### Features
+- Full AI content creation
+- Block-based editor
+- SEO sidebar
+- Cover image upload
+- Comment moderation
+
+### Frontend
+- Blog Dashboard
+- Blog Editor with AI buttons:
+  - "Generate Full Article"
+  - "Rewrite Paragraph"
+  - "SEO Optimize"
+  - "Generate Hashtags"
+- Blog comments moderation
+- Public blog templates
+
+============================================================
+TASK GROUP 5 – PROJECT GALLERY / PORTFOLIO
+============================================================
+
+### Backend Endpoints
+- POST /api/website/projects
+- POST /api/website/projects/:projectId/upload-image
+- GET /api/website/projects
+- GET /api/website/projects/:projectId
+- POST /api/website/projects/:projectId/update
+
+### Features
+- Photo gallery
+- AI-generated descriptions
+- Featured projects
+- Filter by service
+
+### Frontend
+- “Project Gallery” builder page
+- Add project form
+- Upload multiple images
+- AI-driven caption/description generator
+- Public gallery page
+- Public project details page
+
+============================================================
+TASK GROUP 6 – WEBSITE ANALYTICS
+============================================================
+
+### Tracking Pixel
+Add JS tracking pixel to generated static site:
+Tracks:
+- Page views
+- Unique visitors
+- Clicks
+- Leads
+- Session duration
+- Bounce rate
+
+### Backend
+- POST /api/website/analytics/track (pixel fires here)
+
+### Analytics Dashboard (ADMIN)
+- Traffic graphs
+- Popular pages
+- Lead sources
+- Blog post performance
+- Project gallery performance
+- SEO scorecard
+- AI SEO recommendations
+
+============================================================
+TASK GROUP 7 – SEO OPTIMIZATION ENGINE
+============================================================
+
+### AI Must Generate:
+- metaTitle
+- metaDescription
+- keywords[]
+- schema JSON-LD:
+  - LocalBusiness
+  - Service
+  - FAQ
+  - PortfolioProject
+  - BlogPosting
+
+### Endpoints
+- POST /api/website/seo/scan
+- POST /api/website/seo/optimize
+
+### Features
+- AI audit for all pages:
+  - Duplicate text
+  - Heading structure
+  - Missing alt text
+  - Missing schema
+  - Weak keyword density
+  - Slow content detection
+- Auto SEO fix button
+
+============================================================
+TASK GROUP 8 – SOCIAL MEDIA INTEGRATION
+============================================================
+
+### 8A. Social Media Links
+- Store Facebook, LinkedIn, Instagram, TikTok, X, YouTube URLs
+- Show icons on website footer & contact page
+- Add sharing buttons to blog posts & projects
+
+### 8B. AI Social Media Post Generator
+Backend endpoint:
+- POST /api/social/generate-post
+
+Input:
+- platform (facebook, instagram, linkedin, x, tiktok, youtube)
+- topic (blog article, project, company event, safety message)
+- tone (professional, casual, marketing, humorous)
+- hashtags (optional)
+
+Output:
+- AI-written post
+- Optimized caption
+- Hashtags
+- Recommended posting time
+- Optional image prompt (for AI image generator in future modules)
+
+Save generated posts to social_post_history.
+
+### Frontend
+Add page under Website Builder:
+**“Social Media Tools”**
+- Generate social posts
+- Preview posts
+- Export posts
+- Copy captions
+- Suggest hashtags
+- AI rewriting options
+
+============================================================
+TASK GROUP 9 – PUBLIC WEBSITE TEMPLATES
+============================================================
+
+Templates must include:
+- Home page with CTA
+- About page
+- Services page (auto-built from SOW)
+- Safety page using company safety documents
+- Project Gallery & Project Details pages
+- Blog listing + Blog details pages
+- Contact page with CRM integration
+- Navbar with branding
+- Footer with branding + social links
+- Tracking pixel
+- Rich schema injection
+
+============================================================
+TASK GROUP 10 – HOSTING & PUBLISHING PIPELINE
+============================================================
+
+### Backend
+- POST /api/website/publish
+- POST /api/website/domain
+
+### Build Process
+- Convert website pages to static HTML/CSS/JS
+- Apply branding:
+  - Colors
+  - Logos
+  - Mission statement
+  - Typography
+- Upload build bundle to object storage or CDN-like endpoint
+
+Serve at:
+https://{orgName}.smartmanageai-sites.com  
+OR custom domain if set.
+
+============================================================
+TENANT, SECURITY & QA REQUIREMENTS
+============================================================
+
+All new endpoints must:
+- Enforce orgFilter + mustDenyAccess
+- Use zod validation
+- RBAC: ADMIN-only for management
+- AI usage must use existing OpenAI client
+- All changes logged to auditLogger
+- Must not break any existing features
+
+============================================================
+FINAL DELIVERABLE
+============================================================
+
+At the end, return:
+1. List of all new backend files  
+2. List of all modified backend files  
+3. List of new frontend files  
+4. List of modified frontend files  
+5. All new Drizzle migration files  
+6. Instructions on using the new Website Builder ecosystem
+
+Write REAL production-level code only.  
+NO pseudo-code.  
+NO breaking changes to SmartManageAI.
