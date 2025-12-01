@@ -240,6 +240,7 @@ export default function BidWizardPage() {
     mutationFn: async (data: BidDetailsForm) => {
       const selectedItems = [...scopeItems.filter(i => i.selected), ...customItems];
       
+      // Step 1: Create the bid
       const response = await apiRequest("POST", "/api/bids", {
         ...data,
         estimatorId: user?.id,
@@ -250,21 +251,45 @@ export default function BidWizardPage() {
       }
       const bid = await response.json();
       
-      if (selectedItems.length > 0) {
-        // Sanitize items before sending - ensure valid quantities
-        const sanitizedItems = selectedItems.map(item => ({
-          description: item.description,
-          quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
-          unit: item.unit || 'EA',
-          category: item.category || "GENERAL",
-          notes: item.notes,
-        }));
-        
-        const bulkResponse = await apiRequest("POST", `/api/bids/${bid.code}/estimate/bulk-items`, {
-          items: sanitizedItems,
-        });
-        if (!bulkResponse.ok) {
-          console.warn('Failed to add scope items to estimate');
+      // Step 2: Create an estimate for the bid
+      const estimateResponse = await apiRequest("POST", `/api/bids/${bid.id}/estimate`);
+      if (!estimateResponse.ok) {
+        console.warn('Failed to create estimate for bid');
+        return bid;
+      }
+      const estimate = await estimateResponse.json();
+      
+      // Step 3: Add each scope item as a line item to the estimate
+      const validCategories = ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"];
+      const mapCategory = (cat: string | undefined) => {
+        if (!cat) return "GENERAL";
+        const upper = cat.toUpperCase();
+        return validCategories.includes(upper) ? upper : "GENERAL";
+      };
+      
+      if (selectedItems.length > 0 && estimate?.id) {
+        for (const item of selectedItems) {
+          const lineItemData = {
+            description: item.description,
+            quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
+            unit: item.unit || 'EA',
+            category: mapCategory(item.category),
+            notes: item.notes,
+            materialCost: 0,
+            laborCost: 0,
+            laborHours: 0,
+            equipmentCost: 0,
+            consumablesCost: 0,
+            subcontractCost: 0,
+            overheadAllocation: 0,
+            profitAllocation: 0,
+            totalCost: 0,
+          };
+          
+          const lineItemResponse = await apiRequest("POST", `/api/estimates/${estimate.id}/line-items`, lineItemData);
+          if (!lineItemResponse.ok) {
+            console.warn(`Failed to add line item: ${item.description}`);
+          }
         }
       }
       
