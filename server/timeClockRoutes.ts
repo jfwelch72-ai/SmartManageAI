@@ -955,6 +955,7 @@ export function registerTimeClockRoutes(app: Express): void {
             lastName: users.lastName,
             email: users.email,
             role: users.role,
+            organizationId: users.organizationId,
           },
           project: {
             id: projects.id,
@@ -969,9 +970,12 @@ export function registerTimeClockRoutes(app: Express): void {
         .where(and(...conditions))
         .orderBy(desc(timeEntries.date));
 
-      // Filter by organization for non-SUPER_ADMIN users
+      // Filter by organization for non-SUPER_ADMIN users - check project OR user's organization
       const filteredEntries = shouldFilter && orgId
-        ? pendingEntries.filter(e => e.project?.gcOrganizationId === orgId)
+        ? pendingEntries.filter(e => {
+            const entryOrgId = e.project?.gcOrganizationId || e.user?.organizationId;
+            return entryOrgId === orgId;
+          })
         : pendingEntries;
 
       const formattedEntries = filteredEntries.map(({ entry, user, project }) => ({
@@ -1003,9 +1007,14 @@ export function registerTimeClockRoutes(app: Express): void {
         .select({
           entry: timeEntries,
           project: projects,
+          entryUser: {
+            id: users.id,
+            organizationId: users.organizationId,
+          },
         })
         .from(timeEntries)
         .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .leftJoin(users, eq(timeEntries.userId, users.id))
         .where(eq(timeEntries.id, req.params.id))
         .limit(1);
 
@@ -1013,9 +1022,12 @@ export function registerTimeClockRoutes(app: Express): void {
         return res.status(404).json({ error: "Time entry not found" });
       }
 
-      // Verify organization access
-      if (shouldFilter && orgId && entry.project?.gcOrganizationId !== orgId) {
-        return res.status(403).json({ error: "Access denied to this time entry" });
+      // Verify organization access - check project OR user's organization
+      if (shouldFilter && orgId) {
+        const entryOrgId = entry.project?.gcOrganizationId || entry.entryUser?.organizationId;
+        if (entryOrgId !== orgId) {
+          return res.status(403).json({ error: "Access denied to this time entry" });
+        }
       }
 
       if (entry.entry.approvalStatus === "APPROVED") {
@@ -1073,9 +1085,14 @@ export function registerTimeClockRoutes(app: Express): void {
         .select({
           entry: timeEntries,
           project: projects,
+          entryUser: {
+            id: users.id,
+            organizationId: users.organizationId,
+          },
         })
         .from(timeEntries)
         .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .leftJoin(users, eq(timeEntries.userId, users.id))
         .where(eq(timeEntries.id, req.params.id))
         .limit(1);
 
@@ -1083,9 +1100,12 @@ export function registerTimeClockRoutes(app: Express): void {
         return res.status(404).json({ error: "Time entry not found" });
       }
 
-      // Verify organization access
-      if (shouldFilter && orgId && entry.project?.gcOrganizationId !== orgId) {
-        return res.status(403).json({ error: "Access denied to this time entry" });
+      // Verify organization access - check project OR user's organization
+      if (shouldFilter && orgId) {
+        const entryOrgId = entry.project?.gcOrganizationId || entry.entryUser?.organizationId;
+        if (entryOrgId !== orgId) {
+          return res.status(403).json({ error: "Access denied to this time entry" });
+        }
       }
 
       const [updatedEntry] = await db
@@ -1131,19 +1151,28 @@ export function registerTimeClockRoutes(app: Express): void {
 
       const data = schema.parse(req.body);
 
-      // Get all entries to verify access
+      // Get all entries to verify access (include user's organizationId for fallback check)
       const entries = await db
         .select({
           entry: timeEntries,
           project: projects,
+          entryUser: {
+            id: users.id,
+            organizationId: users.organizationId,
+          },
         })
         .from(timeEntries)
         .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .leftJoin(users, eq(timeEntries.userId, users.id))
         .where(inArray(timeEntries.id, data.entryIds));
 
-      // Filter to only entries the user has access to
+      // Filter to only entries the user has access to - check project OR user's organization
       const accessibleIds = entries
-        .filter(e => !shouldFilter || !orgId || e.project?.gcOrganizationId === orgId)
+        .filter(e => {
+          if (!shouldFilter || !orgId) return true;
+          const entryOrgId = e.project?.gcOrganizationId || e.entryUser?.organizationId;
+          return entryOrgId === orgId;
+        })
         .map(e => e.entry.id);
 
       if (accessibleIds.length === 0) {
