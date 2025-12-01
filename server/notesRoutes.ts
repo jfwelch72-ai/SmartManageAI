@@ -184,8 +184,21 @@ router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, 
 router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { authorId, projectId, startDate, endDate } = req.query;
+    const userOrgId = req.user?.organizationId;
+    const userRole = req.user?.role;
+
+    // SECURITY: Non-SUPER_ADMIN users must have an organization
+    if (userRole !== "SUPER_ADMIN" && !userOrgId) {
+      return res.json([]); // Return empty if no org
+    }
 
     const conditions = [];
+
+    // SECURITY: Filter by organization - only show notes from users in the same organization
+    // SUPER_ADMIN can see all notes
+    if (userRole !== "SUPER_ADMIN" && userOrgId) {
+      conditions.push(eq(users.organizationId, userOrgId));
+    }
 
     if (authorId && typeof authorId === "string") {
       conditions.push(eq(companyDailyNotes.authorId, authorId));
@@ -220,7 +233,7 @@ router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response
         createdAt: companyDailyNotes.createdAt,
       })
       .from(companyDailyNotes)
-      .leftJoin(users, eq(companyDailyNotes.authorId, users.id))
+      .innerJoin(users, eq(companyDailyNotes.authorId, users.id))
       .leftJoin(projects, eq(companyDailyNotes.projectId, projects.id))
       .orderBy(desc(companyDailyNotes.createdAt));
 
@@ -244,15 +257,22 @@ router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res
     const { noteId } = req.params;
     const userId = req.user?.id;
     const userRole = req.user?.role;
+    const userOrgId = req.user?.organizationId;
 
     if (!userId) {
       return res.status(401).json({ error: "User not authenticated" });
     }
 
-    // Fetch the existing note
+    // Fetch the existing note with author's organization info
     const [existingNote] = await db
-      .select()
+      .select({
+        id: companyDailyNotes.id,
+        authorId: companyDailyNotes.authorId,
+        authorOrgId: users.organizationId,
+        text: companyDailyNotes.text,
+      })
       .from(companyDailyNotes)
+      .innerJoin(users, eq(companyDailyNotes.authorId, users.id))
       .where(eq(companyDailyNotes.id, noteId))
       .limit(1);
 
@@ -260,9 +280,15 @@ router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res
       return res.status(404).json({ error: "Note not found" });
     }
 
+    // SECURITY: Verify user belongs to the same organization as the note author
+    // SUPER_ADMIN can edit any note
+    if (userRole !== "SUPER_ADMIN" && existingNote.authorOrgId !== userOrgId) {
+      return res.status(403).json({ error: "You do not have permission to edit this note" });
+    }
+
     // Check authorization: must be the creator OR an admin
     const isCreator = existingNote.authorId === userId;
-    const isAdmin = userRole === "ADMIN";
+    const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
 
     if (!isCreator && !isAdmin) {
       return res.status(403).json({ error: "You do not have permission to edit this note" });
@@ -312,9 +338,29 @@ router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res
 router.post("/company-notes", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
+    const userOrgId = req.user?.organizationId;
+    const userRole = req.user?.role;
 
     if (!userId) {
       return res.status(401).json({ error: "User not authenticated" });
+    }
+
+    // SECURITY: Non-SUPER_ADMIN users must have an organization
+    if (userRole !== "SUPER_ADMIN" && !userOrgId) {
+      return res.status(403).json({ error: "User must belong to an organization" });
+    }
+
+    // SECURITY: If a projectId is provided, verify it belongs to user's organization
+    if (req.body.projectId && userRole !== "SUPER_ADMIN" && userOrgId) {
+      const [project] = await db
+        .select({ gcOrganizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, req.body.projectId))
+        .limit(1);
+      
+      if (!project || project.gcOrganizationId !== userOrgId) {
+        return res.status(403).json({ error: "Project does not belong to your organization" });
+      }
     }
 
     const validationResult = insertCompanyDailyNoteSchema.safeParse({
