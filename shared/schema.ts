@@ -3904,3 +3904,95 @@ export const mobilePendingUploads = pgTable("mobile_pending_uploads", {
 export const insertMobilePendingUploadSchema = createInsertSchema(mobilePendingUploads).omit({ id: true, createdAt: true });
 export type InsertMobilePendingUpload = z.infer<typeof insertMobilePendingUploadSchema>;
 export type MobilePendingUpload = typeof mobilePendingUploads.$inferSelect;
+
+// ============================================
+// SCHEDULE OF VALUES (SOV) SYSTEM
+// Progress billing and value tracking
+// ============================================
+export const sovStatusEnum = pgEnum("sov_status", ["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED"]);
+
+export const scheduleOfValues = pgTable("schedule_of_values", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // SOV Header Info
+  sovNumber: text("sov_number").notNull(), // e.g., "SOV-001"
+  title: text("title").notNull(),
+  description: text("description"),
+  contractValue: decimal("contract_value", { precision: 14, scale: 2 }).notNull(),
+  retainagePercent: decimal("retainage_percent", { precision: 5, scale: 2 }).default("10"),
+  
+  // Billing Period
+  periodNumber: integer("period_number").notNull().default(1),
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  
+  // Status & Tracking
+  status: sovStatusEnum("status").notNull().default("DRAFT"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  submittedAt: timestamp("submitted_at"),
+  paidAt: timestamp("paid_at"),
+  
+  // Totals (calculated)
+  totalScheduledValue: decimal("total_scheduled_value", { precision: 14, scale: 2 }),
+  totalPreviouslyCompleted: decimal("total_previously_completed", { precision: 14, scale: 2 }),
+  totalThisPeriod: decimal("total_this_period", { precision: 14, scale: 2 }),
+  totalCompletedToDate: decimal("total_completed_to_date", { precision: 14, scale: 2 }),
+  totalMaterialsStored: decimal("total_materials_stored", { precision: 14, scale: 2 }),
+  totalRetainage: decimal("total_retainage", { precision: 14, scale: 2 }),
+  totalEarnedLessRetainage: decimal("total_earned_less_retainage", { precision: 14, scale: 2 }),
+  
+  // Generated PDF URL
+  pdfUrl: text("pdf_url"),
+  pdfGeneratedAt: timestamp("pdf_generated_at"),
+  
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("sov_project_idx").on(table.projectId),
+  orgIdx: index("sov_org_idx").on(table.organizationId),
+  statusIdx: index("sov_status_idx").on(table.status),
+}));
+
+export const insertScheduleOfValuesSchema = createInsertSchema(scheduleOfValues).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertScheduleOfValues = z.infer<typeof insertScheduleOfValuesSchema>;
+export type ScheduleOfValues = typeof scheduleOfValues.$inferSelect;
+
+export const sovLineItems = pgTable("sov_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sovId: varchar("sov_id").notNull().references(() => scheduleOfValues.id, { onDelete: "cascade" }),
+  
+  // Line Item Details
+  lineNumber: integer("line_number").notNull(),
+  itemCode: text("item_code"), // e.g., "01.A", "02.B"
+  description: text("description").notNull(),
+  category: text("category"), // Labor, Material, Equipment, Subcontract
+  
+  // Values
+  scheduledValue: decimal("scheduled_value", { precision: 12, scale: 2 }).notNull(),
+  previouslyCompleted: decimal("previously_completed", { precision: 12, scale: 2 }).default("0"),
+  thisPeriodCompleted: decimal("this_period_completed", { precision: 12, scale: 2 }).default("0"),
+  materialsStored: decimal("materials_stored", { precision: 12, scale: 2 }).default("0"),
+  
+  // Calculated Fields
+  totalCompletedAndStored: decimal("total_completed_and_stored", { precision: 12, scale: 2 }),
+  percentComplete: decimal("percent_complete", { precision: 5, scale: 2 }),
+  balanceToFinish: decimal("balance_to_finish", { precision: 12, scale: 2 }),
+  retainageAmount: decimal("retainage_amount", { precision: 12, scale: 2 }),
+  
+  // Reference to estimate line item (if applicable)
+  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
+  
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  sovIdx: index("sov_line_items_sov_idx").on(table.sovId),
+}));
+
+export const insertSovLineItemSchema = createInsertSchema(sovLineItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSovLineItem = z.infer<typeof insertSovLineItemSchema>;
+export type SovLineItem = typeof sovLineItems.$inferSelect;
