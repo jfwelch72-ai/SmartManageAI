@@ -117,6 +117,12 @@ export const RoutePermissions = {
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
+  
+  // New feature routes
+  AI_BID_ANALYSIS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
+  AI_CONTRACT_ANALYSIS: (role?: string) => isAdminOrManager(role),
+  SCHEDULE_OF_VALUES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+  SUBCONTRACTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
 
   // Contractor user access (everyone except SUPER_ADMIN)
   DASHBOARD: (role?: string) => hasContractorAccess(role),
@@ -279,6 +285,18 @@ export const NavigationConfig = {
       visible: (role?: string) => isAdminOrManager(role),
     },
     {
+      href: "/ai-bid-analysis",
+      label: "AI Bid Analysis",
+      testId: "nav-ai-bid-analysis",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
+    },
+    {
+      href: "/ai-contract-analysis",
+      label: "AI Contract Analysis",
+      testId: "nav-ai-contract-analysis",
+      visible: (role?: string) => isAdminOrManager(role),
+    },
+    {
       href: "/production-rates",
       label: "Production Rates",
       testId: "nav-production-rates",
@@ -349,6 +367,18 @@ export const NavigationConfig = {
       label: "Equipment",
       testId: "nav-equipment",
       visible: (role?: string) => hasEquipmentAccess(role),
+    },
+    {
+      href: "/schedule-of-values",
+      label: "Schedule of Values",
+      testId: "nav-sov",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+    },
+    {
+      href: "/subcontracts",
+      label: "Subcontracts",
+      testId: "nav-subcontracts",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
   ],
 };

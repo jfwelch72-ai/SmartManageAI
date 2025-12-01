@@ -52,6 +52,10 @@ import AIAssistantWidget from "@/components/AIAssistantWidget";
 import VendorDashboard from "@/pages/vendor/index";
 import VendorPortalPricing from "@/pages/vendor/pricing";
 import VendorClients from "@/pages/vendor/clients";
+import AIBidAnalysisPage from "@/pages/ai-bid-analysis";
+import AIContractAnalysisPage from "@/pages/ai-contract-analysis";
+import ScheduleOfValuesPage from "@/pages/schedule-of-values";
+import SubcontractsPage from "@/pages/subcontracts";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -153,6 +157,14 @@ function Router() {
       <Route path="/rental-vendors" component={() => <Redirect to="/crm" />} />
       <Route path="/vendor-pricing" component={() => <ProtectedRoute component={VendorPricingPage} permission={RoutePermissions.CRM} />} />
       <Route path="/mobile-sync" component={() => <ProtectedRoute component={MobileSyncPage} />} />
+      
+      {/* AI Analysis routes */}
+      <Route path="/ai-bid-analysis" component={() => <ProtectedRoute component={AIBidAnalysisPage} permission={RoutePermissions.AI_BID_ANALYSIS} />} />
+      <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={AIContractAnalysisPage} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} />} />
+      
+      {/* Tools routes */}
+      <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
+      <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />
