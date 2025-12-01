@@ -101,6 +101,34 @@ The Website Builder is a comprehensive white-label website management system for
 
 **Database Tables**: organization_websites, organization_website_pages, website_blog_posts, website_blog_comments, website_projects, website_project_images, website_analytics_daily, website_analytics_events, organization_social_links, social_post_history, website_contact_submissions
 
+## Labor Cost Rate Management System
+A comprehensive labor cost rate system for calculating employee costs on construction projects with the following components:
+
+**Database Tables**:
+- `job_classifications` - Trade-based job classifications (e.g., Journeyman Electrician, Apprentice Plumber) with default rates
+- `employee_classifications` - Assigns employees to job classifications with optional rate overrides
+- `prevailing_wage_rates` - Project-specific prevailing wage rates for government/public projects
+
+**Rate Resolution Priority** (highest to lowest):
+1. Project Prevailing Wage Rate (if project is prevailing wage)
+2. Project Employee Override Rate
+3. Employee Classification Rate
+4. Employee Base Rate (from user profile)
+
+**API Endpoints** (`server/laborRateRoutes.ts`):
+- `GET/POST/PATCH/DELETE /api/labor-rates/classifications` - Job classification CRUD
+- `GET/POST/PATCH/DELETE /api/labor-rates/employee-classifications` - Employee-to-classification assignments
+- `GET/POST/PATCH/DELETE /api/labor-rates/prevailing-wage-rates` - Prevailing wage rates by project
+- `GET /api/labor-rates/employee-classifications/my-rates` - Self-service rate view
+
+**Frontend Features** (`client/src/pages/cost-rates.tsx`):
+- 4-tab interface: Employee Rates, Job Classifications, Employee Assignments, Prevailing Wage
+- Full CRUD dialogs for all rate types
+- Multi-tenant security with organizationId filtering
+- Comprehensive audit logging on all rate changes
+
+**Security**: ADMIN/MANAGER role requirements for mutations, self-service read access for employees
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
