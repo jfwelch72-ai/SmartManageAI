@@ -12,6 +12,7 @@ import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
+import { LaborRateSelector } from "@/components/LaborRateSelector";
 import { 
   Dialog, 
   DialogContent, 
@@ -57,6 +58,8 @@ const lineItemSchema = z.object({
   materialCost: z.coerce.number().min(0).default(0),
   laborCost: z.coerce.number().min(0).default(0),
   laborHours: z.coerce.number().min(0).default(0),
+  jobClassificationId: z.string().optional(),
+  laborRateUsed: z.coerce.number().min(0).optional(),
   equipmentCost: z.coerce.number().min(0).default(0),
   consumablesCost: z.coerce.number().min(0).default(0),
   subcontractCost: z.coerce.number().min(0).default(0),
@@ -235,6 +238,8 @@ export default function BidEstimate() {
       materialCost: 0,
       laborCost: 0,
       laborHours: 0,
+      jobClassificationId: undefined,
+      laborRateUsed: undefined,
       equipmentCost: 0,
       consumablesCost: 0,
       subcontractCost: 0,
@@ -313,6 +318,8 @@ export default function BidEstimate() {
         materialCost: values.materialCost,
         laborCost: values.laborCost,
         laborHours: values.laborHours,
+        jobClassificationId: values.jobClassificationId || null,
+        laborRateUsed: values.laborRateUsed || null,
         equipmentCost: values.equipmentCost,
         consumablesCost: values.consumablesCost || 0,
         subcontractCost: values.subcontractCost || 0,
@@ -385,6 +392,8 @@ export default function BidEstimate() {
         materialCost: String(values.materialCost),
         laborCost: String(values.laborCost),
         laborHours: String(values.laborHours),
+        jobClassificationId: values.jobClassificationId || null,
+        laborRateUsed: values.laborRateUsed ? String(values.laborRateUsed) : null,
         equipmentCost: String(values.equipmentCost),
         consumablesCost: String(values.consumablesCost || 0),
         subcontractCost: String(values.subcontractCost || 0),
@@ -940,33 +949,94 @@ export default function BidEstimate() {
                         </div>
                       )}
 
-                      <FormField
-                        control={form.control}
-                        name="laborCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Labor Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-labor-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Labor Costs Section with Job Classification Integration */}
+                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
+                        <h5 className="font-medium text-sm">Labor Costs</h5>
+                        
+                        <div className="space-y-2">
+                          <FormLabel className="text-sm">Labor Classification (from Cost Rates)</FormLabel>
+                          <LaborRateSelector
+                            value={form.watch("jobClassificationId")}
+                            onSelect={(classificationId, rate) => {
+                              form.setValue("jobClassificationId", classificationId || undefined);
+                              form.setValue("laborRateUsed", rate);
+                              const laborHours = form.watch("laborHours") || 0;
+                              if (rate > 0 && laborHours > 0) {
+                                form.setValue("laborCost", laborHours * rate);
+                              }
+                            }}
+                          />
+                        </div>
 
-                      <FormField
-                        control={form.control}
-                        name="laborHours"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Labor Hours</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.1" {...field} placeholder="0.0" data-testid="input-labor-hours" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="laborHours"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Labor Hours</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.1" 
+                                    placeholder="0.0" 
+                                    {...field}
+                                    onChange={(e) => {
+                                      const hours = parseFloat(e.target.value) || 0;
+                                      field.onChange(hours);
+                                      const rate = form.watch("laborRateUsed") || 0;
+                                      if (rate > 0) {
+                                        form.setValue("laborCost", hours * rate);
+                                      }
+                                    }}
+                                    data-testid="input-labor-hours"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="laborCost"
+                            render={({ field }) => {
+                              const rate = form.watch("laborRateUsed");
+                              const hasRate = !!(rate && rate > 0);
+                              return (
+                                <FormItem>
+                                  <FormLabel>
+                                    Labor Cost ($)
+                                    {hasRate && (
+                                      <span className="text-xs text-muted-foreground ml-1">
+                                        (auto-calculated)
+                                      </span>
+                                    )}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      step="0.01" 
+                                      placeholder="0.00" 
+                                      {...field}
+                                      readOnly={hasRate}
+                                      className={hasRate ? "bg-muted" : ""}
+                                      data-testid="input-labor-cost"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              );
+                            }}
+                          />
+                        </div>
+
+                        {form.watch("laborRateUsed") && form.watch("laborRateUsed")! > 0 && form.watch("laborHours") > 0 && (
+                          <div className="text-xs text-muted-foreground bg-background p-2 rounded border" data-testid="labor-calculation-summary">
+                            {form.watch("laborHours")} hrs × ${form.watch("laborRateUsed")?.toFixed(2)}/hr = ${form.watch("laborCost").toFixed(2)}
+                          </div>
                         )}
-                      />
+                      </div>
 
                       <FormField
                         control={form.control}
@@ -1341,33 +1411,94 @@ export default function BidEstimate() {
                         </div>
                       )}
 
-                      <FormField
-                        control={form.control}
-                        name="laborCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Labor Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-labor-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Labor Costs Section with Job Classification Integration (Edit Dialog) */}
+                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
+                        <h5 className="font-medium text-sm">Labor Costs</h5>
+                        
+                        <div className="space-y-2">
+                          <FormLabel className="text-sm">Labor Classification (from Cost Rates)</FormLabel>
+                          <LaborRateSelector
+                            value={form.watch("jobClassificationId")}
+                            onSelect={(classificationId, rate) => {
+                              form.setValue("jobClassificationId", classificationId || undefined);
+                              form.setValue("laborRateUsed", rate);
+                              const laborHours = form.watch("laborHours") || 0;
+                              if (rate > 0 && laborHours > 0) {
+                                form.setValue("laborCost", laborHours * rate);
+                              }
+                            }}
+                          />
+                        </div>
 
-                      <FormField
-                        control={form.control}
-                        name="laborHours"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Labor Hours</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.1" {...field} placeholder="0.0" data-testid="input-edit-labor-hours" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="laborHours"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Labor Hours</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    step="0.1" 
+                                    placeholder="0.0" 
+                                    {...field}
+                                    onChange={(e) => {
+                                      const hours = parseFloat(e.target.value) || 0;
+                                      field.onChange(hours);
+                                      const rate = form.watch("laborRateUsed") || 0;
+                                      if (rate > 0) {
+                                        form.setValue("laborCost", hours * rate);
+                                      }
+                                    }}
+                                    data-testid="input-edit-labor-hours"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="laborCost"
+                            render={({ field }) => {
+                              const rate = form.watch("laborRateUsed");
+                              const hasRate = !!(rate && rate > 0);
+                              return (
+                                <FormItem>
+                                  <FormLabel>
+                                    Labor Cost ($)
+                                    {hasRate && (
+                                      <span className="text-xs text-muted-foreground ml-1">
+                                        (auto-calculated)
+                                      </span>
+                                    )}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      step="0.01" 
+                                      placeholder="0.00" 
+                                      {...field}
+                                      readOnly={hasRate}
+                                      className={hasRate ? "bg-muted" : ""}
+                                      data-testid="input-edit-labor-cost"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              );
+                            }}
+                          />
+                        </div>
+
+                        {form.watch("laborRateUsed") && form.watch("laborRateUsed")! > 0 && form.watch("laborHours") > 0 && (
+                          <div className="text-xs text-muted-foreground bg-background p-2 rounded border" data-testid="edit-labor-calculation-summary">
+                            {form.watch("laborHours")} hrs × ${form.watch("laborRateUsed")?.toFixed(2)}/hr = ${form.watch("laborCost").toFixed(2)}
+                          </div>
                         )}
-                      />
+                      </div>
 
                       <FormField
                         control={form.control}
