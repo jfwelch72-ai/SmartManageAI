@@ -2213,9 +2213,10 @@ export const insertSubcontractorContractSchema = createInsertSchema(subcontracto
 export type InsertSubcontractorContract = z.infer<typeof insertSubcontractorContractSchema>;
 export type SubcontractorContract = typeof subcontractorContracts.$inferSelect;
 
-// Subcontractor Payments table
+// Subcontractor Payments table - tracks payable requests from contract completion through payment
 export const subcontractorPayments = pgTable("subcontractor_payments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
   paymentNumber: integer("payment_number").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
@@ -2223,15 +2224,32 @@ export const subcontractorPayments = pgTable("subcontractor_payments", {
   paymentDate: timestamp("payment_date"),
   description: text("description"),
   invoiceNumber: text("invoice_number"),
+  // Status workflow: PENDING -> APPROVED -> PAID (or REJECTED)
   status: text("status").notNull().default("PENDING"),
+  // Approval tracking
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
+  // Rejection tracking
+  rejectedById: varchar("rejected_by_id").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  // Payment tracking
   paidById: varchar("paid_by_id").references(() => users.id),
   paidAt: timestamp("paid_at"),
+  checkNumber: text("check_number"),
+  paymentMethod: text("payment_method"), // CHECK, ACH, WIRE, CREDIT_CARD, CASH
+  // Auto-creation flag (from contract completion)
+  autoCreated: boolean("auto_created").notNull().default(false),
+  createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("subcontractor_payments_org_idx").on(table.organizationId),
+  contractIdx: index("subcontractor_payments_contract_idx").on(table.contractId),
+  statusIdx: index("subcontractor_payments_status_idx").on(table.status),
+}));
 
-export const insertSubcontractorPaymentSchema = createInsertSchema(subcontractorPayments).omit({ id: true, createdAt: true });
+export const insertSubcontractorPaymentSchema = createInsertSchema(subcontractorPayments).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSubcontractorPayment = z.infer<typeof insertSubcontractorPaymentSchema>;
 export type SubcontractorPayment = typeof subcontractorPayments.$inferSelect;
 
