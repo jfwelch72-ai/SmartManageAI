@@ -5917,6 +5917,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get rental catalog for a CRM organisation
   app.get("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      // SECURITY: Verify crmOrganisation belongs to user's org
+      const [crmOrg] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
+      if (!crmOrg) {
+        return res.json([]);
+      }
+      
+      if (shouldFilter && crmOrg.organizationId !== orgId) {
+        return res.json([]);
+      }
+      
       const items = await db
         .select()
         .from(rentalEquipmentCatalog)
@@ -5933,11 +5949,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create rental catalog item for CRM organisation
   app.post("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const [org] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
       if (!org) {
         res.status(404).json({ error: "Organisation not found" });
         return;
       }
+      
+      // SECURITY: Verify crmOrganisation belongs to user's org
+      if (shouldFilter && org.organizationId !== orgId) {
+        return res.status(404).json({ error: "Organisation not found" });
+      }
+      
       if (org.type !== "RENTAL_VENDOR" && org.type !== "VENDOR") {
         res.status(400).json({ error: "Organisation must be a Rental Vendor or Vendor type" });
         return;
@@ -5973,10 +6001,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update rental catalog item
   app.put("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id)).limit(1);
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify catalog item belongs to user's org through crmOrganisation
+      const [existing] = await db
+        .select({ 
+          catalogItem: rentalEquipmentCatalog, 
+          orgOrgId: crmOrganisations.organizationId,
+          crmOrgId: crmOrganisations.id
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, rentalEquipmentCatalog.crmOrganisationId))
+        .where(eq(rentalEquipmentCatalog.id, req.params.id))
+        .limit(1);
+      
       if (!existing) {
         res.status(404).json({ error: "Catalog item not found" });
         return;
+      }
+      
+      if (shouldFilter && existing.orgOrgId !== orgId) {
+        return res.status(404).json({ error: "Catalog item not found" });
       }
 
       const validationResult = insertRentalEquipmentCatalogSchema.partial().safeParse(req.body);
@@ -5985,10 +6034,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Include crmOrganisationId in WHERE to prevent TOCTOU race condition
+      const updateConditions = and(
+        eq(rentalEquipmentCatalog.id, req.params.id),
+        eq(rentalEquipmentCatalog.crmOrganisationId, existing.crmOrgId)
+      );
+
+      // SECURITY: Remove crmOrganisationId from update data to prevent cross-tenant reassignment
+      const { crmOrganisationId, ...safeUpdateData } = validationResult.data;
+
       const [updated] = await db
         .update(rentalEquipmentCatalog)
-        .set({ ...validationResult.data, updatedAt: new Date() })
-        .where(eq(rentalEquipmentCatalog.id, req.params.id))
+        .set({ ...safeUpdateData, updatedAt: new Date() })
+        .where(updateConditions)
         .returning();
 
       res.json(updated);
@@ -6001,13 +6059,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete rental catalog item
   app.delete("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const [existing] = await db.select().from(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id)).limit(1);
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
+      // SECURITY: Verify catalog item belongs to user's org through crmOrganisation
+      const [existing] = await db
+        .select({ 
+          catalogItem: rentalEquipmentCatalog, 
+          orgOrgId: crmOrganisations.organizationId,
+          crmOrgId: crmOrganisations.id
+        })
+        .from(rentalEquipmentCatalog)
+        .innerJoin(crmOrganisations, eq(crmOrganisations.id, rentalEquipmentCatalog.crmOrganisationId))
+        .where(eq(rentalEquipmentCatalog.id, req.params.id))
+        .limit(1);
+      
       if (!existing) {
         res.status(404).json({ error: "Catalog item not found" });
         return;
       }
+      
+      if (shouldFilter && existing.orgOrgId !== orgId) {
+        return res.status(404).json({ error: "Catalog item not found" });
+      }
 
-      await db.delete(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, req.params.id));
+      // SECURITY: Include crmOrganisationId in WHERE to prevent TOCTOU race condition
+      const deleteConditions = and(
+        eq(rentalEquipmentCatalog.id, req.params.id),
+        eq(rentalEquipmentCatalog.crmOrganisationId, existing.crmOrgId)
+      );
+
+      await db.delete(rentalEquipmentCatalog).where(deleteConditions);
 
       res.json({ success: true });
     } catch (error) {
@@ -6019,12 +6104,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Search all rental equipment across all vendors (for bid equipment selection)
   app.get("/api/rental-catalog/search", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
       const { type, search } = req.query;
 
       const conditions: any[] = [
         eq(rentalEquipmentCatalog.isActive, true),
         sql`${rentalEquipmentCatalog.crmOrganisationId} IS NOT NULL`,
       ];
+      
+      // SECURITY: Filter by user's organization through crmOrganisation
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
 
       if (type) {
         conditions.push(eq(rentalEquipmentCatalog.equipmentType, type as string));
