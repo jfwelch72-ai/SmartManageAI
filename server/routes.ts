@@ -73,6 +73,7 @@ import platformAdminRoutes from "./platformAdminRoutes";
 import calculatorRoutes from "./calculatorRoutes";
 import aiAssistantRoutes from "./aiAssistantRoutes";
 import aiFeatureRoutes from "./aiFeatureRoutes";
+import organizationDocumentRoutes from "./organizationDocumentRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -125,6 +126,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI Feature routes (7 major AI-enhanced features)
   app.use("/api/ai-features", aiFeatureRoutes);
+
+  // Register organization document routes
+  app.use("/api", organizationDocumentRoutes);
 
   // ====================
   // Auth Routes
