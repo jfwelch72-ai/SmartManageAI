@@ -94,7 +94,7 @@ export async function analyzeSchedulingModule(projectId?: string, organizationId
       status: projects.status,
       startDate: projects.startDate,
       estimatedCompletionDate: projects.estimatedCompletionDate,
-      actualCompletionDate: projects.actualCompletionDate,
+      endDate: projects.endDate,
       budget: projects.budget,
       contractAmount: projects.contractAmount,
     })
@@ -225,18 +225,19 @@ export async function analyzeDelaysModule(projectId?: string, organizationId?: s
     .select({
       id: projectDelays.id,
       projectId: projectDelays.projectId,
-      delayReason: projectDelays.delayReason,
-      delayDays: projectDelays.delayDays,
-      delayHours: projectDelays.delayHours,
-      description: projectDelays.description,
+      delayNumber: projectDelays.delayNumber,
+      reason: projectDelays.reason,
+      reasonNotes: projectDelays.reasonNotes,
+      estimatedDuration: projectDelays.estimatedDuration,
       status: projectDelays.status,
-      financialResponsibility: projectDelays.financialResponsibility,
-      estimatedCostImpact: projectDelays.estimatedCostImpact,
-      occurrenceDate: projectDelays.occurrenceDate,
+      financiallyResponsible: projectDelays.financiallyResponsible,
+      changeOrderRequired: projectDelays.changeOrderRequired,
+      startDateTime: projectDelays.startDateTime,
+      endDateTime: projectDelays.endDateTime,
     })
     .from(projectDelays)
     .where(conditions.length > 0 ? and(...conditions) : sql`0=1`)
-    .orderBy(desc(projectDelays.occurrenceDate))
+    .orderBy(desc(projectDelays.startDateTime))
     .limit(100);
 
   const projectData = await db
@@ -360,8 +361,10 @@ export async function analyzeCostsModule(projectId?: string, organizationId?: st
   const delayData = await db
     .select({
       projectId: projectDelays.projectId,
-      estimatedCostImpact: projectDelays.estimatedCostImpact,
-      financialResponsibility: projectDelays.financialResponsibility,
+      reason: projectDelays.reason,
+      estimatedDuration: projectDelays.estimatedDuration,
+      financiallyResponsible: projectDelays.financiallyResponsible,
+      changeOrderRequired: projectDelays.changeOrderRequired,
     })
     .from(projectDelays)
     .where(sql`${projectDelays.projectId} IN ${orgProjectIds}`)
@@ -475,7 +478,7 @@ export async function analyzeEquipmentModule(organizationId?: string): Promise<M
     .select({
       id: equipment.id,
       name: equipment.name,
-      equipmentType: equipment.equipmentType,
+      type: equipment.type,
       status: equipment.status,
       purchasePrice: equipment.purchasePrice,
       currentHours: equipment.currentHours,
@@ -604,9 +607,9 @@ export async function analyzeVendorPricingModule(organizationId?: string): Promi
   const pricingData = await db
     .select({
       id: vendorPricingCatalogs.id,
-      crmEntityId: vendorPricingCatalogs.crmEntityId,
+      crmOrganisationId: vendorPricingCatalogs.crmOrganisationId,
       itemName: vendorPricingCatalogs.itemName,
-      itemCategory: vendorPricingCatalogs.itemCategory,
+      category: vendorPricingCatalogs.category,
       unitPrice: vendorPricingCatalogs.unitPrice,
       unit: vendorPricingCatalogs.unit,
       effectiveDate: vendorPricingCatalogs.effectiveDate,
@@ -639,12 +642,12 @@ export async function analyzeVendorPricingModule(organizationId?: string): Promi
 
   const enrichedPricing = pricingData.map(p => ({
     ...p,
-    vendorName: vendorMap.get(p.crmEntityId) || 'Unknown Vendor',
+    vendorName: vendorMap.get(p.crmOrganisationId) || 'Unknown Vendor',
   }));
 
   const categorizedPricing: Record<string, any[]> = {};
   enrichedPricing.forEach(p => {
-    const cat = p.itemCategory || 'Uncategorized';
+    const cat = p.category || 'Uncategorized';
     if (!categorizedPricing[cat]) categorizedPricing[cat] = [];
     categorizedPricing[cat].push(p);
   });
