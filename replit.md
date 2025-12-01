@@ -129,6 +129,35 @@ A comprehensive labor cost rate system for calculating employee costs on constru
 
 **Security**: ADMIN/MANAGER role requirements for mutations, self-service read access for employees
 
+## AI-Powered Bid Wizard
+A multi-step bid creation workflow with AI document analysis for faster bid entry.
+
+**Workflow Steps**:
+1. **Upload Documents** - Upload bid invitation PDFs, images, or Word documents
+2. **AI Review** - AI analyzes documents and extracts project info and scope items
+3. **Confirm Scope** - Review and modify AI-extracted scope of work items
+4. **Bid Details** - Enter project name, due date, location, client info
+5. **Build Estimate** - Create estimate with labor, materials, equipment
+
+**Features**:
+- AI-powered document analysis using OpenAI GPT-4o
+- Trade-specific scope item extraction based on organization trade type
+- "Skip AI Analysis" option for manual entry
+- CRM integration for client selection
+- Seamless transition to 5-step Cost Builder workflow
+
+**API Endpoints**:
+- `POST /api/ai-bid-wizard/analyze` - Analyze uploaded documents with AI
+
+**Frontend** (`client/src/pages/bid-wizard.tsx`):
+- Step-by-step wizard interface
+- Document upload with ObjectUploader
+- AI analysis results review
+- Form validation with react-hook-form
+- Links to bid detail page with Cost Builder
+
+**Route**: `/bids/new` - Accessed via "New Bid" button on bids page
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created

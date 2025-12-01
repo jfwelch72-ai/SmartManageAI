@@ -57,6 +57,7 @@ import AIContractAnalysisPage from "@/pages/ai-contract-analysis";
 import ScheduleOfValuesPage from "@/pages/schedule-of-values";
 import SubcontractsPage from "@/pages/subcontracts";
 import WebsiteBuilderPage from "@/pages/website-builder";
+import BidWizardPage from "@/pages/bid-wizard";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -142,6 +143,7 @@ function Router() {
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Management routes (blocked for hourly employees) */}
+      <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />

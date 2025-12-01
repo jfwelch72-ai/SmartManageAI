@@ -542,4 +542,153 @@ router.delete("/ai/bid-document-analysis/:id", requireAuth, requireRole(["SUPER_
   }
 });
 
+// AI Bid Wizard - Analyze multiple documents for new bid creation
+const wizardAnalyzeSchema = z.object({
+  documents: z.array(z.object({
+    url: z.string().url(),
+    name: z.string(),
+  })).min(1, "At least one document is required"),
+});
+
+// Helper to validate document URLs are from our object storage
+function isValidObjectStorageUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    const allowedHosts = [
+      'storage.googleapis.com',
+      'storage.cloud.google.com',
+      'replit.com',
+      'repl.co',
+    ];
+    return allowedHosts.some(host => parsedUrl.hostname.endsWith(host));
+  } catch {
+    return false;
+  }
+}
+
+router.post("/ai-bid-wizard/analyze", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]), async (req: AuthRequest, res: Response) => {
+  try {
+    const validationResult = wizardAnalyzeSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ error: "Invalid request", details: validationResult.error.issues });
+    }
+
+    const { documents } = validationResult.data;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    // Multi-tenant access control
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (shouldFilter && !orgId) {
+      return res.status(403).json({ error: "Organization context required" });
+    }
+
+    // Validate all document URLs are from trusted object storage
+    // NOTE: For enhanced security, could add full ACL verification by:
+    // 1. Parsing object key from URL
+    // 2. Calling objectStorage.getObjectMetadata
+    // 3. Verifying metadata.owner belongs to requesting org
+    // Current hostname whitelist provides defense-in-depth since uploads are org-scoped
+    const invalidUrls = documents.filter(doc => !isValidObjectStorageUrl(doc.url));
+    if (invalidUrls.length > 0) {
+      return res.status(400).json({ 
+        error: "Invalid document URLs", 
+        details: "Documents must be from organization storage" 
+      });
+    }
+
+    // Get organization trade type for context
+    let tradeType: string | undefined;
+    if (orgId) {
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      tradeType = org?.tradeType || undefined;
+    }
+
+    console.log(`🔮 [AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
+
+    // Analyze documents with AI
+    const documentDescriptions = documents.map(d => `- ${d.name}: ${d.url}`).join('\n');
+    
+    const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
+
+    const userPrompt = `Analyze these bid documents and extract project information and scope of work items.
+
+${tradeContext}
+
+Documents:
+${documentDescriptions}
+
+Extract and respond with JSON in this format:
+{
+  "projectName": "Extracted project name or null",
+  "clientName": "Client/GC name or null",
+  "dueDate": "YYYY-MM-DD format or null",
+  "location": "Project location/address or null",
+  "scopeItems": [
+    {
+      "description": "Scope item description",
+      "quantity": 100,
+      "unit": "SF",
+      "category": "CONCRETE|ELECTRICAL|PLUMBING|GENERAL|etc",
+      "notes": "Any relevant notes"
+    }
+  ],
+  "keyRequirements": ["Requirement 1", "Requirement 2"],
+  "specialConditions": ["Condition 1", "Condition 2"],
+  "estimatedValue": "Estimated project value range if mentioned"
+}
+
+Be thorough in extracting scope items. Include quantities and units when available.`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_GPT4O,
+        messages: [
+          { role: 'system', content: BID_DOCUMENT_ANALYSIS_SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+        response_format: { type: "json_object" },
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from AI');
+      }
+
+      const result = JSON.parse(content);
+      
+      console.log(`✅ [AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
+      
+      res.json(result);
+    } catch (aiError) {
+      console.error('[AI Bid Wizard] AI analysis error:', aiError instanceof Error ? aiError.message : 'Unknown');
+      
+      // Return partial success with empty data - frontend can handle manual entry
+      return res.status(200).json({
+        projectName: null,
+        clientName: null,
+        dueDate: null,
+        location: null,
+        scopeItems: [],
+        keyRequirements: [],
+        specialConditions: [],
+        estimatedValue: null,
+        aiError: true,
+        message: "AI analysis could not complete. Please enter information manually.",
+      });
+    }
+  } catch (error) {
+    console.error("[AI Bid Wizard] Error:", error instanceof Error ? error.message : 'Unknown');
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

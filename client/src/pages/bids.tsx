@@ -12,8 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar } from "lucide-react";
-import { useLocation } from "wouter";
+import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2 } from "lucide-react";
+import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
@@ -375,9 +375,11 @@ export default function BidsPage() {
           </div>
           <div className="flex gap-2">
             <AIAnalysisButton module="BIDS" />
-            <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-bid">
-              <Plus className="w-4 h-4 mr-2" />
-              New Bid
+            <Button asChild data-testid="button-new-bid">
+              <Link href="/bids/new">
+                <Wand2 className="w-4 h-4 mr-2" />
+                New Bid
+              </Link>
             </Button>
           </div>
         </div>
