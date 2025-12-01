@@ -7344,27 +7344,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Scope Standardization Routes
   // ====================
 
-  // Get all work type categories with their work types
+  // Get all work type categories with their work types - organization-specific
   app.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const categories = await db
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+
+      // Get organization to determine trade type
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+
+      if (!org) {
+        res.status(404).json({ error: "Organization not found" });
+        return;
+      }
+
+      // First try to get organization-specific SOW items
+      let sowItems = await db
         .select()
-        .from(scopeWorkTypeCategories)
-        .where(eq(scopeWorkTypeCategories.isActive, true))
-        .orderBy(scopeWorkTypeCategories.displayOrder);
+        .from(organizationSowItems)
+        .where(
+          and(
+            eq(organizationSowItems.organizationId, organizationId),
+            eq(organizationSowItems.isActive, true)
+          )
+        )
+        .orderBy(organizationSowItems.displayOrder);
 
-      const workTypes = await db
-        .select()
-        .from(scopeWorkTypes)
-        .where(eq(scopeWorkTypes.isActive, true))
-        .orderBy(scopeWorkTypes.displayOrder);
+      // If no org-specific items, fall back to master SOW items for this trade
+      if (sowItems.length === 0) {
+        const masterItems = await db
+          .select()
+          .from(masterSowItems)
+          .where(
+            and(
+              eq(masterSowItems.tradeType, org.tradeType),
+              eq(masterSowItems.isActive, true)
+            )
+          )
+          .orderBy(masterSowItems.sortOrder);
 
-      // Group work types by category
-      const categoriesWithTypes = categories.map(cat => ({
-        ...cat,
-        workTypes: workTypes.filter(wt => wt.categoryId === cat.id)
-      }));
+        // Convert master items to the expected format
+        sowItems = masterItems.map((item, index) => ({
+          id: item.id,
+          organizationId: organizationId,
+          categoryName: item.categoryName,
+          name: item.name,
+          code: item.code,
+          description: item.description,
+          unit: item.defaultUomCode,
+          requiresDimensions: item.requiresDimensions,
+          dimensionLabel: item.dimensionLabel,
+          displayOrder: item.sortOrder,
+          isFromTemplate: true,
+          isActive: true,
+          createdAt: item.createdAt,
+          updatedAt: item.createdAt,
+        }));
+      }
 
+      // If still no items, fall back to old scope tables (for backward compatibility)
+      if (sowItems.length === 0) {
+        const categories = await db
+          .select()
+          .from(scopeWorkTypeCategories)
+          .where(eq(scopeWorkTypeCategories.isActive, true))
+          .orderBy(scopeWorkTypeCategories.displayOrder);
+
+        const workTypes = await db
+          .select()
+          .from(scopeWorkTypes)
+          .where(eq(scopeWorkTypes.isActive, true))
+          .orderBy(scopeWorkTypes.displayOrder);
+
+        // Group work types by category
+        const categoriesWithTypes = categories.map(cat => ({
+          ...cat,
+          workTypes: workTypes.filter(wt => wt.categoryId === cat.id)
+        }));
+
+        res.json(categoriesWithTypes);
+        return;
+      }
+
+      // Group SOW items by category name
+      const categoryMap = new Map<string, {
+        id: string;
+        name: string;
+        displayOrder: number;
+        isActive: boolean;
+        workTypes: Array<{
+          id: string;
+          categoryId: string;
+          name: string;
+          code: string;
+          defaultUnit: string;
+          requiresDimensions: boolean;
+          dimensionType: string | null;
+          displayOrder: number;
+          isCustom: boolean;
+          isActive: boolean;
+        }>;
+      }>();
+
+      let categoryIndex = 0;
+      for (const item of sowItems) {
+        const categoryKey = item.categoryName;
+        
+        if (!categoryMap.has(categoryKey)) {
+          categoryMap.set(categoryKey, {
+            id: `cat-${categoryIndex++}`,
+            name: item.categoryName,
+            displayOrder: categoryIndex,
+            isActive: true,
+            workTypes: []
+          });
+        }
+
+        const category = categoryMap.get(categoryKey)!;
+        category.workTypes.push({
+          id: item.id,
+          categoryId: category.id,
+          name: item.name,
+          code: item.code,
+          defaultUnit: item.unit || "EA",
+          requiresDimensions: item.requiresDimensions,
+          dimensionType: item.dimensionLabel ? "length_width_depth" : null,
+          displayOrder: item.displayOrder,
+          isCustom: !item.isFromTemplate,
+          isActive: item.isActive
+        });
+      }
+
+      // Convert map to array
+      const categoriesWithTypes = Array.from(categoryMap.values());
       res.json(categoriesWithTypes);
     } catch (error) {
       console.error("Get scope work types error:", error);
