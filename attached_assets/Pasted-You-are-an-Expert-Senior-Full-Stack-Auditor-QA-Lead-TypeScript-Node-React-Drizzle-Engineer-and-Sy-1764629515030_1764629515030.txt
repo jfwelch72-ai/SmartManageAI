@@ -1,0 +1,129 @@
+You are an Expert Senior Full-Stack Auditor, QA Lead, TypeScript/Node/React/Drizzle Engineer, and Systems Architect. Perform a COMPLETE END-TO-END AUDIT of the SmartManage AI application as it exists in this repository RIGHT NOW.
+
+Your job is to evaluate EVERYTHING: API routes, business logic flows, TypeScript status, React UI functionality, AI-powered processes, plan/takeoff tools, CRUD operations, permissions, schemas, and runtime behavior. You must output one final audit report file summarizing ALL findings so an external reviewer (ChatGPT) can analyze it.
+
+This must be a SINGLE OPERATION.  
+Do NOT ask clarifying questions.  
+Do NOT break it into parts.  
+Execute EVERYTHING below as one unified task.
+
+──────────────────────────────────────────────
+OBJECTIVE
+──────────────────────────────────────────────
+Generate a **FULL SMARTMANAGE AI FUNCTIONALITY AUDIT REPORT** listing:
+
+1. **What features are fully working**
+2. **What features are partially working**
+3. **What features are broken or incomplete**
+4. **Why they are broken (root causes)**
+5. **Exact files causing the failures**
+6. **List of all successful backend routes**
+7. **List of all failing backend routes**
+8. **List of all successful frontend pages/components**
+9. **List of all failing frontend pages/components**
+10. **All TypeScript errors and warning locations**
+11. **All schema mismatches**
+12. **All inconsistent audit logging usage**
+13. **All broken React Query bindings**
+14. **All endpoints with incorrect request/response types**
+15. **All missing validations**
+16. **All takeoff/plan upload issues**
+17. **All AI routes that succeed vs fail**
+18. **Any unused/dead code**
+19. **Recommended fixes prioritized High → Medium → Low**
+20. **Overall production readiness score (0–100)**
+
+You MUST package all findings into ONE downloadable audit document for external review.
+
+──────────────────────────────────────────────
+ACTIONS TO PERFORM (DO ALL)
+──────────────────────────────────────────────
+
+1. **Backend route scan**
+   - Detect all existing routes
+   - Attempt static analysis of:
+     • required params  
+     • schema alignment  
+     • missing fields  
+     • incorrect types  
+   - Determine if each route compiles cleanly and matches schema.
+
+2. **Frontend-to-backend contract scan**
+   - Identify mismatching request/response shapes
+   - Detect unsafe casts, unknown data, incorrect generics, or missing fields
+   - Determine which UI pages will break at runtime due to type issues.
+
+3. **TypeScript static analysis**
+   - Run full typecheck
+   - Capture ALL TS errors and warnings
+   - Map each error to the file + component + feature affected.
+
+4. **Audit logger consistency scan**
+   - Locate all calls to:
+     logCreate, logUpdate, logDelete, logApprove, logReject, logAudit
+   - Identify incorrect signatures, missing JSON.stringify, wrong enum values
+
+5. **Drizzle ORM schema alignment**
+   - Identify insert/update/delete operations whose structures do not match the schema
+   - Detect missing fields, undefined fields, or incorrectly typed columns.
+
+6. **AI route evaluation**
+   - Analyze AI routes in server/aiRoutes.ts
+   - Determine if they:
+     • compile  
+     • have proper auth  
+     • have correct audit logging  
+     • return valid JSON  
+     • align with the frontend usage  
+
+7. **Core feature audit**
+   For each SmartManage AI feature below, determine:
+   - Working  
+   - Partially working  
+   - Broken  
+   - Not implemented  
+   - Requires backend fix  
+   - Requires frontend fix  
+   - Requires schema fix  
+   - Requires AI integration fix
+
+   Features:
+   • Projects  
+   • Bids  
+   • Estimates  
+   • Change Orders  
+   • T&M Sheets  
+   • Time Clock  
+   • Crew Management  
+   • Skills  
+   • AI PM Tools  
+   • AI CFO Tools  
+   • Document & Plan Upload  
+   • Takeoff Sheets  
+   • Plan Viewers  
+   • Subcontractors  
+   • Notifications  
+   • User Management  
+   • Permissions  
+   • File Storage & ACL  
+   • Audit Logging  
+   • Dashboard  
+   • Calendar / Time Off  
+   • Procurement Tools  
+
+8. **Broken workflow tracing**
+   - Identify workflows that cannot complete due to broken steps
+   - Highlight missing transitions in state machines (e.g. CO state machine)
+   - Identify missing database writes
+   - Identify missing audit logs
+
+9. **Performance & Replit environment compatibility**
+   - Confirm code uses drizzle-orm/neon-http safely
+   - Confirm 0 transaction usage
+   - Identify unoptimized queries or repeated heavy calls
+
+──────────────────────────────────────────────
+REPORT CREATION (MANDATORY)
+──────────────────────────────────────────────
+
+Create a new file at the root:

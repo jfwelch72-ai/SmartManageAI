@@ -1,0 +1,127 @@
+You are an Expert Senior Full-Stack Auditor, QA Lead, TypeScript/Node/React/Drizzle Engineer, and Systems Architect. Perform a COMPLETE, END-TO-END FUNCTIONALITY AUDIT of the SmartManage AI system in THIS repository and generate ONE comprehensive audit report file for external review.
+
+This entire message is ONE unified instruction. DO NOT ask questions. DO NOT break it apart. DO NOT simplify. Execute EVERYTHING below as one atomic task.
+
+Your objective is to create a SINGLE FILE named:
+
+SMARTMANAGE_AI_FULL_AUDIT_REPORT.md
+
+placed in the project root, containing a complete and accurate audit of:
+
+• All working features  
+• All partially working features  
+• All broken features  
+• Why each feature is broken  
+• Which files cause the breakage  
+• All successful backend routes  
+• All failing backend routes  
+• All valid frontend components  
+• All failing frontend components  
+• All TypeScript errors  
+• All schema mismatches  
+• All audit logging inconsistencies  
+• All incorrect Drizzle operations  
+• All React Query type issues  
+• All permission/auth problems  
+• All AI route problems  
+• All missing validations  
+• All broken workflows  
+• All takeoff/plan upload issues  
+• All data integrity risks  
+• All performance bottlenecks  
+• All features incompatible with Neon HTTP (no transactions)  
+• Root-cause analysis for every failure  
+• High/Medium/Low priority fix list  
+• A final “Production Readiness Score” from 0–100  
+• A clear list of next steps required before deployment
+
+────────────────────────────────────────────
+TO PERFORM THIS AUDIT, DO ALL OF THE FOLLOWING:
+────────────────────────────────────────────
+
+1. Scan ALL backend files:
+   - Identify every endpoint, detect whether it compiles cleanly, matches schema, handles validation, handles permissions, and works under drizzle-orm/neon-http (no transactions).
+   - Identify broken state machines: change orders, time entries, crews, skills, plans, AI routes, uploads.
+
+2. Scan ALL frontend files:
+   - Identify type mismatches, React Query issues, broken models, incorrect assumptions about server data, untyped results, missing generics, and failing components.
+
+3. Run a full TypeScript analysis (tsc –noEmit) and capture ALL errors and warnings.
+
+4. Compare all inserts/updates/deletes against schema definitions using InferInsertModel and InferSelectModel expectations.
+
+5. Detect any missing JSON.stringify usage in audit logs and unify audit logger signatures.
+
+6. Identify all features that do not work due to backend mismatches.
+
+7. Identify all features that do not work due to frontend mismatches.
+
+8. Identify all features that partially work but can fail under common user actions.
+
+9. Identify all dead code, unused helpers, unfinished endpoints, incorrectly shaped request bodies, or broken response shapes.
+
+10. Identify any code that attempts to use “transaction-like” behavior despite neon-http limitations.
+
+11. Determine the stability of each major SmartManage AI module:
+    • Projects
+    • Bids
+    • Estimates
+    • Change Orders
+    • Time Clock
+    • Crew Management
+    • Skills
+    • AI PM Tools
+    • AI CFO Tools
+    • T&M Sheets
+    • Document upload
+    • Plan uploads
+    • Takeoff/Plan viewer
+    • Subcontractors
+    • Notifications
+    • User Management + Permissions
+    • Dashboard
+    • Calendar
+    • Procurement
+
+12. For each module, determine:
+    - WORKING
+    - PARTIALLY WORKING
+    - BROKEN
+    - NOT IMPLEMENTED
+
+13. Provide a clear explanation for each.
+
+14. Assign a “severity level”:
+    - HIGH: Breaks workflow or data integrity
+    - MEDIUM: Limits functionality
+    - LOW: Cosmetic or non-critical
+
+15. Provide a prioritized fix list:
+    - High Priority Fixes (must be done first)
+    - Medium Priority Fixes
+    - Low Priority Fixes
+
+16. Provide a final professional summary:
+    - Key strengths
+    - Key weaknesses
+    - Biggest risks
+    - Recommended architectural improvements
+
+17. Conclude with:
+    “Production Readiness Score: XX/100”
+    and list exactly what must be completed to reach 100/100.
+
+────────────────────────────────────────────
+FINAL REQUIREMENTS
+────────────────────────────────────────────
+
+• Create ONE markdown file:
+  SMARTMANAGE_AI_FULL_AUDIT_REPORT.md
+
+• The file must be clean, structured, readable, and fully usable by an external senior engineer.
+
+• After creating the file, output a link or file reference so it can be downloaded.
+
+• DO NOT generate anything else.
+
+EXECUTE ALL OF THIS AS ONE SINGLE TASK.
