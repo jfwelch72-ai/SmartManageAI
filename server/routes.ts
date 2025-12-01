@@ -4423,6 +4423,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { startDate, endDate, projectCode, unit } = req.query;
       
+      // SECURITY: Multi-tenant isolation - get user's organization filter
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.json({ rates: [], summary: { totalSOWTypes: 0, totalWorkDays: 0, totalProjects: 0, totalEntries: 0 }, availableUnits: [] });
+      }
+      
       // Build base query joining dailyScopeProgress with scopeItems
       let query = db
         .select({
@@ -4438,8 +4444,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
         .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id));
       
-      // Apply filters
+      // Apply filters - always include organization filter for multi-tenant security
       const conditions: any[] = [];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
       
       if (startDate) {
         conditions.push(sql`${dailyScopeProgress.workDate} >= ${startDate}`);
@@ -4573,6 +4584,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
+      // SECURITY: Multi-tenant isolation - get user's organization filter
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.json({ entries: [], dailySummary: [], projectStats: [], aggregates: { totalQuantity: 0, totalDays: 0, totalProjects: 0, avgPerDay: 0 } });
+      }
+      
+      // Build conditions array including org filter
+      const conditions: any[] = [
+        eq(scopeItems.description, description as string),
+        eq(scopeItems.unit, unit as string)
+      ];
+      
+      // SECURITY: Filter by organization
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      
       // Get all entries for this SOW type
       let query = db
         .select({
@@ -4589,10 +4617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
         .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
         .leftJoin(users, eq(dailyScopeProgress.createdById, users.id))
-        .where(and(
-          eq(scopeItems.description, description as string),
-          eq(scopeItems.unit, unit as string)
-        ))
+        .where(and(...conditions))
         .orderBy(desc(dailyScopeProgress.workDate));
       
       let results = await query;
@@ -4689,6 +4714,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { startDate, endDate, projectCode, source } = req.query;
       
+      // SECURITY: Multi-tenant isolation - get user's organization filter
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.json({ rates: [], ratesByWorkType: [], summary: { totalWorkTypes: 0, totalEntries: 0, totalProjects: 0 } });
+      }
+      
       // Results from all sources
       const unifiedRates: {
         workTypeCode: string;
@@ -4705,20 +4736,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 1. Get scope progress data (existing system)
       if (!source || source === 'SCOPE_PROGRESS' || source === 'ALL') {
-        const scopeResults = await db
-          .select({
-            id: dailyScopeProgress.id,
-            description: scopeItems.description,
-            unit: scopeItems.unit,
-            projectCode: projects.code,
-            projectName: projects.name,
-            workDate: dailyScopeProgress.workDate,
-            quantityCompleted: dailyScopeProgress.quantityCompleted,
-          })
-          .from(dailyScopeProgress)
-          .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
-          .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
-          .limit(2000);
+        // Build conditions with org filter
+        const scopeConditions: any[] = [];
+        if (shouldFilter && orgId) {
+          scopeConditions.push(eq(projects.gcOrganizationId, orgId));
+        }
+        
+        const scopeQuery = scopeConditions.length > 0 
+          ? db
+              .select({
+                id: dailyScopeProgress.id,
+                description: scopeItems.description,
+                unit: scopeItems.unit,
+                projectCode: projects.code,
+                projectName: projects.name,
+                workDate: dailyScopeProgress.workDate,
+                quantityCompleted: dailyScopeProgress.quantityCompleted,
+              })
+              .from(dailyScopeProgress)
+              .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+              .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+              .where(and(...scopeConditions))
+              .limit(2000)
+          : db
+              .select({
+                id: dailyScopeProgress.id,
+                description: scopeItems.description,
+                unit: scopeItems.unit,
+                projectCode: projects.code,
+                projectName: projects.name,
+                workDate: dailyScopeProgress.workDate,
+                quantityCompleted: dailyScopeProgress.quantityCompleted,
+              })
+              .from(dailyScopeProgress)
+              .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+              .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+              .limit(2000);
+        
+        const scopeResults = await scopeQuery;
 
         for (const r of scopeResults) {
           if (startDate && r.workDate < startDate) continue;
@@ -4742,6 +4797,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 2. Get T&M ticket scope data (using workTypeCode)
       if (!source || source === 'TM_TICKET' || source === 'ALL') {
+        // Build conditions with org filter
+        const tmConditions: any[] = [sql`${tmTickets.workTypeCode} IS NOT NULL`];
+        if (shouldFilter && orgId) {
+          tmConditions.push(eq(projects.gcOrganizationId, orgId));
+        }
+        
         const tmResults = await db
           .select({
             id: tmTickets.id,
@@ -4757,7 +4818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           })
           .from(tmTickets)
           .innerJoin(projects, eq(tmTickets.projectId, projects.id))
-          .where(sql`${tmTickets.workTypeCode} IS NOT NULL`)
+          .where(and(...tmConditions))
           .limit(2000);
 
         for (const r of tmResults) {
@@ -4783,6 +4844,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 3. Get Change Order scope data (using workTypeCode)
       if (!source || source === 'CHANGE_ORDER' || source === 'ALL') {
+        // Build conditions with org filter
+        const coConditions: any[] = [sql`${changeOrders.workTypeCode} IS NOT NULL`];
+        if (shouldFilter && orgId) {
+          coConditions.push(eq(projects.gcOrganizationId, orgId));
+        }
+        
         const coResults = await db
           .select({
             id: changeOrders.id,
@@ -4798,7 +4865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           })
           .from(changeOrders)
           .innerJoin(projects, eq(changeOrders.projectId, projects.id))
-          .where(sql`${changeOrders.workTypeCode} IS NOT NULL`)
+          .where(and(...coConditions))
           .limit(2000);
 
         for (const r of coResults) {
