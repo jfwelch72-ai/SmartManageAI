@@ -382,11 +382,30 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
     const retainageAmt = totalCompleted * retainagePct;
 
     // NOTE: Neon HTTP driver doesn't support transactions in serverless environments
-    // Using a single CTE-based SQL statement to atomically update both line item and SOV totals
-    // This ensures consistency by executing all operations in one atomic query
+    // Using delta-based atomic update with row-level locking to prevent lost updates
+    // Deltas are computed INSIDE the SQL statement AFTER acquiring the row lock
+    // This ensures we use the actual current values, not a stale snapshot
     
     const result = await db.execute(sql`
-      WITH updated_line_item AS (
+      WITH locked_item AS (
+        SELECT 
+          id,
+          COALESCE(CAST(previously_completed AS DECIMAL(14,2)), 0) as old_previous,
+          COALESCE(CAST(this_period_completed AS DECIMAL(14,2)), 0) as old_current,
+          COALESCE(CAST(materials_stored AS DECIMAL(14,2)), 0) as old_stored
+        FROM sov_line_items 
+        WHERE id = ${lineItemId} 
+        FOR UPDATE
+      ),
+      deltas AS (
+        SELECT
+          ${previous} - old_previous as delta_previous,
+          ${current} - old_current as delta_current,
+          ${stored} - old_stored as delta_stored,
+          (${previous} - old_previous) + (${current} - old_current) + (${stored} - old_stored) as delta_total
+        FROM locked_item
+      ),
+      updated_line_item AS (
         UPDATE sov_line_items
         SET 
           previously_completed = ${String(previous)},
@@ -401,30 +420,29 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
         WHERE id = ${lineItemId}
         RETURNING *
       ),
-      aggregates AS (
-        SELECT 
-          COALESCE(SUM(GREATEST(0, CAST(scheduled_value AS DECIMAL(14,2)))), 0)::text as total_scheduled,
-          COALESCE(SUM(GREATEST(0, CAST(previously_completed AS DECIMAL(14,2)))), 0)::text as total_previous,
-          COALESCE(SUM(GREATEST(0, CAST(this_period_completed AS DECIMAL(14,2)))), 0)::text as total_current,
-          COALESCE(SUM(GREATEST(0, CAST(materials_stored AS DECIMAL(14,2)))), 0)::text as total_stored,
-          COALESCE(SUM(GREATEST(0, CAST(previously_completed AS DECIMAL(14,2)))) + 
-                   SUM(GREATEST(0, CAST(this_period_completed AS DECIMAL(14,2)))) + 
-                   SUM(GREATEST(0, CAST(materials_stored AS DECIMAL(14,2)))), 0) as total_completed
-        FROM sov_line_items
-        WHERE sov_id = ${sovId}
-      ),
       updated_sov AS (
         UPDATE schedule_of_values
         SET 
-          total_scheduled_value = aggregates.total_scheduled,
-          total_previously_completed = aggregates.total_previous,
-          total_this_period = aggregates.total_current,
-          total_materials_stored = aggregates.total_stored,
-          total_completed_to_date = aggregates.total_completed,
-          total_retainage = ROUND((aggregates.total_completed * ${retainagePct})::numeric, 2)::text,
-          total_earned_less_retainage = ROUND((aggregates.total_completed - (aggregates.total_completed * ${retainagePct}))::numeric, 2)::text,
+          total_previously_completed = GREATEST(0, 
+            COALESCE(CAST(schedule_of_values.total_previously_completed AS DECIMAL(14,2)), 0) + deltas.delta_previous
+          )::text,
+          total_this_period = GREATEST(0,
+            COALESCE(CAST(schedule_of_values.total_this_period AS DECIMAL(14,2)), 0) + deltas.delta_current
+          )::text,
+          total_materials_stored = GREATEST(0,
+            COALESCE(CAST(schedule_of_values.total_materials_stored AS DECIMAL(14,2)), 0) + deltas.delta_stored
+          )::text,
+          total_completed_to_date = GREATEST(0,
+            COALESCE(CAST(schedule_of_values.total_completed_to_date AS DECIMAL(14,2)), 0) + deltas.delta_total
+          )::text,
+          total_retainage = ROUND(
+            GREATEST(0, COALESCE(CAST(schedule_of_values.total_completed_to_date AS DECIMAL(14,2)), 0) + deltas.delta_total) * ${retainagePct}
+          , 2)::text,
+          total_earned_less_retainage = ROUND(
+            GREATEST(0, COALESCE(CAST(schedule_of_values.total_completed_to_date AS DECIMAL(14,2)), 0) + deltas.delta_total) * (1 - ${retainagePct})
+          , 2)::text,
           updated_at = NOW()
-        FROM aggregates
+        FROM deltas
         WHERE schedule_of_values.id = ${sovId}
         RETURNING schedule_of_values.*
       )
