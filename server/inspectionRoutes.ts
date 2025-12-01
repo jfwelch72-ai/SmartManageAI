@@ -11,6 +11,7 @@ import { logAudit, type DbTransaction } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { generateInspectionRequestPDF } from "./pdf-service";
 import { sendInspectionRequestEmail } from "./email";
+import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
@@ -80,8 +81,24 @@ function enrichInspection(inspection: ProjectInspection) {
 
 router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
     const { projectId } = req.params;
     const { status, type } = req.query;
+
+    // Verify project exists and check org access
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    
+    if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+      return res.json([]);
+    }
 
     const conditions = [eq(projectInspections.projectId, projectId)];
     

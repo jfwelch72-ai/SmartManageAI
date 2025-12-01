@@ -92,24 +92,28 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
     
-    // AI Schedulers are DISABLED during development
-    // Uncomment these when ready for production deployment
-    // 
-    // // Initialize AI PM + CFO scheduler (runs at configured daily time, default 6:00 AM)
-    // initializeAIScheduler().catch(error => {
-    //   console.error('Failed to initialize AI scheduler:', error);
-    // });
-    // 
-    // // Initialize AI Notes Analysis scheduler (hourly + daily at 6 PM)
-    // try {
-    //   aiNotesScheduler.start();
-    //   console.log('✅ AI Notes Scheduler started successfully');
-    // } catch (error) {
-    //   console.error('❌ Failed to start AI Notes Scheduler:', error);
-    // }
+    // AI Schedulers only run in production mode
+    const isProduction = process.env.NODE_ENV === 'production';
     
-    console.log('ℹ️  AI auto-scan schedulers are DISABLED (development mode)');
-    console.log('   Use the manual "Run AI Analysis" button to trigger scans');
-    console.log('   Uncomment schedulers in server/index.ts for production');
+    if (isProduction) {
+      // Initialize AI PM + CFO scheduler (runs at configured daily time, default 6:00 AM)
+      initializeAIScheduler().catch(error => {
+        console.error('Failed to initialize AI scheduler:', error);
+      });
+      
+      // Initialize AI Notes Analysis scheduler (hourly + daily at 6 PM)
+      try {
+        aiNotesScheduler.start();
+        console.log('AI Notes Scheduler started successfully');
+      } catch (error) {
+        console.error('Failed to start AI Notes Scheduler:', error);
+      }
+      
+      console.log('AI auto-scan schedulers ENABLED (production mode)');
+    } else {
+      console.log('AI auto-scan schedulers are DISABLED (development mode)');
+      console.log('   Use the manual "Run AI Analysis" button to trigger scans');
+      console.log('   Set NODE_ENV=production to enable schedulers');
+    }
   });
 })();

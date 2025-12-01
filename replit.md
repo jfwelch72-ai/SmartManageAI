@@ -102,7 +102,49 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - **Multi-Tenant Security**: All analyzers require `organizationId` and verify project ownership before querying data
 - Development mode: Auto-scan schedulers disabled; use manual "Run AI Analysis" buttons
 
+## Recent Changes (December 2025)
+
+### Time Clock Approval Workflow
+- Added `approvalStatus` enum to time_entries schema (PENDING, APPROVED, REJECTED)
+- Added `approvedById`, `approvedAt`, `rejectionReason` fields to time_entries
+- Created Manager Review tab in time-clock-manager.tsx with:
+  - Search/filter by employee or project
+  - Approve/Reject individual entries with rejection reason dialog
+  - Bulk approve functionality
+  - Group entries by employee
+- Fixed security: Approval endpoints check both `project.gcOrganizationId` AND `user.organizationId` for tenant isolation
+
+### mustDenyAccess Security Hardening
+- Extended mustDenyAccess pattern to 5 additional route files:
+  - changeOrderRoutes.ts (fully updated with checkOrgAccess helper)
+  - delayRoutes.ts (list endpoint secured)
+  - inspectionRoutes.ts (list endpoint secured)
+  - estimateRoutes.ts (list endpoint secured)
+  - tmTicketRoutes.ts (list endpoint secured)
+- Pattern: Users without organizationId (non-SUPER_ADMIN) receive empty data instead of cross-tenant leaks
+
+### AI Schedulers Production Mode
+- Changed AI schedulers from commented-out to proper NODE_ENV check
+- Schedulers automatically enable in production (`NODE_ENV=production`)
+- Schedulers disabled in development with clear console message
+- Supports: initializeAIScheduler, aiNotesScheduler
+
+### AI Auto-Takeoff with OpenAI Vision
+- Enhanced `processAiTakeoff` function with real OpenAI Vision integration
+- Fetches takeoff sheet image and sends to GPT-4o for analysis
+- Trade-specific prompts for 22 supported trades
+- Returns detected items with confidence scores, units, and suggested SOW items
+- Graceful fallback to mock data if Vision fails or no image available
+
+### AI Jobsite Camera Analysis with OpenAI Vision
+- Enhanced jobsite photo processing with real OpenAI Vision integration
+- Analyzes photos for safety hazards, work progress, and crew activity
+- Trade-specific safety and progress detection
+- Returns structured findings with severity levels, recommendations
+- Graceful fallback to mock data if Vision fails or no photos available
+
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
 - **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
 - **SelectItem pattern**: Always use `value="none"` instead of `value=""` for "None" options in Select components
+- **AI Features**: In development mode, AI features use demo/mock data when no images are available; real Vision analysis requires uploaded images

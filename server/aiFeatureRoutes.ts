@@ -136,7 +136,7 @@ router.post("/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ES
   }
 });
 
-// Helper function to process AI takeoff (would be async in production)
+// Helper function to process AI takeoff with OpenAI Vision
 async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[]) {
   const startTime = Date.now();
   
@@ -144,33 +144,163 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
     .set({ status: "PROCESSING" })
     .where(eq(aiTakeoffAnalyses.id, analysisId));
 
-  // Generate mock AI detected items based on trade type
-  const tradeItems = generateTradeSpecificItems(tradeType);
-  
-  const detectedItems = tradeItems.map((item, index) => ({
-    id: `item-${index + 1}`,
-    itemType: item.type,
-    description: item.description,
-    quantity: item.quantity,
-    unit: item.unit,
-    confidence: 70 + Math.floor(Math.random() * 25),
-    suggestedSowItem: item.sowItem,
-  }));
+  try {
+    // Get the analysis record to find associated takeoff sheet
+    const [analysis] = await db.select()
+      .from(aiTakeoffAnalyses)
+      .where(eq(aiTakeoffAnalyses.id, analysisId));
 
-  await db.update(aiTakeoffAnalyses)
-    .set({
-      status: "COMPLETE",
-      detectedItemsJson: JSON.stringify(detectedItems),
-      metadataJson: JSON.stringify({
-        drawingScale: "1/4\" = 1'-0\"",
-        pageSize: "24x36",
-        tradeType,
-      }),
-      aiNotes: `Detected ${detectedItems.length} items for ${tradeType} trade.`,
-      processingTimeMs: Date.now() - startTime,
-      updatedAt: new Date(),
-    })
-    .where(eq(aiTakeoffAnalyses.id, analysisId));
+    let imageUrl: string | null = null;
+    
+    // Try to get image from takeoff sheet if provided
+    if (analysis?.takeoffSheetId) {
+      const [sheet] = await db.select()
+        .from(takeoffSheets)
+        .where(eq(takeoffSheets.id, analysis.takeoffSheetId));
+      if (sheet?.imageUrl) {
+        imageUrl = sheet.imageUrl;
+      }
+    }
+
+    let detectedItems: any[];
+    let metadata: any;
+    let aiNotes: string;
+
+    // Use OpenAI Vision if we have an image, otherwise fall back to mock data
+    if (imageUrl && openai) {
+      try {
+        const tradePrompt = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
+        const focusAreaPrompt = focusAreas?.length ? `Focus especially on: ${focusAreas.join(", ")}. ` : "";
+        
+        const visionResponse = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            {
+              role: "system",
+              content: `You are a construction takeoff specialist analyzing blueprints and construction drawings. 
+${tradePrompt}
+${focusAreaPrompt}
+Analyze the image and extract all measurable quantities for a construction estimate.
+
+Return your analysis as JSON with this exact structure:
+{
+  "detectedItems": [
+    {
+      "itemType": "string (e.g., roof_plane, outlet, slab)",
+      "description": "string (detailed description)",
+      "quantity": number,
+      "unit": "string (SQ, SF, LF, EA, CY, etc.)",
+      "confidence": number (0-100),
+      "notes": "string (optional additional notes)"
+    }
+  ],
+  "metadata": {
+    "drawingScale": "string or null",
+    "pageSize": "string or null",
+    "titleBlock": "string or null",
+    "drawingType": "string (plan, elevation, section, detail)"
+  },
+  "summary": "string (brief summary of what was detected)"
+}`
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: { url: imageUrl, detail: "high" }
+                },
+                {
+                  type: "text",
+                  text: `Analyze this construction drawing for ${tradeType} trade takeoff. Extract all measurable quantities.`
+                }
+              ]
+            }
+          ],
+          max_tokens: 4096,
+          temperature: 0.3,
+        });
+
+        const responseContent = visionResponse.choices[0]?.message?.content || "";
+        
+        // Parse the JSON response
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          detectedItems = (parsed.detectedItems || []).map((item: any, index: number) => ({
+            id: `item-${index + 1}`,
+            itemType: item.itemType,
+            description: item.description,
+            quantity: item.quantity,
+            unit: item.unit,
+            confidence: item.confidence || 75,
+            notes: item.notes,
+          }));
+          metadata = {
+            drawingScale: parsed.metadata?.drawingScale,
+            pageSize: parsed.metadata?.pageSize,
+            titleBlock: parsed.metadata?.titleBlock,
+            drawingType: parsed.metadata?.drawingType,
+            tradeType,
+            analysisMethod: "OpenAI Vision",
+          };
+          aiNotes = parsed.summary || `AI Vision detected ${detectedItems.length} items for ${tradeType} trade.`;
+        } else {
+          throw new Error("Could not parse AI response");
+        }
+      } catch (visionError) {
+        console.error("OpenAI Vision error, falling back to mock data:", visionError);
+        // Fall back to mock data if Vision fails
+        const tradeItems = generateTradeSpecificItems(tradeType);
+        detectedItems = tradeItems.map((item, index) => ({
+          id: `item-${index + 1}`,
+          itemType: item.type,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          confidence: 70 + Math.floor(Math.random() * 25),
+          suggestedSowItem: item.sowItem,
+        }));
+        metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Fallback (mock)" };
+        aiNotes = `Fallback: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
+      }
+    } else {
+      // No image available, use mock data
+      const tradeItems = generateTradeSpecificItems(tradeType);
+      detectedItems = tradeItems.map((item, index) => ({
+        id: `item-${index + 1}`,
+        itemType: item.type,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        confidence: 70 + Math.floor(Math.random() * 25),
+        suggestedSowItem: item.sowItem,
+      }));
+      metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Demo (no image)" };
+      aiNotes = `Demo mode: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
+    }
+
+    await db.update(aiTakeoffAnalyses)
+      .set({
+        status: "COMPLETE",
+        detectedItemsJson: JSON.stringify(detectedItems),
+        metadataJson: JSON.stringify(metadata),
+        aiNotes,
+        processingTimeMs: Date.now() - startTime,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiTakeoffAnalyses.id, analysisId));
+  } catch (error: any) {
+    console.error("AI Takeoff processing error:", error);
+    await db.update(aiTakeoffAnalyses)
+      .set({
+        status: "FAILED",
+        errorMessage: error.message || "Processing failed",
+        processingTimeMs: Date.now() - startTime,
+        updatedAt: new Date(),
+      })
+      .where(eq(aiTakeoffAnalyses.id, analysisId));
+  }
 }
 
 function generateTradeSpecificItems(tradeType: string) {
@@ -521,22 +651,20 @@ router.post("/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SU
   }
 });
 
-// POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos
+// POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
 router.post("/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
+    const userRole = req.user?.role;
+    
+    // SECURITY: Non-SUPER_ADMIN users must have an organization
+    if (userRole !== "SUPER_ADMIN" && !organizationId) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
     const batchId = req.params.batchId;
 
-    // Update status to processing
-    await db.update(jobsiteAnalysisBatches)
-      .set({ status: "PROCESSING" })
-      .where(eq(jobsiteAnalysisBatches.id, batchId));
-
-    // Get batch details
+    // SECURITY: Verify batch exists and belongs to user's organization BEFORE any mutations
     const [batch] = await db.select()
       .from(jobsiteAnalysisBatches)
       .where(eq(jobsiteAnalysisBatches.id, batchId));
@@ -545,28 +673,189 @@ router.post("/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, r
       return res.status(404).json({ error: "Batch not found" });
     }
 
-    // Generate mock analysis results based on trade type
-    const safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
-    const progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+    // SECURITY: Verify organization ownership (skip for SUPER_ADMIN)
+    if (userRole !== "SUPER_ADMIN" && batch.organizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
 
+    // Now safe to update status to processing
     await db.update(jobsiteAnalysisBatches)
-      .set({
-        status: "COMPLETE",
-        summaryJson: JSON.stringify({
+      .set({ status: "PROCESSING" })
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+    // Get photos associated with this batch
+    const photos = await db.select()
+      .from(jobsiteAnalysisPhotos)
+      .where(eq(jobsiteAnalysisPhotos.batchId, batchId));
+
+    let safetyFindings: any[];
+    let progressFindings: any[];
+    let summary: any;
+    let crewFindings: any;
+    let aiNotes: string;
+
+    // Use OpenAI Vision if we have photos, otherwise use mock data
+    if (photos.length > 0 && openai) {
+      try {
+        const tradeType = batch.tradeType || "GENERAL_CONTRACTOR";
+        const analysisTypes = batch.analysisTypes || ["SAFETY", "PROGRESS"];
+        
+        // Build prompt based on analysis types
+        const safetyPrompt = analysisTypes.includes("SAFETY") 
+          ? `SAFETY: Identify any safety hazards, PPE compliance issues, fall hazards, housekeeping problems. Rate severity as CRITICAL, HIGH, MEDIUM, or LOW.` 
+          : "";
+        const progressPrompt = analysisTypes.includes("PROGRESS")
+          ? `PROGRESS: Estimate work completion percentage, identify active work areas, note quality of workmanship.`
+          : "";
+        const crewPrompt = `CREW: Estimate number of workers visible, assess PPE compliance percentage.`;
+        
+        const tradeContext = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
+        
+        // Analyze first photo (can extend to multiple)
+        const imageUrl = photos[0].fileUrl;
+        
+        const visionResponse = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            {
+              role: "system",
+              content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
+${tradeContext}
+
+Analyze the jobsite photo and provide a comprehensive assessment.
+
+${safetyPrompt}
+${progressPrompt}
+${crewPrompt}
+
+Return your analysis as JSON with this exact structure:
+{
+  "summary": {
+    "overallSafetyScore": number (0-100),
+    "estimatedCompletion": number (0-100 percentage),
+    "crewCountEstimate": number,
+    "weatherConditions": "string",
+    "primaryConcerns": ["array of concerns"]
+  },
+  "safetyFindings": [
+    {
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "category": "PPE|FALL_HAZARD|HOUSEKEEPING|ELECTRICAL|FIRE|OTHER",
+      "description": "detailed description",
+      "recommendation": "corrective action"
+    }
+  ],
+  "progressFindings": [
+    {
+      "workArea": "area name",
+      "tradeType": "${tradeType}",
+      "estimatedComplete": number (0-100),
+      "observations": "quality and progress notes"
+    }
+  ],
+  "crewFindings": {
+    "estimatedCount": number,
+    "ppeCompliance": number (0-100),
+    "activeWorkAreas": ["array of areas"]
+  },
+  "notes": "overall summary of findings"
+}`
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: { url: imageUrl, detail: "high" }
+                },
+                {
+                  type: "text",
+                  text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
+                }
+              ]
+            }
+          ],
+          max_tokens: 4096,
+          temperature: 0.3,
+        });
+
+        const responseContent = visionResponse.choices[0]?.message?.content || "";
+        
+        // Parse the JSON response
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          summary = parsed.summary || {
+            overallSafetyScore: 80,
+            estimatedCompletion: 50,
+            crewCountEstimate: 5,
+            weatherConditions: "Unknown",
+            primaryConcerns: [],
+          };
+          safetyFindings = (parsed.safetyFindings || []).map((f: any, i: number) => ({
+            id: `sf-${i + 1}`,
+            severity: f.severity || "MEDIUM",
+            category: f.category || "OTHER",
+            description: f.description,
+            recommendation: f.recommendation,
+            photoId: photos[0].id,
+          }));
+          progressFindings = (parsed.progressFindings || []).map((f: any, i: number) => ({
+            id: `pf-${i + 1}`,
+            workArea: f.workArea || "General Area",
+            tradeType: f.tradeType || tradeType,
+            estimatedComplete: f.estimatedComplete || 0,
+            observations: f.observations,
+            photoId: photos[0].id,
+          }));
+          crewFindings = parsed.crewFindings || {
+            estimatedCount: 0,
+            ppeCompliance: 100,
+            activeWorkAreas: [],
+          };
+          aiNotes = parsed.notes || "AI Vision analysis complete.";
+        } else {
+          throw new Error("Could not parse AI response");
+        }
+      } catch (visionError) {
+        console.error("OpenAI Vision error for jobsite analysis, falling back to mock:", visionError);
+        safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+        progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+        summary = {
           overallSafetyScore: 85,
           estimatedCompletion: 45,
           crewCountEstimate: 6,
           weatherConditions: "Clear, 72°F",
-          primaryConcerns: safetyFindings.filter(f => f.severity === "HIGH").map(f => f.description),
-        }),
+          primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
+          analysisMethod: "Fallback (mock)",
+        };
+        crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
+        aiNotes = "Fallback: Generated sample analysis data.";
+      }
+    } else {
+      // No photos available, use mock data
+      safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+      progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+      summary = {
+        overallSafetyScore: 85,
+        estimatedCompletion: 45,
+        crewCountEstimate: 6,
+        weatherConditions: "Clear, 72°F",
+        primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
+        analysisMethod: "Demo (no photos)",
+      };
+      crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
+      aiNotes = "Demo mode: Generated sample analysis data.";
+    }
+
+    await db.update(jobsiteAnalysisBatches)
+      .set({
+        status: "COMPLETE",
+        summaryJson: JSON.stringify(summary),
         safetyFindingsJson: JSON.stringify(safetyFindings),
         progressFindingsJson: JSON.stringify(progressFindings),
-        crewFindingsJson: JSON.stringify({
-          estimatedCount: 6,
-          ppeCompliance: 90,
-          activeWorkAreas: ["Main building", "North side"],
-        }),
-        aiNotes: "Analysis complete. Minor safety observations noted.",
+        crewFindingsJson: JSON.stringify(crewFindings),
+        aiNotes,
         updatedAt: new Date(),
       })
       .where(eq(jobsiteAnalysisBatches.id, batchId));

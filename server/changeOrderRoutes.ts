@@ -1,11 +1,12 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications } from "@shared/schema";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects } from "@shared/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
+import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
@@ -27,16 +28,43 @@ function isValidTransition(fromStatus: string, toStatus: string): boolean {
 }
 
 /**
- * Gets a change order by ID with validation
+ * Gets a change order by ID with validation and project org info
  */
 async function getChangeOrderById(id: string) {
-  const [order] = await db
-    .select()
+  const [result] = await db
+    .select({
+      order: changeOrders,
+      project: {
+        id: projects.id,
+        gcOrganizationId: projects.gcOrganizationId,
+      },
+    })
     .from(changeOrders)
+    .leftJoin(projects, eq(changeOrders.projectId, projects.id))
     .where(eq(changeOrders.id, id))
     .limit(1);
   
-  return order;
+  return result;
+}
+
+/**
+ * Checks if user has organization access to a change order
+ */
+function checkOrgAccess(
+  req: AuthRequest,
+  projectOrgId: string | null | undefined
+): { allowed: boolean; mustDenyAccess: boolean } {
+  const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+  
+  if (mustDenyAccess) {
+    return { allowed: false, mustDenyAccess: true };
+  }
+  
+  if (shouldFilter && orgId && projectOrgId !== orgId) {
+    return { allowed: false, mustDenyAccess: false };
+  }
+  
+  return { allowed: true, mustDenyAccess: false };
 }
 
 /**
@@ -100,10 +128,19 @@ async function notifyStatusChange(
  */
 router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
 
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    // Check organization access
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(mustDenyAccess ? 403 : 403).json({ error: "Access denied" });
       return;
     }
 
@@ -162,10 +199,19 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
  */
 router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
 
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    // Check organization access
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -225,10 +271,19 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  */
 router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
 
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    // Check organization access
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -296,10 +351,19 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
 
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    // Check organization access
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -367,10 +431,19 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     // SECURITY: Sanitize text inputs for data integrity
     const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
 
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
 
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    // Check organization access
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -435,10 +508,19 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
  */
 router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
     
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project: orderProject } = result;
+
+    // Check organization access first
+    const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -448,8 +530,7 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
     const userId = req.user!.id;
     
     if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get project to verify user is superintendent or associated with project
-      const { projects } = await import("@shared/schema");
+      // Get full project to verify user is superintendent or associated with project
       const [project] = await db
         .select()
         .from(projects)
@@ -553,10 +634,19 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
  */
 router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
     
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project: orderProject } = result;
+
+    // Check organization access first
+    const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -565,8 +655,7 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =>
     const userId = req.user!.id;
     
     if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get project to verify user is superintendent or associated with project
-      const { projects } = await import("@shared/schema");
+      // Get full project to verify user is superintendent or associated with project
       const [project] = await db
         .select()
         .from(projects)
@@ -604,10 +693,19 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =>
  */
 router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const order = await getChangeOrderById(req.params.id);
+    const result = await getChangeOrderById(req.params.id);
     
-    if (!order) {
+    if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project: orderProject } = result;
+
+    // Check organization access first
+    const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -616,8 +714,7 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     const userId = req.user!.id;
     
     if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get project to verify user is superintendent or associated with project
-      const { projects } = await import("@shared/schema");
+      // Get full project to verify user is superintendent or associated with project
       const [project] = await db
         .select()
         .from(projects)

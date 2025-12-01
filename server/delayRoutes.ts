@@ -10,6 +10,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { generateDelayNotificationPDF } from "./pdf-service";
+import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
@@ -141,8 +142,24 @@ async function notifyDelayStatusChange(
 
 router.get("/projects/:projectId/delays", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
     const { projectId } = req.params;
     const { status, reason } = req.query;
+
+    // Verify project exists and check org access
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    
+    if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+      return res.json([]);
+    }
 
     const conditions = [eq(projectDelays.projectId, projectId)];
     

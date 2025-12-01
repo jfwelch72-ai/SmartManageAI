@@ -15,6 +15,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
+import { getOrgIdForFilter } from "./orgFilter";
 
 function hasTMCreateAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
@@ -28,7 +29,23 @@ export function registerTMTicketRoutes(app: Express) {
   // Get all T&M tickets for a project
   app.get("/api/projects/:projectId/tm-tickets", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+
       const { projectId } = req.params;
+      
+      // Verify project exists and check org access
+      const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.json([]);
+      }
       
       const tickets = await db.query.tmTickets.findMany({
         where: eq(tmTickets.projectId, projectId),

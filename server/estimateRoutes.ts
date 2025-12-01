@@ -20,6 +20,7 @@ import {
   generateEquipmentRequirementsJson,
   type MaterialCalculationInputs 
 } from "./materialCalculator";
+import { getOrgIdForFilter } from "./orgFilter";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -38,6 +39,12 @@ export function registerEstimateRoutes(app: Express) {
   // Get active estimate for a project
   app.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json({ estimate: null });
+      }
+
       const { projectId } = req.params;
 
       // Check if user has management access (includes SUPERINTENDENT for read-only)
@@ -52,6 +59,11 @@ export function registerEstimateRoutes(app: Express) {
 
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Check organization access
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.json({ estimate: null });
       }
 
       // Get the most recent active estimate (DRAFT, PENDING_APPROVAL, or APPROVED)
