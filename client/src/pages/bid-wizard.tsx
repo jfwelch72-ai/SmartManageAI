@@ -251,11 +251,11 @@ export default function BidWizardPage() {
       }
       const bid = await response.json();
       
-      // Step 2: Create an estimate for the bid
+      // Step 2: Create an estimate for the bid (required for line items)
       const estimateResponse = await apiRequest("POST", `/api/bids/${bid.id}/estimate`);
       if (!estimateResponse.ok) {
-        console.warn('Failed to create estimate for bid');
-        return bid;
+        const errorData = await estimateResponse.json().catch(() => ({ message: 'Failed to create estimate' }));
+        throw new Error(errorData.message || 'Failed to create estimate for bid. Please try again.');
       }
       const estimate = await estimateResponse.json();
       
@@ -268,6 +268,8 @@ export default function BidWizardPage() {
       };
       
       if (selectedItems.length > 0 && estimate?.id) {
+        const failedItems: string[] = [];
+        
         for (const item of selectedItems) {
           const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
           const lineItemData = {
@@ -289,8 +291,12 @@ export default function BidWizardPage() {
           
           const lineItemResponse = await apiRequest("POST", `/api/estimates/${estimate.id}/line-items`, lineItemData);
           if (!lineItemResponse.ok) {
-            console.warn(`Failed to add line item: ${item.description}`);
+            failedItems.push(item.description);
           }
+        }
+        
+        if (failedItems.length > 0) {
+          throw new Error(`Failed to add ${failedItems.length} scope item(s) to estimate. Please add them manually.`);
         }
       }
       
