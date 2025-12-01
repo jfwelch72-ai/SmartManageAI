@@ -361,11 +361,70 @@ export const projectEmployeeRates = pgTable("project_employee_rates", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull(),
   overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull(),
+  classificationId: varchar("classification_id"), // Optional link to job classification
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   projectUserUnique: unique().on(table.projectId, table.userId),
+}));
+
+// Job Classifications - trades and labor categories (e.g., Carpenter, Electrician, Laborer)
+export const jobClassifications = pgTable("job_classifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g., "Carpenter", "Electrician", "Laborer"
+  code: text("code"), // e.g., "CARP", "ELEC", "LAB"
+  description: text("description"),
+  defaultRegularRate: decimal("default_regular_rate", { precision: 10, scale: 2 }), // Default shop rate for this classification
+  defaultOvertimeRate: decimal("default_overtime_rate", { precision: 10, scale: 2 }),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgNameUnique: unique().on(table.organizationId, table.name),
+}));
+
+// Employee Classification Assignments - assigns employees to job classifications with rates
+export const employeeClassifications = pgTable("employee_classifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
+  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull(), // Employee's rate for this classification
+  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull(),
+  isPrimary: boolean("is_primary").notNull().default(false), // Is this the employee's primary classification?
+  effectiveDate: date("effective_date").notNull().defaultNow(),
+  endDate: date("end_date"), // Null means currently active
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userClassUnique: unique().on(table.userId, table.classificationId),
+  userIdIdx: index("employee_classifications_user_id_idx").on(table.userId),
+  classIdIdx: index("employee_classifications_class_id_idx").on(table.classificationId),
+}));
+
+// Prevailing Wage Rates - stores prevailing wage rates per project per classification
+export const prevailingWageRates = pgTable("prevailing_wage_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
+  wageRate: decimal("wage_rate", { precision: 10, scale: 2 }).notNull(), // Base wage
+  fringeRate: decimal("fringe_rate", { precision: 10, scale: 2 }).notNull().default("0"), // Fringe benefits
+  totalRate: decimal("total_rate", { precision: 10, scale: 2 }).notNull(), // wage + fringe
+  overtimeMultiplier: decimal("overtime_multiplier", { precision: 4, scale: 2 }).notNull().default("1.5"),
+  effectiveDate: date("effective_date").notNull(),
+  expirationDate: date("expiration_date"), // Null means no expiration
+  wageDecision: text("wage_decision"), // Reference to wage determination (e.g., "CA-2024-0001")
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectClassUnique: unique().on(table.projectId, table.classificationId),
+  projectIdIdx: index("prevailing_wage_rates_project_id_idx").on(table.projectId),
 }));
 
 // T&M Daily Sheets table (legacy - replaced by tmTickets)
@@ -1661,6 +1720,24 @@ export const insertProjectEmployeeRateSchema = createInsertSchema(projectEmploye
   updatedAt: true,
 });
 
+export const insertJobClassificationSchema = createInsertSchema(jobClassifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmployeeClassificationSchema = createInsertSchema(employeeClassifications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPrevailingWageRateSchema = createInsertSchema(prevailingWageRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertTMDailySheetSchema = createInsertSchema(tmDailySheets).omit({
   id: true,
   createdAt: true,
@@ -1745,6 +1822,15 @@ export type ProjectLaborRate = typeof projectLaborRates.$inferSelect;
 
 export type InsertProjectEmployeeRate = z.infer<typeof insertProjectEmployeeRateSchema>;
 export type ProjectEmployeeRate = typeof projectEmployeeRates.$inferSelect;
+
+export type InsertJobClassification = z.infer<typeof insertJobClassificationSchema>;
+export type JobClassification = typeof jobClassifications.$inferSelect;
+
+export type InsertEmployeeClassification = z.infer<typeof insertEmployeeClassificationSchema>;
+export type EmployeeClassification = typeof employeeClassifications.$inferSelect;
+
+export type InsertPrevailingWageRate = z.infer<typeof insertPrevailingWageRateSchema>;
+export type PrevailingWageRate = typeof prevailingWageRates.$inferSelect;
 
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
