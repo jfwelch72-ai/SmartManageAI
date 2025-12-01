@@ -2365,6 +2365,7 @@ export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$
 // CRM Organisations table - Companies (Contractors, Subcontractors, Suppliers, Vendors)
 export const crmOrganisations = pgTable("crm_organisations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   type: crmOrganisationTypeEnum("type").notNull(),
   name: text("name").notNull(),
   address: text("address"),
@@ -2390,6 +2391,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
+  organizationIdx: index("crm_organisations_org_idx").on(table.organizationId),
   typeIdx: index("crm_organisations_type_idx").on(table.type),
   nameIdx: index("crm_organisations_name_idx").on(table.name),
 }));
