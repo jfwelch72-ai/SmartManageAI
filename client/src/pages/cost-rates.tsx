@@ -140,9 +140,10 @@ export default function CostRatesPage() {
     queryKey: ["/api/labor-rates/prevailing-wage-rates"],
   });
 
-  const { data: projects = [] } = useQuery<Project[]>({
+  const { data: projectsResponse } = useQuery<{ data: Project[], pagination?: any }>({
     queryKey: ["/api/projects"],
   });
+  const projects = projectsResponse?.data || [];
 
   const updateRatesMutation = useMutation({
     mutationFn: async (data: { userId: string; costRateRegular: string; costRateOvertime: string }) => {
