@@ -269,21 +269,22 @@ export default function BidWizardPage() {
       
       if (selectedItems.length > 0 && estimate?.id) {
         for (const item of selectedItems) {
+          const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
           const lineItemData = {
             description: item.description,
-            quantity: Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1,
+            quantity: qty.toString(),
             unit: item.unit || 'EA',
             category: mapCategory(item.category),
             notes: item.notes,
-            materialCost: 0,
-            laborCost: 0,
-            laborHours: 0,
-            equipmentCost: 0,
-            consumablesCost: 0,
-            subcontractCost: 0,
-            overheadAllocation: 0,
-            profitAllocation: 0,
-            totalCost: 0,
+            materialCost: "0",
+            laborCost: "0",
+            laborHours: "0",
+            equipmentCost: "0",
+            consumablesCost: "0",
+            subcontractCost: "0",
+            overheadAllocation: "0",
+            profitAllocation: "0",
+            totalCost: "0",
           };
           
           const lineItemResponse = await apiRequest("POST", `/api/estimates/${estimate.id}/line-items`, lineItemData);
