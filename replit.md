@@ -47,7 +47,38 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - **AI Contract Document Analysis** (`server/aiContractDocumentRoutes.ts`): AI-powered contract and award document analysis
 - **Schedule of Values** (`server/sovRoutes.ts`): SOV generation with fillable PDF output, status workflow, and transaction-based totals
 - **Subcontract Agreements** (`server/subcontractRoutes.ts`): Subcontract agreement generation with white-label PDF output
+- **Subcontractor Payables** (`server/subcontractorPayablesRoutes.ts`): Payment workflow with auto-creation, approvals, and payment tracking
 - **Website Builder** (`server/websiteBuilderRoutes.ts`): Complete website management with 8 modules - Setup, Pages, Blog, Projects, Social Media, Analytics, SEO, and AI Design Assistant
+
+## Subcontractor Payables Workflow System
+A complete accounts payable workflow for subcontractor payments with the following features:
+
+**Auto-Creation**: When a subcontract status is changed to COMPLETED, a payable is automatically created for the remaining contract balance.
+
+**Workflow States**: PENDING → APPROVED → PAID (or REJECTED from PENDING)
+
+**API Endpoints**:
+- `GET /api/payables` - List all payables for organization
+- `GET /api/payables/summary` - Get summary statistics (pending/approved/paid/rejected counts and totals)
+- `GET /api/payables/:id` - Get single payable details
+- `POST /api/payables/:id/approve` - Approve a pending payable (ADMIN/MANAGER only)
+- `POST /api/payables/:id/reject` - Reject a pending payable with reason (ADMIN/MANAGER only)
+- `POST /api/payables/:id/mark-paid` - Mark approved payable as paid with payment details
+
+**Frontend Features** (`client/src/pages/subcontractor-payables.tsx`):
+- KPI dashboard with pending, approved, paid, and outstanding totals
+- Search by subcontractor, project, contract number
+- Status filtering (ALL, PENDING, APPROVED, PAID, REJECTED)
+- Inline approve/reject buttons for pending items
+- Payment recording dialog with date, method, and check number
+- Detail view with full payable information
+
+**Security**: Multi-tenant isolation, ADMIN/MANAGER role requirements for approvals, comprehensive audit logging
+
+## Test Credentials
+- **Email**: manager2@tfr.com
+- **Password**: TFR2025!
+- **Role**: MANAGER
 
 ## Website Builder System
 The Website Builder is a comprehensive white-label website management system for construction organizations featuring:

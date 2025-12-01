@@ -458,6 +458,7 @@ export default function SubcontractorPayablesPage() {
                                         variant="outline" 
                                         onClick={() => {
                                           setSelectedPayable(payable);
+                                          setRejectionReason("");
                                           setIsRejectOpen(true);
                                         }}
                                         data-testid={`button-reject-${payable.id}`}
@@ -472,6 +473,9 @@ export default function SubcontractorPayablesPage() {
                                       variant="outline"
                                       onClick={() => {
                                         setSelectedPayable(payable);
+                                        setPaymentDate(format(new Date(), "yyyy-MM-dd"));
+                                        setPaymentMethod(payable.paymentMethod || "CHECK");
+                                        setCheckNumber("");
                                         setIsPayOpen(true);
                                       }}
                                       data-testid={`button-pay-${payable.id}`}
@@ -502,7 +506,12 @@ export default function SubcontractorPayablesPage() {
         )}
       </main>
 
-      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+      <Dialog open={isDetailOpen} onOpenChange={(open) => {
+        setIsDetailOpen(open);
+        if (!open) {
+          setSelectedPayable(null);
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="payable-detail-description">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -609,6 +618,7 @@ export default function SubcontractorPayablesPage() {
                 <Button 
                   variant="outline" 
                   onClick={() => {
+                    setRejectionReason("");
                     setIsRejectOpen(true);
                   }}
                 >
@@ -621,7 +631,12 @@ export default function SubcontractorPayablesPage() {
               </div>
             )}
             {selectedPayable?.status === "APPROVED" && (user.role === "ADMIN" || user.role === "MANAGER") && (
-              <Button onClick={() => setIsPayOpen(true)}>
+              <Button onClick={() => {
+                setPaymentDate(format(new Date(), "yyyy-MM-dd"));
+                setPaymentMethod(selectedPayable.paymentMethod || "CHECK");
+                setCheckNumber("");
+                setIsPayOpen(true);
+              }}>
                 <CreditCard className="w-4 h-4 mr-2" /> Record Payment
               </Button>
             )}
@@ -629,7 +644,12 @@ export default function SubcontractorPayablesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
+      <Dialog open={isRejectOpen} onOpenChange={(open) => {
+        setIsRejectOpen(open);
+        if (!open) {
+          setRejectionReason("");
+        }
+      }}>
         <DialogContent aria-describedby="reject-dialog-description">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -668,7 +688,14 @@ export default function SubcontractorPayablesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
+      <Dialog open={isPayOpen} onOpenChange={(open) => {
+        setIsPayOpen(open);
+        if (!open) {
+          setCheckNumber("");
+          setPaymentDate(format(new Date(), "yyyy-MM-dd"));
+          setPaymentMethod("CHECK");
+        }
+      }}>
         <DialogContent aria-describedby="payment-dialog-description">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
