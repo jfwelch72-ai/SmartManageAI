@@ -370,7 +370,7 @@ const createContractAnalysisSchema = z.object({
   documentType: z.string().optional(),
 });
 
-router.post("/ai/contract-document-analysis", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -504,7 +504,7 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole(["SUPER_A
   }
 });
 
-router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -617,7 +617,7 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
   }
 });
 
-router.delete("/ai/contract-document-analysis/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.delete("/ai/contract-document-analysis/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

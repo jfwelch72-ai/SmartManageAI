@@ -6411,11 +6411,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate enrollment code
       const enrollmentCode = `VE-${organizationId.slice(0, 4)}-${vendorCrmOrganisationId.slice(0, 4)}-${Date.now().toString(36)}`.toUpperCase();
 
-      // Create enrollment with INVITED status
+      // Create enrollment with PENDING status (awaiting vendor acceptance)
       const [enrollment] = await db.insert(vendorEnrollments).values({
         vendorCrmOrgId: vendorCrmOrganisationId,
         contractorOrgId: organizationId,
-        status: "INVITED",
+        status: "PENDING",
         autoApproveNewPricing: autoApproveNewPricing || false,
         notifyOnPriceUpdate: true,
         invitedByUserId: req.user!.id,
@@ -6429,7 +6429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "CREATE",
         entityType: "vendor_enrollment",
         entityId: enrollment.id,
-        newValue: JSON.stringify({ vendorName: vendor.name, vendorEmail, status: "INVITED" }),
+        newValue: JSON.stringify({ vendorName: vendor.name, vendorEmail, status: "PENDING" }),
       });
 
       res.status(201).json({
@@ -6512,7 +6512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE",
         entityType: "vendor_enrollment",
         entityId: req.params.id,
-        previousValue: JSON.stringify({ status: existing.status }),
+        oldValue: JSON.stringify({ status: existing.status }),
         newValue: JSON.stringify({ status: "SUSPENDED" }),
       });
 
@@ -6558,7 +6558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE",
         entityType: "vendor_enrollment",
         entityId: req.params.id,
-        previousValue: JSON.stringify({ status: existing.status }),
+        oldValue: JSON.stringify({ status: existing.status }),
         newValue: JSON.stringify({ status: "ACTIVE" }),
       });
 
@@ -6594,11 +6594,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           submittedByName: sql`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
         })
         .from(vendorPricingCatalogs)
-        .leftJoin(users, eq(users.id, vendorPricingCatalogs.submittedByUserId))
+        .leftJoin(users, eq(users.id, vendorPricingCatalogs.submittedByVendorUserId))
         .where(and(
           eq(vendorPricingCatalogs.crmOrganisationId, req.params.id),
           eq(vendorPricingCatalogs.organizationId, organizationId),
-          eq(vendorPricingCatalogs.approvalStatus, "PENDING")
+          eq(vendorPricingCatalogs.approvalStatus, "PENDING_REVIEW")
         ))
         .orderBy(vendorPricingCatalogs.createdAt);
 
@@ -6628,7 +6628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Pricing item not found" });
       }
 
-      if (existing.approvalStatus !== "PENDING") {
+      if (existing.approvalStatus !== "PENDING_REVIEW") {
         return res.status(400).json({ error: "Pricing item is not pending approval" });
       }
 
@@ -6648,7 +6648,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE",
         entityType: "vendor_pricing",
         entityId: req.params.id,
-        previousValue: JSON.stringify({ approvalStatus: "PENDING" }),
+        oldValue: JSON.stringify({ approvalStatus: "PENDING_REVIEW" }),
         newValue: JSON.stringify({ approvalStatus: "APPROVED" }),
       });
 
@@ -6678,7 +6678,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Pricing item not found" });
       }
 
-      if (existing.approvalStatus !== "PENDING") {
+      if (existing.approvalStatus !== "PENDING_REVIEW") {
         return res.status(400).json({ error: "Pricing item is not pending approval" });
       }
 
@@ -6698,7 +6698,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE",
         entityType: "vendor_pricing",
         entityId: req.params.id,
-        previousValue: JSON.stringify({ approvalStatus: "PENDING" }),
+        oldValue: JSON.stringify({ approvalStatus: "PENDING_REVIEW" }),
         newValue: JSON.stringify({ approvalStatus: "REJECTED" }),
       });
 

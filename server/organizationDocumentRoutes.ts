@@ -341,7 +341,7 @@ const createDocumentSchema = insertOrganizationDocumentSchema.extend({
   ),
 });
 
-router.post("/organization-documents", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.post("/organization-documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -426,7 +426,7 @@ const updateDocumentSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-router.patch("/organization-documents/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.patch("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -477,7 +477,7 @@ router.patch("/organization-documents/:id", requireAuth, requireRole(["SUPER_ADM
   }
 });
 
-router.delete("/organization-documents/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

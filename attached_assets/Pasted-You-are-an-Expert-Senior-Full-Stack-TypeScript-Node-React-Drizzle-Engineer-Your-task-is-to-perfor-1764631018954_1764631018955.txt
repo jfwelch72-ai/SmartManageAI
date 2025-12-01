@@ -1,0 +1,157 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React/Drizzle Engineer.  
+Your task is to perform ALL Phase-0 critical fixes required to make the SmartManageAI platform deployable.
+
+This is ONE unified instruction.  
+Do NOT ask for clarification.  
+Do NOT break into steps.  
+Execute EVERYTHING below as one atomic repair operation.
+
+────────────────────────────────────────────────────────
+PHASE 0 – CRITICAL DEPLOYMENT BLOCKERS TO FIX NOW
+────────────────────────────────────────────────────────
+
+You MUST fix ALL of the following issues across the repo:
+
+========================================================
+1. REMOVE FINAL TRANSACTION IN sovRoutes.ts (RUNTIME CRASH)
+========================================================
+File: server/sovRoutes.ts (around line ~384)
+
+Current code incorrectly uses:
+    db.transaction(async (trx) => { ... })
+
+The Neon HTTP driver CANNOT perform transactions.  
+This WILL crash in production.
+
+Fix:
+- Remove ALL db.transaction() usage from sovRoutes.ts.
+- Replace with safe sequential operations using `db` directly.
+- Ensure business logic remains identical.
+- Perform updates in correct order:
+    1. Update the line item
+    2. Recalculate SOV totals
+    3. Update scheduleOfValues
+- Include proper error handling and audit logging.
+
+========================================================
+2. FIX BROKEN requireRole() USAGE (SECURITY BYPASS)
+========================================================
+
+Files affected:
+- server/sovRoutes.ts
+- server/organizationDocumentRoutes.ts
+- server/aiContractDocumentRoutes.ts
+
+Current incorrect usage:
+    requireRole(["ADMIN", "MANAGER"])
+
+Correct usage:
+    requireRole("ADMIN", "MANAGER")
+
+Fix:
+- Update ALL requireRole calls across all files to pass roles as separate arguments.
+- Confirm no routes are left with the old array syntax.
+- Confirm requireRole() enforces proper role matching.
+
+========================================================
+3. FIX AUDIT LOG SCHEMA MISMATCHES (BUILD FAILURE)
+========================================================
+
+Files affected:
+- server/routes.ts
+- server/platformAdminRoutes.ts
+
+Fix ALL of the following mistakenly used fields:
+- Remove any `organizationId` field from audit log inserts.
+- Replace any usage of previousValue with oldValue / newValue format.
+- Ensure all insert calls to auditLog match the defined schema:
+    Required:
+      userId: string
+      entityType: string
+      entityId: string
+      action: enum
+      oldValue: string | null
+      newValue: string | null
+- Wrap all object oldValue/newValue with JSON.stringify BEFORE insert.
+
+========================================================
+4. FIX ENUM MISMATCHES (RUNTIME & BUILD ERRORS)
+========================================================
+
+Files affected:
+- server/routes.ts
+- server/delayRoutes.ts
+- Others if detected
+
+Fix:
+- Replace invalid enums:
+    "INVITED" → valid values: ACTIVE | PENDING | REJECTED | SUSPENDED
+    "PENDING" → correct: "PENDING_REVIEW"
+- Ensure ALL enum comparisons match schema definitions exactly.
+- Confirm no invalid enum value remains anywhere in the repo.
+
+========================================================
+5. FIX MISSING AuthRequest TYPING IN laborRateRoutes.ts
+========================================================
+
+File: server/laborRateRoutes.ts (38 errors)
+
+Fix:
+- Import AuthRequest from its correct module.
+- Update ALL route handlers to:
+      (req: AuthRequest, res)
+- Fix all property access errors where req.user was previously undefined.
+- Ensure validation logic remains intact.
+
+========================================================
+6. FIX MISSING submittedByUserId SCHEMA PROPERTY USAGE
+========================================================
+
+File: server/routes.ts (around line 6597)
+
+Fix:
+- Either remove references to submittedByUserId OR
+- Add submittedByUserId to schema if the field is intended.
+- Make the code + schema fully consistent.
+
+========================================================
+7. SEARCH ENTIRE REPO FOR ALL RELATED PATTERNS
+========================================================
+
+You MUST update all occurrences of:
+- requireRole([...])
+- db.transaction(
+- oldValue: { ... }
+- newValue: { ... }
+- invalid enum values
+
+Perform global replacements safely and consistently.
+
+========================================================
+8. ENSURE THE FIXES DO NOT BREAK BUSINESS LOGIC
+========================================================
+
+- Preserve SOV UOM behavior.
+- Preserve organization-level access control.
+- Preserve AI route behavior and audit logging.
+- Preserve vendor/pricing catalog workflow.
+
+========================================================
+FINAL VERIFICATION REQUIREMENTS
+========================================================
+
+After completing ALL fixes above:
+
+1. Confirm sovRoutes.ts contains NO transaction usage.
+2. Confirm requireRole() is correctly implemented everywhere.
+3. Confirm NO audit log schema violations remain.
+4. Confirm ALL enum values match schema exactly.
+5. Confirm laborRateRoutes.ts has NO missing req.user type errors.
+6. Confirm submittedByUserId mismatch is resolved.
+7. Confirm the code compiles far further than before (even though TypeScript cleanup comes later).
+8. Output a clear summary listing ALL files modified.
+
+Do NOT attempt to fix all TypeScript issues now.  
+ONLY Phase-0 blockers.
+
+END OF INSTRUCTION.

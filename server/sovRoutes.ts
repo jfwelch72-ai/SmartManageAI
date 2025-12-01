@@ -193,7 +193,7 @@ const createSOVSchema = z.object({
   })).optional(),
 });
 
-router.post("/sov", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"]), async (req: AuthRequest, res: Response) => {
+router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -329,7 +329,7 @@ const updateLineItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { sovId, lineItemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -381,60 +381,57 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole(["SU
     const balance = Math.max(0, scheduled - totalCompleted);
     const retainageAmt = totalCompleted * retainagePct;
 
-    const updated = await db.transaction(async (trx) => {
-      const [updatedItem] = await trx
-        .update(sovLineItems)
-        .set({
-          previouslyCompleted: String(previous),
-          thisPeriodCompleted: String(current),
-          materialsStored: String(stored),
-          totalCompletedAndStored: String(totalCompleted),
-          percentComplete: String(percentComplete.toFixed(2)),
-          balanceToFinish: String(balance),
-          retainageAmount: String(retainageAmt.toFixed(2)),
-          notes: updates.notes ?? lineItem.notes,
-          updatedAt: new Date(),
-        })
-        .where(eq(sovLineItems.id, lineItemId))
-        .returning();
-
-      const [sqlTotals] = await trx.execute(sql`
+    // NOTE: Neon HTTP driver doesn't support transactions in serverless environments
+    // Using a single CTE-based SQL statement to atomically update both line item and SOV totals
+    // This ensures consistency by executing all operations in one atomic query
+    
+    const result = await db.execute(sql`
+      WITH updated_line_item AS (
+        UPDATE sov_line_items
+        SET 
+          previously_completed = ${String(previous)},
+          this_period_completed = ${String(current)},
+          materials_stored = ${String(stored)},
+          total_completed_and_stored = ${String(totalCompleted)},
+          percent_complete = ${String(percentComplete.toFixed(2))},
+          balance_to_finish = ${String(balance)},
+          retainage_amount = ${String(retainageAmt.toFixed(2))},
+          notes = ${updates.notes ?? lineItem.notes ?? null},
+          updated_at = NOW()
+        WHERE id = ${lineItemId}
+        RETURNING *
+      ),
+      aggregates AS (
         SELECT 
-          COALESCE(SUM(GREATEST(0, CAST(scheduled_value AS DECIMAL(14,2)))), 0) as total_scheduled_value,
-          COALESCE(SUM(GREATEST(0, CAST(previously_completed AS DECIMAL(14,2)))), 0) as total_previously_completed,
-          COALESCE(SUM(GREATEST(0, CAST(this_period_completed AS DECIMAL(14,2)))), 0) as total_this_period,
-          COALESCE(SUM(GREATEST(0, CAST(materials_stored AS DECIMAL(14,2)))), 0) as total_materials_stored
+          COALESCE(SUM(GREATEST(0, CAST(scheduled_value AS DECIMAL(14,2)))), 0)::text as total_scheduled,
+          COALESCE(SUM(GREATEST(0, CAST(previously_completed AS DECIMAL(14,2)))), 0)::text as total_previous,
+          COALESCE(SUM(GREATEST(0, CAST(this_period_completed AS DECIMAL(14,2)))), 0)::text as total_current,
+          COALESCE(SUM(GREATEST(0, CAST(materials_stored AS DECIMAL(14,2)))), 0)::text as total_stored,
+          COALESCE(SUM(GREATEST(0, CAST(previously_completed AS DECIMAL(14,2)))) + 
+                   SUM(GREATEST(0, CAST(this_period_completed AS DECIMAL(14,2)))) + 
+                   SUM(GREATEST(0, CAST(materials_stored AS DECIMAL(14,2)))), 0) as total_completed
         FROM sov_line_items
         WHERE sov_id = ${sovId}
-        FOR UPDATE
-      `);
+      ),
+      updated_sov AS (
+        UPDATE schedule_of_values
+        SET 
+          total_scheduled_value = aggregates.total_scheduled,
+          total_previously_completed = aggregates.total_previous,
+          total_this_period = aggregates.total_current,
+          total_materials_stored = aggregates.total_stored,
+          total_completed_to_date = aggregates.total_completed,
+          total_retainage = ROUND((aggregates.total_completed * ${retainagePct})::numeric, 2)::text,
+          total_earned_less_retainage = ROUND((aggregates.total_completed - (aggregates.total_completed * ${retainagePct}))::numeric, 2)::text,
+          updated_at = NOW()
+        FROM aggregates
+        WHERE schedule_of_values.id = ${sovId}
+        RETURNING schedule_of_values.*
+      )
+      SELECT * FROM updated_line_item
+    `);
 
-      const totalScheduled = new Decimal(String(sqlTotals.total_scheduled_value || 0));
-      const totalPrevious = new Decimal(String(sqlTotals.total_previously_completed || 0));
-      const totalCurrent = new Decimal(String(sqlTotals.total_this_period || 0));
-      const totalStored = new Decimal(String(sqlTotals.total_materials_stored || 0));
-      
-      const totalCompletedToDate = totalPrevious.plus(totalCurrent).plus(totalStored);
-      const retainageFactor = new Decimal(retainagePct);
-      const totalRetainage = totalCompletedToDate.times(retainageFactor);
-      const totalEarnedLessRetainage = totalCompletedToDate.minus(totalRetainage);
-
-      await trx
-        .update(scheduleOfValues)
-        .set({
-          totalScheduledValue: totalScheduled.toFixed(2),
-          totalPreviouslyCompleted: totalPrevious.toFixed(2),
-          totalThisPeriod: totalCurrent.toFixed(2),
-          totalMaterialsStored: totalStored.toFixed(2),
-          totalCompletedToDate: totalCompletedToDate.toFixed(2),
-          totalRetainage: totalRetainage.toFixed(2),
-          totalEarnedLessRetainage: totalEarnedLessRetainage.toFixed(2),
-          updatedAt: new Date(),
-        })
-        .where(eq(scheduleOfValues.id, sovId));
-
-      return updatedItem;
-    });
+    const updated = result[0] || lineItem;
 
     res.json(updated);
   } catch (error) {
@@ -613,7 +610,7 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) 
   }
 });
 
-router.delete("/sov/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

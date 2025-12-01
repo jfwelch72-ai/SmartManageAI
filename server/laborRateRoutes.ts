@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Response } from "express";
 import { db } from "./db";
 import { 
   jobClassifications, 
@@ -13,31 +13,13 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { logAudit } from "./auditLogger";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
 
 const router = Router();
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.user) {
-    return res.status(401).json({ error: "Authentication required" });
-  }
-  next();
-}
-
-function requireRole(...allowedRoles: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Insufficient permissions" });
-    }
-    next();
-  };
-}
-
 // ==================== JOB CLASSIFICATIONS ====================
 
-router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: Request, res: Response) => {
+router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -57,7 +39,7 @@ router.get("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
   }
 });
 
-router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -89,7 +71,7 @@ router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER"), as
   }
 });
 
-router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -145,7 +127,7 @@ router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (req: Request, res: Response) => {
+router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -190,7 +172,7 @@ router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (
 
 // ==================== EMPLOYEE CLASSIFICATIONS ====================
 
-router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: Request, res: Response) => {
+router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -271,7 +253,7 @@ router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAG
   }
 });
 
-router.get("/employee-classifications/my-rates", requireAuth, async (req: Request, res: Response) => {
+router.get("/employee-classifications/my-rates", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;
@@ -308,7 +290,7 @@ router.get("/employee-classifications/my-rates", requireAuth, async (req: Reques
   }
 });
 
-router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -350,7 +332,7 @@ router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -412,7 +394,7 @@ router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", 
   }
 });
 
-router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -454,7 +436,7 @@ router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN",
 
 // ==================== PREVAILING WAGE RATES ====================
 
-router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: Request, res: Response) => {
+router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -538,7 +520,7 @@ router.get("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -576,7 +558,7 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
-router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -634,7 +616,7 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
-router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: Request, res: Response) => {
+router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
