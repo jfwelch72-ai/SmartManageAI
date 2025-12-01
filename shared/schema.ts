@@ -1570,6 +1570,10 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   materialRequirementsJson: text("material_requirements_json"),
   equipmentRequirementsJson: text("equipment_requirements_json"),
   
+  // Labor Rate Tracking - links to organization's job classifications
+  jobClassificationId: varchar("job_classification_id").references(() => jobClassifications.id, { onDelete: "set null" }),
+  laborRateUsed: decimal("labor_rate_used", { precision: 10, scale: 2 }), // Stores the rate at time of creation for historical accuracy
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1579,6 +1583,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
   workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
   subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),
+  jobClassificationIdx: index("estimate_line_items_job_classification_idx").on(table.jobClassificationId),
 }));
 
 // Estimate Versions table (snapshots of estimates)
