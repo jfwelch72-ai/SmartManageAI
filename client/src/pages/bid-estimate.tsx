@@ -123,6 +123,29 @@ export default function BidEstimate() {
     enabled: !!bidId,
   });
   
+  // Fetch organization-specific work categories based on trade type
+  type WorkCategoryItem = {
+    id: string;
+    name: string;
+    code: string;
+    unit: string | null;
+    description: string | null;
+  };
+  
+  type WorkCategory = {
+    value: string;
+    label: string;
+    itemCount: number;
+    isDefault?: boolean;
+    items: WorkCategoryItem[];
+  };
+  
+  const { data: workCategories = [] } = useQuery<WorkCategory[]>({
+    queryKey: ["/api/organization/work-categories"],
+    enabled: hasEstimateAccess,
+    staleTime: 10 * 60 * 1000, // 10 minutes - categories don't change often
+  });
+  
   // Fetch catalog pricing suggestions for the selected category
   const { data: catalogPrices = [] } = useQuery<CatalogPriceItem[]>({
     queryKey: [`/api/vendor-pricing/search?category=${selectedCatalogCategory}`],
@@ -229,24 +252,18 @@ export default function BidEstimate() {
     form.setValue("unit", data.unit);
     form.setValue("scopeWorkTypeId", data.workTypeId);
     
-    // Map category name to our category enum
-    const categoryMap: Record<string, string> = {
-      "Sidewalk": "CONCRETE",
-      "Driveway": "CONCRETE",
-      "Curb & Gutter": "CONCRETE",
-      "Foundation": "CONCRETE",
-      "Patio": "CONCRETE",
-      "Flatwork": "CONCRETE",
-      "Excavation": "EXCAVATION",
-      "Grading": "EXCAVATION",
-      "Pavers": "PAVERS",
-      "Bollards": "BOLLARDS",
-      "Striping": "STRIPING",
-      "Signage": "SIGNAGE",
-      "Landscaping": "LANDSCAPING",
-      "Electrical": "ELECTRICAL",
-    };
-    const mappedCategory = categoryMap[data.categoryName] || "OTHER";
+    // Find matching category from organization's work categories
+    // The backend returns legacy enum values (CONCRETE, EXCAVATION, etc.) as value
+    // Try to find a category whose label matches the scope's categoryName
+    let matchedCategory = workCategories.find(c => 
+      c.label.toLowerCase() === data.categoryName.toLowerCase() ||
+      c.label.toLowerCase().includes(data.categoryName.toLowerCase())
+    );
+    
+    // Fallback: use the default category (marked with isDefault flag) or 'OTHER'
+    const defaultCategory = workCategories.find(c => c.isDefault);
+    const mappedCategory = matchedCategory?.value || defaultCategory?.value || 'OTHER';
+    
     form.setValue("category", mappedCategory);
     setSelectedCatalogCategory(mappedCategory);
   };
@@ -808,15 +825,28 @@ export default function BidEstimate() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="CONCRETE">Concrete</SelectItem>
-                                <SelectItem value="EXCAVATION">Excavation</SelectItem>
-                                <SelectItem value="PAVERS">Pavers</SelectItem>
-                                <SelectItem value="BOLLARDS">Bollards</SelectItem>
-                                <SelectItem value="STRIPING">Striping</SelectItem>
-                                <SelectItem value="SIGNAGE">Signage</SelectItem>
-                                <SelectItem value="LANDSCAPING">Landscaping</SelectItem>
-                                <SelectItem value="ELECTRICAL">Electrical</SelectItem>
-                                <SelectItem value="OTHER">Other</SelectItem>
+                                {workCategories.length > 0 ? (
+                                  workCategories.map((cat) => (
+                                    <SelectItem key={cat.value} value={cat.value}>
+                                      {cat.label}
+                                      {cat.itemCount > 0 && (
+                                        <span className="ml-2 text-xs text-muted-foreground">
+                                          ({cat.itemCount})
+                                        </span>
+                                      )}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <>
+                                    <SelectItem value="GENERAL">General</SelectItem>
+                                    <SelectItem value="EXCAVATION">Excavation</SelectItem>
+                                    <SelectItem value="CONCRETE">Concrete</SelectItem>
+                                    <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
+                                    <SelectItem value="UTILITIES">Utilities</SelectItem>
+                                    <SelectItem value="GRADING">Grading</SelectItem>
+                                    <SelectItem value="OTHER">Other</SelectItem>
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
                             <FormMessage />
@@ -1201,15 +1231,28 @@ export default function BidEstimate() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="CONCRETE">Concrete</SelectItem>
-                                <SelectItem value="EXCAVATION">Excavation</SelectItem>
-                                <SelectItem value="PAVERS">Pavers</SelectItem>
-                                <SelectItem value="BOLLARDS">Bollards</SelectItem>
-                                <SelectItem value="STRIPING">Striping</SelectItem>
-                                <SelectItem value="SIGNAGE">Signage</SelectItem>
-                                <SelectItem value="LANDSCAPING">Landscaping</SelectItem>
-                                <SelectItem value="ELECTRICAL">Electrical</SelectItem>
-                                <SelectItem value="OTHER">Other</SelectItem>
+                                {workCategories.length > 0 ? (
+                                  workCategories.map((cat) => (
+                                    <SelectItem key={cat.value} value={cat.value}>
+                                      {cat.label}
+                                      {cat.itemCount > 0 && (
+                                        <span className="ml-2 text-xs text-muted-foreground">
+                                          ({cat.itemCount})
+                                        </span>
+                                      )}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <>
+                                    <SelectItem value="GENERAL">General</SelectItem>
+                                    <SelectItem value="EXCAVATION">Excavation</SelectItem>
+                                    <SelectItem value="CONCRETE">Concrete</SelectItem>
+                                    <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
+                                    <SelectItem value="UTILITIES">Utilities</SelectItem>
+                                    <SelectItem value="GRADING">Grading</SelectItem>
+                                    <SelectItem value="OTHER">Other</SelectItem>
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
                             <FormMessage />

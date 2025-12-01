@@ -39,7 +39,7 @@ import {
   bidEquipmentSelections, insertBidEquipmentSelectionSchema,
   projectEquipmentPlans, insertProjectEquipmentPlanSchema,
   rentalEquipmentUsages, insertRentalEquipmentUsageSchema,
-  tradeFeatures, organizations
+  tradeFeatures, organizations, organizationSowItems, masterSowItems
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -7608,6 +7608,316 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete modifier error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Organization-Specific Work Categories
+  // Get work categories based on organization's SOW items (trade-specific)
+  // ====================
+  
+  // Legacy enum values that exist in the system for backward compatibility
+  // These are the only valid category values for catalog lookups and estimate persistence
+  const VALID_LEGACY_ENUMS = [
+    "CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", 
+    "STRIPING", "SIGNAGE", "LANDSCAPING", "ELECTRICAL", "OTHER"
+  ] as const;
+  
+  // Comprehensive mapping from category name keywords to legacy enum values
+  // Uses tokenized matching to avoid false positives
+  // Priority order matters - more specific keywords should be checked first
+  type CategoryMapping = {
+    legacyEnum: string;
+    priority: number;
+    // Multi-word phrases that must appear as word sequences (not substrings)
+    phrases: string[];
+    // Single words that must match as complete tokens
+    words: string[];
+  };
+  
+  const categoryMappings: CategoryMapping[] = [
+    // Striping/Markings (high priority)
+    { legacyEnum: "STRIPING", priority: 1,
+      phrases: ["pavement marking", "traffic paint", "cross walk", "stop bar", 
+                "parking stall", "handicap space", "lane marking", "street marking", 
+                "paint striping"],
+      words: ["striping", "thermoplastic", "crosswalk"] },
+    // Signage (high priority - avoid matching "design", "post-tension" etc.)
+    { legacyEnum: "SIGNAGE", priority: 1,
+      phrases: ["traffic sign", "street sign", "parking sign", "ada sign",
+                "directional sign", "way finding", "sign installation",
+                "monument sign", "regulatory sign"],
+      words: ["signage", "wayfinding"] },
+    // Bollards/Safety
+    { legacyEnum: "BOLLARDS", priority: 2,
+      phrases: ["guard rail", "safety barrier", "wheel stop", "parking barrier", 
+                "crash barrier", "bumper post", "pipe bollard"],
+      words: ["bollard", "guardrail"] },
+    // Electrical
+    { legacyEnum: "ELECTRICAL", priority: 2,
+      phrases: ["electric work", "light fixture", "junction box", "pole light", 
+                "area light", "parking lot lighting", "electrical conduit"],
+      words: ["electrical", "lighting", "conduit", "transformer", "photocell"] },
+    // Landscaping 
+    { legacyEnum: "LANDSCAPING", priority: 2,
+      phrases: ["erosion control", "silt fence", "fiber roll", "stormwater prevention", 
+                "bmp installation", "sprinkler system", "drip line"],
+      words: ["landscaping", "landscape", "irrigation", "hydroseed", "topsoil", 
+              "swppp", "mulch", "sod", "turf", "shrub", "planting"] },
+    // Concrete-related (flatwork, structural, decorative)
+    { legacyEnum: "CONCRETE", priority: 3,
+      phrases: ["curb and gutter", "curb & gutter", "stem wall", "retaining wall",
+                "exposed aggregate", "stamped concrete", "colored concrete", 
+                "expansion joint", "control joint", "post-tension", "post tension", 
+                "pt slab"],
+      words: ["concrete", "sidewalk", "driveway", "foundation", "patio", "flatwork",
+              "footing", "slab", "pier", "rebar", "reinforcing", "dowel", "curb", 
+              "gutter", "cmu", "masonry", "sawcut", "sawcutting"] },
+    // Paving/Asphalt
+    { legacyEnum: "PAVERS", priority: 3,
+      phrases: ["ac paving", "hot mix", "cold patch", "base rock", "base course", 
+                "seal coat", "slurry seal", "crack seal", "pothole repair", 
+                "mill and overlay", "grind and overlay"],
+      words: ["asphalt", "paving", "blacktop", "overlay", "paver"] },
+    // Excavation/Earthwork-related (lowest priority - catches remaining site work)
+    { legacyEnum: "EXCAVATION", priority: 4,
+      phrases: ["site work", "rough grading", "fine grading", "haul off", "import fill",
+                "storm drain", "sewer line", "underground utilities", "catch basin",
+                "traffic control", "construction entrance", "jack and bore", 
+                "pipe installation", "utility install", "temporary fencing", 
+                "stabilized entrance", "site clearing", "directional drill"],
+      words: ["excavation", "earthwork", "grading", "trenching", "backfill", "sitework",
+              "demolition", "compaction", "subgrade", "manhole", "survey", "layout",
+              "barricade", "flagging", "dewatering", "shoring", "boring", "grubbing",
+              "stockpile", "stripping", "trench", "export"] },
+  ].sort((a, b) => a.priority - b.priority);
+  
+  // Tokenize a string into words, handling hyphens and special characters
+  function tokenize(input: string): string[] {
+    // Replace hyphens/underscores with spaces, then split on non-alphanumeric
+    return input.toLowerCase()
+      .replace(/[-_]/g, ' ')
+      .split(/[^a-z0-9]+/)
+      .filter(word => word.length > 0);
+  }
+  
+  // Check if phrase tokens appear in sequence within input tokens
+  function containsPhrase(inputTokens: string[], phraseTokens: string[]): boolean {
+    if (phraseTokens.length === 0) return false;
+    
+    for (let i = 0; i <= inputTokens.length - phraseTokens.length; i++) {
+      let match = true;
+      for (let j = 0; j < phraseTokens.length; j++) {
+        if (inputTokens[i + j] !== phraseTokens[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return true;
+    }
+    return false;
+  }
+  
+  function mapCategoryToLegacyEnum(categoryName: string): { legacyEnum: string; isInferred: boolean } {
+    const inputTokens = tokenize(categoryName);
+    
+    // Check each mapping for matches (in priority order)
+    for (const mapping of categoryMappings) {
+      // Check multi-word phrases first (more specific)
+      for (const phrase of mapping.phrases) {
+        const phraseTokens = tokenize(phrase);
+        if (containsPhrase(inputTokens, phraseTokens)) {
+          return { legacyEnum: mapping.legacyEnum, isInferred: true };
+        }
+      }
+      
+      // Then check single words (must be exact token match)
+      for (const word of mapping.words) {
+        if (inputTokens.includes(word.toLowerCase())) {
+          return { legacyEnum: mapping.legacyEnum, isInferred: true };
+        }
+      }
+    }
+    
+    // Fallback to OTHER for unmatched categories
+    console.log(`[WorkCategories] Unmapped category: "${categoryName}" (tokens: ${inputTokens.join(', ')}) -> defaulting to OTHER`);
+    return { legacyEnum: "OTHER", isInferred: true };
+  }
+  
+  // Get organization-specific work categories from their SOW items
+  app.get("/api/organization/work-categories", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      // Get organization's trade type first for context
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      // Default fallback categories based on valid legacy enums only
+      // These match the enums used in vendor pricing, estimates, and analytics
+      const defaultCategories = [
+        { value: "CONCRETE", label: "Concrete", itemCount: 0, items: [], isDefault: false },
+        { value: "EXCAVATION", label: "Excavation", itemCount: 0, items: [], isDefault: false },
+        { value: "PAVERS", label: "Pavers", itemCount: 0, items: [], isDefault: false },
+        { value: "BOLLARDS", label: "Bollards", itemCount: 0, items: [], isDefault: false },
+        { value: "STRIPING", label: "Striping", itemCount: 0, items: [], isDefault: false },
+        { value: "SIGNAGE", label: "Signage", itemCount: 0, items: [], isDefault: false },
+        { value: "LANDSCAPING", label: "Landscaping", itemCount: 0, items: [], isDefault: false },
+        { value: "ELECTRICAL", label: "Electrical", itemCount: 0, items: [], isDefault: false },
+        { value: "OTHER", label: "Other", itemCount: 0, items: [], isDefault: true }
+      ];
+
+      // Fetch organization's SOW items grouped by category
+      const orgSowItems = await db
+        .select()
+        .from(organizationSowItems)
+        .where(and(
+          eq(organizationSowItems.organizationId, orgId),
+          eq(organizationSowItems.isActive, true)
+        ))
+        .orderBy(organizationSowItems.displayOrder);
+
+      // Group by legacy enum value to maintain backward compatibility
+      const categoriesMap = new Map<string, { 
+        legacyEnum: string; 
+        displayLabels: Set<string>;
+        items: typeof orgSowItems;
+        sortOrder: number;
+      }>();
+
+      for (const item of orgSowItems) {
+        const { legacyEnum } = mapCategoryToLegacyEnum(item.categoryName);
+        if (!categoriesMap.has(legacyEnum)) {
+          categoriesMap.set(legacyEnum, {
+            legacyEnum,
+            displayLabels: new Set(),
+            items: [],
+            sortOrder: item.displayOrder || 0
+          });
+        }
+        const cat = categoriesMap.get(legacyEnum)!;
+        cat.displayLabels.add(item.categoryName);
+        cat.items.push(item);
+      }
+
+      // Convert to array using legacy enum as value for backward compatibility
+      if (categoriesMap.size > 0) {
+        const categories = Array.from(categoriesMap.values())
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map(cat => {
+            // Create display label from unique category names
+            const labelsArray = Array.from(cat.displayLabels);
+            const displayLabel = labelsArray.length === 1 
+              ? labelsArray[0] 
+              : labelsArray.slice(0, 2).join(' / ') + (labelsArray.length > 2 ? ' +' : '');
+            
+            return {
+              value: cat.legacyEnum, // Use legacy enum for backward compatibility
+              label: displayLabel,
+              itemCount: cat.items.length,
+              isDefault: cat.legacyEnum === 'OTHER', // Mark OTHER as default fallback
+              items: cat.items.map(i => ({
+                id: i.id,
+                name: i.name,
+                code: i.code,
+                unit: i.unit,
+                description: i.description
+              }))
+            };
+          });
+
+        // Always ensure OTHER is available as catch-all
+        if (!categories.find(c => c.value === 'OTHER')) {
+          categories.push({ value: "OTHER", label: "Other", itemCount: 0, items: [], isDefault: true });
+        }
+
+        return res.json(categories);
+      }
+
+      // If no organization SOW items exist, get master SOW items based on trade type
+      if (org?.tradeType) {
+        const isGC = org.tradeType === 'GENERAL_CONTRACTOR';
+        
+        const masterItems = await db
+          .select()
+          .from(masterSowItems)
+          .where(isGC 
+            ? eq(masterSowItems.isActive, true)
+            : and(
+                eq(masterSowItems.tradeType, org.tradeType as any),
+                eq(masterSowItems.isActive, true)
+              )
+          )
+          .orderBy(masterSowItems.sortOrder);
+
+        if (masterItems.length > 0) {
+          // Group master items by legacy enum
+          const masterCategoriesMap = new Map<string, { 
+            legacyEnum: string; 
+            displayLabels: Set<string>;
+            items: typeof masterItems;
+            sortOrder: number;
+          }>();
+
+          for (const item of masterItems) {
+            const { legacyEnum } = mapCategoryToLegacyEnum(item.categoryName || 'General');
+            if (!masterCategoriesMap.has(legacyEnum)) {
+              masterCategoriesMap.set(legacyEnum, {
+                legacyEnum,
+                displayLabels: new Set(),
+                items: [],
+                sortOrder: item.sortOrder || 0
+              });
+            }
+            const cat = masterCategoriesMap.get(legacyEnum)!;
+            cat.displayLabels.add(item.categoryName || 'General');
+            cat.items.push(item);
+          }
+
+          const masterCategories = Array.from(masterCategoriesMap.values())
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(cat => {
+              const labelsArray = Array.from(cat.displayLabels);
+              const displayLabel = labelsArray.length === 1 
+                ? labelsArray[0] 
+                : labelsArray.slice(0, 2).join(' / ') + (labelsArray.length > 2 ? ' +' : '');
+              
+              return {
+                value: cat.legacyEnum,
+                label: displayLabel,
+                itemCount: cat.items.length,
+                isDefault: cat.legacyEnum === 'OTHER',
+                items: cat.items.map(i => ({
+                  id: i.id,
+                  name: i.name,
+                  code: i.code,
+                  unit: i.defaultUomCode,
+                  description: i.description
+                }))
+              };
+            });
+
+          // Always ensure OTHER is available
+          if (!masterCategories.find(c => c.value === 'OTHER')) {
+            masterCategories.push({ value: "OTHER", label: "Other", itemCount: 0, items: [], isDefault: true });
+          }
+
+          return res.json(masterCategories);
+        }
+      }
+
+      // Ultimate fallback - return default construction categories using legacy enums
+      return res.json(defaultCategories);
+    } catch (error) {
+      console.error("Get organization work categories error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
