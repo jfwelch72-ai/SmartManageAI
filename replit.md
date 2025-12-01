@@ -45,6 +45,8 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - **Organization Documents** (`server/organizationDocumentRoutes.ts`): Company settings, branding, and compliance document management
 - **AI Bid Document Analysis** (`server/aiBidDocumentRoutes.ts`): AI-powered bid invitation and scope document review with OpenAI Vision
 - **AI Contract Document Analysis** (`server/aiContractDocumentRoutes.ts`): AI-powered contract and award document analysis
+- **Schedule of Values** (`server/sovRoutes.ts`): SOV generation with fillable PDF output, status workflow, and transaction-based totals
+- **Subcontract Agreements** (`server/subcontractRoutes.ts`): Subcontract agreement generation with white-label PDF output
 
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)

@@ -77,6 +77,7 @@ import organizationDocumentRoutes from "./organizationDocumentRoutes";
 import aiBidDocumentRoutes from "./aiBidDocumentRoutes";
 import aiContractDocumentRoutes from "./aiContractDocumentRoutes";
 import sovRoutes from "./sovRoutes";
+import subcontractRoutes from "./subcontractRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -141,6 +142,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Schedule of Values (SOV) routes
   app.use("/api", sovRoutes);
+
+  // Register Subcontract Agreement routes
+  app.use("/api", subcontractRoutes);
 
   // ====================
   // Auth Routes
