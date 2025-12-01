@@ -78,6 +78,7 @@ import aiBidDocumentRoutes from "./aiBidDocumentRoutes";
 import aiContractDocumentRoutes from "./aiContractDocumentRoutes";
 import sovRoutes from "./sovRoutes";
 import subcontractRoutes from "./subcontractRoutes";
+import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -145,6 +146,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Subcontract Agreement routes
   app.use("/api", subcontractRoutes);
+
+  // Register Website Builder routes
+  app.use("/api/website", websiteBuilderRoutes);
 
   // ====================
   // Auth Routes

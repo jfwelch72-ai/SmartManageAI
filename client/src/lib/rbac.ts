@@ -123,6 +123,9 @@ export const RoutePermissions = {
   AI_CONTRACT_ANALYSIS: (role?: string) => isAdminOrManager(role),
   SCHEDULE_OF_VALUES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   SUBCONTRACTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  
+  // Website Builder routes (ADMIN only - organization feature)
+  WEBSITE_BUILDER: (role?: string) => isOrganizationAdmin(role),
 
   // Contractor user access (everyone except SUPER_ADMIN)
   DASHBOARD: (role?: string) => hasContractorAccess(role),
@@ -351,6 +354,12 @@ export const NavigationConfig = {
       href: "/company-settings",
       label: "Company Settings",
       testId: "nav-company-settings",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/website-builder",
+      label: "Website Builder",
+      testId: "nav-website-builder",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
   ],

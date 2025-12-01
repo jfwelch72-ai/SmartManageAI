@@ -67,10 +67,12 @@ export default function SubcontractorPayablesPage() {
 
   const filteredPayables = useMemo(() => {
     return payables.filter(payable => {
+      if (!payable.subcontractor || !payable.project) return false;
+      
       const matchesSearch =
-        payable.subcontractor.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        payable.project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        payable.project.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (payable.subcontractor.companyName?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (payable.project.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (payable.project.code?.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (payable.invoiceNumber && payable.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesStatus = statusFilter === "ALL" || payable.status === statusFilter;

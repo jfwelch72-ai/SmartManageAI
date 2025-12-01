@@ -4002,3 +4002,486 @@ export const sovLineItems = pgTable("sov_line_items", {
 export const insertSovLineItemSchema = createInsertSchema(sovLineItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSovLineItem = z.infer<typeof insertSovLineItemSchema>;
 export type SovLineItem = typeof sovLineItems.$inferSelect;
+
+// ============================================
+// WEBSITE BUILDER SYSTEM
+// Complete website builder with AI design, blog, gallery, analytics
+// ============================================
+
+// Website Builder Enums
+export const websiteStatusEnum = pgEnum("website_status", ["DRAFT", "PUBLISHED", "MAINTENANCE"]);
+export const websitePageTypeEnum = pgEnum("website_page_type", ["HOME", "ABOUT", "SERVICES", "SAFETY", "GALLERY", "BLOG", "CONTACT", "CUSTOM"]);
+export const blogPostStatusEnum = pgEnum("blog_post_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
+export const blogCommentStatusEnum = pgEnum("blog_comment_status", ["PENDING", "APPROVED", "REJECTED", "SPAM"]);
+export const websiteProjectStatusEnum = pgEnum("website_project_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
+export const socialPlatformEnum = pgEnum("social_platform", ["FACEBOOK", "INSTAGRAM", "LINKEDIN", "TWITTER", "TIKTOK", "YOUTUBE"]);
+
+// Main Website Configuration
+export const organizationWebsites = pgTable("organization_websites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Site Configuration
+  status: websiteStatusEnum("status").notNull().default("DRAFT"),
+  siteTitle: text("site_title"),
+  siteTagline: text("site_tagline"),
+  missionStatement: text("mission_statement"),
+  
+  // Domain Settings
+  subdomain: text("subdomain").unique(), // company.smartmanageai-sites.com
+  customDomain: text("custom_domain"),
+  customDomainVerified: boolean("custom_domain_verified").default(false),
+  sslEnabled: boolean("ssl_enabled").default(true),
+  
+  // Theme & Branding
+  primaryColor: text("primary_color"),
+  secondaryColor: text("secondary_color"),
+  accentColor: text("accent_color"),
+  backgroundColor: text("background_color"),
+  textColor: text("text_color"),
+  fontFamily: text("font_family"),
+  logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
+  
+  // SEO Global Settings
+  defaultMetaTitle: text("default_meta_title"),
+  defaultMetaDescription: text("default_meta_description"),
+  defaultKeywords: text("default_keywords").array(),
+  googleAnalyticsId: text("google_analytics_id"),
+  
+  // Contact Info (can override organization)
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  contactAddress: text("contact_address"),
+  
+  // Features Toggle
+  blogEnabled: boolean("blog_enabled").default(true),
+  galleryEnabled: boolean("gallery_enabled").default(true),
+  contactFormEnabled: boolean("contact_form_enabled").default(true),
+  analyticsEnabled: boolean("analytics_enabled").default(true),
+  
+  // Publishing
+  lastPublishedAt: timestamp("last_published_at"),
+  lastPublishedByUserId: varchar("last_published_by_user_id").references(() => users.id),
+  publishedBundleUrl: text("published_bundle_url"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("website_org_idx").on(table.organizationId),
+  subdomainIdx: index("website_subdomain_idx").on(table.subdomain),
+}));
+
+export const insertOrganizationWebsiteSchema = createInsertSchema(organizationWebsites).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationWebsite = z.infer<typeof insertOrganizationWebsiteSchema>;
+export type OrganizationWebsite = typeof organizationWebsites.$inferSelect;
+
+// Website Pages
+export const organizationWebsitePages = pgTable("organization_website_pages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Page Identity
+  pageType: websitePageTypeEnum("page_type").notNull().default("CUSTOM"),
+  pageSlug: text("page_slug").notNull(), // e.g., "about", "services/concrete"
+  pageTitle: text("page_title").notNull(),
+  
+  // Content
+  contentJson: text("content_json"), // Block-based content structure
+  heroImageUrl: text("hero_image_url"),
+  aiGenerated: boolean("ai_generated").default(false),
+  
+  // SEO
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  keywords: text("keywords").array(),
+  richSchemaJson: text("rich_schema_json"), // JSON-LD structured data
+  canonicalUrl: text("canonical_url"),
+  noIndex: boolean("no_index").default(false),
+  
+  // Display Settings
+  isPublished: boolean("is_published").default(false),
+  showInNavigation: boolean("show_in_navigation").default(true),
+  navigationOrder: integer("navigation_order").default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("website_pages_website_idx").on(table.websiteId),
+  orgIdx: index("website_pages_org_idx").on(table.organizationId),
+  slugIdx: index("website_pages_slug_idx").on(table.websiteId, table.pageSlug),
+}));
+
+export const insertOrganizationWebsitePageSchema = createInsertSchema(organizationWebsitePages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationWebsitePage = z.infer<typeof insertOrganizationWebsitePageSchema>;
+export type OrganizationWebsitePage = typeof organizationWebsitePages.$inferSelect;
+
+// Blog Posts
+export const websiteBlogPosts = pgTable("website_blog_posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Post Content
+  slug: text("slug").notNull(),
+  title: text("title").notNull(),
+  excerpt: text("excerpt"),
+  contentJson: text("content_json"), // Block-based editor content
+  contentHtml: text("content_html"), // Rendered HTML for public display
+  coverImageUrl: text("cover_image_url"),
+  
+  // Categorization
+  category: text("category"),
+  tags: text("tags").array(),
+  
+  // Author
+  authorId: varchar("author_id").references(() => users.id),
+  authorName: text("author_name"),
+  
+  // AI Generation
+  aiGenerated: boolean("ai_generated").default(false),
+  aiPrompt: text("ai_prompt"),
+  
+  // SEO
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  keywords: text("keywords").array(),
+  richSchemaJson: text("rich_schema_json"),
+  
+  // Status & Publishing
+  status: blogPostStatusEnum("status").notNull().default("DRAFT"),
+  publishedAt: timestamp("published_at"),
+  featuredPost: boolean("featured_post").default(false),
+  
+  // Engagement
+  viewCount: integer("view_count").default(0),
+  shareCount: integer("share_count").default(0),
+  commentsEnabled: boolean("comments_enabled").default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("blog_posts_website_idx").on(table.websiteId),
+  orgIdx: index("blog_posts_org_idx").on(table.organizationId),
+  slugIdx: index("blog_posts_slug_idx").on(table.websiteId, table.slug),
+  statusIdx: index("blog_posts_status_idx").on(table.status),
+}));
+
+export const insertWebsiteBlogPostSchema = createInsertSchema(websiteBlogPosts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWebsiteBlogPost = z.infer<typeof insertWebsiteBlogPostSchema>;
+export type WebsiteBlogPost = typeof websiteBlogPosts.$inferSelect;
+
+// Blog Comments
+export const websiteBlogComments = pgTable("website_blog_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  postId: varchar("post_id").notNull().references(() => websiteBlogPosts.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Comment Content
+  authorName: text("author_name").notNull(),
+  authorEmail: text("author_email").notNull(),
+  authorWebsite: text("author_website"),
+  content: text("content").notNull(),
+  
+  // Moderation
+  status: blogCommentStatusEnum("status").notNull().default("PENDING"),
+  moderatedById: varchar("moderated_by_id").references(() => users.id),
+  moderatedAt: timestamp("moderated_at"),
+  
+  // Replies
+  parentCommentId: varchar("parent_comment_id"),
+  
+  // Metadata
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  postIdx: index("blog_comments_post_idx").on(table.postId),
+  statusIdx: index("blog_comments_status_idx").on(table.status),
+}));
+
+export const insertWebsiteBlogCommentSchema = createInsertSchema(websiteBlogComments).omit({ id: true, createdAt: true });
+export type InsertWebsiteBlogComment = z.infer<typeof insertWebsiteBlogCommentSchema>;
+export type WebsiteBlogComment = typeof websiteBlogComments.$inferSelect;
+
+// Project Gallery / Portfolio
+export const websiteProjects = pgTable("website_projects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Link to actual project (optional)
+  linkedProjectId: varchar("linked_project_id").references(() => projects.id, { onDelete: "set null" }),
+  
+  // Project Details
+  slug: text("slug").notNull(),
+  title: text("title").notNull(),
+  shortDescription: text("short_description"),
+  fullDescription: text("full_description"),
+  
+  // Categorization
+  serviceType: text("service_type"), // Matches trade/service type
+  projectType: text("project_type"), // Commercial, Residential, Industrial
+  location: text("location"),
+  completionDate: date("completion_date"),
+  
+  // Media
+  featuredImageUrl: text("featured_image_url"),
+  beforeImageUrl: text("before_image_url"),
+  afterImageUrl: text("after_image_url"),
+  
+  // AI Content
+  aiGenerated: boolean("ai_generated").default(false),
+  aiPrompt: text("ai_prompt"),
+  
+  // SEO
+  metaTitle: text("meta_title"),
+  metaDescription: text("meta_description"),
+  keywords: text("keywords").array(),
+  richSchemaJson: text("rich_schema_json"),
+  
+  // Display Settings
+  status: websiteProjectStatusEnum("status").notNull().default("DRAFT"),
+  featuredProject: boolean("featured_project").default(false),
+  displayOrder: integer("display_order").default(0),
+  
+  // Engagement
+  viewCount: integer("view_count").default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("website_projects_website_idx").on(table.websiteId),
+  orgIdx: index("website_projects_org_idx").on(table.organizationId),
+  slugIdx: index("website_projects_slug_idx").on(table.websiteId, table.slug),
+  statusIdx: index("website_projects_status_idx").on(table.status),
+}));
+
+export const insertWebsiteProjectSchema = createInsertSchema(websiteProjects).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWebsiteProject = z.infer<typeof insertWebsiteProjectSchema>;
+export type WebsiteProject = typeof websiteProjects.$inferSelect;
+
+// Project Gallery Images
+export const websiteProjectImages = pgTable("website_project_images", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => websiteProjects.id, { onDelete: "cascade" }),
+  
+  imageUrl: text("image_url").notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  altText: text("alt_text"),
+  caption: text("caption"),
+  displayOrder: integer("display_order").default(0),
+  
+  // AI-generated caption
+  aiCaption: text("ai_caption"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_images_project_idx").on(table.projectId),
+}));
+
+export const insertWebsiteProjectImageSchema = createInsertSchema(websiteProjectImages).omit({ id: true, createdAt: true });
+export type InsertWebsiteProjectImage = z.infer<typeof insertWebsiteProjectImageSchema>;
+export type WebsiteProjectImage = typeof websiteProjectImages.$inferSelect;
+
+// Website Analytics - Daily Aggregates
+export const websiteAnalyticsDaily = pgTable("website_analytics_daily", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Date dimension
+  date: date("date").notNull(),
+  
+  // Traffic Metrics
+  pageViews: integer("page_views").default(0),
+  uniqueVisitors: integer("unique_visitors").default(0),
+  sessions: integer("sessions").default(0),
+  avgSessionDuration: integer("avg_session_duration").default(0), // in seconds
+  bounceRate: decimal("bounce_rate", { precision: 5, scale: 2 }),
+  
+  // Top Pages (JSON array)
+  topPagesJson: text("top_pages_json"),
+  
+  // Traffic Sources (JSON)
+  trafficSourcesJson: text("traffic_sources_json"),
+  
+  // Lead Metrics
+  contactFormSubmissions: integer("contact_form_submissions").default(0),
+  phoneClicks: integer("phone_clicks").default(0),
+  emailClicks: integer("email_clicks").default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteDateIdx: index("analytics_daily_website_date_idx").on(table.websiteId, table.date),
+  orgIdx: index("analytics_daily_org_idx").on(table.organizationId),
+}));
+
+export const insertWebsiteAnalyticsDailySchema = createInsertSchema(websiteAnalyticsDaily).omit({ id: true, createdAt: true });
+export type InsertWebsiteAnalyticsDaily = z.infer<typeof insertWebsiteAnalyticsDailySchema>;
+export type WebsiteAnalyticsDaily = typeof websiteAnalyticsDaily.$inferSelect;
+
+// Website Analytics - Individual Events
+export const websiteAnalyticsEvents = pgTable("website_analytics_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  
+  // Session Info
+  sessionId: text("session_id").notNull(),
+  visitorId: text("visitor_id"), // Persistent visitor identifier
+  
+  // Event Details
+  eventType: text("event_type").notNull(), // PAGE_VIEW, CLICK, FORM_SUBMIT, etc.
+  pagePath: text("page_path"),
+  pageTitle: text("page_title"),
+  referrer: text("referrer"),
+  
+  // Event Data
+  eventDataJson: text("event_data_json"), // Custom event properties
+  
+  // Visitor Info
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  deviceType: text("device_type"), // desktop, mobile, tablet
+  browser: text("browser"),
+  os: text("os"),
+  country: text("country"),
+  city: text("city"),
+  
+  // UTM Parameters
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("analytics_events_website_idx").on(table.websiteId),
+  sessionIdx: index("analytics_events_session_idx").on(table.sessionId),
+  eventTypeIdx: index("analytics_events_type_idx").on(table.eventType),
+  createdAtIdx: index("analytics_events_created_idx").on(table.createdAt),
+}));
+
+export const insertWebsiteAnalyticsEventSchema = createInsertSchema(websiteAnalyticsEvents).omit({ id: true, createdAt: true });
+export type InsertWebsiteAnalyticsEvent = z.infer<typeof insertWebsiteAnalyticsEventSchema>;
+export type WebsiteAnalyticsEvent = typeof websiteAnalyticsEvents.$inferSelect;
+
+// Social Media Links
+export const organizationSocialLinks = pgTable("organization_social_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
+  
+  facebookUrl: text("facebook_url"),
+  instagramUrl: text("instagram_url"),
+  linkedinUrl: text("linkedin_url"),
+  twitterUrl: text("twitter_url"),
+  tiktokUrl: text("tiktok_url"),
+  youtubeUrl: text("youtube_url"),
+  
+  // Display Settings
+  showOnWebsite: boolean("show_on_website").default(true),
+  showInFooter: boolean("show_in_footer").default(true),
+  showOnContact: boolean("show_on_contact").default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("social_links_org_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationSocialLinksSchema = createInsertSchema(organizationSocialLinks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationSocialLinks = z.infer<typeof insertOrganizationSocialLinksSchema>;
+export type OrganizationSocialLinks = typeof organizationSocialLinks.$inferSelect;
+
+// AI Social Post History
+export const socialPostHistory = pgTable("social_post_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Platform & Content
+  platform: socialPlatformEnum("platform").notNull(),
+  postContent: text("post_content").notNull(),
+  hashtags: text("hashtags").array(),
+  
+  // Content Source
+  sourceType: text("source_type"), // BLOG_POST, PROJECT, EVENT, SAFETY, CUSTOM
+  sourceId: varchar("source_id"), // ID of linked blog post or project
+  
+  // AI Generation
+  aiPrompt: text("ai_prompt"),
+  tone: text("tone"), // professional, casual, marketing, humorous
+  
+  // Suggested Image
+  suggestedImageUrl: text("suggested_image_url"),
+  suggestedImagePrompt: text("suggested_image_prompt"),
+  
+  // Publishing Status
+  exported: boolean("exported").default(false),
+  exportedAt: timestamp("exported_at"),
+  
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("social_post_history_org_idx").on(table.organizationId),
+  platformIdx: index("social_post_history_platform_idx").on(table.platform),
+}));
+
+export const insertSocialPostHistorySchema = createInsertSchema(socialPostHistory).omit({ id: true, createdAt: true });
+export type InsertSocialPostHistory = z.infer<typeof insertSocialPostHistorySchema>;
+export type SocialPostHistory = typeof socialPostHistory.$inferSelect;
+
+// Website Contact Form Submissions (CRM Integration)
+export const websiteContactSubmissions = pgTable("website_contact_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Contact Info
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  company: text("company"),
+  
+  // Message
+  subject: text("subject"),
+  message: text("message").notNull(),
+  
+  // Service Interest
+  serviceInterest: text("service_interest"),
+  projectType: text("project_type"),
+  estimatedBudget: text("estimated_budget"),
+  preferredContactMethod: text("preferred_contact_method"),
+  
+  // Source Tracking
+  sourcePage: text("source_page"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  
+  // CRM Integration
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id),
+  crmContactId: varchar("crm_contact_id").references(() => crmContacts.id),
+  convertedToCrm: boolean("converted_to_crm").default(false),
+  convertedAt: timestamp("converted_at"),
+  
+  // Status
+  read: boolean("read").default(false),
+  readAt: timestamp("read_at"),
+  responded: boolean("responded").default(false),
+  respondedAt: timestamp("responded_at"),
+  
+  // Metadata
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("contact_submissions_website_idx").on(table.websiteId),
+  orgIdx: index("contact_submissions_org_idx").on(table.organizationId),
+  emailIdx: index("contact_submissions_email_idx").on(table.email),
+}));
+
+export const insertWebsiteContactSubmissionSchema = createInsertSchema(websiteContactSubmissions).omit({ id: true, createdAt: true });
+export type InsertWebsiteContactSubmission = z.infer<typeof insertWebsiteContactSubmissionSchema>;
+export type WebsiteContactSubmission = typeof websiteContactSubmissions.$inferSelect;

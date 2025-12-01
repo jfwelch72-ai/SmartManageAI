@@ -1,0 +1,1573 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
+import { 
+  Globe,
+  FileText,
+  Layout,
+  Palette,
+  Settings,
+  Eye,
+  ExternalLink,
+  Plus,
+  Edit,
+  Trash2,
+  Image,
+  FileEdit,
+  MessageSquare,
+  Share2,
+  BarChart3,
+  Mail,
+  Sparkles,
+  Send,
+  Check,
+  Clock,
+  AlertCircle,
+  RefreshCw,
+  Search,
+  BookOpen,
+  FolderOpen,
+  Users,
+  TrendingUp,
+  MousePointer,
+  ArrowUpRight,
+  Target,
+  Copy,
+  Wand2,
+  Save
+} from "lucide-react";
+import { format } from "date-fns";
+import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
+
+interface Website {
+  id: string;
+  organizationId: string;
+  subdomain: string;
+  customDomain: string | null;
+  domainVerified: boolean;
+  status: "DRAFT" | "PUBLISHED" | "MAINTENANCE";
+  siteTitle: string | null;
+  siteTagline: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  metaTitle: string | null;
+  metaDescription: string | null;
+  showBlog: boolean;
+  showProjects: boolean;
+  showTestimonials: boolean;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  lastPublishedAt: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+interface WebsitePage {
+  id: string;
+  websiteId: string;
+  pageType: string;
+  pageSlug: string;
+  pageTitle: string;
+  navigationLabel: string | null;
+  navigationOrder: number;
+  showInNavigation: boolean;
+  isHomepage: boolean;
+  status: string;
+  publishedAt: string | null;
+  aiGenerated: boolean;
+}
+
+interface BlogPost {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  category: string | null;
+  authorName: string | null;
+  viewCount: number;
+  publishedAt: string | null;
+  createdAt: string;
+  aiGenerated: boolean;
+}
+
+interface GalleryProject {
+  id: string;
+  title: string;
+  slug: string;
+  shortDescription: string | null;
+  projectType: string | null;
+  serviceType: string | null;
+  clientName: string | null;
+  locationCity: string | null;
+  locationState: string | null;
+  featured: boolean;
+  coverImageUrl: string | null;
+  completionDate: string | null;
+  status: string;
+  viewCount: number;
+}
+
+interface SocialLinks {
+  id?: string;
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  linkedinUrl: string | null;
+  twitterUrl: string | null;
+  youtubeUrl: string | null;
+  tiktokUrl: string | null;
+}
+
+interface ContactSubmission {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  subject: string | null;
+  message: string;
+  read: boolean;
+  responded: boolean;
+  convertedToCrm: boolean;
+  createdAt: string;
+}
+
+interface AnalyticsSummary {
+  hasData: boolean;
+  period: { days: number; startDate: string };
+  totals: {
+    pageViews: number;
+    uniqueVisitors: number;
+    sessions: number;
+    contactFormSubmissions: number;
+  };
+  dailyStats: Array<{
+    date: string;
+    pageViews: number;
+    uniqueVisitors: number;
+  }>;
+}
+
+interface AIResponse {
+  response: string;
+}
+
+export default function WebsiteBuilderPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("setup");
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiConversation, setAiConversation] = useState<Array<{role: string; content: string}>>([]);
+  const [showCreatePageDialog, setShowCreatePageDialog] = useState(false);
+  const [showCreateBlogDialog, setShowCreateBlogDialog] = useState(false);
+  const [showCreateProjectDialog, setShowCreateProjectDialog] = useState(false);
+  const [showGenerateBlogDialog, setShowGenerateBlogDialog] = useState(false);
+  const [generatedBlogContent, setGeneratedBlogContent] = useState<any>(null);
+
+  const isAdmin = user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
+  const canEdit = user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
+
+  const [websiteForm, setWebsiteForm] = useState({
+    siteTitle: "",
+    siteTagline: "",
+    primaryColor: "#3B82F6",
+    secondaryColor: "#1E40AF",
+    accentColor: "#F59E0B",
+    metaTitle: "",
+    metaDescription: "",
+    contactEmail: "",
+    contactPhone: "",
+    showBlog: true,
+    showProjects: true,
+    showTestimonials: true
+  });
+
+  const [pageForm, setPageForm] = useState({
+    pageType: "CUSTOM",
+    pageTitle: "",
+    pageSlug: "",
+    navigationLabel: "",
+    showInNavigation: true
+  });
+
+  const [blogForm, setBlogForm] = useState({
+    title: "",
+    excerpt: "",
+    content: "",
+    category: "",
+    status: "DRAFT"
+  });
+
+  const [generateBlogForm, setGenerateBlogForm] = useState({
+    topic: "",
+    tone: "professional",
+    length: "medium"
+  });
+
+  const [projectForm, setProjectForm] = useState({
+    title: "",
+    shortDescription: "",
+    projectType: "",
+    serviceType: "",
+    clientName: "",
+    locationCity: "",
+    locationState: ""
+  });
+
+  const [socialForm, setSocialForm] = useState<SocialLinks>({
+    facebookUrl: null,
+    instagramUrl: null,
+    linkedinUrl: null,
+    twitterUrl: null,
+    youtubeUrl: null,
+    tiktokUrl: null
+  });
+
+  const { data: websiteData, isLoading: loadingWebsite } = useQuery<{ hasWebsite: boolean; website: Website | null }>({
+    queryKey: ["/api/website"],
+    enabled: !!user && isAdmin
+  });
+
+  const { data: pages = [], isLoading: loadingPages } = useQuery<WebsitePage[]>({
+    queryKey: ["/api/website/pages"],
+    enabled: !!user && isAdmin && !!websiteData?.hasWebsite
+  });
+
+  const { data: blogPosts = [], isLoading: loadingBlog } = useQuery<BlogPost[]>({
+    queryKey: ["/api/website/blog/posts"],
+    enabled: !!user && canEdit && !!websiteData?.hasWebsite
+  });
+
+  const { data: projects = [], isLoading: loadingProjects } = useQuery<GalleryProject[]>({
+    queryKey: ["/api/website/projects"],
+    enabled: !!user && canEdit && !!websiteData?.hasWebsite
+  });
+
+  const { data: socialLinks } = useQuery<SocialLinks>({
+    queryKey: ["/api/website/social"],
+    enabled: !!user && isAdmin && !!websiteData?.hasWebsite,
+    refetchOnMount: true
+  });
+
+  const { data: analyticsData } = useQuery<AnalyticsSummary>({
+    queryKey: ["/api/website/analytics/summary"],
+    enabled: !!user && canEdit && !!websiteData?.hasWebsite
+  });
+
+  const { data: contactSubmissions = [] } = useQuery<ContactSubmission[]>({
+    queryKey: ["/api/website/contact/submissions"],
+    enabled: !!user && canEdit && !!websiteData?.hasWebsite
+  });
+
+  const saveWebsiteMutation = useMutation({
+    mutationFn: async (data: typeof websiteForm) => {
+      return await apiRequest("POST", "/api/website", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website"] });
+      toast({ title: "Website settings saved successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error saving website", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const publishWebsiteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/website/publish", {});
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website"] });
+      toast({ 
+        title: "Website published!", 
+        description: `Your site is now live at ${data.siteUrl}`
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error publishing website", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const createPageMutation = useMutation({
+    mutationFn: async (data: typeof pageForm) => {
+      return await apiRequest("POST", "/api/website/pages", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      toast({ title: "Page created successfully" });
+      setShowCreatePageDialog(false);
+      setPageForm({ pageType: "CUSTOM", pageTitle: "", pageSlug: "", navigationLabel: "", showInNavigation: true });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error creating page", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const createBlogMutation = useMutation({
+    mutationFn: async (data: typeof blogForm) => {
+      return await apiRequest("POST", "/api/website/blog/posts", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/blog/posts"] });
+      toast({ title: "Blog post created successfully" });
+      setShowCreateBlogDialog(false);
+      setBlogForm({ title: "", excerpt: "", content: "", category: "", status: "DRAFT" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error creating blog post", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const generateBlogMutation = useMutation({
+    mutationFn: async (data: typeof generateBlogForm) => {
+      return await apiRequest("POST", "/api/website/blog/posts/generate", data);
+    },
+    onSuccess: (data: any) => {
+      setGeneratedBlogContent(data);
+      toast({ title: "Blog post generated!" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error generating blog post", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (data: typeof projectForm) => {
+      return await apiRequest("POST", "/api/website/projects", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/projects"] });
+      toast({ title: "Project created successfully" });
+      setShowCreateProjectDialog(false);
+      setProjectForm({ title: "", shortDescription: "", projectType: "", serviceType: "", clientName: "", locationCity: "", locationState: "" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error creating project", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const saveSocialMutation = useMutation({
+    mutationFn: async (data: SocialLinks) => {
+      return await apiRequest("POST", "/api/website/social", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/social"] });
+      toast({ title: "Social links saved successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error saving social links", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const aiAssistantMutation = useMutation({
+    mutationFn: async (message: string) => {
+      return await apiRequest("POST", "/api/website/assistant/ask", { message });
+    },
+    onSuccess: (data: AIResponse) => {
+      setAiConversation(prev => [...prev, { role: "assistant", content: data.response }]);
+    },
+    onError: (error: any) => {
+      toast({ title: "AI Assistant error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const handleAISubmit = () => {
+    if (!aiPrompt.trim()) return;
+    setAiConversation(prev => [...prev, { role: "user", content: aiPrompt }]);
+    aiAssistantMutation.mutate(aiPrompt);
+    setAiPrompt("");
+  };
+
+  const handleSaveWebsite = () => {
+    saveWebsiteMutation.mutate(websiteForm);
+  };
+
+  const handlePublish = () => {
+    publishWebsiteMutation.mutate();
+  };
+
+  const handleUseGeneratedBlog = () => {
+    if (generatedBlogContent) {
+      setBlogForm({
+        title: generatedBlogContent.title || "",
+        excerpt: generatedBlogContent.excerpt || "",
+        content: generatedBlogContent.content || "",
+        category: generatedBlogContent.suggestedCategory || "",
+        status: "DRAFT"
+      });
+      setShowGenerateBlogDialog(false);
+      setShowCreateBlogDialog(true);
+    }
+  };
+
+  if (!isAdmin && !canEdit) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              Access Denied
+            </CardTitle>
+            <CardDescription>
+              You don't have permission to access the Website Builder. Please contact your administrator.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  if (loadingWebsite) {
+    return (
+      <div className="p-6 space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
+  const website = websiteData?.website;
+  const hasWebsite = websiteData?.hasWebsite;
+
+  return (
+    <div className="p-6 space-y-6" data-testid="page-website-builder">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+            <Globe className="h-6 w-6 text-primary" />
+            Website Builder
+          </h1>
+          <p className="text-muted-foreground">
+            Create and manage your organization's professional website
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasWebsite && (
+            <>
+              <Badge variant={website?.status === "PUBLISHED" ? "default" : "secondary"} data-testid="badge-website-status">
+                {website?.status || "DRAFT"}
+              </Badge>
+              {website?.status === "PUBLISHED" && (
+                <Button variant="outline" size="sm" asChild data-testid="button-view-site">
+                  <a href={`https://${website?.subdomain}.smartmanageai-sites.com`} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-1" />
+                    View Site
+                  </a>
+                </Button>
+              )}
+              <Button 
+                onClick={handlePublish}
+                disabled={publishWebsiteMutation.isPending}
+                data-testid="button-publish"
+              >
+                {publishWebsiteMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-1" />
+                )}
+                Publish
+              </Button>
+            </>
+          )}
+          <Button 
+            variant="outline" 
+            onClick={() => setShowAIAssistant(true)}
+            data-testid="button-ai-assistant"
+          >
+            <Sparkles className="h-4 w-4 mr-1" />
+            AI Assistant
+          </Button>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid grid-cols-7 w-full max-w-4xl" data-testid="tabs-website-sections">
+          <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">Setup</span>
+          </TabsTrigger>
+          <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
+            <Layout className="h-4 w-4" />
+            <span className="hidden sm:inline">Pages</span>
+          </TabsTrigger>
+          <TabsTrigger value="blog" className="flex items-center gap-1" data-testid="tab-blog">
+            <BookOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Blog</span>
+          </TabsTrigger>
+          <TabsTrigger value="gallery" className="flex items-center gap-1" data-testid="tab-gallery">
+            <FolderOpen className="h-4 w-4" />
+            <span className="hidden sm:inline">Gallery</span>
+          </TabsTrigger>
+          <TabsTrigger value="social" className="flex items-center gap-1" data-testid="tab-social">
+            <Share2 className="h-4 w-4" />
+            <span className="hidden sm:inline">Social</span>
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-1" data-testid="tab-analytics">
+            <BarChart3 className="h-4 w-4" />
+            <span className="hidden sm:inline">Analytics</span>
+          </TabsTrigger>
+          <TabsTrigger value="leads" className="flex items-center gap-1" data-testid="tab-leads">
+            <Mail className="h-4 w-4" />
+            <span className="hidden sm:inline">Leads</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="setup" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5" />
+                  Basic Settings
+                </CardTitle>
+                <CardDescription>Configure your website's basic information</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="siteTitle">Site Title</Label>
+                  <Input
+                    id="siteTitle"
+                    value={websiteForm.siteTitle || website?.siteTitle || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, siteTitle: e.target.value }))}
+                    placeholder="Your Company Name"
+                    data-testid="input-site-title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="siteTagline">Tagline</Label>
+                  <Input
+                    id="siteTagline"
+                    value={websiteForm.siteTagline || website?.siteTagline || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, siteTagline: e.target.value }))}
+                    placeholder="Building Excellence Since 1990"
+                    data-testid="input-site-tagline"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactEmail">Contact Email</Label>
+                  <Input
+                    id="contactEmail"
+                    type="email"
+                    value={websiteForm.contactEmail || website?.contactEmail || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, contactEmail: e.target.value }))}
+                    placeholder="info@yourcompany.com"
+                    data-testid="input-contact-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="contactPhone">Contact Phone</Label>
+                  <Input
+                    id="contactPhone"
+                    value={websiteForm.contactPhone || website?.contactPhone || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, contactPhone: e.target.value }))}
+                    placeholder="(555) 123-4567"
+                    data-testid="input-contact-phone"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Palette className="h-5 w-5" />
+                  Branding & Colors
+                </CardTitle>
+                <CardDescription>Customize your website's look and feel</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="primaryColor">Primary</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id="primaryColor"
+                        value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"}
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value }))}
+                        className="w-10 h-10 rounded border cursor-pointer"
+                        data-testid="input-primary-color"
+                      />
+                      <Input 
+                        value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"} 
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value }))}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="secondaryColor">Secondary</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id="secondaryColor"
+                        value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"}
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                        className="w-10 h-10 rounded border cursor-pointer"
+                        data-testid="input-secondary-color"
+                      />
+                      <Input 
+                        value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"} 
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="accentColor">Accent</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id="accentColor"
+                        value={websiteForm.accentColor || website?.accentColor || "#F59E0B"}
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value }))}
+                        className="w-10 h-10 rounded border cursor-pointer"
+                        data-testid="input-accent-color"
+                      />
+                      <Input 
+                        value={websiteForm.accentColor || website?.accentColor || "#F59E0B"} 
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value }))}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 space-y-3 border-t">
+                  <h4 className="font-medium">Sections</h4>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="showBlog">Show Blog</Label>
+                    <Switch
+                      id="showBlog"
+                      checked={websiteForm.showBlog}
+                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showBlog: checked }))}
+                      data-testid="switch-show-blog"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="showProjects">Show Projects Gallery</Label>
+                    <Switch
+                      id="showProjects"
+                      checked={websiteForm.showProjects}
+                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showProjects: checked }))}
+                      data-testid="switch-show-projects"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="showTestimonials">Show Testimonials</Label>
+                    <Switch
+                      id="showTestimonials"
+                      checked={websiteForm.showTestimonials}
+                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showTestimonials: checked }))}
+                      data-testid="switch-show-testimonials"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  SEO Settings
+                </CardTitle>
+                <CardDescription>Optimize your website for search engines</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="metaTitle">Meta Title (60 characters max)</Label>
+                    <Input
+                      id="metaTitle"
+                      value={websiteForm.metaTitle || website?.metaTitle || ""}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaTitle: e.target.value }))}
+                      maxLength={60}
+                      placeholder="Your Company | Quality Construction Services"
+                      data-testid="input-meta-title"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {(websiteForm.metaTitle || website?.metaTitle || "").length}/60 characters
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="metaDescription">Meta Description (160 characters max)</Label>
+                    <Textarea
+                      id="metaDescription"
+                      value={websiteForm.metaDescription || website?.metaDescription || ""}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaDescription: e.target.value }))}
+                      maxLength={160}
+                      placeholder="We provide top-quality construction services in the greater metro area. Contact us for a free estimate."
+                      data-testid="input-meta-description"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {(websiteForm.metaDescription || website?.metaDescription || "").length}/160 characters
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-end gap-2">
+                <Button 
+                  onClick={handleSaveWebsite}
+                  disabled={saveWebsiteMutation.isPending}
+                  data-testid="button-save-settings"
+                >
+                  {saveWebsiteMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-1" />
+                  )}
+                  Save Settings
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="pages" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Website Pages</h2>
+              <p className="text-sm text-muted-foreground">Manage your website's pages and navigation</p>
+            </div>
+            <Button onClick={() => setShowCreatePageDialog(true)} data-testid="button-create-page">
+              <Plus className="h-4 w-4 mr-1" />
+              Add Page
+            </Button>
+          </div>
+
+          {loadingPages ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : pages.length === 0 ? (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Layout className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">No pages yet</h3>
+                <p className="text-muted-foreground mb-4">Get started by creating your first page</p>
+                <Button onClick={() => setShowCreatePageDialog(true)} data-testid="button-create-first-page">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Create Page
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {pages.map((page) => (
+                <Card key={page.id} className="hover-elevate" data-testid={`card-page-${page.id}`}>
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 rounded bg-muted">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium">{page.pageTitle}</h3>
+                        <p className="text-sm text-muted-foreground">/{page.pageSlug}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={page.status === "PUBLISHED" ? "default" : "secondary"}>
+                        {page.status}
+                      </Badge>
+                      {page.aiGenerated && (
+                        <Badge variant="outline">
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          AI
+                        </Badge>
+                      )}
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-page-${page.id}`}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="blog" className="space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Blog Posts</h2>
+              <p className="text-sm text-muted-foreground">Manage your blog content</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setShowGenerateBlogDialog(true)} data-testid="button-generate-blog">
+                <Wand2 className="h-4 w-4 mr-1" />
+                AI Generate
+              </Button>
+              <Button onClick={() => setShowCreateBlogDialog(true)} data-testid="button-create-blog">
+                <Plus className="h-4 w-4 mr-1" />
+                New Post
+              </Button>
+            </div>
+          </div>
+
+          {loadingBlog ? (
+            <div className="space-y-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : blogPosts.length === 0 ? (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">No blog posts yet</h3>
+                <p className="text-muted-foreground mb-4">Start creating content to engage your audience</p>
+                <div className="flex justify-center gap-2">
+                  <Button variant="outline" onClick={() => setShowGenerateBlogDialog(true)} data-testid="button-generate-first-blog">
+                    <Wand2 className="h-4 w-4 mr-1" />
+                    AI Generate
+                  </Button>
+                  <Button onClick={() => setShowCreateBlogDialog(true)} data-testid="button-create-first-blog">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Write Post
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Views</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {blogPosts.map((post) => (
+                  <TableRow key={post.id} data-testid={`row-blog-${post.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{post.title}</span>
+                        {post.aiGenerated && (
+                          <Badge variant="outline" className="text-xs">
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            AI
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{post.category || "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant={post.status === "PUBLISHED" ? "default" : post.status === "ARCHIVED" ? "secondary" : "outline"}>
+                        {post.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{post.viewCount}</TableCell>
+                    <TableCell>{format(new Date(post.createdAt), "MMM d, yyyy")}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" data-testid={`button-edit-blog-${post.id}`}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </TabsContent>
+
+        <TabsContent value="gallery" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Project Gallery</h2>
+              <p className="text-sm text-muted-foreground">Showcase your completed projects</p>
+            </div>
+            <Button onClick={() => setShowCreateProjectDialog(true)} data-testid="button-create-project">
+              <Plus className="h-4 w-4 mr-1" />
+              Add Project
+            </Button>
+          </div>
+
+          {loadingProjects ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Skeleton className="h-64" />
+              <Skeleton className="h-64" />
+              <Skeleton className="h-64" />
+            </div>
+          ) : projects.length === 0 ? (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Image className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">No projects yet</h3>
+                <p className="text-muted-foreground mb-4">Add your completed projects to showcase your work</p>
+                <Button onClick={() => setShowCreateProjectDialog(true)} data-testid="button-create-first-project">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Project
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {projects.map((project) => (
+                <Card key={project.id} className="hover-elevate overflow-hidden" data-testid={`card-project-${project.id}`}>
+                  <div className="aspect-video bg-muted relative">
+                    {project.coverImageUrl ? (
+                      <img src={project.coverImageUrl} alt={project.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <Image className="h-12 w-12 text-muted-foreground" />
+                      </div>
+                    )}
+                    {project.featured && (
+                      <Badge className="absolute top-2 left-2" variant="default">Featured</Badge>
+                    )}
+                  </div>
+                  <CardContent className="p-4">
+                    <h3 className="font-medium mb-1">{project.title}</h3>
+                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                      {project.shortDescription || "No description"}
+                    </p>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{project.locationCity}, {project.locationState}</span>
+                      <span>{project.viewCount} views</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="social" className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Share2 className="h-5 w-5" />
+                  Social Media Links
+                </CardTitle>
+                <CardDescription>Connect your social media profiles</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiFacebook className="h-4 w-4 text-blue-600" />
+                    Facebook
+                  </Label>
+                  <Input
+                    value={socialForm.facebookUrl || socialLinks?.facebookUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, facebookUrl: e.target.value }))}
+                    placeholder="https://facebook.com/yourcompany"
+                    data-testid="input-facebook-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiInstagram className="h-4 w-4 text-pink-600" />
+                    Instagram
+                  </Label>
+                  <Input
+                    value={socialForm.instagramUrl || socialLinks?.instagramUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, instagramUrl: e.target.value }))}
+                    placeholder="https://instagram.com/yourcompany"
+                    data-testid="input-instagram-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiLinkedin className="h-4 w-4 text-blue-700" />
+                    LinkedIn
+                  </Label>
+                  <Input
+                    value={socialForm.linkedinUrl || socialLinks?.linkedinUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, linkedinUrl: e.target.value }))}
+                    placeholder="https://linkedin.com/company/yourcompany"
+                    data-testid="input-linkedin-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiYoutube className="h-4 w-4 text-red-600" />
+                    YouTube
+                  </Label>
+                  <Input
+                    value={socialForm.youtubeUrl || socialLinks?.youtubeUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, youtubeUrl: e.target.value }))}
+                    placeholder="https://youtube.com/@yourcompany"
+                    data-testid="input-youtube-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiTiktok className="h-4 w-4" />
+                    TikTok
+                  </Label>
+                  <Input
+                    value={socialForm.tiktokUrl || socialLinks?.tiktokUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, tiktokUrl: e.target.value }))}
+                    placeholder="https://tiktok.com/@yourcompany"
+                    data-testid="input-tiktok-url"
+                  />
+                </div>
+                <Button 
+                  className="w-full mt-4"
+                  onClick={() => saveSocialMutation.mutate(socialForm)}
+                  disabled={saveSocialMutation.isPending}
+                  data-testid="button-save-social"
+                >
+                  {saveSocialMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-1" />
+                  )}
+                  Save Social Links
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wand2 className="h-5 w-5" />
+                  AI Social Post Generator
+                </CardTitle>
+                <CardDescription>Generate engaging social media content</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Platform</Label>
+                  <Select defaultValue="FACEBOOK">
+                    <SelectTrigger data-testid="select-social-platform">
+                      <SelectValue placeholder="Select platform" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FACEBOOK">Facebook</SelectItem>
+                      <SelectItem value="INSTAGRAM">Instagram</SelectItem>
+                      <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
+                      <SelectItem value="TWITTER">X (Twitter)</SelectItem>
+                      <SelectItem value="TIKTOK">TikTok</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Topic / Theme</Label>
+                  <Textarea
+                    placeholder="Describe what you want to post about..."
+                    rows={3}
+                    data-testid="input-social-topic"
+                  />
+                </div>
+                <Button className="w-full" data-testid="button-generate-social">
+                  <Sparkles className="h-4 w-4 mr-1" />
+                  Generate Post
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <MousePointer className="h-4 w-4" />
+                  <span className="text-sm">Page Views</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="text-total-pageviews">
+                  {analyticsData?.totals.pageViews.toLocaleString() || "0"}
+                </p>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Users className="h-4 w-4" />
+                  <span className="text-sm">Unique Visitors</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="text-unique-visitors">
+                  {analyticsData?.totals.uniqueVisitors.toLocaleString() || "0"}
+                </p>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <TrendingUp className="h-4 w-4" />
+                  <span className="text-sm">Sessions</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="text-total-sessions">
+                  {analyticsData?.totals.sessions.toLocaleString() || "0"}
+                </p>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Mail className="h-4 w-4" />
+                  <span className="text-sm">Contact Forms</span>
+                </div>
+                <p className="text-2xl font-bold" data-testid="text-contact-forms">
+                  {analyticsData?.totals.contactFormSubmissions || "0"}
+                </p>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {!analyticsData?.hasData && (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">No analytics data yet</h3>
+                <p className="text-muted-foreground">
+                  Analytics will appear here once your website starts receiving traffic
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="leads" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Contact Submissions</h2>
+              <p className="text-sm text-muted-foreground">Manage leads from your website contact form</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" data-testid="badge-unread-count">
+                {contactSubmissions.filter(s => !s.read).length} unread
+              </Badge>
+            </div>
+          </div>
+
+          {contactSubmissions.length === 0 ? (
+            <Card className="py-12">
+              <CardContent className="text-center">
+                <Mail className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">No contact submissions yet</h3>
+                <p className="text-muted-foreground">
+                  Submissions from your website contact form will appear here
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Contact</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contactSubmissions.map((submission) => (
+                  <TableRow key={submission.id} className={!submission.read ? "bg-muted/50" : ""} data-testid={`row-submission-${submission.id}`}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{submission.name}</p>
+                        <p className="text-sm text-muted-foreground">{submission.email}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>{submission.subject || "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {!submission.read && (
+                          <Badge variant="secondary">Unread</Badge>
+                        )}
+                        {submission.responded && (
+                          <Badge variant="outline">Responded</Badge>
+                        )}
+                        {submission.convertedToCrm && (
+                          <Badge>CRM</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{format(new Date(submission.createdAt), "MMM d, yyyy")}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" data-testid={`button-view-submission-${submission.id}`}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={showAIAssistant} onOpenChange={setShowAIAssistant}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              AI Website Design Assistant
+            </DialogTitle>
+            <DialogDescription>
+              Ask questions about website design, content, or get suggestions for improvements
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-4 min-h-[300px] p-4 bg-muted/50 rounded-lg">
+            {aiConversation.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                <Wand2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Start a conversation with the AI assistant</p>
+                <p className="text-sm mt-2">Try asking about color schemes, page layouts, or content ideas</p>
+              </div>
+            ) : (
+              aiConversation.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] p-3 rounded-lg ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-background border"}`}>
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))
+            )}
+            {aiAssistantMutation.isPending && (
+              <div className="flex justify-start">
+                <div className="bg-background border p-3 rounded-lg">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 pt-4">
+            <Input
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="Ask about design, content, or get suggestions..."
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleAISubmit()}
+              data-testid="input-ai-prompt"
+            />
+            <Button onClick={handleAISubmit} disabled={aiAssistantMutation.isPending} data-testid="button-send-ai">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCreatePageDialog} onOpenChange={setShowCreatePageDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Page</DialogTitle>
+            <DialogDescription>Add a new page to your website</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Page Type</Label>
+              <Select value={pageForm.pageType} onValueChange={(v) => setPageForm(prev => ({ ...prev, pageType: v }))}>
+                <SelectTrigger data-testid="select-page-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="HOME">Home</SelectItem>
+                  <SelectItem value="ABOUT">About</SelectItem>
+                  <SelectItem value="SERVICES">Services</SelectItem>
+                  <SelectItem value="PROJECTS">Projects</SelectItem>
+                  <SelectItem value="BLOG">Blog</SelectItem>
+                  <SelectItem value="CONTACT">Contact</SelectItem>
+                  <SelectItem value="SAFETY">Safety</SelectItem>
+                  <SelectItem value="CAREERS">Careers</SelectItem>
+                  <SelectItem value="TEAM">Team</SelectItem>
+                  <SelectItem value="FAQ">FAQ</SelectItem>
+                  <SelectItem value="CUSTOM">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Page Title</Label>
+              <Input
+                value={pageForm.pageTitle}
+                onChange={(e) => {
+                  const title = e.target.value;
+                  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                  setPageForm(prev => ({ ...prev, pageTitle: title, pageSlug: slug }));
+                }}
+                placeholder="About Us"
+                data-testid="input-page-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>URL Slug</Label>
+              <Input
+                value={pageForm.pageSlug}
+                onChange={(e) => setPageForm(prev => ({ ...prev, pageSlug: e.target.value }))}
+                placeholder="about-us"
+                data-testid="input-page-slug"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Navigation Label</Label>
+              <Input
+                value={pageForm.navigationLabel}
+                onChange={(e) => setPageForm(prev => ({ ...prev, navigationLabel: e.target.value }))}
+                placeholder="About"
+                data-testid="input-nav-label"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label>Show in Navigation</Label>
+              <Switch
+                checked={pageForm.showInNavigation}
+                onCheckedChange={(checked) => setPageForm(prev => ({ ...prev, showInNavigation: checked }))}
+                data-testid="switch-show-in-nav"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreatePageDialog(false)}>Cancel</Button>
+            <Button onClick={() => createPageMutation.mutate(pageForm)} disabled={createPageMutation.isPending} data-testid="button-submit-page">
+              {createPageMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : null}
+              Create Page
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCreateBlogDialog} onOpenChange={setShowCreateBlogDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Blog Post</DialogTitle>
+            <DialogDescription>Write a new blog post for your website</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-2">
+              <Label>Title</Label>
+              <Input
+                value={blogForm.title}
+                onChange={(e) => setBlogForm(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter blog post title"
+                data-testid="input-blog-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Excerpt (Preview text)</Label>
+              <Textarea
+                value={blogForm.excerpt}
+                onChange={(e) => setBlogForm(prev => ({ ...prev, excerpt: e.target.value }))}
+                placeholder="A brief summary of the post..."
+                rows={2}
+                data-testid="input-blog-excerpt"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Content (HTML)</Label>
+              <Textarea
+                value={blogForm.content}
+                onChange={(e) => setBlogForm(prev => ({ ...prev, content: e.target.value }))}
+                placeholder="Write your blog post content..."
+                rows={8}
+                data-testid="input-blog-content"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input
+                value={blogForm.category}
+                onChange={(e) => setBlogForm(prev => ({ ...prev, category: e.target.value }))}
+                placeholder="Industry News"
+                data-testid="input-blog-category"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateBlogDialog(false)}>Cancel</Button>
+            <Button onClick={() => createBlogMutation.mutate(blogForm)} disabled={createBlogMutation.isPending} data-testid="button-submit-blog">
+              {createBlogMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : null}
+              Create Post
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showGenerateBlogDialog} onOpenChange={setShowGenerateBlogDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5" />
+              AI Blog Post Generator
+            </DialogTitle>
+            <DialogDescription>Let AI write a professional blog post for you</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Topic</Label>
+              <Input
+                value={generateBlogForm.topic}
+                onChange={(e) => setGenerateBlogForm(prev => ({ ...prev, topic: e.target.value }))}
+                placeholder="e.g., Safety tips for commercial roofing projects"
+                data-testid="input-generate-topic"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tone</Label>
+              <Select value={generateBlogForm.tone} onValueChange={(v) => setGenerateBlogForm(prev => ({ ...prev, tone: v }))}>
+                <SelectTrigger data-testid="select-generate-tone">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="professional">Professional</SelectItem>
+                  <SelectItem value="casual">Casual & Friendly</SelectItem>
+                  <SelectItem value="technical">Technical & Detailed</SelectItem>
+                  <SelectItem value="educational">Educational</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Length</Label>
+              <Select value={generateBlogForm.length} onValueChange={(v) => setGenerateBlogForm(prev => ({ ...prev, length: v }))}>
+                <SelectTrigger data-testid="select-generate-length">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="short">Short (~300 words)</SelectItem>
+                  <SelectItem value="medium">Medium (~600 words)</SelectItem>
+                  <SelectItem value="long">Long (~1000+ words)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {generatedBlogContent && (
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <h4 className="font-medium mb-2">{generatedBlogContent.title}</h4>
+                  <p className="text-sm text-muted-foreground mb-3">{generatedBlogContent.excerpt}</p>
+                  <Button size="sm" onClick={handleUseGeneratedBlog} data-testid="button-use-generated">
+                    <Check className="h-4 w-4 mr-1" />
+                    Use This Content
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateBlogDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={() => generateBlogMutation.mutate(generateBlogForm)} 
+              disabled={generateBlogMutation.isPending || !generateBlogForm.topic}
+              data-testid="button-generate-blog-submit"
+            >
+              {generateBlogMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />}
+              Generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCreateProjectDialog} onOpenChange={setShowCreateProjectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Portfolio Project</DialogTitle>
+            <DialogDescription>Showcase a completed project in your gallery</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Project Title</Label>
+              <Input
+                value={projectForm.title}
+                onChange={(e) => setProjectForm(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Downtown Office Building Renovation"
+                data-testid="input-project-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Short Description</Label>
+              <Textarea
+                value={projectForm.shortDescription}
+                onChange={(e) => setProjectForm(prev => ({ ...prev, shortDescription: e.target.value }))}
+                placeholder="A brief overview of the project..."
+                rows={2}
+                data-testid="input-project-description"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Project Type</Label>
+                <Select value={projectForm.projectType} onValueChange={(v) => setProjectForm(prev => ({ ...prev, projectType: v }))}>
+                  <SelectTrigger data-testid="select-project-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="commercial">Commercial</SelectItem>
+                    <SelectItem value="residential">Residential</SelectItem>
+                    <SelectItem value="industrial">Industrial</SelectItem>
+                    <SelectItem value="institutional">Institutional</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Service Type</Label>
+                <Input
+                  value={projectForm.serviceType}
+                  onChange={(e) => setProjectForm(prev => ({ ...prev, serviceType: e.target.value }))}
+                  placeholder="Renovation"
+                  data-testid="input-service-type"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Client Name (optional)</Label>
+              <Input
+                value={projectForm.clientName}
+                onChange={(e) => setProjectForm(prev => ({ ...prev, clientName: e.target.value }))}
+                placeholder="ABC Corporation"
+                data-testid="input-client-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>City</Label>
+                <Input
+                  value={projectForm.locationCity}
+                  onChange={(e) => setProjectForm(prev => ({ ...prev, locationCity: e.target.value }))}
+                  placeholder="Dallas"
+                  data-testid="input-location-city"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>State</Label>
+                <Input
+                  value={projectForm.locationState}
+                  onChange={(e) => setProjectForm(prev => ({ ...prev, locationState: e.target.value }))}
+                  placeholder="TX"
+                  data-testid="input-location-state"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateProjectDialog(false)}>Cancel</Button>
+            <Button onClick={() => createProjectMutation.mutate(projectForm)} disabled={createProjectMutation.isPending} data-testid="button-submit-project">
+              {createProjectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : null}
+              Add Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
