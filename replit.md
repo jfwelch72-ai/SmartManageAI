@@ -40,3 +40,15 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Uppy**: For enhanced file uploads.
 *   **node-cron**: For scheduling backend tasks.
 *   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.
+
+## Key Route Files
+- **Organization Documents** (`server/organizationDocumentRoutes.ts`): Company settings, branding, and compliance document management
+- **AI Bid Document Analysis** (`server/aiBidDocumentRoutes.ts`): AI-powered bid invitation and scope document review with OpenAI Vision
+- **AI Contract Document Analysis** (`server/aiContractDocumentRoutes.ts`): AI-powered contract and award document analysis
+
+## Known Issues / Design Notes
+- **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
+- **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
+- **SelectItem pattern**: Always use `value="none"` instead of `value=""` for "None" options in Select components
+- **AI Features**: In development mode, AI features use demo/mock data when no images are available; real Vision analysis requires uploaded images
+- **Express route ordering**: Specific routes (e.g., /types, /summary) must be defined BEFORE /:id catch-all routes

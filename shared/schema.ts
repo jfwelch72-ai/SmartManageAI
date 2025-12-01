@@ -1201,6 +1201,83 @@ export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
   statusIdx: index("ai_bid_document_analysis_status_idx").on(table.status),
 }));
 
+// AI Contract/Award Document Analysis (AI-powered award/contract document review)
+export const aiContractDocumentAnalysisStatusEnum = pgEnum("ai_contract_document_analysis_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
+
+export const aiContractDocumentAnalysis = pgTable("ai_contract_document_analysis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  documentUrl: text("document_url").notNull(),
+  documentName: text("document_name").notNull(),
+  documentType: text("document_type"), // PDF, IMAGE, etc.
+  status: aiContractDocumentAnalysisStatusEnum("status").notNull().default("PENDING"),
+  
+  // Contract basics
+  contractType: text("contract_type"), // Subcontract, Prime Contract, Change Order, Amendment
+  contractNumber: text("contract_number"),
+  contractDate: timestamp("contract_date"),
+  effectiveDate: timestamp("effective_date"),
+  completionDate: timestamp("completion_date"),
+  
+  // Parties
+  ownerName: text("owner_name"),
+  generalContractorName: text("general_contractor_name"),
+  subcontractorName: text("subcontractor_name"),
+  ownerAddress: text("owner_address"),
+  gcAddress: text("gc_address"),
+  projectName: text("project_name"),
+  projectLocation: text("project_location"),
+  
+  // Contract value and payment
+  contractValue: decimal("contract_value", { precision: 14, scale: 2 }),
+  retainage: decimal("retainage", { precision: 5, scale: 2 }), // Percentage
+  paymentTerms: text("payment_terms"),
+  billingSchedule: text("billing_schedule"), // Monthly, milestone-based, etc.
+  
+  // Scope and work
+  scopeOfWork: text("scope_of_work"), // Full scope description
+  scopeSummary: text("scope_summary"), // Short summary
+  scopeItems: text("scope_items"), // JSON: [{section, description, inclusions, exclusions}]
+  exclusions: text("exclusions"), // JSON array of explicit exclusions
+  
+  // Schedule
+  startDate: timestamp("start_date"),
+  duration: text("duration"), // "90 days", "3 months", etc.
+  milestones: text("milestones"), // JSON: [{name, date, description}]
+  liquidatedDamages: text("liquidated_damages"),
+  
+  // Insurance and bonding
+  insuranceRequirements: text("insurance_requirements"), // JSON with limits
+  bondingRequirements: text("bonding_requirements"),
+  
+  // Terms and conditions
+  warrantyTerms: text("warranty_terms"),
+  changeOrderProcess: text("change_order_process"),
+  disputeResolution: text("dispute_resolution"),
+  terminationClauses: text("termination_clauses"),
+  indemnificationClauses: text("indemnification_clauses"),
+  
+  // Key clauses extracted
+  keyTerms: text("key_terms"), // JSON: [{term, summary, section}]
+  riskFactors: text("risk_factors"), // JSON: [{risk, severity, mitigation, section}]
+  obligations: text("obligations"), // JSON: [{type, description, deadline}]
+  
+  // Raw AI response for debugging
+  rawAiResponse: text("raw_ai_response"),
+  confidenceScore: integer("confidence_score"), // 0-100
+  
+  analyzedById: varchar("analyzed_by_id").references(() => users.id),
+  analyzedAt: timestamp("analyzed_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("ai_contract_document_analysis_project_idx").on(table.projectId),
+  orgIdx: index("ai_contract_document_analysis_org_idx").on(table.organizationId),
+  statusIdx: index("ai_contract_document_analysis_status_idx").on(table.status),
+}));
+
 // ==================================================
 // TAKEOFF + ESTIMATING ENGINE TABLES
 // ==================================================
@@ -1897,6 +1974,14 @@ export const insertAIBidDocumentAnalysisSchema = createInsertSchema(aiBidDocumen
 });
 export type InsertAIBidDocumentAnalysis = z.infer<typeof insertAIBidDocumentAnalysisSchema>;
 export type AIBidDocumentAnalysis = typeof aiBidDocumentAnalysis.$inferSelect;
+
+export const insertAIContractDocumentAnalysisSchema = createInsertSchema(aiContractDocumentAnalysis).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAIContractDocumentAnalysis = z.infer<typeof insertAIContractDocumentAnalysisSchema>;
+export type AIContractDocumentAnalysis = typeof aiContractDocumentAnalysis.$inferSelect;
 
 // Crews table
 export const crews = pgTable("crews", {

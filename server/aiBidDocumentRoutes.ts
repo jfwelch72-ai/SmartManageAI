@@ -175,14 +175,23 @@ Respond with JSON in this format:
   }
 }
 
+function safeJsonParse(value: string | null | undefined, defaultValue: any[] = []): any {
+  if (!value) return defaultValue;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return defaultValue;
+  }
+}
+
 function parseAnalysis(analysis: any) {
   return {
     ...analysis,
-    lineItems: analysis.lineItems ? JSON.parse(analysis.lineItems) : [],
-    requirements: analysis.requirements ? JSON.parse(analysis.requirements) : [],
-    qualifications: analysis.qualifications ? JSON.parse(analysis.qualifications) : [],
-    suggestedPricingFactors: analysis.suggestedPricingFactors ? JSON.parse(analysis.suggestedPricingFactors) : [],
-    riskFactors: analysis.riskFactors ? JSON.parse(analysis.riskFactors) : [],
+    lineItems: safeJsonParse(analysis.lineItems, []),
+    requirements: safeJsonParse(analysis.requirements, []),
+    qualifications: safeJsonParse(analysis.qualifications, []),
+    suggestedPricingFactors: safeJsonParse(analysis.suggestedPricingFactors, []),
+    riskFactors: safeJsonParse(analysis.riskFactors, []),
   };
 }
 
