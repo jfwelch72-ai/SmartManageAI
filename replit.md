@@ -47,6 +47,28 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 - **AI Contract Document Analysis** (`server/aiContractDocumentRoutes.ts`): AI-powered contract and award document analysis
 - **Schedule of Values** (`server/sovRoutes.ts`): SOV generation with fillable PDF output, status workflow, and transaction-based totals
 - **Subcontract Agreements** (`server/subcontractRoutes.ts`): Subcontract agreement generation with white-label PDF output
+- **Website Builder** (`server/websiteBuilderRoutes.ts`): Complete website management with 8 modules - Setup, Pages, Blog, Projects, Social Media, Analytics, SEO, and AI Design Assistant
+
+## Website Builder System
+The Website Builder is a comprehensive white-label website management system for construction organizations featuring:
+
+**Core Modules**:
+- **Website Setup**: Organization website configuration with custom domains, branding, and publish status
+- **Page Builder**: CRUD for website pages (HOME, ABOUT, SERVICES, SAFETY, CONTACT, GALLERY, BLOG, CUSTOM) with drag-and-drop content management
+- **Blog System**: Full blog CMS with posts, categories, tags, comments, and AI content generation
+- **Project Gallery**: Portfolio showcase with project images, descriptions, and AI-generated descriptions
+- **Social Media**: Social link management and AI-powered social post generator for multiple platforms
+- **Analytics**: Website tracking with daily stats, event logging, and visitor insights
+- **SEO Engine**: AI-powered SEO scanning and optimization with structured data generation
+- **AI Design Assistant**: Conversational AI for website design suggestions, color schemes, and content generation
+
+**Security**:
+- All mutations require ADMIN/SUPER_ADMIN role (MANAGER role excluded)
+- Multi-tenant isolation with organizationId filtering on all queries
+- Comprehensive audit logging on create/update/delete operations
+- Public endpoints only for analytics tracking pixel and contact form submissions
+
+**Database Tables**: organization_websites, organization_website_pages, website_blog_posts, website_blog_comments, website_projects, website_project_images, website_analytics_daily, website_analytics_events, organization_social_links, social_post_history, website_contact_submissions
 
 ## Known Issues / Design Notes
 - **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
