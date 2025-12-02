@@ -838,7 +838,7 @@ export default function CRMPage() {
   // Get unique specialties from all organizations
   const uniqueSpecialties = useMemo(() => {
     const allSpecialties = organizations?.flatMap(org => org.specialties || []) || [];
-    return [...new Set(allSpecialties)].sort();
+    return Array.from(new Set(allSpecialties)).sort();
   }, [organizations]);
 
   const filteredOrganizations = organizations?.filter((org) => {

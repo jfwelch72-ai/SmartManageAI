@@ -57,7 +57,7 @@ async function verifyContractAccess(contractId: string, orgId: string | null, sh
   return { contract, hasAccess: true };
 }
 
-router.get("/subcontracts/project/:projectId", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER", "FIELD_USER"]), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/project/:projectId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -91,7 +91,7 @@ router.get("/subcontracts/project/:projectId", requireAuth, requireRole(["SUPER_
   }
 });
 
-router.get("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER", "FIELD_USER"]), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -127,7 +127,6 @@ router.get("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"
         locationAddress: project?.locationAddress,
         city: project?.city,
         state: project?.state,
-        zipCode: project?.zipCode
       }
     });
   } catch (error) {
@@ -148,7 +147,7 @@ const createSubcontractSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
-router.post("/subcontracts", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -227,7 +226,7 @@ const updateSubcontractSchema = z.object({
   status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "TERMINATED"]).optional()
 });
 
-router.patch("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -307,7 +306,7 @@ router.patch("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMI
   }
 });
 
-router.delete("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN"]), async (req: AuthRequest, res: Response) => {
+router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -332,7 +331,7 @@ router.delete("/subcontracts/:id", requireAuth, requireRole(["SUPER_ADMIN", "ADM
   }
 });
 
-router.get("/subcontracts/:id/pdf", requireAuth, requireRole(["SUPER_ADMIN", "ADMIN", "MANAGER"]), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -384,7 +383,7 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRole(["SUPER_ADMIN", "AD
           address: org.address || project.locationAddress,
           city: org.city || project.city,
           state: org.state || project.state,
-          zipCode: org.zipCode || project.zipCode,
+          zipCode: org.zipCode || '',
           phone: org.phone,
           email: org.email,
           primaryColor: org.primaryColor || '#1a365d',
@@ -420,9 +419,9 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRole(["SUPER_ADMIN", "AD
         locationAddress: project.locationAddress,
         city: project.city,
         state: project.state,
-        zipCode: project.zipCode,
+        zipCode: null,
         startDate: project.startDate,
-        targetCompletionDate: project.targetCompletionDate
+        targetCompletionDate: project.estimatedCompletionDate
       },
       branding,
       includeSignaturePages: includeSignatures

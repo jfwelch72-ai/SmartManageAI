@@ -1,0 +1,187 @@
+You are an Expert Senior Full-Stack TypeScript/Node/React/Drizzle Engineer and Systems Auditor.  
+Your task is to perform ALL Phase-2 code quality cleanup items across the SmartManageAI codebase.
+
+Treat this as ONE unified instruction.  
+Do NOT ask questions.  
+Do NOT break into steps.  
+Execute everything below as a single repair and cleanup operation.
+
+=================================================================
+PHASE 2 – CODE QUALITY CLEANUP GOALS
+=================================================================
+
+The goal of Phase 2 is to bring SmartManageAI from “deployable” to  
+**“production-polished, high-quality, enterprise-grade code.”**
+
+You MUST fix ALL of the following categories across the entire repo:
+
+=================================================================
+1. REMOVE ALL REMAINING implicit `any` TYPES
+=================================================================
+
+Search the entire repository for:
+
+- implicit `any`
+- parameters without types
+- callbacks missing type definitions
+- missing generics
+- unused function parameters
+
+Fix ALL of the following:
+
+- Add correct types for callback parameters in map/filter/reduce.
+- Add correct types for Express request handlers.
+- Add missing generics to useQuery/useMutation everywhere.
+- Standardize all shared types into the shared/ or types/ folder if used across modules.
+
+There must be **NO implicit any** values remaining.
+
+=================================================================
+2. FIX ALL DOWNLEVEL ITERATION WARNINGS
+=================================================================
+
+Specifically in:
+
+- `server/ai/snapshotBuilder.ts`
+- any module using MapIterator, SetIterator, etc.
+
+Fix by doing ONE of the following:
+
+Option A:
+    Convert iterators to arrays:
+        const entries = Array.from(myMap.entries());
+
+Option B:
+    Update tsconfig:
+        "downlevelIteration": true
+
+Choose the safest approach for each file.  
+The end result must be **0 downlevel iteration warnings.**
+
+=================================================================
+3. FIX ALL SCHEMA MISMATCHES
+=================================================================
+
+Resolve the remaining:
+- submittedByUserId mismatch in server/routes.ts  
+- Any reference to schema fields that do not exist  
+- Any optional vs. required type mismatches  
+- Any enum mismatches that still exist
+
+You MUST:
+- Update the schema (recommended) OR
+- Remove/replace incorrect references
+
+The schema and code must be 100% aligned.
+
+=================================================================
+4. CLEAN UP UNUSED IMPORTS, UNUSED VARIABLES, UNUSED PROPS
+=================================================================
+
+Perform a full pass through the codebase to remove:
+
+- Unused imports  
+- Unused variables  
+- Unused React props  
+- Unused React state values  
+- Dead code paths  
+- Commented-out blocks that are obsolete  
+
+Everything should compile clean and minimal.
+
+=================================================================
+5. FIX ALL MINOR EXAMPLE FILE MISMATCHES
+=================================================================
+
+The audit identified the following remaining type issues:
+
+- `DailyNoteFeed`
+- `ProjectsTable`
+
+Fix:
+- Type the component props correctly
+- Match backend response shapes
+- Eliminate `any`
+- Remove or fix unused or incorrect props
+
+These are NOT core system files, but they must be made type-safe and correct.
+
+=================================================================
+6. UPDATE REACT QUERY GENERICS & BACKEND SHAPES
+=================================================================
+
+Ensure ALL useQuery and useMutation hooks have:
+
+- Proper response type generics
+- Correct error type
+- Correct variable type
+- Correct mutationFn/queryFn typings
+
+Frontend response types MUST exactly match backend return types.
+
+=================================================================
+7. FULL TS CONFIG CLEANUP
+=================================================================
+
+Improve code quality by updating tsconfig:
+
+- Enable strict mode if not already enabled
+- Enable noUncheckedIndexedAccess (optional, recommended)
+- Remove obsolete compiler flags
+- Ensure "downlevelIteration" is correct
+- Ensure moduleResolution is set appropriately for the project
+
+=================================================================
+8. PERFORM A FULL PROJECT CLEAN BUILD
+=================================================================
+
+After all fixes:
+
+Run:
+    npm run typecheck  
+    npm run build  
+
+There must be **ZERO errors** in both commands.
+
+=================================================================
+9. GENERATE UPDATED AUDIT REPORT
+=================================================================
+
+After Phase 2 cleanup is complete, generate a new file:
+
+SMARTMANAGE_AI_FULL_AUDIT_REPORT_PHASE2.md
+
+Include:
+
+1. Executive summary  
+2. “Phase 2 Completed Successfully” section  
+3. List of ALL changes made  
+4. Remaining minor suggestions (if any)  
+5. Updated Production Readiness Score  
+6. Confirmation that:  
+   - 0 TypeScript errors remain  
+   - Schema and code are aligned  
+   - React Query types are correct  
+   - No implicit any remains  
+   - No iterator warnings remain  
+   - All example files typecheck  
+7. Final deployment readiness evaluation  
+8. Recommendation on beginning deployment pipeline (Phase 3)
+
+=================================================================
+FINAL OUTPUT
+=================================================================
+
+When you finish:
+
+1. Confirm:
+   “Phase 2 Code Quality Cleanup Completed – 0 errors.”
+
+2. Provide:
+   - Location of the updated audit file
+   - A list of all files changed
+   - A brief summary of improvements
+
+Then stop.
+
+END OF INSTRUCTION.

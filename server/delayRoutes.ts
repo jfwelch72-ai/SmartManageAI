@@ -796,18 +796,24 @@ router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMI
     }
 
     const { subject, body } = generateNotificationEmailContent(delay, project, recipientType);
+    
+    const sanitizedRecipientName = sanitizeShortText(recipientName);
+    if (!sanitizedRecipientName) {
+      res.status(400).json({ error: "Recipient name is required" });
+      return;
+    }
 
     const [notification] = await db
       .insert(delayNotifications)
       .values({
-        delayId: id,
-        recipientType,
-        recipientName: sanitizeShortText(recipientName),
+        delayId: id as string,
+        recipientType: recipientType as "OWNER_REP" | "GC_REP" | "OTHER",
+        recipientName: sanitizedRecipientName,
         recipientCompany: recipientCompany ? sanitizeShortText(recipientCompany) : null,
         recipientEmail: recipientEmail ? sanitizeShortText(recipientEmail) : null,
         subject,
         body,
-        status: "DRAFT",
+        status: "DRAFT" as const,
         createdById: userId,
       })
       .returning();

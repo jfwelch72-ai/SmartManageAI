@@ -802,11 +802,11 @@ export default function BidWizardPage() {
                     <div className="space-y-2">
                       <FormLabel>Select from CRM (optional)</FormLabel>
                       <CrmOrganizationSelector
-                        value={selectedGcOrg}
+                        value={selectedGcOrg?.id}
                         onSelect={handleGcSelect}
-                        selectedContact={selectedGcContact}
+                        selectedContactId={selectedGcContact?.id}
                         onContactSelect={handleGcContactSelect}
-                        typeFilter="CONTRACTOR"
+                        filterTypes={["CONTRACTOR"]}
                         placeholder="Search for client organization..."
                       />
                     </div>

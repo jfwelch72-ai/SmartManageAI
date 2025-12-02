@@ -1,7 +1,9 @@
-import { Router } from "express";
+import { Router, Response } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects } from "@shared/schema";
 import { eq, and, desc, isNull, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -15,7 +17,7 @@ const router = Router();
 /**
  * Update AI insight status (acknowledge, start progress, complete, dismiss)
  */
-router.patch("/api/insights/:insightId/status", requireAuth, async (req, res) => {
+router.patch("/api/insights/:insightId/status", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { insightId } = req.params;
     const { status, dismissReason } = req.body;
@@ -89,7 +91,7 @@ router.patch("/api/insights/:insightId/status", requireAuth, async (req, res) =>
 /**
  * Acknowledge an AI insight (mark as seen)
  */
-router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req, res) => {
+router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { insightId } = req.params;
     const userId = req.user!.id;
@@ -143,10 +145,11 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
     }
 
     // Build where conditions
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
 
     if (status) {
-      conditions.push(eq(tasks.status, status as string));
+      const validStatus = status as "PENDING" | "IN_PROGRESS" | "COMPLETED" | "DISMISSED";
+      conditions.push(eq(tasks.status, validStatus));
     }
 
     if (assignedToId) {
@@ -164,27 +167,29 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
     // Organization filter: filter tasks by project's organization
     // Tasks without projects (company-wide) are filtered by creator's organization
     if (shouldFilter && orgId) {
-      conditions.push(
-        or(
-          eq(projects.gcOrganizationId, orgId),
-          and(isNull(tasks.projectId), eq(users.organizationId, orgId))
-        )
+      const orgFilter = or(
+        eq(projects.gcOrganizationId, orgId),
+        and(isNull(tasks.projectId), eq(users.organizationId, orgId))
       );
+      if (orgFilter) {
+        conditions.push(orgFilter);
+      }
     }
 
     // RBAC: Non-admin users only see tasks assigned to them or created by them
     if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole)) {
-      conditions.push(
-        or(
-          eq(tasks.assignedToId, userId),
-          eq(tasks.createdById, userId)
-        )
+      const rbacFilter = or(
+        eq(tasks.assignedToId, userId),
+        eq(tasks.createdById, userId)
       );
+      if (rbacFilter) {
+        conditions.push(rbacFilter);
+      }
     }
 
-    // Use .as() method for aliasing when joining users table twice
-    const creator = users.as("creator");
-    const assignee = users.as("assignee");
+    // Use alias function for aliasing when joining users table twice
+    const creator = alias(users, "creator");
+    const assignee = alias(users, "assignee");
 
     const taskList = await db
       .select({
@@ -231,7 +236,7 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
 /**
  * Get a single task by ID
  */
-router.get("/api/tasks/:taskId", requireAuth, async (req, res) => {
+router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;
@@ -263,7 +268,7 @@ router.get("/api/tasks/:taskId", requireAuth, async (req, res) => {
 /**
  * Create a new manual task
  */
-router.post("/api/tasks", requireAuth, async (req, res) => {
+router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -303,7 +308,7 @@ router.post("/api/tasks", requireAuth, async (req, res) => {
 /**
  * Update a task
  */
-router.patch("/api/tasks/:taskId", requireAuth, async (req, res) => {
+router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;
@@ -385,7 +390,7 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req, res) => {
 /**
  * Delete a task
  */
-router.delete("/api/tasks/:taskId", requireAuth, async (req, res) => {
+router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { taskId } = req.params;
     const userId = req.user!.id;

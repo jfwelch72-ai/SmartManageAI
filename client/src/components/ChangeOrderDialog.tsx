@@ -85,10 +85,10 @@ interface ChangeOrder {
   status: string;
   requestedById: string;
   approvedById?: string | null;
-  approvedAt?: string | null;
+  approvedAt?: string | Date | null;
   rejectionReason?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   // Standardized scope fields
   workTypeId?: string | null;
   workTypeCode?: string | null;

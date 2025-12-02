@@ -395,9 +395,8 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
       entityType: "users",
       entityId: user.id,
       userId: req.user!.id,
-      organizationId: null,
-      changes: { adminPasswordReset: true, targetEmail: user.email },
-    });
+      newValue: JSON.stringify({ adminPasswordReset: true, targetEmail: user.email }),
+    }, req);
 
     console.log(`Admin-initiated password reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });

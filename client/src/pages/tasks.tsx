@@ -79,22 +79,19 @@ export default function Tasks() {
   });
 
   // Fetch projects for dropdown
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [] } = useQuery<Array<{ id: string; code: string; name: string }>>({
     queryKey: ["/api/projects"],
   });
 
   // Fetch users for assignment dropdown
-  const { data: users = [] } = useQuery({
+  const { data: users = [] } = useQuery<Array<{ id: string; firstName: string; lastName: string }>>({
     queryKey: ["/api/users"],
   });
 
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: TaskFormData) => {
-      return apiRequest("/api/tasks", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("POST", "/api/tasks", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -110,10 +107,7 @@ export default function Tasks() {
   // Update task status mutation
   const updateStatusMutation = useMutation({
     mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return apiRequest(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
+      return apiRequest("PATCH", `/api/tasks/${taskId}`, { status });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });

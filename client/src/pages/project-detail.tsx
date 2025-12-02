@@ -1658,6 +1658,12 @@ export default function ProjectDetailPage() {
       total: number;
       sheetsCount: number;
     };
+    tmTickets?: {
+      approved: number;
+      approvedTotal: number;
+      pending: number;
+      pendingTotal: number;
+    };
     projectedProfit: number;
     actualProfit: number;
     actualCosts: {
@@ -2475,16 +2481,16 @@ export default function ProjectDetailPage() {
                               <span>Change Orders ({financials.approvedChangeOrdersCount}):</span>
                               <span className="font-mono">${financials.approvedChangeOrdersTotal.toLocaleString()}</span>
                             </div>
-                            {financials.tmTickets?.approvedTotal > 0 && (
+                            {(financials.tmTickets?.approvedTotal ?? 0) > 0 && (
                               <div className="flex justify-between">
-                                <span>T&M Tickets ({financials.tmTickets?.approved || 0}):</span>
-                                <span className="font-mono">${(financials.tmTickets?.approvedTotal || 0).toLocaleString()}</span>
+                                <span>T&M Tickets ({financials.tmTickets?.approved ?? 0}):</span>
+                                <span className="font-mono">${(financials.tmTickets?.approvedTotal ?? 0).toLocaleString()}</span>
                               </div>
                             )}
-                            {financials.tmTickets?.pending > 0 && (
+                            {(financials.tmTickets?.pending ?? 0) > 0 && (
                               <div className="flex justify-between text-amber-600">
-                                <span>Pending T&M ({financials.tmTickets?.pending}):</span>
-                                <span className="font-mono">${(financials.tmTickets?.pendingTotal || 0).toLocaleString()}</span>
+                                <span>Pending T&M ({financials.tmTickets?.pending ?? 0}):</span>
+                                <span className="font-mono">${(financials.tmTickets?.pendingTotal ?? 0).toLocaleString()}</span>
                               </div>
                             )}
                             {financials.tmCharges?.total > 0 && (
@@ -2910,7 +2916,7 @@ export default function ProjectDetailPage() {
             <AiSchedulingPanel 
               projectId={project.id}
               projectName={project.name}
-              tradeType={project.tradeType}
+              tradeType={(project as { tradeType?: string }).tradeType}
             />
           </TabsContent>
 

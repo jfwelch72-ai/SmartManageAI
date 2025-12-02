@@ -284,7 +284,7 @@ export default function BidsPage() {
 
   const performConversion = async (bidCode: string) => {
     try {
-      await convertBid.mutateAsync(bidCode);
+      await convertBid.mutateAsync({ code: bidCode });
       toast({
         title: "Success",
         description: `Bid ${bidCode} has been converted to an active project!`,

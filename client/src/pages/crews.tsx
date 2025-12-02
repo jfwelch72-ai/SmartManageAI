@@ -132,7 +132,7 @@ export default function CrewsPage() {
   // Get unique skill categories
   const uniqueSkillCategories = useMemo(() => {
     const categories = skills.map(s => s.category).filter(Boolean) as string[];
-    return [...new Set(categories)].sort();
+    return Array.from(new Set(categories)).sort();
   }, [skills]);
 
   const filteredSkills = useMemo(() => {

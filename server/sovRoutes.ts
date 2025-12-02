@@ -449,7 +449,8 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
       SELECT * FROM updated_line_item
     `);
 
-    const updated = result[0] || lineItem;
+    const rows = result.rows as Record<string, unknown>[];
+    const updated = rows[0] || lineItem;
 
     res.json(updated);
   } catch (error) {

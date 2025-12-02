@@ -12495,12 +12495,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create message
+      const sanitizedContent = sanitizeText(content);
+      if (!sanitizedContent) {
+        res.status(400).json({ error: "Message content is required" });
+        return;
+      }
+      
       const [newMessage] = await db
         .insert(messages)
         .values({
-          conversationId,
+          conversationId: conversationId as string,
           senderId: userId,
-          content: sanitizeText(content),
+          content: sanitizedContent,
           attachmentUrl: attachmentUrl || null,
           attachmentName: attachmentName || null,
           attachmentType: attachmentType || null,
@@ -13766,10 +13772,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Source, equipment name, and type are required" });
       }
       
-      const insertData = {
+      const [newPlan] = await db.insert(projectEquipmentPlans).values({
         projectId,
         source: req.body.source,
-        status: "PLANNED",
+        status: "PLANNED" as const,
         equipmentId: req.body.equipmentId || null,
         rentalCatalogId: req.body.rentalCatalogId || null,
         rentalVendorId: req.body.rentalVendorId || null,
@@ -13783,12 +13789,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
         dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
         notes: req.body.notes || null,
-        createdById: userId,
-      };
+        createdById: userId!,
+      }).returning();
       
-      const [newPlan] = await db.insert(projectEquipmentPlans).values(insertData).returning();
-      
-      await logCreate(userId!, "project_equipment_plans", newPlan.id, { projectId, equipmentName: insertData.equipmentName });
+      await logCreate(userId!, "project_equipment_plans", newPlan.id, { projectId, equipmentName: req.body.equipmentName });
       
       res.status(201).json(newPlan);
     } catch (error) {
