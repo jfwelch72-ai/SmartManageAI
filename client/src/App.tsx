@@ -58,6 +58,7 @@ import ScheduleOfValuesPage from "@/pages/schedule-of-values";
 import SubcontractsPage from "@/pages/subcontracts";
 import WebsiteBuilderPage from "@/pages/website-builder";
 import BidWizardPage from "@/pages/bid-wizard";
+import EmailAssistantPage from "@/pages/email-assistant";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -169,6 +170,7 @@ function Router() {
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} />} />
+      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />
