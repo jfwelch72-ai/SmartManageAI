@@ -180,12 +180,11 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
     const data = parseResult.data;
 
     // Verify linked entities belong to the same organization (mustDenyAccess pattern)
-    // Note: projects and bids use gcOrganizationId (General Contractor mode), not organizationId
-    // We verify entity existence - full organization check is handled by project/bid access controls
+    // Projects and bids use gcOrganizationId (General Contractor mode) for multi-tenant isolation
     if (data.projectId) {
       const { projects } = await import("@shared/schema");
       const [project] = await db
-        .select({ id: projects.id })
+        .select({ gcOrganizationId: projects.gcOrganizationId })
         .from(projects)
         .where(eq(projects.id, data.projectId))
         .limit(1);
@@ -193,12 +192,16 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
+      // Enforce multi-tenant isolation using gcOrganizationId
+      if (project.gcOrganizationId && project.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied: Project belongs to another organization" });
+      }
     }
 
     if (data.bidId) {
       const { bids } = await import("@shared/schema");
       const [bid] = await db
-        .select({ id: bids.id })
+        .select({ gcOrganizationId: bids.gcOrganizationId })
         .from(bids)
         .where(eq(bids.id, data.bidId))
         .limit(1);
@@ -206,9 +209,13 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
+      // Enforce multi-tenant isolation using gcOrganizationId
+      if (bid.gcOrganizationId && bid.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied: Bid belongs to another organization" });
+      }
     }
 
-    // Vendors (CRM organisations) DO have organizationId - enforce full access control
+    // Vendors (CRM organisations) use organizationId for multi-tenant isolation
     if (data.vendorId) {
       const { crmOrganisations } = await import("@shared/schema");
       const [vendor] = await db

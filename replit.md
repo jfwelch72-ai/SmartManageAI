@@ -16,11 +16,11 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, file validation, and multi-tenant access control with `mustDenyAccess` pattern to prevent cross-tenant data leaks.
 
 **Key Architectural Decisions & Features**:
-*   **Multi-Tenant Architecture**: Supports distinct organizations with trade-specific configurations, self-service registration, and AI-driven onboarding. Includes General Contractor (GC) mode and custom trade onboarding for specialties not in preset trades.
+*   **Multi-Tenant Architecture**: Supports distinct organizations with trade-specific configurations, self-service registration, and AI-driven onboarding. Includes General Contractor (GC) mode and custom trade onboarding.
 *   **Trade-Specific Features System**: Dynamic functionality based on an organization's trade type, including APIs, navigation, dashboards, units of measure, and master scope of work items.
 *   **Comprehensive Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material (T&M) Tracking. Includes a guided 5-step Bid Cost Builder Workflow.
 *   **Project Tracking Systems**: Comprehensive Project Delay Tracking System and an Inspection Scheduling System.
-*   **AI Integration**: Features an AI Senior PM + CFO System for various tasks (generation, analysis, scheduling, automation). Includes AI Auto-Takeoff (with OpenAI Vision), AI Scheduling Assistant, AI Jobsite Camera Analysis (with OpenAI Vision), Vendor Pricing Sync, Client Portal, AI Change Order Generator, and Mobile/Offline Mode. New AI module analyzers (Scheduling, Delays, Costs, Equipment, Vendor Pricing, Project Health) and AI Bid Document Analysis (with OpenAI Vision) are integrated.
+*   **AI Integration**: Features an AI Senior PM + CFO System for various tasks (generation, analysis, scheduling, automation). Includes AI Auto-Takeoff (with OpenAI Vision), AI Scheduling Assistant, AI Jobsite Camera Analysis (with OpenAI Vision), Vendor Pricing Sync, Client Portal, AI Change Order Generator, Mobile/Offline Mode, AI module analyzers (Scheduling, Delays, Costs, Equipment, Vendor Pricing, Project Health), and AI Bid Document Analysis (with OpenAI Vision).
 *   **Takeoff & Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, and a material calculator.
 *   **CRM System**: Manages various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
 *   **Time-Clock System**: Native time-clock with GPS, shift management, labor hour tracking, and a Manager Approval Workflow.
@@ -30,6 +30,11 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Equipment Management System**: Fleet and tool tracking, project assignment, repair workflows, and preventative maintenance.
 *   **White-Label Branding**: System-wide rebranding capabilities, including PDF generation and dynamic organization branding.
 *   **Onboarding Walkthrough System**: Role-specific onboarding walkthroughs for all user roles, guided by an AI Assistant.
+*   **Email AI System**: Comprehensive email management with AI-powered classification and task extraction across 7 categories (BID_INVITE, CHANGE_ORDER, SUBMITTAL_REQUEST, DELAY_NOTICE, SAFETY_ISSUE, APPROVAL_NEEDED, GENERAL). Supports Gmail, Outlook, and IMAP/SMTP providers, offering features like task extraction, smart replies, and project integration.
+*   **Subcontractor Payables Workflow System**: Automates payable creation upon subcontract completion with a workflow of PENDING → APPROVED → PAID. Includes a KPI dashboard and role-based approvals.
+*   **Website Builder System**: Comprehensive white-label website management with modules for Setup, Page Builder, Blog, Project Gallery, Social Media, Analytics, SEO, and an AI Design Assistant.
+*   **Labor Cost Rate Management System**: Calculates employee costs using job classifications, employee assignments, and prevailing wage rates, with a defined rate resolution priority.
+*   **AI-Powered Bid Wizard**: A multi-step bid creation workflow featuring AI document analysis (OpenAI GPT-4o) to extract project information and scope items from uploaded documents, followed by estimation.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
@@ -40,127 +45,3 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Uppy**: For enhanced file uploads.
 *   **node-cron**: For scheduling backend tasks.
 *   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.
-
-## Key Route Files
-- **Organization Documents** (`server/organizationDocumentRoutes.ts`): Company settings, branding, and compliance document management
-- **AI Bid Document Analysis** (`server/aiBidDocumentRoutes.ts`): AI-powered bid invitation and scope document review with OpenAI Vision
-- **AI Contract Document Analysis** (`server/aiContractDocumentRoutes.ts`): AI-powered contract and award document analysis
-- **Schedule of Values** (`server/sovRoutes.ts`): SOV generation with fillable PDF output, status workflow, and transaction-based totals
-- **Subcontract Agreements** (`server/subcontractRoutes.ts`): Subcontract agreement generation with white-label PDF output
-- **Subcontractor Payables** (`server/subcontractorPayablesRoutes.ts`): Payment workflow with auto-creation, approvals, and payment tracking
-- **Website Builder** (`server/websiteBuilderRoutes.ts`): Complete website management with 8 modules - Setup, Pages, Blog, Projects, Social Media, Analytics, SEO, and AI Design Assistant
-
-## Subcontractor Payables Workflow System
-A complete accounts payable workflow for subcontractor payments with the following features:
-
-**Auto-Creation**: When a subcontract status is changed to COMPLETED, a payable is automatically created for the remaining contract balance.
-
-**Workflow States**: PENDING → APPROVED → PAID (or REJECTED from PENDING)
-
-**API Endpoints**:
-- `GET /api/payables` - List all payables for organization
-- `GET /api/payables/summary` - Get summary statistics (pending/approved/paid/rejected counts and totals)
-- `GET /api/payables/:id` - Get single payable details
-- `POST /api/payables/:id/approve` - Approve a pending payable (ADMIN/MANAGER only)
-- `POST /api/payables/:id/reject` - Reject a pending payable with reason (ADMIN/MANAGER only)
-- `POST /api/payables/:id/mark-paid` - Mark approved payable as paid with payment details
-
-**Frontend Features** (`client/src/pages/subcontractor-payables.tsx`):
-- KPI dashboard with pending, approved, paid, and outstanding totals
-- Search by subcontractor, project, contract number
-- Status filtering (ALL, PENDING, APPROVED, PAID, REJECTED)
-- Inline approve/reject buttons for pending items
-- Payment recording dialog with date, method, and check number
-- Detail view with full payable information
-
-**Security**: Multi-tenant isolation, ADMIN/MANAGER role requirements for approvals, comprehensive audit logging
-
-## Test Credentials
-- **Email**: manager2@tfr.com
-- **Password**: TFR2025!
-- **Role**: MANAGER
-
-## Website Builder System
-The Website Builder is a comprehensive white-label website management system for construction organizations featuring:
-
-**Core Modules**:
-- **Website Setup**: Organization website configuration with custom domains, branding, and publish status
-- **Page Builder**: CRUD for website pages (HOME, ABOUT, SERVICES, SAFETY, CONTACT, GALLERY, BLOG, CUSTOM) with drag-and-drop content management
-- **Blog System**: Full blog CMS with posts, categories, tags, comments, and AI content generation
-- **Project Gallery**: Portfolio showcase with project images, descriptions, and AI-generated descriptions
-- **Social Media**: Social link management and AI-powered social post generator for multiple platforms
-- **Analytics**: Website tracking with daily stats, event logging, and visitor insights
-- **SEO Engine**: AI-powered SEO scanning and optimization with structured data generation
-- **AI Design Assistant**: Conversational AI for website design suggestions, color schemes, and content generation
-
-**Security**:
-- All mutations require ADMIN/SUPER_ADMIN role (MANAGER role excluded)
-- Multi-tenant isolation with organizationId filtering on all queries
-- Comprehensive audit logging on create/update/delete operations
-- Public endpoints only for analytics tracking pixel and contact form submissions
-
-**Database Tables**: organization_websites, organization_website_pages, website_blog_posts, website_blog_comments, website_projects, website_project_images, website_analytics_daily, website_analytics_events, organization_social_links, social_post_history, website_contact_submissions
-
-## Labor Cost Rate Management System
-A comprehensive labor cost rate system for calculating employee costs on construction projects with the following components:
-
-**Database Tables**:
-- `job_classifications` - Trade-based job classifications (e.g., Journeyman Electrician, Apprentice Plumber) with default rates
-- `employee_classifications` - Assigns employees to job classifications with optional rate overrides
-- `prevailing_wage_rates` - Project-specific prevailing wage rates for government/public projects
-
-**Rate Resolution Priority** (highest to lowest):
-1. Project Prevailing Wage Rate (if project is prevailing wage)
-2. Project Employee Override Rate
-3. Employee Classification Rate
-4. Employee Base Rate (from user profile)
-
-**API Endpoints** (`server/laborRateRoutes.ts`):
-- `GET/POST/PATCH/DELETE /api/labor-rates/classifications` - Job classification CRUD
-- `GET/POST/PATCH/DELETE /api/labor-rates/employee-classifications` - Employee-to-classification assignments
-- `GET/POST/PATCH/DELETE /api/labor-rates/prevailing-wage-rates` - Prevailing wage rates by project
-- `GET /api/labor-rates/employee-classifications/my-rates` - Self-service rate view
-
-**Frontend Features** (`client/src/pages/cost-rates.tsx`):
-- 4-tab interface: Employee Rates, Job Classifications, Employee Assignments, Prevailing Wage
-- Full CRUD dialogs for all rate types
-- Multi-tenant security with organizationId filtering
-- Comprehensive audit logging on all rate changes
-
-**Security**: ADMIN/MANAGER role requirements for mutations, self-service read access for employees
-
-## AI-Powered Bid Wizard
-A multi-step bid creation workflow with AI document analysis for faster bid entry.
-
-**Workflow Steps**:
-1. **Upload Documents** - Upload bid invitation PDFs, images, or Word documents
-2. **AI Review** - AI analyzes documents and extracts project info and scope items
-3. **Confirm Scope** - Review and modify AI-extracted scope of work items
-4. **Bid Details** - Enter project name, due date, location, client info
-5. **Build Estimate** - Create estimate with labor, materials, equipment
-
-**Features**:
-- AI-powered document analysis using OpenAI GPT-4o
-- Trade-specific scope item extraction based on organization trade type
-- "Skip AI Analysis" option for manual entry
-- CRM integration for client selection
-- Seamless transition to 5-step Cost Builder workflow
-
-**API Endpoints**:
-- `POST /api/ai-bid-wizard/analyze` - Analyze uploaded documents with AI
-
-**Frontend** (`client/src/pages/bid-wizard.tsx`):
-- Step-by-step wizard interface
-- Document upload with ObjectUploader
-- AI analysis results review
-- Form validation with react-hook-form
-- Links to bid detail page with Cost Builder
-
-**Route**: `/bids/new` - Accessed via "New Bid" button on bids page
-
-## Known Issues / Design Notes
-- **ADMIN users**: Clock In/Out controls intentionally hidden (ADMINs manage time, don't clock in themselves)
-- **Equipment creation**: Minor backend validation issue with empty numeric fields returns 500 but equipment is created
-- **SelectItem pattern**: Always use `value="none"` instead of `value=""` for "None" options in Select components
-- **AI Features**: In development mode, AI features use demo/mock data when no images are available; real Vision analysis requires uploaded images
-- **Express route ordering**: Specific routes (e.g., /types, /summary) must be defined BEFORE /:id catch-all routes
