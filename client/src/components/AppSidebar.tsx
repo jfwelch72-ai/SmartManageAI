@@ -34,6 +34,7 @@ import {
   Calendar, 
   MessageSquare, 
   MessageCircle, 
+  Mail,
   Gavel, 
   Users as UsersIcon, 
   Clock, 
@@ -242,6 +243,15 @@ export function AppSidebar() {
                     </Badge>
                   </SidebarMenuBadge>
                 )}
+              </SidebarMenuItem>
+              
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/email-assistant")} tooltip="Email Assistant">
+                  <Link href="/email-assistant" data-testid="sidebar-email-assistant">
+                    <Mail className="w-4 h-4" />
+                    <span>Email Assistant</span>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               
               <SidebarMenuItem>
