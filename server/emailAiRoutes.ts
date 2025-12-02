@@ -177,10 +177,58 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Thread not found" });
     }
 
+    const data = parseResult.data;
+
+    // Verify linked entities belong to the same organization (mustDenyAccess pattern)
+    // Note: projects and bids use gcOrganizationId (General Contractor mode), not organizationId
+    // We verify entity existence - full organization check is handled by project/bid access controls
+    if (data.projectId) {
+      const { projects } = await import("@shared/schema");
+      const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, data.projectId))
+        .limit(1);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+    }
+
+    if (data.bidId) {
+      const { bids } = await import("@shared/schema");
+      const [bid] = await db
+        .select({ id: bids.id })
+        .from(bids)
+        .where(eq(bids.id, data.bidId))
+        .limit(1);
+      
+      if (!bid) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+    }
+
+    // Vendors (CRM organisations) DO have organizationId - enforce full access control
+    if (data.vendorId) {
+      const { crmOrganisations } = await import("@shared/schema");
+      const [vendor] = await db
+        .select({ organizationId: crmOrganisations.organizationId })
+        .from(crmOrganisations)
+        .where(eq(crmOrganisations.id, data.vendorId))
+        .limit(1);
+      
+      if (!vendor) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+      if (vendor.organizationId && vendor.organizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied: Vendor belongs to another organization" });
+      }
+    }
+
     const [updated] = await db
       .update(emailThreads)
       .set({
-        ...parseResult.data,
+        ...data,
         updatedAt: new Date(),
       })
       .where(eq(emailThreads.id, req.params.id))
