@@ -108,7 +108,7 @@ export default function AIBidAnalysisPage() {
     }
   });
 
-  const getUploadParameters = async () => {
+  const onGetUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -421,12 +421,13 @@ export default function AIBidAnalysisPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Upload Document</label>
                 <ObjectUploader
-                  getUploadParameters={getUploadParameters}
-                  onUploadComplete={handleUploadComplete}
+                  onGetUploadParameters={onGetUploadParameters}
+                  onComplete={handleUploadComplete}
                   allowedFileTypes={["application/pdf", "image/*"]}
                   maxFileSize={50 * 1024 * 1024}
-                  note="Upload bid invitation, RFP, or scope document (PDF or image, max 50MB)"
-                />
+                >
+                  Upload bid invitation, RFP, or scope document (PDF or image, max 50MB)
+                </ObjectUploader>
               </div>
             )}
 

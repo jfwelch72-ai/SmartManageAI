@@ -2200,7 +2200,7 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const getUploadParameters = async () => {
+  const onGetUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -3009,7 +3009,7 @@ export default function ProjectDetailPage() {
                         maxNumberOfFiles={1}
                         maxFileSize={104857600}
                         allowedFileTypes={mediaType === "IMAGE" ? ["image/*"] : ["video/*"]}
-                        onGetUploadParameters={getUploadParameters}
+                        onGetUploadParameters={onGetUploadParameters}
                         onComplete={(result) => {
                           setIsUploadingMedia(true);
                           handleMediaUploadComplete(result);
@@ -3299,7 +3299,7 @@ export default function ProjectDetailPage() {
                           <ObjectUploader
                             maxNumberOfFiles={1}
                             maxFileSize={104857600}
-                            onGetUploadParameters={getUploadParameters}
+                            onGetUploadParameters={onGetUploadParameters}
                             onComplete={(result) => {
                               setIsUploadingDocument(true);
                               handleDocumentUploadComplete(result);
@@ -3600,7 +3600,7 @@ export default function ProjectDetailPage() {
                         maxNumberOfFiles={1}
                         maxFileSize={104857600}
                         allowedFileTypes={["image/*", "application/pdf"]}
-                        onGetUploadParameters={getUploadParameters}
+                        onGetUploadParameters={onGetUploadParameters}
                         onComplete={(result) => {
                           setIsUploadingReceipt(true);
                           handleReceiptUploadComplete(result);

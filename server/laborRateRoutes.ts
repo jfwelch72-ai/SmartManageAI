@@ -61,7 +61,7 @@ router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER"), as
       entityType: "job_classification",
       entityId: classification.id,
       action: "CREATE",
-      newValue: classification
+      newValue: typeof classification === 'string' ? classification : JSON.stringify(classification)
     }, req);
 
     res.status(201).json(classification);
@@ -116,8 +116,8 @@ router.patch("/classifications/:id", requireAuth, requireRole("ADMIN", "MANAGER"
       entityType: "job_classification",
       entityId: id,
       action: "UPDATE",
-      oldValue: existing,
-      newValue: updated
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing),
+      newValue: typeof updated === 'string' ? updated : JSON.stringify(updated)
     }, req);
 
     res.json(updated);
@@ -160,7 +160,7 @@ router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (
       entityType: "job_classification",
       entityId: id,
       action: "DELETE",
-      oldValue: existing
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing)
     }, req);
 
     res.json({ success: true });
@@ -322,7 +322,7 @@ router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANA
       entityType: "employee_classification",
       entityId: assignment.id,
       action: "CREATE",
-      newValue: assignment
+      newValue: typeof assignment === 'string' ? assignment : JSON.stringify(assignment)
     }, req);
 
     res.status(201).json(assignment);
@@ -383,8 +383,8 @@ router.patch("/employee-classifications/:id", requireAuth, requireRole("ADMIN", 
       entityType: "employee_classification",
       entityId: id,
       action: "UPDATE",
-      oldValue: existing,
-      newValue: updated
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing),
+      newValue: typeof updated === 'string' ? updated : JSON.stringify(updated)
     }, req);
 
     res.json(updated);
@@ -424,7 +424,7 @@ router.delete("/employee-classifications/:id", requireAuth, requireRole("ADMIN",
       entityType: "employee_classification",
       entityId: id,
       action: "DELETE",
-      oldValue: existing
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing)
     }, req);
 
     res.json({ success: true });
@@ -548,7 +548,7 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       entityType: "prevailing_wage_rate",
       entityId: rate.id,
       action: "CREATE",
-      newValue: rate
+      newValue: typeof rate === 'string' ? rate : JSON.stringify(rate)
     }, req);
 
     res.status(201).json(rate);
@@ -605,8 +605,8 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
       entityType: "prevailing_wage_rate",
       entityId: id,
       action: "UPDATE",
-      oldValue: existing,
-      newValue: updated
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing),
+      newValue: typeof updated === 'string' ? updated : JSON.stringify(updated)
     }, req);
 
     res.json(updated);
@@ -646,7 +646,7 @@ router.delete("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "M
       entityType: "prevailing_wage_rate",
       entityId: id,
       action: "DELETE",
-      oldValue: existing
+      oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing)
     }, req);
 
     res.json({ success: true });

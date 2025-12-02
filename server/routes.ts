@@ -424,6 +424,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { email } = validationResult.data;
       const sanitizedEmail = sanitizeEmail(email);
+      if (!sanitizedEmail) {
+        res.status(400).json({ error: "Invalid email address" });
+        return;
+      }
 
       const [user] = await db.select().from(users).where(eq(users.email, sanitizedEmail)).limit(1);
 
@@ -515,8 +519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "users",
         entityId: resetToken.userId,
         userId: resetToken.userId,
-        organizationId: null,
-        changes: { passwordReset: true },
+        newValue: JSON.stringify({ passwordReset: true }),
       });
 
       console.log(`Password reset completed for user: ${resetToken.userId}`);
@@ -3048,8 +3051,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .returning();
       }
 
-      await logAudit(db, req.user!.id, existing ? "UPDATE" : "CREATE", "projectLaborRates", result.id, 
-        { projectCode: req.params.code, ...validationResult.data });
+      await logAudit({
+        userId: req.user!.id,
+        action: existing ? "UPDATE" : "CREATE",
+        entityType: "projectLaborRates",
+        entityId: result.id,
+        newValue: JSON.stringify({ projectCode: req.params.code, ...validationResult.data }),
+      }, req);
 
       res.json(result);
     } catch (error) {
@@ -3165,8 +3173,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .returning();
       }
 
-      await logAudit(db, req.user!.id, existing ? "UPDATE" : "CREATE", "projectEmployeeRates", result.id, 
-        { projectCode: req.params.code, employeeId: validationResult.data.userId });
+      await logAudit({
+        userId: req.user!.id,
+        action: existing ? "UPDATE" : "CREATE",
+        entityType: "projectEmployeeRates",
+        entityId: result.id,
+        newValue: JSON.stringify({ projectCode: req.params.code, employeeId: validationResult.data.userId }),
+      }, req);
 
       res.json(result);
     } catch (error) {
@@ -3201,8 +3214,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await db.delete(projectEmployeeRates).where(eq(projectEmployeeRates.id, req.params.rateId));
 
-      await logAudit(db, req.user!.id, "DELETE", "projectEmployeeRates", req.params.rateId, 
-        { projectCode: req.params.code });
+      await logAudit({
+        userId: req.user!.id,
+        action: "DELETE",
+        entityType: "projectEmployeeRates",
+        entityId: req.params.rateId,
+        oldValue: JSON.stringify({ projectCode: req.params.code }),
+      }, req);
 
       res.json({ success: true });
     } catch (error) {
@@ -7308,6 +7326,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .where(eq(vendorPricingCatalogs.id, existing.id));
         } else {
           // Create new catalog item
+          const now = new Date();
+          const quarter = `${now.getFullYear()}-Q${Math.ceil((now.getMonth() + 1) / 3)}`;
           await db.insert(vendorPricingCatalogs).values({
             organizationId,
             crmOrganisationId: pricebook.vendorId,
@@ -7320,6 +7340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sourceType: "PRICEBOOK_IMPORT",
             approvalStatus: "APPROVED",
             isActive: true,
+            effectiveDate: now,
+            effectiveQuarter: quarter,
           });
         }
         syncedCount++;
@@ -13766,7 +13788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const [newPlan] = await db.insert(projectEquipmentPlans).values(insertData).returning();
       
-      await logCreate("project_equipment_plans", newPlan.id, userId!, { projectId, equipmentName: insertData.equipmentName });
+      await logCreate(userId!, "project_equipment_plans", newPlan.id, { projectId, equipmentName: insertData.equipmentName });
       
       res.status(201).json(newPlan);
     } catch (error) {
@@ -13843,7 +13865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(planConditions)
         .returning();
       
-      await logUpdate("project_equipment_plans", planId, userId!, JSON.stringify(existing), JSON.stringify(updated));
+      await logUpdate(userId!, "project_equipment_plans", planId, existing, updated);
       
       res.json(updated);
     } catch (error) {
@@ -13892,7 +13914,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // SECURITY: Use same conditions in DELETE to prevent TOCTOU race condition
       await db.delete(projectEquipmentPlans).where(planConditions);
       
-      await logDelete("project_equipment_plans", planId, userId!, { equipmentName: existing.equipmentName });
+      await logDelete(userId!, "project_equipment_plans", planId, { equipmentName: existing.equipmentName });
       
       res.status(204).send();
     } catch (error) {
@@ -14604,7 +14626,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       const [newProfile] = await db.insert(equipmentRateProfiles).values(validatedData).returning();
       
-      await logCreate("equipment_rate_profiles", newProfile.id, userId!, {
+      await logCreate(userId!, "equipment_rate_profiles", newProfile.id, {
         equipmentId,
         hourlyRate: String(validatedData.hourlyRate),
       });
@@ -14672,7 +14694,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         .where(eq(equipmentRateProfiles.id, profileId))
         .returning();
       
-      await logUpdate(userId!, "equipment_rate_profiles", profileId, updateData);
+      await logUpdate(userId!, "equipment_rate_profiles", profileId, existingProfile, updateData);
       
       res.json(updatedProfile);
     } catch (error) {
@@ -14728,7 +14750,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         .where(eq(equipmentRateProfiles.id, profileId))
         .returning();
       
-      await logUpdate(userId!, "equipment_rate_profiles", profileId, { isActive: true });
+      await logUpdate(userId!, "equipment_rate_profiles", profileId, existingProfile, { isActive: true });
       
       res.json(updatedProfile);
     } catch (error) {
@@ -14772,7 +14794,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       await db.delete(equipmentRateProfiles).where(eq(equipmentRateProfiles.id, profileId));
       
-      await logDelete(userId!, "equipment_rate_profiles", profileId);
+      await logDelete(userId!, "equipment_rate_profiles", profileId, { deleted: true });
       
       res.json({ message: "Rate profile deleted successfully" });
     } catch (error) {
@@ -14862,7 +14884,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       const [newVendor] = await db.insert(rentalVendors).values(dataWithOrg).returning();
       
-      await logCreate("rental_vendors", newVendor.id, userId!, { name: validatedData.name });
+      await logCreate(userId!, "rental_vendors", newVendor.id, { name: validatedData.name });
       
       res.status(201).json(newVendor);
     } catch (error) {
@@ -14902,7 +14924,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         .where(and(...conditions))
         .returning();
       
-      await logUpdate(userId!, "rental_vendors", id, req.body);
+      await logUpdate(userId!, "rental_vendors", id, existing, req.body);
       
       res.json(updated);
     } catch (error) {
@@ -14936,7 +14958,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       await db.delete(rentalVendors).where(and(...conditions));
       
-      await logDelete(userId!, "rental_vendors", id);
+      await logDelete(userId!, "rental_vendors", id, { name: existing.name });
       
       res.json({ message: "Rental vendor deleted successfully" });
     } catch (error) {
@@ -15069,7 +15091,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       const [newItem] = await db.insert(rentalEquipmentCatalog).values(validatedData).returning();
       
-      await logCreate("rental_equipment_catalog", newItem.id, userId!, { name: validatedData.name, vendorId });
+      await logCreate(userId!, "rental_equipment_catalog", newItem.id, { name: validatedData.name, vendorId });
       
       res.status(201).json(newItem);
     } catch (error) {
@@ -15119,7 +15141,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         .where(eq(rentalEquipmentCatalog.id, id))
         .returning();
       
-      await logUpdate(userId!, "rental_equipment_catalog", id, req.body);
+      await logUpdate(userId!, "rental_equipment_catalog", id, catalogWithVendor[0], req.body);
       
       res.json(updated);
     } catch (error) {
@@ -15163,7 +15185,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       await db.delete(rentalEquipmentCatalog).where(eq(rentalEquipmentCatalog.id, id));
       
-      await logDelete(userId!, "rental_equipment_catalog", id);
+      await logDelete(userId!, "rental_equipment_catalog", id, { deleted: true });
       
       res.json({ message: "Catalog item deleted successfully" });
     } catch (error) {
@@ -15262,7 +15284,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       
       const [newSelection] = await db.insert(bidEquipmentSelections).values(insertData).returning();
       
-      await logCreate("bid_equipment_selections", newSelection.id, userId!, { bidId, equipmentName: insertData.equipmentName });
+      await logCreate(userId!, "bid_equipment_selections", newSelection.id, { bidId, equipmentName: insertData.equipmentName });
       
       res.status(201).json(newSelection);
     } catch (error) {
@@ -15331,7 +15353,7 @@ If the make/model is unknown, provide general best practices for the equipment t
         .where(selectionConditions)
         .returning();
       
-      await logUpdate(userId!, "bid_equipment_selections", selectionId, req.body);
+      await logUpdate(userId!, "bid_equipment_selections", selectionId, existing, req.body);
       
       res.json(updated);
     } catch (error) {
@@ -15380,7 +15402,7 @@ If the make/model is unknown, provide general best practices for the equipment t
       // SECURITY: Use same conditions in DELETE to prevent TOCTOU race condition
       await db.delete(bidEquipmentSelections).where(selectionConditions);
       
-      await logDelete(userId!, "bid_equipment_selections", selectionId);
+      await logDelete(userId!, "bid_equipment_selections", selectionId, { equipmentName: existing.equipmentName });
       
       res.json({ message: "Equipment selection deleted successfully" });
     } catch (error) {

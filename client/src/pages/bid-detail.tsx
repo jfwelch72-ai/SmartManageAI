@@ -839,7 +839,7 @@ export default function BidDetailPage() {
     return sum + parseFloat(sel.estimatedCost || "0");
   }, 0);
 
-  const getUploadParameters = async () => {
+  const onGetUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -879,7 +879,7 @@ export default function BidDetailPage() {
     }
   };
 
-  const getUploadParametersMaterial = async () => {
+  const onGetUploadParametersMaterial = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -2185,11 +2185,9 @@ export default function BidDetailPage() {
                     onChange={(data) => {
                       setScopeSelectionData(data);
                       if (data) {
-                        form.setValue("scopeOfWork", data.description);
+                        form.setValue("scopeOfWork", data.canonicalName || data.workTypeName || "");
                       }
                     }}
-                    estimateLineItems={estimateData.estimate.lineItems}
-                    placeholder="Link to estimate scope item..."
                   />
                 </div>
               )}
@@ -2272,13 +2270,16 @@ export default function BidDetailPage() {
                   </div>
                 ) : (
                   <ObjectUploader
-                    getUploadParameters={getUploadParameters}
-                    onUploadStart={() => setIsUploadingFile(true)}
-                    onComplete={handleFileUploadComplete}
-                    onError={() => setIsUploadingFile(false)}
+                    onGetUploadParameters={onGetUploadParameters}
+                    onComplete={(result) => {
+                      setIsUploadingFile(true);
+                      handleFileUploadComplete(result);
+                    }}
                     allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
                     maxFileSize={10 * 1024 * 1024}
-                  />
+                  >
+                    Upload Quote Document
+                  </ObjectUploader>
                 )}
               </div>
               <DialogFooter>
@@ -2440,13 +2441,16 @@ export default function BidDetailPage() {
                   </div>
                 ) : (
                   <ObjectUploader
-                    getUploadParameters={getUploadParametersMaterial}
-                    onUploadStart={() => setIsUploadingMaterialFile(true)}
-                    onComplete={handleMaterialFileUploadComplete}
-                    onError={() => setIsUploadingMaterialFile(false)}
+                    onGetUploadParameters={onGetUploadParametersMaterial}
+                    onComplete={(result) => {
+                      setIsUploadingMaterialFile(true);
+                      handleMaterialFileUploadComplete(result);
+                    }}
                     allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
                     maxFileSize={10 * 1024 * 1024}
-                  />
+                  >
+                    Upload Quote Document
+                  </ObjectUploader>
                 )}
               </div>
               <DialogFooter>

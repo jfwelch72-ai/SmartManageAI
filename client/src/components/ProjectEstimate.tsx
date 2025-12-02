@@ -829,7 +829,7 @@ export default function ProjectEstimate() {
                             name="laborCost"
                             render={({ field }) => {
                               const rate = form.watch("laborRateUsed");
-                              const hasRate = rate && rate > 0;
+                              const hasRate = !!(rate && rate > 0);
                               return (
                                 <FormItem>
                                   <FormLabel>

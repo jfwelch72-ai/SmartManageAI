@@ -163,13 +163,11 @@ export function AIInsightsWidget({
   });
 
   const runAnalysisMutation = useMutation({
-    mutationFn: async (module?: string) => {
-      return apiRequest('/api/ai-analyze', {
-        method: 'POST',
-        body: JSON.stringify({ module: module || 'ALL', projectId, saveResults: true }),
-      });
+    mutationFn: async (module: string = 'ALL') => {
+      const response = await apiRequest('POST', '/api/ai-analyze', { module, projectId, saveResults: true });
+      return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast({
         title: "AI Analysis Complete",
         description: `Generated ${data.insights?.length || 0} insights across ${data.module} modules.`,
@@ -189,9 +187,7 @@ export function AIInsightsWidget({
 
   const acknowledgeMutation = useMutation({
     mutationFn: async (insightId: string) => {
-      return apiRequest(`/api/ai-insights/${insightId}/acknowledge`, {
-        method: 'PATCH',
-      });
+      return apiRequest('PATCH', `/api/ai-insights/${insightId}/acknowledge`);
     },
     onSuccess: () => {
       toast({
@@ -245,7 +241,7 @@ export function AIInsightsWidget({
             <Button 
               size="sm" 
               variant="outline"
-              onClick={() => runAnalysisMutation.mutate()}
+              onClick={() => runAnalysisMutation.mutate('ALL')}
               disabled={runAnalysisMutation.isPending}
               data-testid="run-ai-analysis-button"
             >

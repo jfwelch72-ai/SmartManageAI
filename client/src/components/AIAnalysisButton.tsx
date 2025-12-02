@@ -52,16 +52,14 @@ export function AIAnalysisButton({
 
   const runAnalysisMutation = useMutation({
     mutationFn: async (selectedModule: string) => {
-      return apiRequest('/api/ai-analyze', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          module: selectedModule, 
-          projectId, 
-          saveResults: true 
-        }),
+      const response = await apiRequest('POST', '/api/ai-analyze', { 
+        module: selectedModule, 
+        projectId, 
+        saveResults: true 
       });
+      return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast({
         title: "AI Analysis Complete",
         description: `Generated ${data.insights?.length || 0} insights for ${data.module} analysis.`,

@@ -170,7 +170,7 @@ export default function CompanySettings() {
     setSelectedDocType("");
   };
 
-  const getUploadParameters = async () => {
+  const onGetUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -654,7 +654,7 @@ export default function CompanySettings() {
                     ? ["image/png", "image/jpeg", "image/svg+xml", "image/webp"]
                     : ["image/png", "image/jpeg", "application/pdf"]
                 }
-                onGetUploadParameters={getUploadParameters}
+                onGetUploadParameters={onGetUploadParameters}
                 onComplete={handleUploadComplete}
                 buttonVariant="default"
                 buttonClassName="w-full"

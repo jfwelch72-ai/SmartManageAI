@@ -418,24 +418,24 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                           <Button
                             key={item.id}
                             type="button"
-                            variant={scopeSelection?.workTypeCode === item.workTypeCode ? "default" : "outline"}
+                            variant={scopeSelection?.canonicalName === item.description ? "default" : "outline"}
                             size="sm"
                             className="text-xs h-auto py-1 px-2"
                             onClick={() => {
                               setScopeSelection({
                                 workTypeId: "",
-                                workTypeName: item.name,
-                                workTypeCode: item.workTypeCode || "",
+                                workTypeName: item.description,
+                                workTypeCode: "",
                                 categoryName: "",
                                 unit: item.unit,
                                 modifierIds: [],
                                 modifierNames: [],
-                                canonicalName: item.name,
+                                canonicalName: item.description,
                               });
                             }}
                             data-testid={`button-scope-item-${item.id}`}
                           >
-                            {item.name} ({item.completedQuantity || 0}/{item.totalQuantity} {item.unit})
+                            {item.description} ({item.completedQuantity || 0}/{item.totalQuantity} {item.unit})
                           </Button>
                         ))}
                       </div>

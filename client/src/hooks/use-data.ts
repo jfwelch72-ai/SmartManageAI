@@ -1056,6 +1056,15 @@ export function useCreateTMTicket() {
       workDate: string;
       description: string;
       location?: string;
+      workTypeId?: string;
+      workTypeCode?: string;
+      workTypeName?: string;
+      categoryName?: string;
+      scopeModifierIds?: string;
+      scopeModifierNames?: string;
+      canonicalName?: string;
+      scopeUnit?: string;
+      scopeQuantity?: string;
       laborEntries?: Array<{
         employeeName: string;
         position?: string;

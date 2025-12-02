@@ -149,7 +149,7 @@ export default function BidWizardPage() {
     },
   });
 
-  const getUploadParameters = async () => {
+  const onGetUploadParameters = async () => {
     try {
       const response = await apiRequest("POST", "/api/objects/upload");
       const data = await response.json();
@@ -464,7 +464,7 @@ export default function BidWizardPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <ObjectUploader
-                onGetUploadParameters={getUploadParameters}
+                onGetUploadParameters={onGetUploadParameters}
                 onComplete={handleUploadComplete}
                 allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx"]}
                 maxNumberOfFiles={10}

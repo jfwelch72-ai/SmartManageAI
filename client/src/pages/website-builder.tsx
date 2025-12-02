@@ -182,8 +182,8 @@ export default function WebsiteBuilderPage() {
   const [showGenerateBlogDialog, setShowGenerateBlogDialog] = useState(false);
   const [generatedBlogContent, setGeneratedBlogContent] = useState<any>(null);
 
-  const isAdmin = user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
-  const canEdit = user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
+  const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
+  const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
 
   const [websiteForm, setWebsiteForm] = useState({
     siteTitle: "",
@@ -378,8 +378,9 @@ export default function WebsiteBuilderPage() {
   });
 
   const aiAssistantMutation = useMutation({
-    mutationFn: async (message: string) => {
-      return await apiRequest("POST", "/api/website/assistant/ask", { message });
+    mutationFn: async (message: string): Promise<AIResponse> => {
+      const response = await apiRequest("POST", "/api/website/assistant/ask", { message });
+      return response.json();
     },
     onSuccess: (data: AIResponse) => {
       setAiConversation(prev => [...prev, { role: "assistant", content: data.response }]);
