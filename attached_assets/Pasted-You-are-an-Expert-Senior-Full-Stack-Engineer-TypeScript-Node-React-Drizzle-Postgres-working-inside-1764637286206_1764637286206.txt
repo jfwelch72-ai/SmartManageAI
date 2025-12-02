@@ -1,0 +1,456 @@
+You are an Expert Senior Full-Stack Engineer (TypeScript/Node/React/Drizzle/Postgres) working inside the existing SmartManageAI monorepo.
+
+The codebase is:
+- Backend: Node/Express + TypeScript + drizzle-orm + Neon HTTP driver (NO db.transaction usage)
+- Frontend: React + TypeScript + React Query + shadcn-style components
+- DB: PostgreSQL (Neon) with schema.ts + drizzle migrations
+- Auth: JWT + AuthRequest + requireAuth / requireRole
+- Multi-tenant: organizationId-based isolation, getOrgIdForFilter(), mustDenyAccess patterns
+- Logging: auditLog table + logCreate/logUpdate/logDelete/logAudit helpers
+- AI: Existing AI routes (aiRoutes, aiContractDocumentRoutes, etc.) using OpenAI
+
+Treat this entire message as ONE unified instruction. Do NOT ask for clarification. Do NOT split this into multiple prompts. Execute everything below as a single, coherent task.
+
+Your goal: FULLY IMPLEMENT an Email AI System that:
+- Allows users to connect email accounts (Gmail, Outlook, and generic IMAP/SMTP)
+- Periodically fetches and ingests emails into SmartManageAI
+- Uses AI to classify emails and extract actionable items
+- Converts emails into tasks, project updates, and notifications
+- Provides an “AI Email Assistant” UI (global + per-project)
+- Integrates with existing project, bid, CO, T&M, and vendor workflows
+- Maintains strict multi-tenant isolation and full audit logging
+- Preserves ZERO TypeScript errors and all existing behavior
+
+====================================================================
+HIGH-LEVEL FEATURE SPEC
+====================================================================
+
+Implement the following end-to-end:
+
+1) Email Account Linking (Per User, Per Organization)
+2) Email Ingestion & Storage
+3) AI Email Classification & Task Extraction
+4) Task Creation & Project Routing
+5) AI Email Assistant UI (Global Inbox)
+6) Project-Level Email Views (Per-project inbox)
+7) Daily/Weekly AI Email Summaries
+8) Smart Reply Suggestions (AI-generated draft replies)
+9) Security, Permissions, and Audit Logging
+10) Tests / Type Safety / No regressions
+
+====================================================================
+1) EMAIL ACCOUNT LINKING
+====================================================================
+
+Add support for three categories of email providers:
+
+A. Gmail (OAuth2)
+B. Outlook / Microsoft 365 (OAuth2 via Microsoft Graph)
+C. Generic IMAP/SMTP (manual host/port/credentials)
+
+Backend:
+- Create a new table in schema.ts (and migration) for linked email accounts, e.g.:
+
+  emailAccounts:
+    - id (uuid, PK)
+    - organizationId (uuid, FK)
+    - userId (uuid, FK)
+    - provider (enum: "GMAIL" | "OUTLOOK" | "IMAP")
+    - emailAddress (text)
+    - displayName (text, nullable)
+    - oauthProviderId (text, nullable)      // for Gmail/Outlook, e.g., Google sub, MS id
+    - accessToken (text, nullable)          // store encrypted or token reference
+    - refreshToken (text, nullable)         // store encrypted or token reference
+    - expiresAt (timestamptz, nullable)     // OAuth expiry
+    - imapHost (text, nullable)
+    - imapPort (integer, nullable)
+    - imapSecure (boolean, nullable)
+    - smtpHost (text, nullable)
+    - smtpPort (integer, nullable)
+    - smtpSecure (boolean, nullable)
+    - imapUsername (text, nullable)
+    - imapPassword (text, nullable)         // store encrypted or token reference
+    - isActive (boolean, default true)
+    - lastSyncedAt (timestamptz, nullable)
+    - createdAt / updatedAt (timestamptz)
+
+- Ensure multi-tenant isolation via organizationId and userId, consistent with existing patterns.
+
+- Implement backend routes (in a new file like server/emailAccountRoutes.ts) with:
+
+  - GET /api/email/accounts           → list linked accounts for current user/org
+  - POST /api/email/accounts          → create/link a new account (IMAP config or OAuth start)
+  - PATCH /api/email/accounts/:id     → update account (toggle active, update settings)
+  - DELETE /api/email/accounts/:id    → unlink account (soft delete or deactivate)
+
+- All routes:
+  - Use requireAuth and AuthRequest type
+  - Enforce organizationId & userId ownership
+  - Use requireRole where appropriate (e.g., admins can see org-wide accounts if allowed)
+
+OAuth:
+- For Gmail:
+  - Support OAuth2 flow using Google APIs (Gmail read-only + basic profile).
+  - Store refreshToken, accessToken, expiresAt in emailAccounts.
+- For Outlook:
+  - Use Microsoft Graph OAuth2 with mail.read (and optional mail.send).
+  - Store tokens as above.
+- For IMAP/SMTP:
+  - Allow manual input of host, port, security, username, password.
+  - Mark these fields as sensitive (TODO: integrate with existing encryption helper if present; otherwise create a small internal helper that at least logically isolates secrets and document that real KMS/secret vault should be used in production).
+
+Do NOT break existing auth mechanisms. Follow the existing environment variable patterns for third-party client IDs/secrets.
+
+====================================================================
+2) EMAIL INGESTION & STORAGE
+====================================================================
+
+Add tables for storing emails and threads, for efficient querying:
+
+- emailThreads:
+  - id (uuid, PK)
+  - organizationId (uuid, FK)
+  - emailAccountId (uuid, FK)
+  - subject (text)
+  - projectId (uuid, nullable, FK)
+  - bidId (uuid, nullable, FK)
+  - vendorId (uuid, nullable, FK)
+  - status (enum: "OPEN" | "ARCHIVED" | "IGNORED")
+  - lastMessageAt (timestamptz)
+  - createdAt / updatedAt
+
+- emailMessages:
+  - id (uuid, PK)
+  - organizationId (uuid, FK)
+  - emailAccountId (uuid, FK)
+  - threadId (uuid, FK)
+  - externalId (text)               // provider message id
+  - fromAddress (text)
+  - fromName (text, nullable)
+  - toAddresses (jsonb)
+  - ccAddresses (jsonb)
+  - bccAddresses (jsonb, nullable)
+  - subject (text)
+  - bodyText (text, nullable)
+  - bodyHtml (text, nullable)
+  - receivedAt (timestamptz)
+  - isRead (boolean)
+  - hasAttachments (boolean)
+  - classification (enum or text)   // e.g., "BID_INVITE", "CHANGE_ORDER", etc.
+  - createdAt / updatedAt
+
+- emailAttachments:
+  - id (uuid, PK)
+  - organizationId (uuid, FK)
+  - emailMessageId (uuid, FK)
+  - filename (text)
+  - contentType (text)
+  - sizeBytes (integer)
+  - storageKey (text)              // key in your object storage
+  - createdAt / updatedAt
+
+Implement backend ingestion service (e.g., server/emailIngestService.ts) that:
+
+- For each active emailAccount:
+  - Uses provider-specific client to fetch emails since lastSyncedAt.
+  - For GMAIL: use Gmail API (not raw IMAP) where possible.
+  - For OUTLOOK: use Microsoft Graph.
+  - For IMAP: use IMAP client (e.g., node-imap-like library; follow project’s dependency patterns).
+- Normalizes messages into emailMessages + emailThreads rows.
+- Stores attachments in existing file/object storage system via existing upload helper patterns and records in emailAttachments.
+- Updates lastSyncedAt on emailAccounts.
+
+Add a route or internal job trigger:
+
+- POST /api/email/sync           → Manually trigger sync for current user/org
+  - For now, allow manual trigger.
+  - Optionally, setup a lightweight internal scheduler (e.g., periodically polling via an existing job runner or API-based “sync now” button) respecting Replit/Neon constraints.
+
+Ensure:
+- No db.transaction() usage (use sequential operations).
+- Multi-tenant filtering everywhere.
+
+====================================================================
+3) AI EMAIL CLASSIFICATION & TASK EXTRACTION
+====================================================================
+
+Create a dedicated AI helper module (e.g., server/ai/emailAi.ts) that:
+
+- Reuses the existing OpenAI client / AI helper abstraction used by aiRoutes.
+- Defines classification categories, for example:
+  - "PROJECT_UPDATE"
+  - "BID_INVITE"
+  - "BID_RFI"
+  - "CHANGE_ORDER_REQUEST"
+  - "SUBMITTAL_REQUEST"
+  - "PAY_APP"
+  - "INVOICE"
+  - "DELAY_NOTICE"
+  - "SAFETY_ISSUE"
+  - "DELIVERY_NOTICE"
+  - "TIME_CLOCK_ISSUE"
+  - "VENDOR_PRICING"
+  - "GENERAL_COMMUNICATION"
+  - "SPAM_OR_IRRELEVANT"
+
+For each emailMessage (subject + bodyText/bodyHtml), call AI to:
+
+- Classify into one of the categories (or "OTHER").
+- Extract:
+  - Due dates / deadlines
+  - Project code / name
+  - Bid number / reference
+  - Vendor / subcontractor name
+  - Requested actions (e.g., "Submit CO", "Respond to RFI", "Approve T&M", etc.)
+- Store:
+  - classification (enum or text) on emailMessages
+  - AI-extracted metadata in a structured jsonb column if helpful (optional new column, e.g. aiMetadata).
+
+Create a backend route (e.g. server/emailAiRoutes.ts):
+
+- POST /api/email/messages/:id/analyze
+  - Runs AI classification and extraction
+  - Creates/updates related tasks (see next section)
+  - Returns summary + structured actions
+
+Also allow a batch process:
+- Internal job that runs AI analysis on newly ingested messages that lack classification.
+
+All AI calls:
+- Must use existing rate limiting & auth patterns used for AI routes.
+- Must log AI actions to auditLog.
+
+====================================================================
+4) TASK CREATION & PROJECT ROUTING
+====================================================================
+
+For converting emails into actionable items:
+
+- Inspect schema.ts for any existing task or todo table:
+  - If there is a standard tasks table, extend it to support email-linked tasks.
+  - Otherwise, create a new tasks table, for example:
+
+    tasks:
+      - id (uuid, PK)
+      - organizationId (uuid, FK)
+      - createdByUserId (uuid, FK)
+      - assignedToUserId (uuid, nullable)
+      - projectId (uuid, nullable, FK)
+      - bidId (uuid, nullable, FK)
+      - vendorId (uuid, nullable, FK)
+      - emailThreadId (uuid, nullable, FK)
+      - emailMessageId (uuid, nullable, FK)
+      - title (text)
+      - description (text)
+      - status (enum: "OPEN" | "IN_PROGRESS" | "DONE" | "IGNORED")
+      - priority (enum: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL")
+      - dueDate (timestamptz, nullable)
+      - sourceType (enum: "EMAIL" | "MANUAL" | ...) // if consistent with existing patterns
+      - createdAt / updatedAt
+
+- AI logic should:
+  - Try to match project / bid / vendor by:
+    - Project codes in subject/body
+    - Known naming patterns (use fuzzy matching if needed)
+    - Known email addresses for vendors/subs
+  - Create a task linked to:
+    - projectId (if found)
+    - bidId (if relevant)
+    - vendorId (if relevant)
+    - emailThreadId and emailMessageId
+  - Assign a sensible default priority based on classification type.
+
+- Implement backend routes for tasks (if not already present) or extend existing ones:
+  - GET /api/tasks
+  - POST /api/tasks
+  - PATCH /api/tasks/:id
+  - Optionally, filters: by project, by status, by email-related, etc.
+
+- Anytime a task is created from an email:
+  - Log to auditLog with entityType = "TASK", action = "CREATE_FROM_EMAIL"
+  - Store oldValue/newValue as JSON strings.
+
+====================================================================
+5) AI EMAIL ASSISTANT UI (GLOBAL INBOX)
+====================================================================
+
+Create a new frontend page, for example:
+
+- client/src/pages/email-assistant.tsx
+
+Features:
+
+- Displays:
+  - List of emailThreads (paginated, sorted by lastMessageAt)
+  - Filters:
+    - By classification (e.g., BID_INVITE, CHANGE_ORDER_REQUEST, etc.)
+    - By linked project
+    - By linked vendor/subcontractor
+    - By status (OPEN / ARCHIVED)
+
+- When a thread is selected:
+  - Show messages in a conversation view (like a basic email thread).
+  - Highlight AI-extracted summary:
+    - “Summary of this thread”
+    - “Key requested actions”
+    - “Deadlines”
+  - Show related tasks:
+    - Existing tasks linked to that thread/message
+    - Ability to create a new task or mark tasks as done
+
+- Provide an AI panel with:
+  - “Summarize this thread”
+  - “What do I need to do next?”
+  - “Generate a reply”
+  - “Explain this in simple terms”
+
+- Use React Query for:
+  - /api/email/threads
+  - /api/email/messages?threadId=...
+  - /api/email/messages/:id/analyze
+  - /api/tasks
+
+- Every new API integration must be fully typed (no any / unknown) and consistent with backend types.
+
+====================================================================
+6) PROJECT-LEVEL EMAIL VIEWS
+====================================================================
+
+Integrate email data directly into the project-detail page.
+
+- In client/src/pages/project-detail.tsx (or equivalent):
+  - Add a new tab or section: “Email & Communications”
+  - For the current projectId:
+    - Fetch related emailThreads filtered by projectId.
+    - Display list of threads + key classification labels.
+    - Allow clicking through to see thread messages.
+    - Show AI summary and related tasks.
+
+Ensure:
+- This uses the same React Query patterns as the global email-assistant page.
+- Type safety is preserved.
+- Only emails from same organizationId are shown.
+
+====================================================================
+7) DAILY/WEEKLY AI EMAIL SUMMARIES
+====================================================================
+
+Backend:
+
+- Create a route:
+  - POST /api/email/summary/daily
+    - For the current user/org:
+      - Summarize the most important emailThreads in last 24h:
+        - New bid invites
+        - CO requests
+        - Submittal requests
+        - Delays
+        - Safety issues
+        - Approvals needed
+      - Use AI to generate a concise human-readable summary.
+      - Store or return this summary.
+
+- Add a second route:
+  - POST /api/email/summary/weekly
+    - Same as above but for last 7 days.
+
+Frontend:
+
+- On dashboard or a dedicated “AI Overview” widget:
+  - Add a “Daily Email Summary” and “Weekly Email Summary” section.
+  - Allow user to click a button to generate or refresh.
+
+Email sending (optional initial version):
+- For now, just render in UI; optionally integrate existing mail-sending system later for automated outbound summary emails.
+
+====================================================================
+8) SMART REPLY SUGGESTIONS
+====================================================================
+
+Backend:
+
+- New route:
+  - POST /api/email/messages/:id/suggest-reply
+    - Uses AI to:
+      - Read the selected emailMessage
+      - Generate 1–3 suggested reply drafts
+      - Optionally adjust tone: “Professional”, “Casual”, “Firm”
+    - Does NOT auto-send; returns draft(s) to the frontend.
+
+Frontend:
+
+- In email-assistant thread view:
+  - Add a “Suggest Reply” button
+  - Show AI draft in a textarea editor
+  - Allow user to edit
+  - Provide a “Copy to clipboard” button
+  - (Optional for now) Provide “Send via provider” button if sendMail is implemented later.
+
+====================================================================
+9) SECURITY, PERMISSIONS, AUDIT LOGGING
+====================================================================
+
+- All email routes must:
+  - Use requireAuth
+  - Use AuthRequest
+  - Enforce organizationId scoping
+  - Prevent cross-tenant access to emailAccounts, threads, messages, attachment files.
+
+- Sensitive fields:
+  - Tokens and passwords MUST NOT be returned in any API response.
+  - They must only be used internally in the server.
+
+- Use auditLog for:
+  - Linking/unlinking email accounts
+  - Creating tasks from emails
+  - Running AI analyses
+  - Changing email thread status (OPEN → ARCHIVED, etc.)
+
+- No db.transaction calls. Use sequential operations with robust error handling (as already practiced in sovRoutes).
+
+====================================================================
+10) TYPE SAFETY, TESTING, AND NO REGRESSIONS
+====================================================================
+
+- Ensure:
+  - `npm run typecheck` passes with 0 errors.
+  - `npm run build` passes successfully.
+  - `npm run dev` runs without runtime TypeScript-related issues.
+
+- All new backend routes:
+  - Must have proper TypeScript types for Request/Response.
+  - Must align with Drizzle schema types.
+
+- All new frontend queries and components:
+  - Must use explicit generics in useQuery/useMutation.
+  - Must not introduce any any or unknown types.
+  - Must not break existing pages (project-detail, dashboard, AI pages).
+
+- If you introduce any new enums or tables:
+  - Ensure they are fully wired into schema.ts and migrations.
+  - Ensure there are no enum mismatches like “PENDING” vs “PENDING_REVIEW”.
+
+====================================================================
+FINAL OUTPUT REQUIREMENTS
+====================================================================
+
+When you are done:
+
+1. Confirm:
+   - EmailAccounts, EmailThreads, EmailMessages, EmailAttachments (and Tasks if new) tables exist and are wired.
+   - Email account linking (Gmail, Outlook, IMAP) works end-to-end.
+   - Email ingestion and AI classification works for at least basic text emails.
+   - AI Email Assistant page loads and displays threads + summaries.
+   - Project detail page shows a project-scoped email section.
+   - Daily/weekly summaries and smart reply suggestions function correctly.
+
+2. Ensure:
+   - No existing features are broken.
+   - No new TypeScript errors are introduced.
+   - No db.transaction usage is added.
+
+3. Provide a short summary in the console/editor:
+   - “Email AI System integration complete.”
+   - List of main new files created/modified.
+
+Then stop.

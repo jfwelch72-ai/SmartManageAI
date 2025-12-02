@@ -82,6 +82,8 @@ import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import laborRateRoutes from "./laborRateRoutes";
+import emailAccountRoutes from "./emailAccountRoutes";
+import emailAiRoutes from "./emailAiRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -158,6 +160,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Labor Rate routes
   app.use("/api/labor-rates", laborRateRoutes);
+
+  // Register Email Account routes
+  app.use("/api/email", emailAccountRoutes);
+
+  // Register Email AI routes (threads, messages, tasks, summaries)
+  app.use("/api/email", emailAiRoutes);
 
   // ====================
   // Auth Routes

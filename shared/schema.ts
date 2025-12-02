@@ -4654,3 +4654,253 @@ export const websiteContactSubmissions = pgTable("website_contact_submissions", 
 export const insertWebsiteContactSubmissionSchema = createInsertSchema(websiteContactSubmissions).omit({ id: true, createdAt: true });
 export type InsertWebsiteContactSubmission = z.infer<typeof insertWebsiteContactSubmissionSchema>;
 export type WebsiteContactSubmission = typeof websiteContactSubmissions.$inferSelect;
+
+// ====================================================================
+// EMAIL AI SYSTEM
+// ====================================================================
+
+// Email Provider Enum
+export const emailProviderEnum = pgEnum("email_provider", ["GMAIL", "OUTLOOK", "IMAP"]);
+
+// Email Thread Status Enum
+export const emailThreadStatusEnum = pgEnum("email_thread_status", ["OPEN", "ARCHIVED", "IGNORED"]);
+
+// Email Classification Enum
+export const emailClassificationEnum = pgEnum("email_classification", [
+  "PROJECT_UPDATE",
+  "BID_INVITE",
+  "BID_RFI",
+  "CHANGE_ORDER_REQUEST",
+  "SUBMITTAL_REQUEST",
+  "PAY_APP",
+  "INVOICE",
+  "DELAY_NOTICE",
+  "SAFETY_ISSUE",
+  "DELIVERY_NOTICE",
+  "TIME_CLOCK_ISSUE",
+  "VENDOR_PRICING",
+  "GENERAL_COMMUNICATION",
+  "SPAM_OR_IRRELEVANT",
+  "OTHER"
+]);
+
+// Email Task Source Enum  
+export const emailTaskSourceEnum = pgEnum("email_task_source", ["EMAIL", "MANUAL", "AI_GENERATED"]);
+
+// Email Accounts Table (linked email accounts per user)
+export const emailAccounts = pgTable("email_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: emailProviderEnum("provider").notNull(),
+  emailAddress: text("email_address").notNull(),
+  displayName: text("display_name"),
+  
+  // OAuth fields (for Gmail/Outlook)
+  oauthProviderId: text("oauth_provider_id"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at"),
+  
+  // IMAP/SMTP fields
+  imapHost: text("imap_host"),
+  imapPort: integer("imap_port"),
+  imapSecure: boolean("imap_secure"),
+  smtpHost: text("smtp_host"),
+  smtpPort: integer("smtp_port"),
+  smtpSecure: boolean("smtp_secure"),
+  imapUsername: text("imap_username"),
+  imapPassword: text("imap_password"), // Should be encrypted in production
+  
+  isActive: boolean("is_active").notNull().default(true),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_accounts_org_idx").on(table.organizationId),
+  userIdx: index("email_accounts_user_idx").on(table.userId),
+  emailIdx: index("email_accounts_email_idx").on(table.emailAddress),
+}));
+
+export const insertEmailAccountSchema = createInsertSchema(emailAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailAccount = z.infer<typeof insertEmailAccountSchema>;
+export type EmailAccount = typeof emailAccounts.$inferSelect;
+
+// Email Threads Table
+export const emailThreads = pgTable("email_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  emailAccountId: varchar("email_account_id").notNull().references(() => emailAccounts.id, { onDelete: "cascade" }),
+  
+  subject: text("subject").notNull(),
+  externalThreadId: text("external_thread_id"), // Provider's thread ID
+  
+  // Linked entities (optional)
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  
+  status: emailThreadStatusEnum("status").notNull().default("OPEN"),
+  messageCount: integer("message_count").notNull().default(0),
+  unreadCount: integer("unread_count").notNull().default(0),
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  
+  // AI-generated fields
+  aiSummary: text("ai_summary"),
+  primaryClassification: emailClassificationEnum("primary_classification"),
+  aiMetadata: text("ai_metadata"), // JSON with extracted entities
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_threads_org_idx").on(table.organizationId),
+  accountIdx: index("email_threads_account_idx").on(table.emailAccountId),
+  projectIdx: index("email_threads_project_idx").on(table.projectId),
+  bidIdx: index("email_threads_bid_idx").on(table.bidId),
+  statusIdx: index("email_threads_status_idx").on(table.status),
+  lastMessageIdx: index("email_threads_last_message_idx").on(table.lastMessageAt),
+}));
+
+export const insertEmailThreadSchema = createInsertSchema(emailThreads).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailThread = z.infer<typeof insertEmailThreadSchema>;
+export type EmailThread = typeof emailThreads.$inferSelect;
+
+// Email Messages Table
+export const emailMessages = pgTable("email_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  emailAccountId: varchar("email_account_id").notNull().references(() => emailAccounts.id, { onDelete: "cascade" }),
+  threadId: varchar("thread_id").notNull().references(() => emailThreads.id, { onDelete: "cascade" }),
+  
+  externalId: text("external_id").notNull(), // Provider message ID
+  
+  fromAddress: text("from_address").notNull(),
+  fromName: text("from_name"),
+  toAddresses: text("to_addresses"), // JSON array
+  ccAddresses: text("cc_addresses"), // JSON array
+  bccAddresses: text("bcc_addresses"), // JSON array
+  
+  subject: text("subject").notNull(),
+  bodyText: text("body_text"),
+  bodyHtml: text("body_html"),
+  snippet: text("snippet"), // Preview text
+  
+  receivedAt: timestamp("received_at").notNull(),
+  isRead: boolean("is_read").notNull().default(false),
+  isIncoming: boolean("is_incoming").notNull().default(true),
+  hasAttachments: boolean("has_attachments").notNull().default(false),
+  
+  // AI Classification
+  classification: emailClassificationEnum("classification"),
+  aiMetadata: text("ai_metadata"), // JSON with extracted data
+  aiAnalyzedAt: timestamp("ai_analyzed_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_messages_org_idx").on(table.organizationId),
+  accountIdx: index("email_messages_account_idx").on(table.emailAccountId),
+  threadIdx: index("email_messages_thread_idx").on(table.threadId),
+  externalIdIdx: index("email_messages_external_id_idx").on(table.externalId),
+  receivedAtIdx: index("email_messages_received_at_idx").on(table.receivedAt),
+  classificationIdx: index("email_messages_classification_idx").on(table.classification),
+}));
+
+export const insertEmailMessageSchema = createInsertSchema(emailMessages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailMessage = z.infer<typeof insertEmailMessageSchema>;
+export type EmailMessage = typeof emailMessages.$inferSelect;
+
+// Email Attachments Table
+export const emailAttachments = pgTable("email_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  emailMessageId: varchar("email_message_id").notNull().references(() => emailMessages.id, { onDelete: "cascade" }),
+  
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  storageKey: text("storage_key").notNull(), // Object storage key
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_attachments_org_idx").on(table.organizationId),
+  messageIdx: index("email_attachments_message_idx").on(table.emailMessageId),
+}));
+
+export const insertEmailAttachmentSchema = createInsertSchema(emailAttachments).omit({ id: true, createdAt: true });
+export type InsertEmailAttachment = z.infer<typeof insertEmailAttachmentSchema>;
+export type EmailAttachment = typeof emailAttachments.$inferSelect;
+
+// Extend Tasks table to support email linking
+// Note: The existing tasks table at line 630 is extended here with additional email-linked columns
+// We add a separate email_tasks table for email-specific task linking
+
+export const emailTasks = pgTable("email_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Core Task Fields
+  createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id),
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id),
+  
+  // Linked Entities
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  emailThreadId: varchar("email_thread_id").references(() => emailThreads.id, { onDelete: "set null" }),
+  emailMessageId: varchar("email_message_id").references(() => emailMessages.id, { onDelete: "set null" }),
+  
+  title: text("title").notNull(),
+  description: text("description"),
+  
+  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
+  priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
+  dueDate: timestamp("due_date"),
+  
+  sourceType: emailTaskSourceEnum("source_type").notNull().default("EMAIL"),
+  aiMetadata: text("ai_metadata"), // JSON with AI extraction details
+  
+  completedAt: timestamp("completed_at"),
+  completedByUserId: varchar("completed_by_user_id").references(() => users.id),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_tasks_org_idx").on(table.organizationId),
+  projectIdx: index("email_tasks_project_idx").on(table.projectId),
+  assignedIdx: index("email_tasks_assigned_idx").on(table.assignedToUserId),
+  statusIdx: index("email_tasks_status_idx").on(table.status),
+  threadIdx: index("email_tasks_thread_idx").on(table.emailThreadId),
+  dueDateIdx: index("email_tasks_due_date_idx").on(table.dueDate),
+}));
+
+export const insertEmailTaskSchema = createInsertSchema(emailTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmailTask = z.infer<typeof insertEmailTaskSchema>;
+export type EmailTask = typeof emailTasks.$inferSelect;
+
+// AI Email Summaries Table (daily/weekly digest cache)
+export const emailSummaries = pgTable("email_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  summaryType: text("summary_type").notNull(), // "DAILY" or "WEEKLY"
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  
+  summaryContent: text("summary_content").notNull(), // AI-generated summary
+  highlightsJson: text("highlights_json"), // JSON with key points
+  
+  emailCount: integer("email_count").notNull().default(0),
+  tasksCreated: integer("tasks_created").notNull().default(0),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("email_summaries_org_idx").on(table.organizationId),
+  userIdx: index("email_summaries_user_idx").on(table.userId),
+  periodIdx: index("email_summaries_period_idx").on(table.periodStart, table.periodEnd),
+}));
+
+export const insertEmailSummarySchema = createInsertSchema(emailSummaries).omit({ id: true, createdAt: true });
+export type InsertEmailSummary = z.infer<typeof insertEmailSummarySchema>;
+export type EmailSummary = typeof emailSummaries.$inferSelect;
