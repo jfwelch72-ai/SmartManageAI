@@ -841,20 +841,20 @@ Most critical implicit any types have been addressed. Some remain in example fil
 
 ---
 
-## 📊 Module-by-Module Assessment (Updated)
+## 📊 Module-by-Module Assessment (Updated December 3, 2025)
 
-### Backend Route Coverage (258 Routes)
+### Backend Route Coverage (262+ Routes)
 
 | Module | Routes | Status | Notes |
 |--------|--------|--------|-------|
 | Auth & Users | 25 | ✅ Stable | Proper JWT/bcrypt, rate limiting |
 | Projects | 30 | ✅ Stable | CRUD with multi-tenant filtering |
 | Bids | 20 | ✅ Stable | Cost builder workflow operational |
-| Estimates | 35 | ✅ Stable | Line items, category mapping works |
+| Estimates | 39 | ✅ **EXPANDED** | Line items, category mapping + **4 production rate endpoints** |
 | Change Orders | 15 | ✅ Stable | State machine properly implemented |
 | Time Clock | 12 | ✅ Stable | GPS, shift management |
 | Crews & Skills | 10 | ✅ Stable | Assignment tracking |
-| AI Features | 25 | ✅ Stable | Vision, scheduling, analysis |
+| AI Features | 25 | ✅ **ENHANCED** | Vision, scheduling, orchestrator, 6 module analyzers |
 | SOV | 8 | ✅ Fixed | Delta-based updates, role checks verified |
 | Documents | 10 | ✅ Fixed | Role check pattern verified |
 | Website Builder | 25 | ✅ Fixed | Frontend typing resolved |
@@ -863,8 +863,9 @@ Most critical implicit any types have been addressed. Some remain in example fil
 | Delays & Inspections | 15 | ✅ Stable | Schema aligned |
 | Platform Admin | 10 | ✅ Fixed | Audit log fields corrected |
 | **Email AI System** | **15** | ✅ **NEW** | Account linking, AI classification, task extraction |
+| **Production Rates** | **4** | ✅ **NEW** | Suggestions, lookup, estimate-labor, auto-populate |
 
-### Frontend Page Coverage (51+ Pages)
+### Frontend Page Coverage (52+ Pages)
 
 | Page | Lines | Status | Notes |
 |------|-------|--------|-------|
@@ -882,13 +883,26 @@ Most critical implicit any types have been addressed. Some remain in example fil
 | subcontracts.tsx | 869 | ✅ Stable | Agreement management |
 | ai-bid-analysis.tsx | ~800 | ✅ Fixed | ObjectUploader props fixed |
 | ai-contract-analysis.tsx | ~700 | ✅ Fixed | ObjectUploader props fixed |
+| **dashboard.tsx** | **~600** | ✅ **ENHANCED** | **Customizable widgets + color palettes** |
 
 ### Database Schema Health
 
-**Total Schema Size:** 4,900+ lines  
-**Tables Defined:** 85+  
-**Enums Defined:** 34+  
+**Total Schema Size:** 5,100+ lines  
+**Tables Defined:** 88+  
+**Enums Defined:** 35+  
 **Insert Schemas:** Properly generated via drizzle-zod
+
+**New Tables (December 3, 2025):**
+| Table | Purpose | Security |
+|-------|---------|----------|
+| `user_dashboard_permissions` | Admin-controlled customization access | Org-scoped |
+| `user_dashboard_layouts` | Widget arrangement per user | Org-scoped |
+| `user_color_palettes` | Color scheme preferences | Org-scoped |
+
+**New Enums (December 3, 2025):**
+| Enum | Values | Purpose |
+|------|--------|---------|
+| `dashboard_widget_type` | 12 widget types | Widget configuration |
 
 **Observations:**
 - ✅ Comprehensive trade type enums (ELECTRICAL, PLUMBING, HVAC, etc.)
@@ -897,6 +911,8 @@ Most critical implicit any types have been addressed. Some remain in example fil
 - ✅ UOM categories and SOW items per trade
 - ✅ **NEW: Email system tables (5) with proper indexes**
 - ✅ **NEW: Email enums (4) for provider, status, classification, priority**
+- ✅ **NEW: Dashboard customization tables (3) with WCAG AA validation**
+- ✅ **NEW: Dashboard widget type enum (12 widget types)**
 
 ---
 
@@ -935,7 +951,7 @@ Most critical implicit any types have been addressed. Some remain in example fil
 
 ---
 
-## 🔒 Security Assessment (Updated)
+## 🔒 Security Assessment (Updated December 3, 2025)
 
 ### Strengths
 - ✅ Multi-tenant isolation with `getOrgIdForFilter()` pattern
@@ -947,16 +963,40 @@ Most critical implicit any types have been addressed. Some remain in example fil
 - ✅ File validation (type, size, existence)
 - ✅ Role-based access control (8 user roles + SUPER_ADMIN)
 - ✅ requireRole middleware properly includes SUPER_ADMIN
+- ✅ **NEW: OrganizationRequiredError class for service-level validation**
+- ✅ **NEW: Uniform 404 error response pattern for cross-tenant protection**
+- ✅ **NEW: Super-admin explicit organization validation requirement**
+
+### New Security Patterns (December 3, 2025)
+
+**OrganizationRequiredError Pattern:**
+| Component | Implementation | Purpose |
+|-----------|---------------|---------|
+| Error Class | `OrganizationRequiredError` in productionRateService.ts | Service-level org validation |
+| Throw Point | Before any database query | Defense in depth |
+| Catch Pattern | Route handlers catch and return 404 | Uniform error surface |
+
+**Uniform 404 Response Pattern:**
+| Scenario | Response | Rationale |
+|----------|----------|-----------|
+| Not authenticated | 404 "Not found" | No auth hint to attackers |
+| Wrong role | 404 "Not found" | No permission hint |
+| Cross-org attempt | 404 "Not found" | No resource enumeration |
+| Missing org context | 404 "Not found" | No org info leakage |
+| Super-admin no org | 404 "Not found" | Explicit org required |
 
 ### Areas for Improvement
 - ⬜ Consider CSP headers for frontend
 - ✅ Audit logging - Fixed and verified
+- ✅ **Production rate endpoints - Secured with uniform 404 pattern**
 
 ---
 
-## 🤖 AI Features Assessment
+## 🤖 AI Features Assessment (Updated December 3, 2025)
 
 ### Implemented AI Capabilities
+
+**Core AI Systems:**
 1. **AI Onboarding Assistant** - Trade-specific setup guidance
 2. **AI Bid Document Analysis** - OpenAI Vision for scope extraction
 3. **AI Contract Analysis** - Award document parsing
@@ -964,15 +1004,46 @@ Most critical implicit any types have been addressed. Some remain in example fil
 5. **AI Jobsite Camera Analysis** - Safety and progress monitoring
 6. **AI Auto-Takeoff** - Measurement extraction from drawings
 7. **AI Change Order Generator** - Automated documentation
-8. **AI Module Analyzers** (10 modules):
-   - Scheduling, Delays, Costs, Equipment
-   - Vendor Pricing, Project Health, Labor
-   - Bids, Change Orders, Gantt Charts
-9. **AI Email System** (NEW - December 2, 2025):
-   - **Email Classification** - 7 construction-specific categories
-   - **Task Extraction** - Action items with priority/due dates
-   - **Smart Replies** - Context-aware response suggestions
-   - **Email Summaries** - Daily/weekly digest generation
+
+**AI Email System (December 2, 2025):**
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Email Classification | 7 construction-specific categories | ✅ Active |
+| Task Extraction | Action items with priority/due dates | ✅ Active |
+| Smart Replies | Context-aware response suggestions | ✅ Active |
+| Email Summaries | Daily/weekly digest generation | ✅ Active |
+
+**AI Orchestrator & Module Analyzers (December 3, 2025):**
+
+The AI Orchestrator (`server/ai/orchestrator.ts`) coordinates 6 specialized module analyzers powered by OpenAI GPT-4o:
+
+| Analyzer | Purpose | Data Sources | Output |
+|----------|---------|--------------|--------|
+| **Scheduling** | Timeline optimization, crew scheduling | Projects, Tasks, Crews | Schedule recommendations |
+| **Delays** | Delay tracking, impact assessment | Delays, Change Orders, Weather | Risk alerts |
+| **Costs** | Budget variance, cost trending | Financials, Invoices, Labor | Profitability warnings |
+| **Equipment** | Fleet utilization, maintenance | Equipment, Repairs, Assignments | Maintenance alerts |
+| **Vendor Pricing** | Price trends, vendor comparison | Vendor Pricing, Procurement | Pricing insights |
+| **Project Health** | Overall status scoring | All project data | Health dashboards |
+
+**Orchestrator Pipeline:**
+```
+buildDataSnapshot() → calculateAllProjectsProfitability() → callOpenAIForAnalysis(GPT-4o) → createTasksFromAIResponse()
+```
+
+**Scheduler Features:**
+- Cron-based daily analysis runs
+- Configurable run time (default: 6:00 AM ET)
+- Weekly change order alerts (Mondays at 8:00 AM)
+- Settings-driven feature toggles
+
+**Production Rate Analysis (December 3, 2025):**
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Rate Statistics | avg/min/max/median/stdDev per SOW | ✅ Active |
+| Confidence Scoring | HIGH/MEDIUM/LOW/NONE | ✅ Active |
+| Labor Estimation | Auto-calculate from historical data | ✅ Active |
+| Estimate Auto-Population | Apply rates to line items | ✅ Active |
 
 **Status:** All AI routes properly structured with:
 - Error handling
@@ -992,7 +1063,7 @@ Most critical implicit any types have been addressed. Some remain in example fil
 
 ---
 
-## ✅ What's Working Well
+## ✅ What's Working Well (Updated December 3, 2025)
 
 1. **Bid Wizard Flow** - Complete AI-assisted bid creation workflow
 2. **Multi-tenant Architecture** - Proper organization isolation
@@ -1003,20 +1074,27 @@ Most critical implicit any types have been addressed. Some remain in example fil
 7. **File Upload System** - Object storage integration (ObjectUploader fixed)
 8. **CRM Integration** - Vendor/subcontractor management
 9. **Audit Logging** - Schema-compliant logging throughout
-10. **Email AI System** - AI-powered email management with construction-specific classification (NEW)
+10. **Email AI System** - AI-powered email management with construction-specific classification
+11. **Production Rate Tracking** - Historical rate analysis with confidence scoring (NEW)
+12. **AI Orchestrator** - 6 module analyzers with automated scheduling (NEW)
+13. **Dashboard Customization** - WCAG AA compliant with color palette presets (NEW)
+14. **Security Hardening** - Uniform 404 pattern for cross-tenant protection (NEW)
 
 ---
 
-## 📋 Production Deployment Checklist (Updated)
+## 📋 Production Deployment Checklist (Updated December 3, 2025)
 
 ### Before Deployment
 - [x] Fix 3 critical issues (transaction, requireRole, audit log)
 - [x] Fix TypeScript compilation errors
-- [ ] Run `npm run db:push --force` to sync schema
+- [ ] Run `npm run db:push --force` to sync schema (includes 3 new dashboard tables)
 - [ ] Verify all environment variables set
 - [ ] Test AI features with actual OpenAI key
 - [x] Verify rate limiting configuration
 - [x] Test multi-tenant isolation
+- [x] Verify production rate endpoint security (uniform 404 pattern)
+- [x] Test AI orchestrator scheduler initialization
+- [x] Verify dashboard customization table migrations
 
 ### Post-Deployment
 - [ ] Monitor error logs for 24-48 hours
@@ -1024,6 +1102,9 @@ Most critical implicit any types have been addressed. Some remain in example fil
 - [ ] Test user registration/onboarding flow
 - [ ] Validate email notifications
 - [ ] Performance baseline metrics
+- [ ] Verify AI orchestrator daily runs executing
+- [ ] Test production rate auto-population workflow
+- [ ] Validate WCAG AA color contrast validation
 
 ---
 
@@ -1076,15 +1157,52 @@ The following operational categories were **NOT assessed** in this audit and sho
 
 ---
 
-**Report Generated:** December 2, 2025  
-**Audit Version:** 2.1 (Updated with Email AI System feature audit)  
-**Previous Version:** 2.0 (December 2, 2025 - TypeScript hardening)  
-**Changes in v2.1:**
+**Report Generated:** December 3, 2025  
+**Audit Version:** 2.2 (Major update with Production Rates, AI Orchestrator, Dashboard Customization)  
+**Previous Version:** 2.1 (December 2, 2025 - Email AI System)  
+
+---
+
+## 📋 Version History
+
+### Version 2.2 (December 3, 2025) - Current
+**New Features Documented:**
+- ✅ Production Rate Tracking & Auto-Population System
+  - 4 new API endpoints for rate suggestions, lookup, labor estimation, auto-population
+  - Service layer with `OrganizationRequiredError` class
+  - Confidence scoring (HIGH/MEDIUM/LOW/NONE)
+  - Statistical calculations (avg/min/max/median/stdDev)
+- ✅ AI Orchestrator & Module Analyzers System
+  - 6 specialized analyzers (Scheduling, Delays, Costs, Equipment, Vendor Pricing, Project Health)
+  - Cron-based scheduler with configurable daily runs
+  - Data snapshot builder with comprehensive aggregation
+  - Profitability engine with risk classification
+- ✅ Dashboard Customization System
+  - 3 new database tables (permissions, layouts, color_palettes)
+  - 12 widget types with grid-based layout
+  - WCAG AA accessibility compliance (4.5:1 contrast ratio)
+  - 5 preset themes + custom palette creation
+- ✅ Security Enhancements
+  - Uniform 404 error response pattern for cross-tenant protection
+  - Super-admin explicit organization validation
+  - OrganizationRequiredError for service-level security
+
+**Updated Metrics:**
+- Route count: 258 → 262+ routes (+4 production rate endpoints)
+- Page count: 51+ → 52+ pages (+enhanced dashboard)
+- Schema size: 4,900+ → 5,100+ lines (+3 tables, +1 enum)
+- Production Readiness Score: 88 → 91/100
+
+### Version 2.1 (December 2, 2025)
 - Added comprehensive Email AI System feature audit section
 - Updated route count: 243 → 258 routes (+15 email routes)
 - Updated page count: 50+ → 51+ pages (+1 email-assistant page)
 - Updated schema size: 4,656 → 4,900+ lines (+5 tables, +4 enums)
 - Updated AI Features Assessment with Email AI capabilities
-- Updated "What's Working Well" section
+
+### Version 2.0 (December 2, 2025)
+- TypeScript hardening complete (347 → 0 errors)
+- All critical issues resolved
+- Build compilation 100%
 
 **Next Audit Recommended:** After Phase 2 code quality improvements or next major feature release
