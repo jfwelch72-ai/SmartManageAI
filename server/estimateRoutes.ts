@@ -1053,7 +1053,7 @@ Provide comprehensive financial analysis and recommendations.`
         targetOrgId = orgId;
       }
       
-      if (!description || !unit || quantity === undefined) {
+      if (!description || !unit || quantity === undefined || !targetOrgId) {
         return res.status(404).json({ error: "Not found" });
       }
 
