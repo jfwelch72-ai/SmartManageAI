@@ -924,7 +924,10 @@ Provide comprehensive financial analysis and recommendations.`
         return res.status(404).json({ error: "Not found" });
       }
 
-      const requestedOrgId = req.query.organizationId as string | undefined;
+      const rawRequestedOrgId = req.query.organizationId;
+      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
+        ? rawRequestedOrgId.trim() 
+        : null;
       let targetOrgId: string | null = null;
 
       if (isSuperAdmin) {
@@ -975,7 +978,10 @@ Provide comprehensive financial analysis and recommendations.`
         return res.status(404).json({ error: "Not found" });
       }
 
-      const requestedOrgId = req.query.organizationId as string | undefined;
+      const rawRequestedOrgId = req.query.organizationId;
+      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
+        ? rawRequestedOrgId.trim() 
+        : null;
       let targetOrgId: string | null = null;
 
       if (isSuperAdmin) {
@@ -1029,7 +1035,10 @@ Provide comprehensive financial analysis and recommendations.`
         return res.status(404).json({ error: "Not found" });
       }
 
-      const { description, unit, quantity, workdayHours, organizationId: requestedOrgId } = req.body;
+      const { description, unit, quantity, workdayHours, organizationId: rawRequestedOrgId } = req.body;
+      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
+        ? rawRequestedOrgId.trim() 
+        : null;
       let targetOrgId: string | null = null;
 
       if (isSuperAdmin) {
