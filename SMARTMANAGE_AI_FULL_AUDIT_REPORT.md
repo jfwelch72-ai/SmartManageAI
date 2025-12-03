@@ -301,6 +301,479 @@ A comprehensive email management system with AI-powered classification and task 
 
 ---
 
+## ✅ NEW FEATURE: Production Rate Tracking & Auto-Population System (December 3, 2025)
+
+A comprehensive system for analyzing historical production rates from daily scope progress entries and auto-populating labor hour estimates into estimate line items.
+
+### Feature Overview
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| Production Rate Statistics | avg/min/max/median/stdDev per SOW item | ✅ Implemented |
+| Confidence Scoring | HIGH/MEDIUM/LOW/NONE based on data points | ✅ Implemented |
+| Labor Hour Estimation | Automatic calculation from historical rates | ✅ Implemented |
+| Estimate Auto-Population | Apply rates to estimate line items | ✅ Implemented |
+| Multi-Tenant Isolation | Strict organization scoping | ✅ Implemented |
+
+### Service Layer Architecture
+
+**File:** `server/productionRateService.ts` (~280 lines)
+
+**Core Interfaces:**
+```typescript
+interface ProductionRateStats {
+  description: string;
+  unit: string;
+  avgPerDay: number;
+  minPerDay: number;
+  maxPerDay: number;
+  medianPerDay: number;
+  stdDev: number;
+  totalDays: number;
+  totalProjects: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+}
+
+interface LaborEstimate {
+  suggestedLaborHours: number;
+  productionRateUsed: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+  dataSource: string;
+  totalDaysOfData: number;
+}
+```
+
+**Security Class:**
+```typescript
+class OrganizationRequiredError extends Error {
+  constructor(message: string = "Organization ID is required") {
+    super(message);
+    this.name = "OrganizationRequiredError";
+  }
+}
+```
+
+### API Endpoints (4 new routes)
+
+| Endpoint | Method | Description | Security |
+|----------|--------|-------------|----------|
+| `/api/estimates/production-rates/suggestions` | GET | Get rate suggestions for all SOW items | Org-scoped, 404 on unauthorized |
+| `/api/estimates/production-rates/lookup` | GET | Lookup specific SOW rate by description/unit | Org-scoped, 404 on unauthorized |
+| `/api/estimates/production-rates/estimate-labor` | POST | Calculate labor hours from rate data | Org-scoped, 404 on unauthorized |
+| `/api/estimates/:estimateId/line-items/auto-populate-labor` | POST | Apply rates to estimate line items | Org-scoped, 404 on unauthorized |
+
+### Confidence Scoring Algorithm
+
+| Level | Data Points Required | Description |
+|-------|---------------------|-------------|
+| HIGH | 10+ days | Statistically significant sample |
+| MEDIUM | 5-9 days | Moderate confidence |
+| LOW | 1-4 days | Limited data, use with caution |
+| NONE | 0 days | No historical data available |
+
+### Security Model (Uniform 404 Pattern)
+
+The production rate endpoints implement a **uniform 404 error response pattern** for enhanced security:
+
+**All unauthorized scenarios return identical 404 responses:**
+- Authentication failures
+- Permission failures (role-based)
+- Cross-organization access attempts
+- Missing organization context
+- Super-admin without explicit organizationId
+
+**Why 404 instead of 401/403?**
+- Prevents information leakage about resource existence
+- Blocks cross-tenant inference attacks
+- Provides uniform response regardless of failure reason
+
+**Super-Admin Pattern:**
+- Must explicitly provide `organizationId` parameter
+- Organization validated against database before proceeding
+- No implicit access to all organizations
+
+### Database Integration
+
+**Tables Used:**
+- `dailyScopeProgress` - Source of production rate data
+- `scopeItems` - SOW item descriptions and units
+- `projects` - Organization scoping via `gcOrganizationId`
+- `estimateLineItems` - Target for labor hour auto-population
+
+### Files Added/Modified
+
+**New Files:**
+- `server/productionRateService.ts` - Core service with calculations and security
+
+**Modified Files:**
+- `server/estimateRoutes.ts` - Added 4 production rate endpoints
+- `shared/schema.ts` - (Uses existing tables)
+
+---
+
+## ✅ NEW FEATURE: AI Orchestrator & Module Analyzers System (December 3, 2025)
+
+A comprehensive AI analysis system with 6 specialized module analyzers coordinated by a central orchestrator, powered by OpenAI GPT-4o.
+
+### Feature Overview
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| AI Orchestrator | Central coordination of analysis runs | ✅ Implemented |
+| Data Snapshot Builder | Comprehensive data aggregation | ✅ Implemented |
+| Profitability Engine | Project financial analysis | ✅ Implemented |
+| Cron-Based Scheduler | Automated daily analysis runs | ✅ Implemented |
+| Task Generation | AI-driven task creation | ✅ Implemented |
+
+### Module Analyzers (6 Analyzers)
+
+| Analyzer | Purpose | Data Sources |
+|----------|---------|--------------|
+| **Scheduling Analyzer** | Timeline optimization, crew scheduling | Projects, Tasks, Crews |
+| **Delays Analyzer** | Delay tracking, impact assessment | Delays, Change Orders, Weather |
+| **Costs Analyzer** | Budget variance, cost trending | Financials, Invoices, Labor |
+| **Equipment Analyzer** | Fleet utilization, maintenance alerts | Equipment, Repairs, Assignments |
+| **Vendor Pricing Analyzer** | Price trend analysis, vendor comparison | Vendor Pricing, Procurement |
+| **Project Health Analyzer** | Overall project status scoring | All project data points |
+
+### Orchestrator Architecture
+
+**File:** `server/ai/orchestrator.ts`
+
+**Core Function: `runAIAnalysis()`**
+```typescript
+export async function runAIAnalysis(triggeredById: string | null = null): Promise<string> {
+  // Step 1: Create AI run record (manual or daily)
+  // Step 2: Build comprehensive data snapshot
+  // Step 3: Calculate profitability for all projects
+  // Step 4: Get AI settings (enabled features)
+  // Step 5: Construct user prompt
+  // Step 6: Call OpenAI GPT-4o
+  // Step 7: Persist response and create tasks
+}
+```
+
+**Data Pipeline:**
+1. `buildDataSnapshot()` → Aggregates all project/financial data
+2. `calculateAllProjectsProfitability()` → Financial health scoring
+3. `callOpenAIForAnalysis()` → GPT-4o structured JSON response
+4. `createTasksFromAIResponse()` → Role-based task generation
+
+### Data Snapshot Builder
+
+**File:** `server/ai/snapshotBuilder.ts` (~1,000+ lines)
+
+**Comprehensive Data Snapshot Interface:**
+```typescript
+interface DataSnapshot {
+  generated_at: string;
+  projects: { active_projects, missing_financials, ... };
+  labor: { total_hours, unapproved_entries, ... };
+  procurement: { pending_orders, urgent_items, ... };
+  change_orders: { by_status, by_project, needs_attention, ... };
+  billing: { invoiced_ytd, overdue_invoices, ... };
+  bids: { upcoming_deadlines, all_bids_for_followup, ... };
+  equipment: { rental_vs_owned, underutilized, ... };
+}
+```
+
+### Scheduler System
+
+**File:** `server/ai/scheduler.ts`
+
+**Features:**
+- Cron-based scheduling with configurable run time
+- Weekly change order alerts (Mondays at 8:00 AM)
+- Timezone support (America/New_York)
+- Settings-driven enable/disable
+
+**Cron Configuration:**
+```typescript
+scheduledTask = cron.schedule(`${minute} ${hour} * * *`, async () => {
+  await runAIAnalysis(null);
+}, { timezone: 'America/New_York' });
+```
+
+### AI Settings Configuration
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `dailyRunsEnabled` | Enable automatic daily runs | true |
+| `dailyRunTime` | Time for daily run (HH:MM) | "06:00" |
+| `roleTasksEnabled` | Generate role-based tasks | true |
+| `billingAlertsEnabled` | Include billing insights | true |
+| `profitabilityWarningsEnabled` | Flag at-risk projects | true |
+| `crewSchedulingEnabled` | Crew assignment recommendations | true |
+| `bidRemindersEnabled` | Bid deadline reminders | true |
+| `materialOrderingEnabled` | Procurement alerts | true |
+
+### Profitability Engine
+
+**File:** `server/ai/profitabilityEngine.ts`
+
+**Project Status Classification:**
+```typescript
+type ProjectStatus = 'MAJOR_RISK' | 'MINOR_CONCERN' | 'ON_BUDGET';
+```
+
+**Calculation Factors:**
+- Contract amount vs actual costs
+- Labor hours variance
+- Change order impact
+- Procurement spending
+
+### OpenAI Integration
+
+**File:** `server/ai/openaiClient.ts`
+
+**Model:** GPT-4o (default) with JSON response format
+**Temperature:** 0.7 for balanced creativity/accuracy
+**Max Tokens:** 4,096 for comprehensive analysis
+
+### Files Added/Modified
+
+**Core AI Files:**
+- `server/ai/orchestrator.ts` - Central coordinator
+- `server/ai/scheduler.ts` - Cron-based scheduling
+- `server/ai/snapshotBuilder.ts` - Data aggregation
+- `server/ai/profitabilityEngine.ts` - Financial analysis
+- `server/ai/openaiClient.ts` - OpenAI API integration
+- `server/ai/moduleAnalyzers.ts` - 6 specialized analyzers
+
+---
+
+## ✅ NEW FEATURE: Dashboard Customization System (December 3, 2025)
+
+A comprehensive user dashboard personalization system with admin-controlled permissions, edit mode toggle, and WCAG AA accessibility compliance.
+
+### Feature Overview
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| Dashboard Permissions | Admin-controlled customization access | ✅ Implemented |
+| Widget Layouts | User-specific widget arrangement | ✅ Implemented |
+| Color Palettes | Customizable color schemes | ✅ Implemented |
+| WCAG AA Compliance | 4.5:1 contrast ratio validation | ✅ Implemented |
+| Preset Themes | 5 pre-configured color schemes | ✅ Implemented |
+
+### Database Schema Additions
+
+**New Tables (3):**
+
+**1. `user_dashboard_permissions`**
+```typescript
+{
+  id: varchar (PK),
+  organizationId: varchar (FK → organizations),
+  userId: varchar (FK → users),
+  canCustomizeDashboard: boolean (default: false),
+  canCustomizeColorScheme: boolean (default: false),
+  grantedByUserId: varchar (FK → users),
+  grantedAt: timestamp
+}
+```
+
+**2. `user_dashboard_layouts`**
+```typescript
+{
+  id: varchar (PK),
+  organizationId: varchar (FK → organizations),
+  userId: varchar (FK → users),
+  layoutConfig: text (JSON format),
+  isCustom: boolean (default: false)
+}
+```
+
+**3. `user_color_palettes`**
+```typescript
+{
+  id: varchar (PK),
+  organizationId: varchar (FK → organizations),
+  userId: varchar (FK → users),
+  paletteName: text,
+  isPreset: boolean,
+  // Light mode colors (13 HSL values)
+  lightPrimary, lightPrimaryForeground, lightSecondary, ...
+  // Dark mode colors (13 HSL values)
+  darkPrimary, darkPrimaryForeground, darkSecondary, ...
+  contrastValidated: boolean,
+  lastValidatedAt: timestamp,
+  isActive: boolean
+}
+```
+
+**New Enum:**
+```typescript
+pgEnum("dashboard_widget_type", [
+  "QUICK_STATS", "AI_INSIGHTS", "MESSAGES", "NOTIFICATIONS",
+  "CALENDAR_EVENTS", "ACTIVE_PROJECTS", "ACTIVE_BIDS", "AI_TASKS",
+  "CREW_ASSIGNMENTS", "RECENT_ACTIVITY", "PROJECT_HEALTH", "BUDGET_OVERVIEW"
+])
+```
+
+### Widget Configuration Types
+
+```typescript
+interface DashboardWidgetConfig {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  visible: boolean;
+  minW?: number;
+  minH?: number;
+  maxW?: number;
+  maxH?: number;
+}
+
+interface DashboardLayoutConfig {
+  widgets: DashboardWidgetConfig[];
+  gridCols: number;
+  version: number;
+}
+```
+
+### Color Palette System
+
+**Preset Themes (5):**
+| Theme | Primary Color | Description |
+|-------|---------------|-------------|
+| Default Blue | Blue | Standard professional theme |
+| Forest Green | Green | Nature-inspired theme |
+| Sunset Orange | Orange | Warm, energetic theme |
+| Ocean Blue | Teal | Calm, trustworthy theme |
+| Royal Purple | Purple | Premium, creative theme |
+
+**HSL Color Format:**
+Colors stored as space-separated HSL values (e.g., "220 14% 96%") for Tailwind CSS compatibility.
+
+### WCAG AA Accessibility Compliance
+
+**Contrast Validation:**
+```typescript
+interface ColorContrastResult {
+  isValid: boolean;
+  contrastRatio: number;
+  wcagLevel: "AAA" | "AA" | "FAIL";
+  pair: string;
+}
+
+interface PaletteValidationResult {
+  isValid: boolean;
+  results: ColorContrastResult[];
+  failedPairs: string[];
+}
+```
+
+**Validation Requirements:**
+- Minimum 4.5:1 contrast ratio for normal text
+- Real-time validation before palette save
+- Warning UI for failed contrast pairs
+
+### Edit Mode Features
+
+**Edit Mode Toggle:**
+- Safe widget management with explicit save/cancel
+- Prevents accidental layout changes
+- Live preview of changes before commit
+
+**Reset Functionality:**
+- Restore to organization default layout
+- Restore to system default layout
+
+### Files Added/Modified
+
+**Schema Updates:**
+- `shared/schema.ts` - Added 3 tables, 1 enum, and TypeScript interfaces
+
+---
+
+## ✅ SECURITY ENHANCEMENT: Uniform 404 Error Response Pattern (December 3, 2025)
+
+A critical security pattern implemented across production rate endpoints and other sensitive routes.
+
+### Pattern Overview
+
+**Principle:** Return identical 404 responses for all unauthorized access scenarios to prevent information leakage.
+
+### Implementation Details
+
+**OrganizationRequiredError Class:**
+```typescript
+// server/productionRateService.ts
+export class OrganizationRequiredError extends Error {
+  constructor(message: string = "Organization ID is required") {
+    super(message);
+    this.name = "OrganizationRequiredError";
+  }
+}
+```
+
+**Service-Level Validation:**
+```typescript
+export async function getProductionRateForSOW(
+  description: string,
+  unit: string,
+  organizationId: string
+): Promise<ProductionRateStats | null> {
+  if (!organizationId || organizationId.trim() === '') {
+    throw new OrganizationRequiredError("getProductionRateForSOW requires a valid organizationId");
+  }
+  // ... rest of implementation
+}
+```
+
+**Route-Level Catch Pattern:**
+```typescript
+try {
+  // ... business logic
+} catch (error) {
+  if (error instanceof OrganizationRequiredError) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  console.error("Error:", error);
+  res.status(404).json({ error: "Not found" });
+}
+```
+
+### Security Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| No Resource Enumeration | Cannot determine if resources exist |
+| Cross-Tenant Protection | Cannot probe other organizations' data |
+| Uniform Error Surface | All failures look identical to attackers |
+| Defense in Depth | Multiple layers of validation |
+
+### Super-Admin Explicit Validation
+
+**Pattern:**
+```typescript
+if (isSuperAdmin) {
+  if (!requestedOrgId) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  const orgExists = await db.query.organizations.findFirst({
+    where: eq(organizations.id, requestedOrgId),
+  });
+  if (!orgExists) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  targetOrgId = requestedOrgId;
+}
+```
+
+### Routes Using This Pattern
+
+| Route File | Endpoints | Pattern Applied |
+|------------|-----------|-----------------|
+| `estimateRoutes.ts` | 4 production rate endpoints | ✅ Full |
+| `routes.ts` | Multi-tenant sensitive routes | ✅ Recommended |
+
+---
+
 ## 🟡 HIGH PRIORITY ISSUES - STATUS UPDATE
 
 ### Issue #4: TypeScript Compilation Errors
