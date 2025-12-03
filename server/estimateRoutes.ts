@@ -9,6 +9,7 @@ import {
   takeoffMeasurements,
   insertEstimateSchema,
   insertEstimateLineItemSchema,
+  organizations,
   type EstimateLineItem,
 } from "@shared/schema";
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
@@ -21,6 +22,14 @@ import {
   type MaterialCalculationInputs 
 } from "./materialCalculator";
 import { getOrgIdForFilter } from "./orgFilter";
+import { 
+  getProductionRateForSOW, 
+  estimateLaborHoursFromProductionRate,
+  getProductionRateSuggestions,
+  OrganizationRequiredError,
+  type ProductionRateStats,
+  type LaborEstimate 
+} from "./productionRateService";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -904,6 +913,283 @@ Provide comprehensive financial analysis and recommendations.`
     } catch (error) {
       console.error("Error analyzing estimate:", error);
       res.status(500).json({ error: "Failed to analyze estimate" });
+    }
+  });
+
+  app.get("/api/estimates/production-rates/suggestions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const requestedOrgId = req.query.organizationId as string | undefined;
+      let targetOrgId: string | null = null;
+
+      if (isSuperAdmin) {
+        if (!requestedOrgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        const orgExists = await db.query.organizations.findFirst({
+          where: eq(organizations.id, requestedOrgId),
+        });
+        if (!orgExists) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = requestedOrgId;
+      } else {
+        if (!orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        if (requestedOrgId && requestedOrgId !== orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = orgId;
+      }
+
+      const { searchTerm, unit, limit } = req.query;
+      
+      const suggestions = await getProductionRateSuggestions(
+        targetOrgId,
+        searchTerm as string | undefined,
+        unit as string | undefined,
+        limit ? parseInt(limit as string) : 10
+      );
+
+      res.json({ rates: suggestions });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error fetching production rate suggestions:", error);
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  app.get("/api/estimates/production-rates/lookup", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const requestedOrgId = req.query.organizationId as string | undefined;
+      let targetOrgId: string | null = null;
+
+      if (isSuperAdmin) {
+        if (!requestedOrgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        const orgExists = await db.query.organizations.findFirst({
+          where: eq(organizations.id, requestedOrgId),
+        });
+        if (!orgExists) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = requestedOrgId;
+      } else {
+        if (!orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        if (requestedOrgId && requestedOrgId !== orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = orgId;
+      }
+
+      const { description, unit } = req.query;
+      
+      if (!description || !unit) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const rate = await getProductionRateForSOW(
+        description as string,
+        unit as string,
+        targetOrgId
+      );
+
+      res.json({ rate });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error looking up production rate:", error);
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  app.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const { description, unit, quantity, workdayHours, organizationId: requestedOrgId } = req.body;
+      let targetOrgId: string | null = null;
+
+      if (isSuperAdmin) {
+        if (!requestedOrgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        const orgExists = await db.query.organizations.findFirst({
+          where: eq(organizations.id, requestedOrgId),
+        });
+        if (!orgExists) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = requestedOrgId;
+      } else {
+        if (!orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        if (requestedOrgId && requestedOrgId !== orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = orgId;
+      }
+      
+      if (!description || !unit || quantity === undefined) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const laborEstimate = await estimateLaborHoursFromProductionRate(
+        description,
+        unit,
+        Number(quantity),
+        targetOrgId,
+        workdayHours ? Number(workdayHours) : 8
+      );
+
+      res.json({ estimate: laborEstimate });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error estimating labor hours:", error);
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  app.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { estimateId } = req.params;
+      const { lineItemId, applyRate } = req.body;
+
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasEstimateAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      if (!isSuperAdmin && !orgId) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const estimateQuery = shouldFilter 
+        ? db
+            .select({
+              estimateId: estimates.id,
+              projectId: estimates.projectId,
+              projectOrgId: projects.gcOrganizationId,
+            })
+            .from(estimates)
+            .leftJoin(projects, eq(estimates.projectId, projects.id))
+            .where(and(
+              eq(estimates.id, estimateId),
+              eq(projects.gcOrganizationId, orgId!)
+            ))
+            .limit(1)
+        : db
+            .select({
+              estimateId: estimates.id,
+              projectId: estimates.projectId,
+              projectOrgId: projects.gcOrganizationId,
+            })
+            .from(estimates)
+            .leftJoin(projects, eq(estimates.projectId, projects.id))
+            .where(eq(estimates.id, estimateId))
+            .limit(1);
+
+      const estimateWithProject = await estimateQuery;
+
+      if (estimateWithProject.length === 0) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const { projectOrgId } = estimateWithProject[0];
+      
+      if (!projectOrgId) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ),
+      });
+
+      if (!lineItem) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const laborEstimate = await estimateLaborHoursFromProductionRate(
+        lineItem.description || '',
+        lineItem.unit || '',
+        Number(lineItem.quantity) || 0,
+        projectOrgId
+      );
+
+      if (laborEstimate.confidence === 'NONE') {
+        return res.json({
+          success: false,
+          message: "No production rate data available for this scope of work",
+        });
+      }
+
+      if (applyRate) {
+        const [updatedLineItem] = await db.transaction(async (tx) => {
+          return await tx.update(estimateLineItems)
+            .set({
+              laborHours: laborEstimate.suggestedLaborHours.toString(),
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(estimateLineItems.id, lineItemId),
+              eq(estimateLineItems.estimateId, estimateId)
+            ))
+            .returning();
+        });
+
+        if (!updatedLineItem) {
+          return res.status(404).json({ error: "Not found" });
+        }
+
+        return res.json({
+          success: true,
+          message: `Applied ${laborEstimate.suggestedLaborHours} labor hours based on production rate data`,
+          laborEstimate,
+          updatedLineItem,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Labor estimate calculated successfully",
+        laborEstimate,
+        suggestedLaborHours: laborEstimate.suggestedLaborHours,
+      });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error auto-populating labor hours:", error);
+      res.status(404).json({ error: "Not found" });
     }
   });
 }
