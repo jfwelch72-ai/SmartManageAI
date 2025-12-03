@@ -84,6 +84,7 @@ import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
 import emailAiRoutes from "./emailAiRoutes";
+import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -166,6 +167,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Email AI routes (threads, messages, tasks, summaries)
   app.use("/api/email", emailAiRoutes);
+
+  // Register Dashboard Customization routes
+  app.use("/api/dashboard", dashboardCustomizationRoutes);
 
   // ====================
   // Auth Routes
