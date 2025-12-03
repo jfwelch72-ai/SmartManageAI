@@ -1,6 +1,9 @@
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
+import { DashboardEditMode, EditModeIndicator } from "@/components/DashboardEditMode";
+import { ThemePicker } from "@/components/ThemePicker";
+import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { 
   Briefcase, Clock, AlertCircle, CalendarClock, Plus, DollarSign, 
   AlertTriangle, Users, Bell, HardHat, Check, MessageSquare, Calendar,
@@ -178,7 +181,9 @@ export default function DashboardPage() {
             </div>
             
             {/* Quick Actions - All new jobs start as bids and follow proper workflow to be awarded */}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <ThemePicker />
+              <DashboardEditMode />
               {hasManagementAccess(user?.role) && (
                 <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid">
                   <Plus className="w-4 h-4 mr-2" />
@@ -188,6 +193,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        
+        {/* Edit mode indicator */}
+        <EditModeIndicator />
 
         {statsLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading your dashboard...</div>

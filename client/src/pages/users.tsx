@@ -236,170 +236,124 @@ export default function UsersPage() {
           </TabsList>
 
           <TabsContent value="users">
-        <Card>
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
-            <CardTitle>All Users</CardTitle>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name, email, phone..."
-                  className="pl-9 w-[220px]"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-users"
-                />
-              </div>
-              
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-role-filter">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Roles</SelectItem>
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map(option => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          
-          {/* Active filter badges */}
-          {(searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL") && (
-            <div className="px-6 pb-2 flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Active filters:</span>
-              {searchTerm && (
-                <Badge variant="secondary" className="gap-1">
-                  Search: "{searchTerm}"
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
-                    onClick={() => setSearchTerm("")}
-                    data-testid="button-clear-search"
-                  />
-                </Badge>
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
+                <CardTitle>All Users</CardTitle>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, email, phone..."
+                      className="pl-9 w-[220px]"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      data-testid="input-search-users"
+                    />
+                  </div>
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="w-[160px]" data-testid="select-role-filter">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Roles</SelectItem>
+                      {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_FILTERS.map(option => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              {(searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL") && (
+                <div className="px-6 pb-2 flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Active filters:</span>
+                  {searchTerm && (
+                    <Badge variant="secondary" className="gap-1">
+                      Search: "{searchTerm}"
+                      <X className="w-3 h-3 cursor-pointer" onClick={() => setSearchTerm("")} data-testid="button-clear-search" />
+                    </Badge>
+                  )}
+                  {roleFilter !== "ALL" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {ROLE_LABELS[roleFilter]}
+                      <X className="w-3 h-3 cursor-pointer" onClick={() => setRoleFilter("ALL")} data-testid="button-clear-role-filter" />
+                    </Badge>
+                  )}
+                  {statusFilter !== "ALL" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {statusFilter === "ACTIVE" ? "Active" : "Inactive"}
+                      <X className="w-3 h-3 cursor-pointer" onClick={() => setStatusFilter("ALL")} data-testid="button-clear-status-filter" />
+                    </Badge>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => { setSearchTerm(""); setRoleFilter("ALL"); setStatusFilter("ALL"); }} data-testid="button-clear-all-filters">
+                    Clear all
+                  </Button>
+                </div>
               )}
-              {roleFilter !== "ALL" && (
-                <Badge variant="secondary" className="gap-1">
-                  {ROLE_LABELS[roleFilter]}
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
-                    onClick={() => setRoleFilter("ALL")}
-                    data-testid="button-clear-role-filter"
-                  />
-                </Badge>
-              )}
-              {statusFilter !== "ALL" && (
-                <Badge variant="secondary" className="gap-1">
-                  {statusFilter === "ACTIVE" ? "Active" : "Inactive"}
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
-                    onClick={() => setStatusFilter("ALL")}
-                    data-testid="button-clear-status-filter"
-                  />
-                </Badge>
-              )}
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => {
-                  setSearchTerm("");
-                  setRoleFilter("ALL");
-                  setStatusFilter("ALL");
-                }}
-                data-testid="button-clear-all-filters"
-              >
-                Clear all
-              </Button>
-            </div>
-          )}
-          
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center py-8" data-testid="text-loading">Loading users...</div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL" 
-                  ? "No users match your filters" 
-                  : "No users found"}
-              </div>
-            ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <Table className="min-w-[700px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">Name</TableHead>
-                      <TableHead className="whitespace-nowrap">Email</TableHead>
-                      <TableHead className="whitespace-nowrap">Phone</TableHead>
-                      <TableHead className="whitespace-nowrap">Role</TableHead>
-                      <TableHead className="whitespace-nowrap">Status</TableHead>
-                      <TableHead className="whitespace-nowrap">Active</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                <TableBody>
-                  {filteredUsers.map((u) => (
-                    <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
-                      <TableCell className="font-medium" data-testid={`text-name-${u.id}`}>
-                        {u.firstName} {u.lastName}
-                      </TableCell>
-                      <TableCell data-testid={`text-email-${u.id}`}>{u.email}</TableCell>
-                      <TableCell className="text-muted-foreground" data-testid={`text-phone-${u.id}`}>
-                        {u.phone || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={u.role}
-                          onValueChange={(newRole) => handleRoleChange(u.id, newRole)}
-                          disabled={updateUserMutation.isPending}
-                        >
-                          <SelectTrigger className="w-[180px]" data-testid={`select-role-${u.id}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                              <SelectItem key={value} value={value}>
-                                {label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={u.isActive ? "default" : "secondary"}
-                          data-testid={`badge-status-${u.id}`}
-                        >
-                          {u.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Switch
-                          checked={u.isActive}
-                          onCheckedChange={() => handleToggleActive(u.id, u.isActive)}
-                          disabled={updateUserMutation.isPending}
-                          data-testid={`switch-active-${u.id}`}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              <CardContent>
+                {isLoading ? (
+                  <div className="text-center py-8" data-testid="text-loading">Loading users...</div>
+                ) : filteredUsers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL" ? "No users match your filters" : "No users found"}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <Table className="min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Name</TableHead>
+                          <TableHead className="whitespace-nowrap">Email</TableHead>
+                          <TableHead className="whitespace-nowrap">Phone</TableHead>
+                          <TableHead className="whitespace-nowrap">Role</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
+                          <TableHead className="whitespace-nowrap">Active</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredUsers.map((u) => (
+                          <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
+                            <TableCell className="font-medium" data-testid={`text-name-${u.id}`}>{u.firstName} {u.lastName}</TableCell>
+                            <TableCell data-testid={`text-email-${u.id}`}>{u.email}</TableCell>
+                            <TableCell className="text-muted-foreground" data-testid={`text-phone-${u.id}`}>{u.phone || "—"}</TableCell>
+                            <TableCell>
+                              <Select value={u.role} onValueChange={(newRole) => handleRoleChange(u.id, newRole)} disabled={updateUserMutation.isPending}>
+                                <SelectTrigger className="w-[180px]" data-testid={`select-role-${u.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={u.isActive ? "default" : "secondary"} data-testid={`badge-status-${u.id}`}>
+                                {u.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Switch checked={u.isActive} onCheckedChange={() => handleToggleActive(u.id, u.isActive)} disabled={updateUserMutation.isPending} data-testid={`switch-active-${u.id}`} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="customization">
