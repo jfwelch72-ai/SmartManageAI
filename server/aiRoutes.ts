@@ -18,7 +18,7 @@ import { type AuthRequest } from "./auth";
 import { openai, researchCustomTrade, TradeResearchResult } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
-import { getWalkthroughForRole, getTotalStepsForRole, getWalkthroughStep, generateWalkthroughPrompt } from "./ai/walkthroughContent";
+import { getWalkthroughForRole, getTotalStepsForRole, getWalkthroughStep, generateWalkthroughPrompt, getPersonalizedWalkthrough, personalizeContent } from "./ai/walkthroughContent";
 
 const onboardingCompleteSchema = z.object({
   companyName: z.string()
@@ -1468,6 +1468,7 @@ router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
       walkthroughStartedAt: users.walkthroughStartedAt,
       role: users.role,
       organizationId: users.organizationId,
+      firstName: users.firstName,
     }).from(users).where(and(
       eq(users.id, req.user.id),
       eq(users.organizationId, req.user.organizationId)
@@ -1477,8 +1478,19 @@ router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const walkthrough = getWalkthroughForRole(user.role);
+    // Get personalized walkthrough content with user's first name
+    const firstName = user.firstName || 'there';
+    const walkthrough = getPersonalizedWalkthrough(user.role, firstName);
     const totalSteps = getTotalStepsForRole(user.role);
+    
+    // Get personalized current step if in walkthrough
+    const rawStep = user.walkthroughStep > 0 ? getWalkthroughStep(user.role, user.walkthroughStep) : null;
+    const currentStep = rawStep ? {
+      ...rawStep,
+      description: personalizeContent(rawStep.description, firstName),
+      action: personalizeContent(rawStep.action, firstName),
+      encouragement: rawStep.encouragement ? personalizeContent(rawStep.encouragement, firstName) : undefined,
+    } : null;
 
     res.json({
       walkthroughCompleted: user.walkthroughCompleted,
@@ -1486,11 +1498,12 @@ router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
       walkthroughStartedAt: user.walkthroughStartedAt,
       totalSteps,
       role: user.role,
+      firstName,
       walkthrough: walkthrough ? {
         roleName: walkthrough.roleName,
         welcomeMessage: walkthrough.welcomeMessage,
         completionMessage: walkthrough.completionMessage,
-        currentStep: user.walkthroughStep > 0 ? getWalkthroughStep(user.role, user.walkthroughStep) : null,
+        currentStep,
       } : null,
     });
   } catch (error: any) {
@@ -1511,7 +1524,8 @@ router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 
-    const walkthrough = getWalkthroughForRole(req.user.role);
+    const firstName = req.user.firstName || 'there';
+    const walkthrough = getPersonalizedWalkthrough(req.user.role, firstName);
     if (!walkthrough) {
       return res.status(400).json({ error: "No walkthrough available for this role" });
     }
@@ -1527,7 +1541,7 @@ router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
         eq(users.organizationId, req.user.organizationId)
       ));
 
-    const firstStep = getWalkthroughStep(req.user.role, 1);
+    const firstStep = walkthrough.steps[0] || null;
 
     res.json({
       success: true,
@@ -1535,6 +1549,7 @@ router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
       totalSteps: walkthrough.steps.length,
       welcomeMessage: walkthrough.welcomeMessage,
       step: firstStep,
+      firstName,
     });
   } catch (error: any) {
     console.error("Walkthrough start error:", error.message);
@@ -1557,6 +1572,7 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
     const [user] = await db.select({
       walkthroughStep: users.walkthroughStep,
       role: users.role,
+      firstName: users.firstName,
     }).from(users).where(and(
       eq(users.id, req.user.id),
       eq(users.organizationId, req.user.organizationId)
@@ -1566,6 +1582,7 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    const firstName = user.firstName || 'there';
     const totalSteps = getTotalStepsForRole(user.role);
     const nextStep = user.walkthroughStep + 1;
 
@@ -1581,12 +1598,13 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
           eq(users.organizationId, req.user.organizationId)
         ));
 
-      const walkthrough = getWalkthroughForRole(user.role);
+      const walkthrough = getPersonalizedWalkthrough(user.role, firstName);
 
       res.json({
         success: true,
         completed: true,
-        completionMessage: walkthrough?.completionMessage || "Congratulations! You've completed the walkthrough!",
+        completionMessage: walkthrough?.completionMessage || `Congratulations, ${firstName}! You've completed the walkthrough!`,
+        firstName,
       });
     } else {
       await db.update(users)
@@ -1596,7 +1614,14 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
           eq(users.organizationId, req.user.organizationId)
         ));
 
-      const stepContent = getWalkthroughStep(user.role, nextStep);
+      // Get personalized step content
+      const rawStep = getWalkthroughStep(user.role, nextStep);
+      const stepContent = rawStep ? {
+        ...rawStep,
+        description: personalizeContent(rawStep.description, firstName),
+        action: personalizeContent(rawStep.action, firstName),
+        encouragement: rawStep.encouragement ? personalizeContent(rawStep.encouragement, firstName) : undefined,
+      } : null;
 
       res.json({
         success: true,
@@ -1604,6 +1629,7 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
         currentStep: nextStep,
         totalSteps,
         step: stepContent,
+        firstName,
       });
     }
   } catch (error: any) {
@@ -1697,6 +1723,7 @@ router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
       walkthroughCompleted: users.walkthroughCompleted,
       walkthroughStep: users.walkthroughStep,
       role: users.role,
+      firstName: users.firstName,
     }).from(users).where(eq(users.id, req.user.id));
 
     const isInWalkthrough = userStatus && !userStatus.walkthroughCompleted && userStatus.walkthroughStep > 0;
@@ -1705,24 +1732,24 @@ router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
     const pageContext = getPageContext(currentPath || '/dashboard');
     const userRole = req.user.role;
     const userName = `${req.user.firstName} ${req.user.lastName}`;
+    const userFirstName = userStatus?.firstName || req.user.firstName || 'there';
 
     let systemPrompt: string;
 
     if (isInWalkthrough) {
-      // Use walkthrough-specific prompt
-      const walkthroughPrompt = generateWalkthroughPrompt(userStatus.role, userStatus.walkthroughStep);
-      const walkthrough = getWalkthroughForRole(userStatus.role);
+      // Use walkthrough-specific prompt with personalization
+      const walkthroughPrompt = generateWalkthroughPrompt(userStatus.role, userStatus.walkthroughStep, userFirstName);
       const totalSteps = getTotalStepsForRole(userStatus.role);
       
       systemPrompt = `${walkthroughPrompt}
 
 ## Current Context
-- User: ${userName}
+- User: ${userName} (call them "${userFirstName}")
 - Role: ${userRole}
 - ${pageContext}
 - Walkthrough Progress: Step ${userStatus.walkthroughStep} of ${totalSteps}
 
-When the user says they've completed the current step or wants to continue, respond with enthusiasm and remind them to click "Next Step" to proceed. Be supportive and encouraging throughout their learning journey.`;
+When ${userFirstName} says they've completed the current step or wants to continue, congratulate them with enthusiasm and remind them to click "Next Step" to proceed. Use their first name naturally to keep it personal. Be supportive and encouraging throughout their learning journey!`;
     } else {
       // Normal help mode
       systemPrompt = `${AI_ASSISTANT_SYSTEM_PROMPT}

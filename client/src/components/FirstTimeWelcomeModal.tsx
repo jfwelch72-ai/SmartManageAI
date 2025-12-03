@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
-  Sparkles, 
   ChevronRight, 
   SkipForward, 
   Rocket, 
@@ -35,68 +34,75 @@ interface WalkthroughStatus {
 
 const DISMISSED_KEY = "smartmanage-welcome-dismissed";
 
-const roleFeatures: Record<string, { icon: any; features: string[] }> = {
+const roleFeatures: Record<string, { icon: any; features: string[]; intro: string }> = {
   ADMIN: {
     icon: Shield,
+    intro: "As an Administrator, you have full control over the platform. Here's what I'll help you master:",
     features: [
-      "Set up your team with custom roles and permissions",
-      "Manage vendors, suppliers, and subcontractors",
-      "Create detailed bids and estimates",
-      "Track projects from start to finish",
+      "Building your team with the right roles and permissions",
+      "Setting up your vendor and supplier network",
+      "Creating winning bids and estimates",
+      "Managing projects from bid to completion",
     ],
   },
   MANAGER: {
     icon: Users,
+    intro: "As a Manager, you'll oversee projects and your team. Let me show you the ropes:",
     features: [
-      "Review and approve bids from your team",
-      "Monitor active projects and progress",
-      "Handle change orders efficiently",
-      "Coordinate with superintendents and estimators",
+      "Reviewing and approving bids from your team",
+      "Keeping tabs on all active projects",
+      "Handling change orders smoothly",
+      "Coordinating with your superintendents and estimators",
     ],
   },
   ESTIMATOR: {
     icon: Calculator,
+    intro: "As an Estimator, you're the heart of our bidding process. I'll walk you through:",
     features: [
-      "Create accurate bids with our estimating tools",
-      "Use AI-powered document analysis",
-      "Access vendor pricing catalogs",
-      "Generate professional quotes",
+      "Creating accurate bids with powerful estimating tools",
+      "Using AI to analyze bid documents automatically",
+      "Pulling vendor pricing right into your estimates",
+      "Generating polished, professional quotes",
     ],
   },
   SUPERINTENDENT: {
     icon: ClipboardList,
+    intro: "As a Superintendent, you run the field. Here's what you'll learn:",
     features: [
-      "Track daily field progress",
-      "Manage crew timesheets",
-      "Document delays and issues",
-      "Monitor T&M work",
+      "Tracking daily progress and activities",
+      "Managing your crew's timesheets",
+      "Documenting delays and issues properly",
+      "Handling T&M work and change orders",
     ],
   },
   OFFICE_MANAGER: {
     icon: Target,
+    intro: "As Office Manager, you keep everything running smoothly. Let's cover:",
     features: [
-      "Manage billing and invoices",
-      "Track vendor relationships",
-      "Handle supply ordering",
-      "Coordinate with field teams",
+      "Managing billing and keeping invoices organized",
+      "Maintaining strong vendor relationships",
+      "Streamlining supply ordering",
+      "Staying connected with field teams",
     ],
   },
   HOURLY_EMPLOYEE: {
     icon: Clock,
+    intro: "Welcome to the team! Here's what you need to know:",
     features: [
-      "Clock in/out with GPS tracking",
-      "View your work schedule",
-      "Stay connected with your team",
-      "Access project details",
+      "Clocking in and out — it's super simple",
+      "Checking your work schedule anytime",
+      "Staying in the loop with your team",
+      "Viewing project details when you need them",
     ],
   },
   SUPER_ADMIN: {
     icon: Shield,
+    intro: "As a Platform Administrator, you have the keys to the kingdom. Let me show you:",
     features: [
-      "Monitor all platform organizations",
-      "View analytics and usage metrics",
-      "Assist with user issues",
-      "Manage platform configuration",
+      "Monitoring all organizations on the platform",
+      "Viewing analytics and usage insights",
+      "Helping users when they need support",
+      "Managing platform-wide settings",
     ],
   },
 };
@@ -198,6 +204,9 @@ export function FirstTimeWelcomeModal() {
   const RoleIcon = roleConfig.icon;
   const roleName = walkthroughStatus?.walkthrough?.roleName || user.role;
   const totalSteps = walkthroughStatus?.totalSteps || 0;
+  
+  // Extract first name for personal greeting
+  const firstName = user.firstName || 'there';
 
   return (
     <div 
@@ -230,18 +239,18 @@ export function FirstTimeWelcomeModal() {
               {roleName}
             </Badge>
             <h1 className="text-3xl font-bold mb-3">
-              Welcome to SmartManageAI!
+              Hey {firstName}, welcome aboard!
             </h1>
             <p className="text-lg text-muted-foreground max-w-md mx-auto">
-              Let's get you up to speed quickly. Our guided tour will show you everything you need to know.
+              I'm your AI assistant and I'll be guiding you through SmartManageAI. 
+              Let me show you around — you'll be up and running in no time!
             </p>
           </div>
 
           <div className="bg-muted/50 rounded-xl p-5 mb-8">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              What you'll learn in {totalSteps} quick steps:
-            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              {roleConfig.intro}
+            </p>
             <ul className="space-y-2.5">
               {roleConfig.features.map((feature, idx) => (
                 <li key={idx} className="flex items-start gap-3 text-sm">
@@ -252,6 +261,9 @@ export function FirstTimeWelcomeModal() {
                 </li>
               ))}
             </ul>
+            <p className="text-xs text-muted-foreground/70 mt-4 italic">
+              {totalSteps} quick steps · About 5 minutes
+            </p>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -302,7 +314,7 @@ export function FirstTimeWelcomeModal() {
           </div>
 
           <p className="text-center text-xs text-muted-foreground mt-6">
-            The tour takes about 5 minutes and can be paused at any step
+            Feel free to ask me questions anytime during the tour!
           </p>
         </div>
       </div>

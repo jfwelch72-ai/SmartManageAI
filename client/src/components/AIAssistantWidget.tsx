@@ -32,6 +32,7 @@ interface WalkthroughStatus {
   walkthroughStartedAt: string | null;
   totalSteps: number;
   role: string;
+  firstName?: string;
   walkthrough: {
     roleName: string;
     welcomeMessage: string;
@@ -61,8 +62,13 @@ export function AIAssistantWidget() {
   const [inputValue, setInputValue] = useState("");
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState("");
+  const [showMilestone, setShowMilestone] = useState(false);
+  const [milestoneData, setMilestoneData] = useState<{ progress: number; message: string } | null>(null);
+  const [navigationHint, setNavigationHint] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const prevLocation = useRef<string | null>(null);
+  const celebratedMilestones = useRef<Set<number>>(new Set());
 
   const { data: walkthroughStatus, isLoading: statusLoading } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -119,6 +125,72 @@ export function AIAssistantWidget() {
     
     prevWalkthroughStep.current = currentStep;
   }, [walkthroughStatus?.walkthroughStep, walkthroughStatus?.walkthroughCompleted]);
+
+  // Navigation detection - show encouragement when user arrives at correct page
+  useEffect(() => {
+    if (!isInWalkthrough || !walkthroughStatus?.walkthrough?.currentStep) {
+      setNavigationHint(null);
+      prevLocation.current = location;
+      return;
+    }
+
+    const targetPage = walkthroughStatus.walkthrough.currentStep.targetPage;
+    const justNavigated = prevLocation.current !== location;
+    
+    // Check if user arrived at the correct page for current step
+    if (justNavigated && location.startsWith(targetPage)) {
+      const firstName = walkthroughStatus.firstName || 'there';
+      const messages = [
+        `Great navigation, ${firstName}! You're in the right place.`,
+        `Perfect, ${firstName}! This is exactly where you need to be.`,
+        `Nice work finding this page, ${firstName}! Let's continue.`,
+        `You've got this, ${firstName}! Ready for the next action?`,
+      ];
+      setNavigationHint(messages[Math.floor(Math.random() * messages.length)]);
+      
+      // Clear the hint after 4 seconds
+      setTimeout(() => setNavigationHint(null), 4000);
+    }
+    
+    prevLocation.current = location;
+  }, [location, isInWalkthrough, walkthroughStatus]);
+
+  // Milestone celebration - celebrate progress at 25%, 50%, 75%
+  // Uses step-based thresholds for deterministic triggering
+  useEffect(() => {
+    if (!isInWalkthrough || !walkthroughStatus || walkthroughStatus.totalSteps === 0) return;
+    
+    const currentStep = walkthroughStatus.walkthroughStep;
+    const totalSteps = walkthroughStatus.totalSteps;
+    const firstName = walkthroughStatus.firstName || 'there';
+    
+    // Calculate step thresholds for deterministic milestone triggering
+    const milestones = [
+      { threshold: 25, stepThreshold: Math.ceil(totalSteps * 0.25), message: `Quarter of the way there, ${firstName}! You're picking this up quickly.` },
+      { threshold: 50, stepThreshold: Math.ceil(totalSteps * 0.50), message: `Halfway done, ${firstName}! You're becoming a pro at this.` },
+      { threshold: 75, stepThreshold: Math.ceil(totalSteps * 0.75), message: `Almost there, ${firstName}! Just a few more steps to go.` },
+    ];
+    
+    for (const milestone of milestones) {
+      // Trigger when reaching exactly the step threshold
+      if (currentStep === milestone.stepThreshold && !celebratedMilestones.current.has(milestone.threshold)) {
+        celebratedMilestones.current.add(milestone.threshold);
+        setMilestoneData({ progress: milestone.threshold, message: milestone.message });
+        setShowMilestone(true);
+        
+        // Auto-dismiss after 3 seconds
+        setTimeout(() => setShowMilestone(false), 3000);
+        break;
+      }
+    }
+  }, [isInWalkthrough, walkthroughStatus?.walkthroughStep, walkthroughStatus?.totalSteps, walkthroughStatus?.firstName]);
+
+  // Reset celebrated milestones when walkthrough resets
+  useEffect(() => {
+    if (!isInWalkthrough && walkthroughStatus?.walkthroughStep === 0) {
+      celebratedMilestones.current.clear();
+    }
+  }, [isInWalkthrough, walkthroughStatus?.walkthroughStep]);
 
   const startWalkthroughMutation = useMutation({
     mutationFn: async () => {
@@ -260,6 +332,24 @@ export function AIAssistantWidget() {
               <CheckCircle2 className="h-4 w-4 mr-2" />
               Get Started
             </Button>
+          </div>
+        </div>
+      )}
+
+      {showMilestone && milestoneData && (
+        <div 
+          className="fixed bottom-24 right-6 bg-gradient-to-r from-primary/90 to-purple-500/90 text-primary-foreground rounded-lg shadow-lg p-4 max-w-xs animate-in slide-in-from-right duration-300"
+          style={{ zIndex: 9998 }}
+          data-testid="milestone-celebration"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0 p-2 bg-white/20 rounded-full">
+              <Trophy className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm">{milestoneData.progress}% Complete!</div>
+              <p className="text-xs opacity-90 mt-0.5">{milestoneData.message}</p>
+            </div>
           </div>
         </div>
       )}
@@ -409,6 +499,12 @@ export function AIAssistantWidget() {
                   </div>
                 ) : isInWalkthrough && currentStep ? (
                   <div className="space-y-4">
+                    {navigationHint && (
+                      <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/30 flex items-center gap-2 animate-in fade-in duration-300" data-testid="navigation-hint">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        <span className="text-sm text-green-700 dark:text-green-400">{navigationHint}</span>
+                      </div>
+                    )}
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
                       <div className="flex items-center gap-2 mb-2">
                         <Badge variant="outline" className="text-xs">
