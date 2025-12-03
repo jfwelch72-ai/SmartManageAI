@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -21,10 +21,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, Search, Filter, X } from "lucide-react";
+import { UserPlus, Search, Filter, X, Layout, Palette, Settings, Info } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
+
+interface UserWithPermissions extends SelectUser {
+  canCustomizeDashboard?: boolean;
+  canCustomizeColorScheme?: boolean;
+  grantedAt?: string;
+}
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Admin",
@@ -52,16 +69,23 @@ const STATUS_FILTERS = [
 ];
 
 export default function UsersPage() {
-  const { user, logout, organizationName } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   
   // Filter state
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [activeTab, setActiveTab] = useState("users");
 
   const { data: users = [], isLoading } = useQuery<SelectUser[]>({
     queryKey: ["/api/users"],
+  });
+  
+  // Fetch dashboard permissions for all users (admin only)
+  const { data: usersWithPermissions = [], isLoading: permissionsLoading } = useQuery<UserWithPermissions[]>({
+    queryKey: ["/api/dashboard/permissions"],
+    enabled: user?.role === "ADMIN" || user?.role === "SUPER_ADMIN",
   });
   
   // Filtered users
@@ -120,6 +144,50 @@ export default function UsersPage() {
       data: { role: newRole as any },
     });
   };
+  
+  // Mutation for updating dashboard permissions
+  const updatePermissionsMutation = useMutation({
+    mutationFn: async ({ userId, canCustomizeDashboard, canCustomizeColorScheme }: { 
+      userId: string; 
+      canCustomizeDashboard: boolean;
+      canCustomizeColorScheme: boolean;
+    }) => {
+      return await apiRequest("PUT", `/api/dashboard/permissions/${userId}`, {
+        canCustomizeDashboard,
+        canCustomizeColorScheme,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+      toast({
+        title: "Success",
+        description: "User permissions updated",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update permissions",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleDashboardPermission = async (userId: string, currentValue: boolean, userPerms: UserWithPermissions) => {
+    await updatePermissionsMutation.mutateAsync({
+      userId,
+      canCustomizeDashboard: !currentValue,
+      canCustomizeColorScheme: userPerms.canCustomizeColorScheme || false,
+    });
+  };
+
+  const handleToggleColorSchemePermission = async (userId: string, currentValue: boolean, userPerms: UserWithPermissions) => {
+    await updatePermissionsMutation.mutateAsync({
+      userId,
+      canCustomizeDashboard: userPerms.canCustomizeDashboard || false,
+      canCustomizeColorScheme: !currentValue,
+    });
+  };
 
   if (!user) {
     return null;
@@ -155,6 +223,19 @@ export default function UsersPage() {
           </Button>
         </div>
 
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList data-testid="tabs-user-management">
+            <TabsTrigger value="users" data-testid="tab-users">
+              <Settings className="w-4 h-4 mr-2" />
+              Users
+            </TabsTrigger>
+            <TabsTrigger value="customization" data-testid="tab-customization">
+              <Layout className="w-4 h-4 mr-2" />
+              Customization Permissions
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="users">
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0">
             <CardTitle>All Users</CardTitle>
@@ -319,6 +400,113 @@ export default function UsersPage() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="customization">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CardTitle>Dashboard Customization Permissions</CardTitle>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>Control which users can customize their dashboard layout and color scheme. Admins always have full customization access.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <CardDescription>
+                  Grant or revoke dashboard and color scheme customization permissions for team members
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {permissionsLoading ? (
+                  <div className="text-center py-8" data-testid="text-permissions-loading">Loading permissions...</div>
+                ) : usersWithPermissions.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No users found</div>
+                ) : (
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <Table className="min-w-[600px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">User</TableHead>
+                          <TableHead className="whitespace-nowrap">Role</TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <Layout className="w-4 h-4" />
+                              Dashboard Layout
+                            </div>
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <Palette className="w-4 h-4" />
+                              Color Scheme
+                            </div>
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usersWithPermissions.map((u) => {
+                          const isAdmin = u.role === "ADMIN" || u.role === "SUPER_ADMIN";
+                          return (
+                            <TableRow key={u.id} data-testid={`row-permission-${u.id}`}>
+                              <TableCell>
+                                <div className="flex flex-col">
+                                  <span className="font-medium" data-testid={`text-perm-name-${u.id}`}>
+                                    {u.firstName} {u.lastName}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground" data-testid={`text-perm-email-${u.id}`}>
+                                    {u.email}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={ROLE_COLORS[u.role] || "secondary"}>
+                                  {ROLE_LABELS[u.role] || u.role}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {isAdmin ? (
+                                  <div className="flex items-center gap-2">
+                                    <Switch checked={true} disabled />
+                                    <span className="text-xs text-muted-foreground">Always enabled</span>
+                                  </div>
+                                ) : (
+                                  <Switch
+                                    checked={u.canCustomizeDashboard || false}
+                                    onCheckedChange={() => handleToggleDashboardPermission(u.id, u.canCustomizeDashboard || false, u)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`switch-dashboard-${u.id}`}
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isAdmin ? (
+                                  <div className="flex items-center gap-2">
+                                    <Switch checked={true} disabled />
+                                    <span className="text-xs text-muted-foreground">Always enabled</span>
+                                  </div>
+                                ) : (
+                                  <Switch
+                                    checked={u.canCustomizeColorScheme || false}
+                                    onCheckedChange={() => handleToggleColorSchemePermission(u.id, u.canCustomizeColorScheme || false, u)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`switch-colorscheme-${u.id}`}
+                                  />
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
