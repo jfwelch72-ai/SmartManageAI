@@ -4904,3 +4904,167 @@ export const emailSummaries = pgTable("email_summaries", {
 export const insertEmailSummarySchema = createInsertSchema(emailSummaries).omit({ id: true, createdAt: true });
 export type InsertEmailSummary = z.infer<typeof insertEmailSummarySchema>;
 export type EmailSummary = typeof emailSummaries.$inferSelect;
+
+// ============================================
+// DASHBOARD CUSTOMIZATION SYSTEM
+// ============================================
+
+// Dashboard Widget Types - Available widgets for the dashboard
+export const dashboardWidgetTypeEnum = pgEnum("dashboard_widget_type", [
+  "QUICK_STATS",
+  "AI_INSIGHTS", 
+  "MESSAGES",
+  "NOTIFICATIONS",
+  "CALENDAR_EVENTS",
+  "ACTIVE_PROJECTS",
+  "ACTIVE_BIDS",
+  "AI_TASKS",
+  "CREW_ASSIGNMENTS",
+  "RECENT_ACTIVITY",
+  "PROJECT_HEALTH",
+  "BUDGET_OVERVIEW"
+]);
+
+// User Dashboard Permissions - Admin-controlled access to customization
+export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Customization permissions
+  canCustomizeDashboard: boolean("can_customize_dashboard").notNull().default(false),
+  canCustomizeColorScheme: boolean("can_customize_color_scheme").notNull().default(false),
+  
+  // Granted by admin
+  grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
+  grantedAt: timestamp("granted_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("user_dashboard_permissions_org_idx").on(table.organizationId),
+  userIdx: index("user_dashboard_permissions_user_idx").on(table.userId),
+  orgUserUnique: unique("user_dashboard_permissions_org_user_unique").on(table.organizationId, table.userId),
+}));
+
+export const insertUserDashboardPermissionSchema = createInsertSchema(userDashboardPermissions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserDashboardPermission = z.infer<typeof insertUserDashboardPermissionSchema>;
+export type UserDashboardPermission = typeof userDashboardPermissions.$inferSelect;
+
+// User Dashboard Layouts - Store widget arrangement per user
+export const userDashboardLayouts = pgTable("user_dashboard_layouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Layout configuration stored as JSON
+  // Format: { widgets: [{ id, type, x, y, w, h, visible }], gridCols, version }
+  layoutConfig: text("layout_config").notNull(),
+  
+  // Track if using default or custom layout
+  isCustom: boolean("is_custom").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("user_dashboard_layouts_org_idx").on(table.organizationId),
+  userIdx: index("user_dashboard_layouts_user_idx").on(table.userId),
+  orgUserUnique: unique("user_dashboard_layouts_org_user_unique").on(table.organizationId, table.userId),
+}));
+
+export const insertUserDashboardLayoutSchema = createInsertSchema(userDashboardLayouts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserDashboardLayout = z.infer<typeof insertUserDashboardLayoutSchema>;
+export type UserDashboardLayout = typeof userDashboardLayouts.$inferSelect;
+
+// User Color Palettes - Store color scheme preferences per user
+export const userColorPalettes = pgTable("user_color_palettes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Palette name (for presets or custom)
+  paletteName: text("palette_name").notNull().default("Default"),
+  isPreset: boolean("is_preset").notNull().default(false),
+  
+  // Light mode colors (HSL format without hsl() wrapper, e.g., "220 14% 96%")
+  lightPrimary: text("light_primary"),
+  lightPrimaryForeground: text("light_primary_foreground"),
+  lightSecondary: text("light_secondary"),
+  lightSecondaryForeground: text("light_secondary_foreground"),
+  lightAccent: text("light_accent"),
+  lightAccentForeground: text("light_accent_foreground"),
+  lightBackground: text("light_background"),
+  lightForeground: text("light_foreground"),
+  lightMuted: text("light_muted"),
+  lightMutedForeground: text("light_muted_foreground"),
+  lightCard: text("light_card"),
+  lightCardForeground: text("light_card_foreground"),
+  lightBorder: text("light_border"),
+  
+  // Dark mode colors (HSL format)
+  darkPrimary: text("dark_primary"),
+  darkPrimaryForeground: text("dark_primary_foreground"),
+  darkSecondary: text("dark_secondary"),
+  darkSecondaryForeground: text("dark_secondary_foreground"),
+  darkAccent: text("dark_accent"),
+  darkAccentForeground: text("dark_accent_foreground"),
+  darkBackground: text("dark_background"),
+  darkForeground: text("dark_foreground"),
+  darkMuted: text("dark_muted"),
+  darkMutedForeground: text("dark_muted_foreground"),
+  darkCard: text("dark_card"),
+  darkCardForeground: text("dark_card_foreground"),
+  darkBorder: text("dark_border"),
+  
+  // Contrast validation metadata
+  contrastValidated: boolean("contrast_validated").notNull().default(false),
+  lastValidatedAt: timestamp("last_validated_at"),
+  
+  // Track if using custom or org default
+  isActive: boolean("is_active").notNull().default(false),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("user_color_palettes_org_idx").on(table.organizationId),
+  userIdx: index("user_color_palettes_user_idx").on(table.userId),
+}));
+
+export const insertUserColorPaletteSchema = createInsertSchema(userColorPalettes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertUserColorPalette = z.infer<typeof insertUserColorPaletteSchema>;
+export type UserColorPalette = typeof userColorPalettes.$inferSelect;
+
+// Dashboard Widget Configuration Type (for layout JSON)
+export interface DashboardWidgetConfig {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  visible: boolean;
+  minW?: number;
+  minH?: number;
+  maxW?: number;
+  maxH?: number;
+}
+
+export interface DashboardLayoutConfig {
+  widgets: DashboardWidgetConfig[];
+  gridCols: number;
+  version: number;
+}
+
+// Color palette validation result type
+export interface ColorContrastResult {
+  isValid: boolean;
+  contrastRatio: number;
+  wcagLevel: "AAA" | "AA" | "FAIL";
+  pair: string;
+}
+
+export interface PaletteValidationResult {
+  isValid: boolean;
+  results: ColorContrastResult[];
+  failedPairs: string[];
+}
