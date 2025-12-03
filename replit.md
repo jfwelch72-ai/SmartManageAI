@@ -35,6 +35,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Website Builder System**: Comprehensive white-label website management with modules for Setup, Page Builder, Blog, Project Gallery, Social Media, Analytics, SEO, and an AI Design Assistant.
 *   **Labor Cost Rate Management System**: Calculates employee costs using job classifications, employee assignments, and prevailing wage rates, with a defined rate resolution priority.
 *   **AI-Powered Bid Wizard**: A multi-step bid creation workflow featuring AI document analysis (OpenAI GPT-4o) to extract project information and scope items from uploaded documents, followed by estimation.
+*   **Dashboard Customization System**: Comprehensive user dashboard personalization with admin-controlled permissions, edit mode toggle for safe widget management, and customizable color schemes. Features WCAG AA accessibility compliance (4.5:1 contrast ratio validation), preset themes (Default Blue, Forest Green, Sunset Orange, Ocean Blue, Royal Purple), and live preview with validation to prevent invisible text/buttons. Database tables: user_dashboard_permissions, user_dashboard_layouts, user_color_palettes.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
