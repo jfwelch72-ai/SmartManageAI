@@ -102,11 +102,23 @@ export function AIAssistantWidget() {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
   }, [isMinimized]);
 
+  // Auto-open and expand the assistant when walkthrough becomes active
+  // This handles both FirstTimeWelcomeModal "Start Tour" and sidebar "Start Tutorial" actions
+  const prevWalkthroughStep = useRef<number | undefined>(undefined);
+  
   useEffect(() => {
-    if (hasNotStarted && user && !isOpen) {
-      setTimeout(() => setIsOpen(true), 1000);
+    const currentStep = walkthroughStatus?.walkthroughStep;
+    const wasZeroOrUndefined = prevWalkthroughStep.current === 0 || prevWalkthroughStep.current === undefined;
+    const isNowInWalkthrough = currentStep !== undefined && currentStep > 0 && !walkthroughStatus?.walkthroughCompleted;
+    
+    // If walkthrough just started (transitioned from 0 or undefined to step 1+), open and expand
+    if (wasZeroOrUndefined && isNowInWalkthrough) {
+      setIsOpen(true);
+      setIsMinimized(false);
     }
-  }, [hasNotStarted, user, isOpen]);
+    
+    prevWalkthroughStep.current = currentStep;
+  }, [walkthroughStatus?.walkthroughStep, walkthroughStatus?.walkthroughCompleted]);
 
   const startWalkthroughMutation = useMutation({
     mutationFn: async () => {

@@ -49,6 +49,7 @@ import VendorPricingPage from "@/pages/vendor-pricing";
 import MobileSyncPage from "@/pages/mobile-sync";
 import CompanySettingsPage from "@/pages/company-settings";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
+import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import VendorDashboard from "@/pages/vendor/index";
 import VendorPortalPricing from "@/pages/vendor/pricing";
 import VendorClients from "@/pages/vendor/clients";
@@ -246,6 +247,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <AppContent />
+          <FirstTimeWelcomeModal />
           <AIAssistantWidget />
         </TooltipProvider>
       </AuthProvider>

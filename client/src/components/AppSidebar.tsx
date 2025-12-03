@@ -1,7 +1,9 @@
 import { Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor } from "@/lib/rbac";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Sidebar,
   SidebarContent,
@@ -48,19 +50,61 @@ import {
   Store,
   ChevronDown,
   LogOut,
+  GraduationCap,
+  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
+
+interface WalkthroughStatus {
+  walkthroughCompleted: boolean;
+  walkthroughStep: number;
+  totalSteps: number;
+  role: string;
+  walkthrough: {
+    roleName: string;
+    welcomeMessage: string;
+    completionMessage: string;
+  } | null;
+}
 
 export function AppSidebar() {
   const { user, logout, organizationName } = useAuth();
   const [location] = useLocation();
   const { data: messageCountData = { unreadCount: 0 } } = useUnreadMessageCount();
   const { state } = useSidebar();
+  const queryClient = useQueryClient();
   
   const [timeClockOpen, setTimeClockOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+
+  const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
+    queryKey: ["/api/ai/walkthrough/status"],
+    enabled: !!user,
+    refetchOnWindowFocus: false,
+  });
+
+  const resetAndStartWalkthroughMutation = useMutation({
+    mutationFn: async () => {
+      // First reset the walkthrough, then start it to ensure step goes to 1
+      await apiRequest("POST", "/api/ai/walkthrough/reset");
+      const response = await apiRequest("POST", "/api/ai/walkthrough/start");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+      sessionStorage.removeItem("smartmanage-welcome-dismissed");
+    },
+    onError: () => {
+      // Silent fail - button re-enables automatically since mutation completes
+      // User can try again by clicking the button
+    },
+  });
+
+  const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
+    (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
+  const isInWalkthrough = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep > 0;
 
   if (!user) return null;
 
@@ -412,6 +456,36 @@ export function AppSidebar() {
       
       <SidebarFooter className="border-t">
         <SidebarMenu>
+          {showTutorialButton && (
+            <SidebarMenuItem>
+              <SidebarMenuButton 
+                onClick={() => resetAndStartWalkthroughMutation.mutate()}
+                disabled={resetAndStartWalkthroughMutation.isPending}
+                className="text-primary hover:text-primary"
+                tooltip="Start Tutorial"
+                data-testid="sidebar-start-tutorial"
+              >
+                <GraduationCap className="w-4 h-4" />
+                <span>Start Tutorial</span>
+                {!walkthroughStatus?.walkthroughCompleted && walkthroughStatus?.walkthroughStep === 0 && (
+                  <Badge variant="secondary" className="ml-auto text-xs px-1.5 py-0">
+                    <Sparkles className="w-3 h-3 mr-0.5" />
+                    New
+                  </Badge>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          {isInWalkthrough && (
+            <SidebarMenuItem>
+              <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
+                <div className="flex items-center gap-2 text-xs text-primary">
+                  <Sparkles className="w-3 h-3" />
+                  <span>Tutorial: Step {walkthroughStatus.walkthroughStep}/{walkthroughStatus.totalSteps}</span>
+                </div>
+              </div>
+            </SidebarMenuItem>
+          )}
           <SidebarMenuItem>
             <div className="flex items-center gap-2 px-2 py-2 group-data-[collapsible=icon]:justify-center">
               <Avatar className="w-8 h-8">
