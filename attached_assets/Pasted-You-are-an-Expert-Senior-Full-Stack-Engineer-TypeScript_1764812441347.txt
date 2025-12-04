@@ -1,0 +1,333 @@
+You are an Expert Senior Full-Stack Engineer (TypeScript/Node/React/Drizzle/Postgres) working inside the existing SmartManageAI monorepo.
+
+The codebase is:
+- Backend: Node/Express + TypeScript + drizzle-orm + Neon HTTP driver (NO db.transaction usage)
+- Frontend: React + TypeScript + React Query + shadcn-style components
+- DB: PostgreSQL (Neon) with schema.ts + drizzle migrations
+- Auth: JWT + AuthRequest + requireAuth / requireRole
+- Multi-tenant: organizationId-based isolation, getOrgIdForFilter(), mustDenyAccess patterns
+- Logging: auditLog table + logCreate/logUpdate/logDelete/logAudit helpers
+- AI: Multiple AI routes using OpenAI, including new Email AI System
+- Status: As of the last audit, 0 TypeScript errors, production readiness score 88/100, Email AI System fully integrated
+
+Treat this ENTIRE message as ONE unified instruction. Do NOT ask for clarification. Do NOT split this into multiple steps. Execute everything coherently as a single task.
+
+Your goals:
+
+1) EMAIL TASK REFACTOR: Merge `email_tasks` into a unified `tasks` system that can handle email-originated tasks WITHOUT fragmenting the task model.
+2) CODE CLEANUP: Fix remaining moderate issues from the audit (`submittedByUserId`, downlevel iteration, implicit any in examples) while preserving 0 TS errors.
+3) OPS HARDENING: Add practical operational hardening for production use (health checks, logging, rate limiting on sensitive endpoints, CI config, basic monitoring hooks + docs) WITHOUT breaking existing behavior.
+
+====================================================================
+SECTION 1 — EMAIL TASK REFACTOR (UNIFY TASK MODEL)
+====================================================================
+
+Objective: Eliminate a separate `email_tasks` table and move all email-originated tasks into a SINGLE `tasks` table that can represent:
+
+- Tasks created manually
+- Tasks created by AI from emails
+- Tasks created by other modules (scheduling, change orders, etc., if applicable)
+
+Follow these steps carefully:
+
+1.1 Inspect Existing Schema:
+
+- In schema.ts (or equivalent shared/schema.ts):
+  - Locate:
+    - Any existing `tasks` table.
+    - The `email_tasks` table described in the latest audit.
+  - If there is NO generic `tasks` table yet:
+    - Create ONE unified `tasks` table that meets ALL needs below.
+  - If there IS a generic `tasks` table:
+    - Extend that table instead of keeping a separate `email_tasks` table.
+
+1.2 Design Unified `tasks` Table:
+
+Create or update the `tasks` table to support:
+
+- id (uuid, PK)
+- organizationId (uuid, FK)
+- createdByUserId (uuid, FK)
+- assignedToUserId (uuid, nullable)
+- projectId (uuid, nullable, FK)
+- bidId (uuid, nullable, FK)
+- vendorId (uuid, nullable, FK)
+- emailThreadId (uuid, nullable, FK to email_threads)
+- emailMessageId (uuid, nullable, FK to email_messages)
+- title (text)
+- description (text)
+- status (enum: "OPEN" | "IN_PROGRESS" | "DONE" | "IGNORED") or align with existing enum if already defined
+- priority (enum: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" or "URGENT" if that’s the established convention; be consistent)
+- dueDate (timestamptz, nullable)
+- sourceType (enum: "MANUAL" | "EMAIL" | "AI" | "SYSTEM" or align to existing patterns; ensure this is represented as a Drizzle enum)
+- createdAt / updatedAt (timestamptz)
+
+Rules:
+
+- `sourceType` is required and used to distinguish email-derived tasks from others.
+- `emailThreadId` and `emailMessageId` MUST be nullable and only set for `sourceType = "EMAIL"` tasks.
+- Multi-tenant isolation: enforce organizationId for all tasks.
+
+1.3 Remove or Deprecate `email_tasks` Table:
+
+- If schema.ts currently defines `email_tasks`:
+  - Plan for a migration path:
+    - If there is existing data, map it into the unified `tasks` table with `sourceType = "EMAIL"`.
+    - If this is development-only and no real data exists, you can safely drop `email_tasks`.
+  - Update migrations accordingly:
+    - Either add a new migration to move from `email_tasks` → `tasks`, or
+    - If safe, remove `email_tasks` from schema and adjust any references.
+
+1.4 Update Backend Code to Use Unified Tasks:
+
+- Search the server code for any usage of `email_tasks`, including:
+  - Routes under `/api/email/tasks*`
+  - AI email extraction logic
+  - Any other backend module referencing `email_tasks`
+- Replace logic so that:
+  - `/api/email/tasks` routes operate on the unified `tasks` table with `sourceType = "EMAIL"` and `emailThreadId/emailMessageId` set.
+  - Task creation from emails:
+    - Sets `sourceType = "EMAIL"`.
+    - Links to projectId / bidId / vendorId if AI extraction finds these.
+    - Links to emailThreadId and emailMessageId.
+  - Task listing endpoints:
+    - For general task listing: allow filters like `sourceType`, `projectId`, `status`.
+    - For email-specific listing (if needed): filter on `sourceType = "EMAIL"` and email-related foreign keys.
+
+- Make sure endpoints remain:
+
+  - GET /api/email/tasks       → returns tasks with `sourceType = "EMAIL"`, filtered by org/user
+  - POST /api/email/tasks      → creates a task with `sourceType = "EMAIL"` (or allows override, but default EMAIL)
+  - PATCH /api/email/tasks/:id → updates status/priority/dueDate/assignment
+
+- Internally, these routes should use the unified `tasks` table, not `email_tasks`.
+
+1.5 Update Frontend to Use Unified Tasks:
+
+- Update any frontend code that expects `email_tasks` or email-specific task shapes:
+
+  - `client/src/pages/email-assistant.tsx`
+  - Any email-related side panels or dialogs
+  - Any project-detail email tab components that list email tasks
+
+- Make sure all email task UIs now assume a unified task type with fields:
+
+  - id, title, description, status, priority, dueDate
+  - projectId, vendorId, bidId
+  - emailThreadId, emailMessageId
+  - sourceType
+
+- Types:
+  - Create or update a shared Task type (for frontend) that matches the backend schema.
+  - Use that type in React Query generics for all tasks-related hooks.
+  - Do NOT introduce `any` or `unknown`.
+
+1.6 Audit & Logging:
+
+- Wherever a task is created from an email:
+  - Log to auditLog with entityType = "TASK", action = "CREATE_FROM_EMAIL".
+  - Store oldValue/newValue JSON strings properly.
+- Ensure that any old audit logging referencing `email_tasks` is updated to refer to `tasks`.
+
+====================================================================
+SECTION 2 — FIX REMAINING MODERATE CODE ISSUES
+====================================================================
+
+Address the remaining moderate issues reported in the latest audit:
+
+2.1 `submittedByUserId` Schema Issue:
+
+- In `server/routes.ts` (and anywhere else mentioned in the audit), locate references to `submittedByUserId` (or similar).
+- Check `schema.ts` to confirm the actual column name on the relevant table (e.g., `submittedByVendorUserId`, `submittedByProjectUserId`, etc.).
+- Fix the mismatch by:
+  - Either:
+    - Updating the code to use the correct existing field, OR
+    - Adding the missing column in the schema *if* it is truly required by the business logic.
+- Ensure the fix is consistent with the data model and does not introduce new TS errors.
+
+2.2 Downlevel Iteration Warning:
+
+- Audit any usage of MapIterator or patterns that require `--downlevelIteration` (e.g., in `server/ai/snapshotBuilder.ts` or similar).
+- Prefer to fix code rather than rely on TS flags:
+
+  - If you see something like:
+    - `for (const [key, value] of someMap)` where `someMap` is a Map, ensure you wrap it as:
+      - `for (const [key, value] of Array.from(someMap.entries())) { ... }`
+
+- This removes the need for downlevel iteration and keeps tsconfig cleaner.
+
+2.3 Implicit Any Types in Examples:
+
+- Search for `any` types and implicit any usage, especially in:
+  - Example or demo components (DailyNoteFeed, ProjectsTable, etc.), as mentioned in the audit.
+- For any code that is:
+  - Not essential to production features AND is causing TS trouble:
+    - EITHER:
+      - Add proper types, OR
+      - Explicitly mark these files as internal examples and ensure they do not affect the main build (e.g., not imported into production routes/pages).
+- Confirm that `npm run typecheck` (or the project’s equivalent) passes with **0 errors** after your changes.
+
+====================================================================
+SECTION 3 — OPS HARDENING FOR PRODUCTION
+====================================================================
+
+Implement practical operational hardening to make the app safer and easier to operate in production.
+
+3.1 Health & Readiness Endpoints:
+
+- In the backend (e.g., main routes file or a dedicated ops routes file), add:
+
+  - GET /healthz
+    - Returns 200 with a simple JSON payload, e.g.:
+      - `{ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() }`
+    - No auth required.
+
+  - GET /readyz
+    - Checks:
+      - DB connectivity (e.g., run a trivial `SELECT 1` against Neon via drizzle).
+    - Returns:
+      - 200 JSON `{ status: "ready" }` if DB is reachable.
+      - 503 JSON `{ status: "not_ready" }` if DB check fails.
+    - No auth required.
+
+- These endpoints will be used by load balancers / uptime monitors.
+
+3.2 Centralized Error Logging Middleware:
+
+- Ensure there is a centralized Express error handler, e.g.:
+
+  - Logs:
+    - request method, path, userId (if available), organizationId (if available), and stack trace.
+  - Returns:
+    - A consistent JSON error structure (e.g., `{ error: "Internal Server Error" }` or more detailed if in development).
+
+- If such middleware already exists, enhance it to:
+  - Tag logs with correlation IDs if available.
+  - Optionally log an `errorId` that can be surfaced to the frontend.
+
+3.3 Minimal Structured Logging Utility:
+
+- Create a small logger utility (if not already present), e.g. `server/utils/logger.ts` that wraps console.log:
+
+  - Expose functions like:
+    - logInfo(message, context?)
+    - logWarn(message, context?)
+    - logError(message, context?)
+
+- Use this logger in:
+  - Health/readiness checks
+  - Email sync operations
+  - AI email classification
+  - Critical modules (auth, SOV, finance, etc.)
+
+3.4 Rate Limiting on Sensitive Endpoints (Email & AI):
+
+- Identify sensitive routes that could be spammed:
+
+  - Email sync endpoints (e.g. `/api/email/sync`, `/api/email/accounts` linking).
+  - AI endpoints:
+    - `/api/email/ai/*`
+    - `/api/ai/*` routes that perform heavy operations.
+
+- Integrate a lightweight rate limiter (align with whatever is already used, or add one that works well with Express + Redis or in-memory as appropriate for the current environment).
+
+  - For example:
+    - Limit per IP and per user for AI-heavy routes (e.g., 60 requests per minute, configurable).
+    - Limit email sync to avoid abusive polling (e.g., 1 sync per user per account every N minutes).
+
+- Ensure rate limiting errors respond with clear messages:
+  - `{ error: "Rate limit exceeded. Please try again later." }`
+
+3.5 Basic CI Configuration (GitHub Actions or Similar):
+
+- Add a CI workflow file (e.g. `.github/workflows/ci.yml`) that:
+
+  - Runs on:
+    - `push` to main / master
+    - `pull_request` to main / master
+
+  - Steps:
+    - Checkout repo
+    - Install dependencies
+    - Run typecheck (e.g., `npm run typecheck` or `npx tsc --noEmit` depending on project scripts)
+    - Run tests if they exist (e.g., `npm test`, `npm run test`, or skip if not configured but leave a TODO)
+    - Run build (e.g., `npm run build`)
+
+- Ensure the workflow uses the correct package manager and scripts from `package.json`.
+
+3.6 Monitoring & Observability Hooks (Minimal but Practical):
+
+- Add simple hooks/placeholders for integrating with an error tracking/monitoring tool (e.g., Sentry or similar), but make them conditional on env vars.
+
+  - Example:
+    - Create a small `monitoring.ts` with something like:
+
+      - If `SENTRY_DSN` is set:
+        - Initialize Sentry.
+      - Otherwise:
+        - Do nothing.
+
+- Wire the global error handler to call out to this monitoring hook when a serious error occurs.
+
+- Document in the repo how to enable monitoring by setting the appropriate environment variables.
+
+3.7 Documentation: Ops / Runbook Notes
+
+- Update the main documentation file (e.g., `replit.md` or create `OPS_README.md`) to include:
+
+  - Health endpoints:
+    - `/healthz`, `/readyz`
+  - How to:
+    - Run `npm run typecheck`, `npm run build`, and any tests.
+    - Configure CI (reference the workflow file).
+    - Monitor logs (where, how).
+    - Enable external monitoring (Sentry or equivalent).
+    - Manage DB backups:
+      - Explain that Neon provides backups/PITR (without actually implementing backup logic in code).
+      - Add instructions to confirm backup configuration in Neon’s dashboard.
+
+- Make sure the documentation is clean, consistent, and references the newest Email AI System, unified tasks, and health checks.
+
+====================================================================
+SECTION 4 — FINAL VERIFICATION
+====================================================================
+
+After all changes:
+
+4.1 Code & Types:
+
+- Confirm all TypeScript checks pass:
+  - `npm run typecheck` or the project’s TS check script.
+- Confirm the project builds successfully:
+  - `npm run build` or equivalent.
+- Confirm there are still **0 TypeScript errors**.
+
+4.2 Runtime Sanity:
+
+- Run the dev server:
+  - Confirm:
+    - `/healthz` returns status ok
+    - `/readyz` passes when DB is reachable
+  - Confirm:
+    - Email Assistant page still loads
+    - Project detail “Email & Communications” tab still works
+    - Email tasks now flow through the unified `tasks` model
+    - AI email classification and task extraction still work as before
+
+4.3 Security & Multi-Tenant:
+
+- Ensure all new/modified routes:
+  - Maintain organizationId filtering.
+  - Use requireAuth and requireRole where appropriate.
+  - Do not expose any sensitive tokens or secrets in responses.
+
+4.4 Summary Output:
+
+- When done, print a concise summary to the console/editor that includes:
+
+  - “Email task refactor to unified tasks model: COMPLETE”
+  - “Moderate issues from audit (submittedByUserId, downlevel iteration, implicit any): FIXED”
+  - “Ops hardening (health checks, error logging, rate limiting, CI skeleton, monitoring hooks, docs): IMPLEMENTED”
+  - List key files added/modified.
+
+Then stop.

@@ -1,0 +1,130 @@
+/**
+ * Operational Routes
+ * 
+ * Health checks, readiness probes, and operational endpoints
+ * for load balancers and monitoring systems.
+ */
+
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { db } from './db';
+import { sql } from 'drizzle-orm';
+import { logInfo, logError } from './utils/logger';
+import { getMonitoringStatus } from './utils/monitoring';
+
+const router = Router();
+
+// Rate limiter for ops endpoints (protect against brute force)
+const opsRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 30, // 30 requests per minute
+  message: { error: 'Too many requests to ops endpoints' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
+ * GET /healthz - Health check endpoint
+ * 
+ * Returns basic health status. Used by load balancers.
+ * Always returns 200 if the server is running.
+ * No authentication required.
+ */
+router.get('/healthz', (_req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || '1.0.0',
+  });
+});
+
+/**
+ * GET /readyz - Readiness check endpoint
+ * 
+ * Checks if the application is ready to serve traffic.
+ * Verifies database connectivity.
+ * No authentication required.
+ */
+router.get('/readyz', async (_req, res) => {
+  const checks: { name: string; status: 'ok' | 'fail'; latencyMs?: number; error?: string }[] = [];
+
+  // Check database connectivity
+  const dbStart = Date.now();
+  try {
+    await db.execute(sql`SELECT 1`);
+    checks.push({
+      name: 'database',
+      status: 'ok',
+      latencyMs: Date.now() - dbStart,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    checks.push({
+      name: 'database',
+      status: 'fail',
+      latencyMs: Date.now() - dbStart,
+      error: errorMessage,
+    });
+    logError('Readiness check failed: Database unavailable', {}, error as Error);
+  }
+
+  // Overall status
+  const allOk = checks.every((c) => c.status === 'ok');
+
+  if (allOk) {
+    res.status(200).json({
+      status: 'ready',
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    res.status(503).json({
+      status: 'not_ready',
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * GET /api/ops/status - Extended status endpoint (requires auth in production)
+ * 
+ * Provides detailed operational status for debugging.
+ * In development, accessible without auth.
+ * Rate limited to 30 requests/minute.
+ */
+router.get('/api/ops/status', opsRateLimiter, (_req, res) => {
+  const isDev = process.env.NODE_ENV === 'development';
+  
+  if (!isDev) {
+    // In production, require some form of auth header
+    const authHeader = _req.headers['x-ops-token'];
+    const expectedToken = process.env.OPS_STATUS_TOKEN;
+    
+    if (!expectedToken || authHeader !== expectedToken) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
+
+  const monitoring = getMonitoringStatus();
+
+  res.json({
+    status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
+    uptime: process.uptime(),
+    memory: {
+      heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB',
+      rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
+    },
+    monitoring,
+    node: {
+      version: process.version,
+      platform: process.platform,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+export default router;

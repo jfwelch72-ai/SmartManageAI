@@ -34,6 +34,7 @@ export const aiNoteInsightSeverityEnum = pgEnum("ai_note_insight_severity", ["LO
 export const aiNoteInsightSourceTypeEnum = pgEnum("ai_note_insight_source_type", ["PROJECT", "COMPANY"]);
 export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
 export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+export const taskSourceTypeEnum = pgEnum("task_source_type", ["MANUAL", "EMAIL", "AI_GENERATED", "SYSTEM"]);
 
 // CRM Enums
 export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR"]);
@@ -626,15 +627,22 @@ export const aiNoteInsights = pgTable("ai_note_insights", {
   statusIdx: index("ai_note_insights_status_idx").on(table.status),
 }));
 
-// Manual Tasks table (user-created tasks separate from AI insights)
+// Unified Tasks table (supports manual, email-derived, AI-generated, and system tasks)
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  emailThreadId: varchar("email_thread_id"),
+  emailMessageId: varchar("email_message_id"),
   title: text("title").notNull(),
   description: text("description"),
   category: aiNoteInsightCategoryEnum("category").notNull().default("OTHER"),
   priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
   status: aiTaskStatusEnum("status").notNull().default("PENDING"),
+  sourceType: taskSourceTypeEnum("source_type").notNull().default("MANUAL"),
+  aiMetadata: text("ai_metadata"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   assignedToId: varchar("assigned_to_id").references(() => users.id),
   dueDate: timestamp("due_date"),
@@ -648,11 +656,14 @@ export const tasks = pgTable("tasks", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
+  organizationIdIdx: index("tasks_organization_id_idx").on(table.organizationId),
   projectIdIdx: index("tasks_project_id_idx").on(table.projectId),
   assignedToIdIdx: index("tasks_assigned_to_id_idx").on(table.assignedToId),
   statusIdx: index("tasks_status_idx").on(table.status),
   priorityIdx: index("tasks_priority_idx").on(table.priority),
   dueDateIdx: index("tasks_due_date_idx").on(table.dueDate),
+  sourceTypeIdx: index("tasks_source_type_idx").on(table.sourceType),
+  emailThreadIdIdx: index("tasks_email_thread_id_idx").on(table.emailThreadId),
 }));
 
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
@@ -4831,38 +4842,30 @@ export const insertEmailAttachmentSchema = createInsertSchema(emailAttachments).
 export type InsertEmailAttachment = z.infer<typeof insertEmailAttachmentSchema>;
 export type EmailAttachment = typeof emailAttachments.$inferSelect;
 
-// Extend Tasks table to support email linking
-// Note: The existing tasks table at line 630 is extended here with additional email-linked columns
-// We add a separate email_tasks table for email-specific task linking
+// DEPRECATED: email_tasks table
+// Email-derived tasks are now stored in the unified 'tasks' table (line 633) with sourceType="EMAIL"
+// The emailTasks table is kept for migration reference only. New code should use the unified tasks table.
+// See tasks.sourceType, tasks.emailThreadId, tasks.emailMessageId, tasks.aiMetadata for email task fields.
 
 export const emailTasks = pgTable("email_tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  
-  // Core Task Fields
   createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id),
   assignedToUserId: varchar("assigned_to_user_id").references(() => users.id),
-  
-  // Linked Entities
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
   vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
   emailThreadId: varchar("email_thread_id").references(() => emailThreads.id, { onDelete: "set null" }),
   emailMessageId: varchar("email_message_id").references(() => emailMessages.id, { onDelete: "set null" }),
-  
   title: text("title").notNull(),
   description: text("description"),
-  
   status: aiTaskStatusEnum("status").notNull().default("PENDING"),
   priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
   dueDate: timestamp("due_date"),
-  
   sourceType: emailTaskSourceEnum("source_type").notNull().default("EMAIL"),
-  aiMetadata: text("ai_metadata"), // JSON with AI extraction details
-  
+  aiMetadata: text("ai_metadata"),
   completedAt: timestamp("completed_at"),
   completedByUserId: varchar("completed_by_user_id").references(() => users.id),
-  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -4874,6 +4877,7 @@ export const emailTasks = pgTable("email_tasks", {
   dueDateIdx: index("email_tasks_due_date_idx").on(table.dueDate),
 }));
 
+// DEPRECATED: Use insertTaskSchema and Task types instead
 export const insertEmailTaskSchema = createInsertSchema(emailTasks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEmailTask = z.infer<typeof insertEmailTaskSchema>;
 export type EmailTask = typeof emailTasks.$inferSelect;

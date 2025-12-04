@@ -85,11 +85,15 @@ import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
 import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
+import opsRoutes from "./opsRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register operational routes BEFORE auth middleware (health checks should be public)
+  app.use(opsRoutes);
+
   // Apply auth middleware to all routes
   app.use(authMiddleware);
 

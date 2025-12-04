@@ -239,8 +239,10 @@ Return format: { "insights": [ ... ] }`;
 
     // Validate and map each insight
     const validatedInsights: AIInsight[] = [];
+    const insightsArray = insights as Array<{ [key: string]: unknown }>;
     
-    for (const [index, rawInsight] of insights.entries()) {
+    for (let index = 0; index < insightsArray.length; index++) {
+      const rawInsight = insightsArray[index];
       try {
         // Validate required fields
         if (!rawInsight.sourceNoteId || typeof rawInsight.sourceNoteId !== 'string') {
@@ -254,13 +256,15 @@ Return format: { "insights": [ ... ] }`;
         }
 
         // Validate and normalize category
-        const category = rawInsight.category?.toUpperCase();
+        const categoryValue = rawInsight.category;
+        const category = typeof categoryValue === 'string' ? categoryValue.toUpperCase() : '';
         if (!validCategories.includes(category)) {
           console.warn(`[AI Notes] Insight ${index}: Invalid category "${rawInsight.category}", defaulting to OTHER`);
         }
 
         // Validate and normalize severity
-        const severity = rawInsight.severity?.toUpperCase();
+        const severityValue = rawInsight.severity;
+        const severity = typeof severityValue === 'string' ? severityValue.toUpperCase() : '';
         if (!validSeverities.includes(severity)) {
           console.warn(`[AI Notes] Insight ${index}: Invalid severity "${rawInsight.severity}", defaulting to MEDIUM`);
         }
