@@ -29,7 +29,10 @@ import {
   History,
   Trash2,
   Clock,
-  FileCheck
+  FileCheck,
+  Wrench,
+  RefreshCw,
+  Loader2
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -90,14 +93,28 @@ interface TypesResponse {
   categories: { value: string; label: string; types: string[] }[];
 }
 
+interface TradeConfigResponse {
+  organization: {
+    id: string;
+    name: string;
+    tradeType: string;
+    tradeName: string | null;
+  };
+  sowItemCount: number;
+  tradeTypes: { value: string; label: string }[];
+}
+
 export default function CompanySettings() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("branding");
+  const [activeTab, setActiveTab] = useState("trade");
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
   const [selectedDocType, setSelectedDocType] = useState<string>("");
   const [historyDocType, setHistoryDocType] = useState<string>("");
+  const [selectedTradeType, setSelectedTradeType] = useState<string>("");
+  const [tradeName, setTradeName] = useState("");
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
   
   const [uploadForm, setUploadForm] = useState({
     name: "",
@@ -126,6 +143,45 @@ export default function CompanySettings() {
   const { data: historyDocs = [] } = useQuery<OrganizationDocument[]>({
     queryKey: ["/api/organization-documents/history", historyDocType],
     enabled: !!historyDocType && showHistoryDialog
+  });
+
+  const { data: tradeConfig, isLoading: loadingTradeConfig } = useQuery<TradeConfigResponse>({
+    queryKey: ["/api/organization/trade-config"],
+    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "HUSTLER"].includes(user.role)
+  });
+
+  const updateTradeTypeMutation = useMutation({
+    mutationFn: async (data: { tradeType: string; tradeName?: string }) => {
+      return await apiRequest("POST", "/api/organization/update-trade-type", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organization/trade-config"] });
+      toast({ title: "Trade type updated successfully" });
+      setSelectedTradeType("");
+      setTradeName("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update trade type", variant: "destructive" });
+    }
+  });
+
+  const reinitializeSowMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/organization/reinitialize-sow", {});
+    },
+    onSuccess: async (response) => {
+      const data = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/organization/trade-config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/scope/work-types"] });
+      toast({ 
+        title: "SOW Items Regenerated", 
+        description: `Created ${data.newItemsCreated} items across ${data.categories?.length || 0} categories`
+      });
+      setShowRebuildConfirm(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to regenerate SOW items", variant: "destructive" });
+    }
   });
 
   const createDocumentMutation = useMutation({
@@ -433,7 +489,11 @@ export default function CompanySettings() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3" data-testid="tabs-company-settings">
+        <TabsList className="grid w-full grid-cols-4" data-testid="tabs-company-settings">
+          <TabsTrigger value="trade" data-testid="tab-trade">
+            <Wrench className="h-4 w-4 mr-2" />
+            Trade
+          </TabsTrigger>
           <TabsTrigger value="branding" data-testid="tab-branding">
             <Image className="h-4 w-4 mr-2" />
             Branding
@@ -447,6 +507,189 @@ export default function CompanySettings() {
             Compliance
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="trade" className="mt-6">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Trade Configuration</h2>
+                <p className="text-sm text-muted-foreground">
+                  Manage your organization's trade type and scope of work templates
+                </p>
+              </div>
+            </div>
+
+            {loadingTradeConfig ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Skeleton className="h-48" />
+                <Skeleton className="h-48" />
+              </div>
+            ) : tradeConfig ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Wrench className="h-5 w-5" />
+                      Current Trade Type
+                    </CardTitle>
+                    <CardDescription>
+                      Your organization's trade specialization
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-sm px-3 py-1 ${
+                          tradeConfig.organization.tradeType === 'GENERAL_CONTRACTOR' 
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            : tradeConfig.organization.tradeType === 'OTHER'
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                        }`}
+                        data-testid="badge-trade-type"
+                      >
+                        {tradeConfig.organization.tradeType.replace(/_/g, ' ')}
+                      </Badge>
+                      {tradeConfig.organization.tradeName && (
+                        <span className="text-sm text-muted-foreground">
+                          ({tradeConfig.organization.tradeName})
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium">{tradeConfig.sowItemCount}</span> active scope items
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Change Trade Type</CardTitle>
+                    <CardDescription>
+                      Update your organization's trade specialization
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="trade-type">New Trade Type</Label>
+                      <Select
+                        value={selectedTradeType || tradeConfig.organization.tradeType}
+                        onValueChange={(value) => setSelectedTradeType(value)}
+                      >
+                        <SelectTrigger data-testid="select-trade-type">
+                          <SelectValue placeholder="Select trade type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tradeConfig.tradeTypes.map(t => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {selectedTradeType === 'OTHER' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="trade-name">Trade Name</Label>
+                        <Input
+                          id="trade-name"
+                          value={tradeName}
+                          onChange={(e) => setTradeName(e.target.value)}
+                          placeholder="Enter your custom trade name"
+                          data-testid="input-trade-name"
+                        />
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={() => {
+                        const newType = selectedTradeType || tradeConfig.organization.tradeType;
+                        if (newType !== tradeConfig.organization.tradeType) {
+                          updateTradeTypeMutation.mutate({ 
+                            tradeType: newType,
+                            tradeName: newType === 'OTHER' ? tradeName : undefined
+                          });
+                        }
+                      }}
+                      disabled={
+                        updateTradeTypeMutation.isPending || 
+                        (!selectedTradeType || selectedTradeType === tradeConfig.organization.tradeType) ||
+                        (selectedTradeType === 'OTHER' && !tradeName.trim())
+                      }
+                      data-testid="button-update-trade"
+                    >
+                      {updateTradeTypeMutation.isPending && (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      )}
+                      Update Trade Type
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="md:col-span-2">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5" />
+                      Rebuild SOW Templates
+                    </CardTitle>
+                    <CardDescription>
+                      Regenerate scope of work items from trade templates
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Alert>
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        This will regenerate SOW templates based on your current trade type. 
+                        Custom items you've created will remain active.
+                      </AlertDescription>
+                    </Alert>
+                    
+                    {!showRebuildConfirm ? (
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowRebuildConfirm(true)}
+                        data-testid="button-rebuild-sow"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Rebuild SOW Items from Trade Type
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="destructive"
+                          onClick={() => reinitializeSowMutation.mutate()}
+                          disabled={reinitializeSowMutation.isPending}
+                          data-testid="button-confirm-rebuild"
+                        >
+                          {reinitializeSowMutation.isPending && (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          )}
+                          Confirm Rebuild
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowRebuildConfirm(false)}
+                          data-testid="button-cancel-rebuild"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <Alert>
+                <AlertDescription>
+                  Unable to load trade configuration. Please try again.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </TabsContent>
 
         <TabsContent value="branding" className="mt-6">
           <div className="space-y-4">

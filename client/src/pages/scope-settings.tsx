@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench } from "lucide-react";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 interface WorkTypeCategory {
   id: string;
@@ -53,9 +54,35 @@ interface Modifier {
   isActive: boolean;
 }
 
+interface TradeConfigResponse {
+  organization: {
+    id: string;
+    name: string;
+    tradeType: string;
+    tradeName: string | null;
+  };
+  sowItemCount: number;
+  tradeTypes: { value: string; label: string }[];
+}
+
 export default function ScopeSettings() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("work-types");
+
+  const { data: tradeConfig } = useQuery<TradeConfigResponse>({
+    queryKey: ["/api/organization/trade-config"],
+    enabled: !!user
+  });
+
+  const getTradeTypeBadgeColor = (tradeType: string) => {
+    if (tradeType === 'GENERAL_CONTRACTOR') {
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+    } else if (tradeType === 'OTHER') {
+      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+    }
+    return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
+  };
   const [showWorkTypeDialog, setShowWorkTypeDialog] = useState(false);
   const [showModifierDialog, setShowModifierDialog] = useState(false);
   const [editingWorkType, setEditingWorkType] = useState<WorkType | null>(null);
@@ -249,10 +276,22 @@ export default function ScopeSettings() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Settings className="h-6 w-6" />
-              Scope Standardization Settings
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Settings className="h-6 w-6" />
+                Scope Standardization Settings
+              </h1>
+              {tradeConfig && (
+                <Badge 
+                  variant="secondary" 
+                  className={`text-sm px-3 py-1 ${getTradeTypeBadgeColor(tradeConfig.organization.tradeType)}`}
+                  data-testid="badge-scope-trade-type"
+                >
+                  <Wrench className="h-3 w-3 mr-1" />
+                  {tradeConfig.organization.tradeType.replace(/_/g, ' ')}
+                </Badge>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               Manage standardized work types and modifiers for consistent scope tracking
             </p>

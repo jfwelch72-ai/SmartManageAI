@@ -9,9 +9,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Building2, Check, ChevronDown, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Building2, Check, ChevronDown, Loader2, Wrench } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 interface Organization {
   id: string;
@@ -39,6 +41,7 @@ interface HustlerOrganizationsResponse {
 
 export function OrganizationSwitcher() {
   const { toast } = useToast();
+  const { refetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery<HustlerOrganizationsResponse>({
@@ -54,14 +57,20 @@ export function OrganizationSwitcher() {
       });
       return response.json();
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      // Invalidate all queries to refresh data for new organization
       queryClient.invalidateQueries();
+      
+      // Refresh auth context to get updated user info with new organizationId
+      if (refetch) {
+        await refetch();
+      }
+      
       toast({
         title: "Organization Switched",
         description: result.message || "Successfully switched organization",
       });
       setIsOpen(false);
-      window.location.reload();
     },
     onError: (error: any) => {
       toast({
@@ -124,8 +133,20 @@ export function OrganizationSwitcher() {
           >
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{org.organization.name}</div>
-              <div className="text-xs text-muted-foreground truncate">
-                {org.organization.tradeName || org.organization.tradeType}
+              <div className="flex items-center gap-1 mt-0.5">
+                <Badge 
+                  variant="secondary" 
+                  className={`text-[10px] px-1.5 py-0 h-4 ${
+                    org.organization.tradeType === 'GENERAL_CONTRACTOR' 
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                      : org.organization.tradeType === 'OTHER'
+                      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                  }`}
+                >
+                  <Wrench className="h-2.5 w-2.5 mr-0.5" />
+                  {org.organization.tradeName || org.organization.tradeType.replace(/_/g, ' ')}
+                </Badge>
               </div>
             </div>
             {org.organizationId === data.currentOrganizationId && (

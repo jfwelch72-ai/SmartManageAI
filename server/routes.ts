@@ -9,7 +9,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
-import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens } from "@shared/schema";
+import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens, tradeTypeEnum } from "@shared/schema";
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { 
   projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
@@ -54,7 +54,7 @@ import {
   revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, ne, desc, sql, and, or, isNull, inArray, type SQL } from "drizzle-orm";
+import { eq, ne, desc, asc, sql, and, or, isNull, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
@@ -8115,6 +8115,380 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(defaultCategories);
     } catch (error) {
       console.error("Get organization work categories error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Trade Configuration Routes
+  // ====================
+
+  const { sowAuditLog, masterSowItems: masterSowItemsTable } = await import("@shared/schema");
+
+  // Get organization trade configuration
+  app.get("/api/organization/trade-config", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const [org] = await db
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          tradeType: organizations.tradeType,
+          tradeName: organizations.tradeName,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      // Get SOW item count
+      const sowItemsResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationSowItems)
+        .where(and(
+          eq(organizationSowItems.organizationId, orgId),
+          eq(organizationSowItems.isActive, true)
+        ));
+
+      const sowItemCount = sowItemsResult[0]?.count || 0;
+
+      // Get available trade types from enum
+      const tradeTypes = tradeTypeEnum.enumValues.map(t => ({
+        value: t,
+        label: t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      }));
+
+      res.json({
+        organization: org,
+        sowItemCount,
+        tradeTypes
+      });
+    } catch (error) {
+      console.error("Get trade config error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update organization trade type
+  app.post("/api/organization/update-trade-type", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res) => {
+    try {
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const { tradeType: newTradeType, tradeName } = req.body;
+
+      // Validate trade type
+      if (!tradeTypeEnum.enumValues.includes(newTradeType)) {
+        return res.status(400).json({ 
+          error: "Invalid trade type",
+          message: `Trade type "${newTradeType}" is not valid. Valid options: ${tradeTypeEnum.enumValues.join(', ')}`
+        });
+      }
+
+      // Get current organization
+      const [org] = await db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      const previousTradeType = org.tradeType;
+
+      // Update organization trade type
+      await db
+        .update(organizations)
+        .set({ 
+          tradeType: newTradeType,
+          tradeName: newTradeType === 'OTHER' ? tradeName : null
+        })
+        .where(eq(organizations.id, orgId));
+
+      // Log the change
+      await db.insert(sowAuditLog).values({
+        organizationId: orgId,
+        userId: req.user!.id,
+        action: "UPDATE",
+        details: `Trade type changed from ${previousTradeType} to ${newTradeType}`,
+        previousTradeType: previousTradeType,
+        newTradeType: newTradeType,
+      });
+
+      console.log(`[TradeConfig] Trade type updated for org ${orgId}: ${previousTradeType} -> ${newTradeType}`);
+
+      res.json({ 
+        success: true, 
+        message: "Trade type updated successfully",
+        previousTradeType,
+        newTradeType
+      });
+    } catch (error) {
+      console.error("Update trade type error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Reinitialize SOW items based on current trade type
+  app.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "HUSTLER"), async (req: AuthRequest, res) => {
+    try {
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      // Get organization
+      const [org] = await db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      const tradeType = org.tradeType;
+      const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
+      const isCustomTrade = tradeType === 'OTHER';
+
+      // Count existing active SOW items
+      const existingCountResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(organizationSowItems)
+        .where(and(
+          eq(organizationSowItems.organizationId, orgId),
+          eq(organizationSowItems.isActive, true)
+        ));
+      const existingCount = existingCountResult[0]?.count || 0;
+
+      // Deactivate existing template-based SOW items (preserve custom items)
+      const deactivatedResult = await db
+        .update(organizationSowItems)
+        .set({ isActive: false })
+        .where(and(
+          eq(organizationSowItems.organizationId, orgId),
+          eq(organizationSowItems.isFromTemplate, true),
+          eq(organizationSowItems.isActive, true)
+        ))
+        .returning({ id: organizationSowItems.id });
+
+      const deactivatedCount = deactivatedResult.length;
+
+      // Log deactivation
+      await db.insert(sowAuditLog).values({
+        organizationId: orgId,
+        userId: req.user!.id,
+        action: "DEACTIVATE",
+        details: `Deactivated ${deactivatedCount} template-based SOW items for regeneration`,
+        itemCount: deactivatedCount,
+      });
+
+      let newItemsCreated = 0;
+      const newCategories: string[] = [];
+
+      // Don't load new items for custom trades (OTHER) - they define their own
+      if (!isCustomTrade) {
+        // Load master SOW items based on trade type
+        let masterItems;
+        if (isGeneralContractor) {
+          masterItems = await db
+            .select()
+            .from(masterSowItemsTable)
+            .where(eq(masterSowItemsTable.isActive, true))
+            .orderBy(asc(masterSowItemsTable.tradeType), asc(masterSowItemsTable.sortOrder));
+        } else {
+          masterItems = await db
+            .select()
+            .from(masterSowItemsTable)
+            .where(and(
+              eq(masterSowItemsTable.tradeType, tradeType as any),
+              eq(masterSowItemsTable.isActive, true)
+            ))
+            .orderBy(asc(masterSowItemsTable.sortOrder));
+        }
+
+        // Safety check: Abort if no master items found for this trade type
+        if (masterItems.length === 0) {
+          console.warn(`[SOW] No master SOW items found for trade type ${tradeType} - reactivating deactivated items`);
+          
+          // Reactivate the items we just deactivated
+          await db
+            .update(organizationSowItems)
+            .set({ isActive: true })
+            .where(and(
+              eq(organizationSowItems.organizationId, orgId),
+              eq(organizationSowItems.isFromTemplate, true),
+              eq(organizationSowItems.isActive, false)
+            ));
+          
+          return res.status(400).json({ 
+            error: "No templates available",
+            message: `No master SOW items are configured for trade type ${tradeType}. Your existing items have been preserved.`
+          });
+        }
+
+        // Create new organization SOW items
+        for (const item of masterItems) {
+          const categoryName = isGeneralContractor 
+            ? `${item.tradeType} - ${item.categoryName || 'General'}`
+            : item.categoryName || 'General';
+          
+          const itemCode = isGeneralContractor
+            ? `${item.tradeType}_${item.code}`
+            : item.code;
+
+          // Check if this code already exists (even if inactive)
+          const [existing] = await db
+            .select()
+            .from(organizationSowItems)
+            .where(and(
+              eq(organizationSowItems.organizationId, orgId),
+              eq(organizationSowItems.code, itemCode)
+            ))
+            .limit(1);
+
+          if (existing) {
+            // Reactivate existing item
+            await db
+              .update(organizationSowItems)
+              .set({ isActive: true })
+              .where(eq(organizationSowItems.id, existing.id));
+          } else {
+            // Create new item
+            await db.insert(organizationSowItems).values({
+              organizationId: orgId,
+              categoryName: categoryName,
+              name: item.name,
+              code: itemCode,
+              description: item.description,
+              unit: item.defaultUomCode,
+              requiresDimensions: item.requiresDimensions || false,
+              dimensionLabel: item.dimensionLabel,
+              displayOrder: item.sortOrder || 0,
+              isFromTemplate: true,
+              isActive: true,
+            });
+            newItemsCreated++;
+          }
+
+          if (!newCategories.includes(categoryName)) {
+            newCategories.push(categoryName);
+          }
+        }
+      }
+
+      // Log regeneration
+      await db.insert(sowAuditLog).values({
+        organizationId: orgId,
+        userId: req.user!.id,
+        action: "REGENERATE",
+        details: `Regenerated SOW items for trade type ${tradeType}. Created ${newItemsCreated} new items across ${newCategories.length} categories.`,
+        newTradeType: tradeType,
+        itemCount: newItemsCreated,
+      });
+
+      console.log(`[SOW] Reinitialized SOW for org ${orgId}: ${deactivatedCount} deactivated, ${newItemsCreated} created, ${newCategories.length} categories`);
+
+      res.json({
+        success: true,
+        message: isCustomTrade 
+          ? "Template items deactivated. Add custom scope items for your trade."
+          : "SOW items regenerated from trade templates",
+        tradeType,
+        isCustomTrade,
+        deactivatedCount,
+        newItemsCreated,
+        categories: newCategories,
+      });
+    } catch (error) {
+      console.error("Reinitialize SOW error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get SOW preview for a trade type (for onboarding review)
+  app.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { tradeType } = req.params;
+
+      // Validate trade type
+      if (!tradeTypeEnum.enumValues.includes(tradeType as any)) {
+        return res.status(400).json({ 
+          error: "Invalid trade type",
+          message: `Trade type "${tradeType}" is not valid.`
+        });
+      }
+
+      const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
+      const isCustomTrade = tradeType === 'OTHER';
+
+      if (isCustomTrade) {
+        return res.json({
+          tradeType,
+          isCustomTrade: true,
+          categories: [],
+          message: "Custom trades allow you to define your own scope of work items."
+        });
+      }
+
+      // Get master SOW items
+      let masterItems;
+      if (isGeneralContractor) {
+        masterItems = await db
+          .select()
+          .from(masterSowItemsTable)
+          .where(eq(masterSowItemsTable.isActive, true))
+          .orderBy(asc(masterSowItemsTable.tradeType), asc(masterSowItemsTable.sortOrder));
+      } else {
+        masterItems = await db
+          .select()
+          .from(masterSowItemsTable)
+          .where(and(
+            eq(masterSowItemsTable.tradeType, tradeType as any),
+            eq(masterSowItemsTable.isActive, true)
+          ))
+          .orderBy(asc(masterSowItemsTable.sortOrder));
+      }
+
+      // Group by category
+      const categoriesMap = new Map<string, { name: string; items: string[] }>();
+      
+      for (const item of masterItems) {
+        const categoryName = isGeneralContractor 
+          ? `${item.tradeType} - ${item.categoryName || 'General'}`
+          : item.categoryName || 'General';
+        
+        if (!categoriesMap.has(categoryName)) {
+          categoriesMap.set(categoryName, { name: categoryName, items: [] });
+        }
+        categoriesMap.get(categoryName)!.items.push(item.name);
+      }
+
+      const categories = Array.from(categoriesMap.values());
+
+      res.json({
+        tradeType,
+        isCustomTrade: false,
+        totalItems: masterItems.length,
+        categories
+      });
+    } catch (error) {
+      console.error("Get SOW preview error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

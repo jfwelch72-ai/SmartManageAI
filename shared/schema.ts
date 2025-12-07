@@ -3553,6 +3553,31 @@ export const insertOrganizationSowItemSchema = createInsertSchema(organizationSo
 export type InsertOrganizationSowItem = z.infer<typeof insertOrganizationSowItemSchema>;
 export type OrganizationSowItem = typeof organizationSowItems.$inferSelect;
 
+// SOW Audit Log - Track all SOW item changes for compliance
+export const sowAuditActionEnum = pgEnum("sow_audit_action", ["CREATE", "UPDATE", "DEACTIVATE", "REGENERATE"]);
+
+export const sowAuditLog = pgTable("sow_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  action: sowAuditActionEnum("action").notNull(),
+  sowCode: text("sow_code"),
+  sowName: text("sow_name"),
+  details: text("details"),
+  previousTradeType: tradeTypeEnum("previous_trade_type"),
+  newTradeType: tradeTypeEnum("new_trade_type"),
+  itemCount: integer("item_count"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("sow_audit_log_org_idx").on(table.organizationId),
+  userIdx: index("sow_audit_log_user_idx").on(table.userId),
+  actionIdx: index("sow_audit_log_action_idx").on(table.action),
+}));
+
+export const insertSowAuditLogSchema = createInsertSchema(sowAuditLog).omit({ id: true, createdAt: true });
+export type InsertSowAuditLog = z.infer<typeof insertSowAuditLogSchema>;
+export type SowAuditLog = typeof sowAuditLog.$inferSelect;
+
 // ============================================
 // ORGANIZATION DOCUMENTS
 // Company branding assets and compliance documents

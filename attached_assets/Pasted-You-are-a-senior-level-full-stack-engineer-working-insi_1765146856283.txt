@@ -1,0 +1,175 @@
+You are a senior-level full-stack engineer working inside the SmartManageAI repository.  
+Implement the following enhancements across backend and frontend.  
+Do NOT refactor unrelated areas.  
+Do NOT modify Hustler routes, SOW logic, or role systems outside what is described.
+
+=====================================================================
+PHASE A — Add Visible Trade Type Indicator + Editable Trade Setting
+=====================================================================
+
+1. In the Organization Settings page:
+   - Add a "Trade Configuration" section.
+   - Show the current org.tradeType with a badge.
+   - Allow ADMIN, SUPER_ADMIN, or HUSTLER to change tradeType using a dropdown.
+   - Trade dropdown options must come from shared/schema.ts tradeTypeEnum.
+
+2. When tradeType is changed:
+   - Backend endpoint: POST /api/organization/update-trade-type
+   - Validate:
+        - Only ADMIN, SUPER_ADMIN, or HUSTLER can change.
+        - New tradeType is valid.
+   - If tradeType changes:
+        - Re-run the SOW initialization logic:
+            - If GENERAL_CONTRACTOR → load all master SOW items.
+            - If OTHER → leave existing items, do not overwrite custom.
+            - Otherwise → load SOW items for that trade.
+        - Deactivate old SOW items instead of deleting.
+
+3. In the Scope/SOW Settings page:
+   - Add a header badge:
+        “Trade Type: {TRADE_TYPE}”
+   - Color-code:
+        GENERAL_CONTRACTOR → blue
+        OTHER → yellow
+        others → gray
+
+===============================================================
+PHASE B — Add Onboarding Review Step Before Finalizing Account
+===============================================================
+
+Add a new step called “Review Your Trade Setup” BEFORE onboarding completes.
+
+This review page must show:
+
+- “Detected Trade Type: ROOFING / CONCRETE / GENERAL_CONTRACTOR / OTHER”
+- If OTHER → show tradeName
+- List the SOW categories that will be initialized for the user
+    Example:
+      Concrete:
+        - Flatwork
+        - Foundations
+        - Reinforcement
+      Roofing:
+        - Tear-off
+        - Underlayment
+        - Shingles
+- Show a confirmation prompt:
+      “Does this look correct?”
+
+Buttons:
+- YES, finalize setup → continue onboarding normally
+- NO, change trade → return to the trade selection step and allow modification
+
+Backend:
+- On "No, change trade":
+    - Do not create the organization yet.
+    - Allow the user to select a new tradeType.
+    - Continue the onboarding flow.
+
+==========================================================
+PHASE C — Post-Onboarding Trade Correction Flow (Admin Only)
+==========================================================
+
+Add backend endpoint:
+
+    POST /api/organization/reinitialize-sow
+
+Requires role: ADMIN, SUPER_ADMIN, or HUSTLER.
+
+When triggered:
+
+1. Deactivate current SOW items (do not delete).
+2. Re-run initialization based on the organization’s updated tradeType.
+3. Return list of newly created SOW categories for UI display.
+
+Frontend:
+- Add button in Organization Settings:
+      “Rebuild SOW Items from Trade Type”
+- Warn user:
+      “This will regenerate SOW templates. Custom items will remain active.”
+
+===================================================================
+PHASE D — Improvements & Optional Features (Implement All of These)
+===================================================================
+
+D1 — Improve AI Trade Mapping (Post-Processing Layer)
+-----------------------------------------------------
+
+Add a post-processing function in aiRoutes.ts:
+
+after AI extracts tradeType:
+
+If user message contains keywords:
+- ["builder","general contractor","we manage subs","we oversee jobs"]
+      → override to GENERAL_CONTRACTOR
+
+If message contains both:
+- concrete keywords AND sitework keywords
+      → prefer EARTHWORK
+
+If message mentions:
+- multiple trades (“we do concrete, roofing, electrical”)
+      → GENERAL_CONTRACTOR
+
+Place this logic immediately after AI extraction but before validation.
+
+D2 — Improve Organization Switcher (Hustler UX)
+------------------------------------------------
+
+Replace:
+    window.location.reload()
+
+With:
+- Update active organization in auth context
+- Invalidate React Query caches
+- Re-fetch:
+    - /api/projects
+    - /api/sow-items
+    - /api/notifications
+    - /api/tasks
+
+D3 — Create sow_audit_log table
+---------------------------------
+
+New table:
+
+CREATE TABLE sow_audit_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  user_id UUID NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,  -- "CREATE", "UPDATE", "DEACTIVATE"
+  sow_code TEXT,
+  timestamp TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+Log entries whenever:
+- SOW items are created
+- SOW items are edited
+- SOW items are deactivated
+- SOW is regenerated due to trade change
+
+D4 — Add production rate unit tests (basic)
+--------------------------------------------
+
+Create test file:
+tests/productionRateService.test.ts
+
+Add unit tests for:
+- avgPerDay accuracy
+- median calculation for odd/even sets
+- confidence scoring thresholds
+
+Only require simple deterministic inputs.
+
+===============================================================
+WHEN COMPLETE — Output:
+===============================================================
+
+1. List of all files modified.
+2. Any new components or backend routes created.
+3. Any migrations added.
+4. Instructions for restarting backend and running migrations.
+
+DO NOT apply unrelated refactors.
+DO NOT modify SOW logic outside the described enhancements.
+

@@ -633,6 +633,290 @@ router.get("/ai/onboarding/units", async (req: AuthRequest, res) => {
   }
 });
 
+// AI trade type mapping - normalizes user inputs to valid trade type enums
+const TRADE_TYPE_ALIASES: Record<string, string> = {
+  // GENERAL_CONTRACTOR - full phrases and variations
+  'gc': 'GENERAL_CONTRACTOR',
+  'general': 'GENERAL_CONTRACTOR',
+  'general contractor': 'GENERAL_CONTRACTOR',
+  'general contracting': 'GENERAL_CONTRACTOR',
+  'builder': 'GENERAL_CONTRACTOR',
+  'home builder': 'GENERAL_CONTRACTOR',
+  'residential builder': 'GENERAL_CONTRACTOR',
+  'commercial builder': 'GENERAL_CONTRACTOR',
+  'construction company': 'GENERAL_CONTRACTOR',
+  'construction contractor': 'GENERAL_CONTRACTOR',
+  'custom home builder': 'GENERAL_CONTRACTOR',
+  'design build': 'GENERAL_CONTRACTOR',
+  'general construction': 'GENERAL_CONTRACTOR',
+  
+  // ELECTRICAL
+  'electrician': 'ELECTRICAL',
+  'electric': 'ELECTRICAL',
+  'electrical': 'ELECTRICAL',
+  'electrical contractor': 'ELECTRICAL',
+  'electrical company': 'ELECTRICAL',
+  'wiring': 'ELECTRICAL',
+  'electrical work': 'ELECTRICAL',
+  'commercial electrical': 'ELECTRICAL',
+  'residential electrical': 'ELECTRICAL',
+  
+  // PLUMBING
+  'plumber': 'PLUMBING',
+  'plumbing': 'PLUMBING',
+  'plumbing contractor': 'PLUMBING',
+  'plumbing company': 'PLUMBING',
+  'plumber contractor': 'PLUMBING',
+  'pipe fitting': 'PLUMBING',
+  'pipefitting': 'PLUMBING',
+  
+  // HVAC
+  'hvac': 'HVAC',
+  'heating': 'HVAC',
+  'air conditioning': 'HVAC',
+  'ac': 'HVAC',
+  'hvac contractor': 'HVAC',
+  'hvac company': 'HVAC',
+  'hvac tech': 'HVAC',
+  'hvac technician': 'HVAC',
+  'heating and cooling': 'HVAC',
+  'heating cooling': 'HVAC',
+  'mechanical contractor': 'HVAC',
+  'refrigeration': 'HVAC',
+  
+  // ROOFING
+  'roofer': 'ROOFING',
+  'roofing': 'ROOFING',
+  'roofing contractor': 'ROOFING',
+  'roofing company': 'ROOFING',
+  'shingle': 'ROOFING',
+  'shingler': 'ROOFING',
+  'roof repair': 'ROOFING',
+  'roof replacement': 'ROOFING',
+  'commercial roofing': 'ROOFING',
+  'residential roofing': 'ROOFING',
+  
+  // CONCRETE
+  'concrete': 'CONCRETE',
+  'cement': 'CONCRETE',
+  'flatwork': 'CONCRETE',
+  'concrete contractor': 'CONCRETE',
+  'concrete company': 'CONCRETE',
+  'concrete work': 'CONCRETE',
+  'concrete finisher': 'CONCRETE',
+  'foundation': 'CONCRETE',
+  'foundation contractor': 'CONCRETE',
+  'slab work': 'CONCRETE',
+  
+  // FRAMING
+  'framing': 'FRAMING',
+  'carpentry': 'FRAMING',
+  'framer': 'FRAMING',
+  'wood framing': 'FRAMING',
+  'framing contractor': 'FRAMING',
+  'framing company': 'FRAMING',
+  'carpenter': 'FRAMING',
+  'rough carpentry': 'FRAMING',
+  'structural framing': 'FRAMING',
+  
+  // DRYWALL
+  'drywall': 'DRYWALL',
+  'sheetrock': 'DRYWALL',
+  'drywall installation': 'DRYWALL',
+  'drywall contractor': 'DRYWALL',
+  'drywall company': 'DRYWALL',
+  'drywall hanging': 'DRYWALL',
+  'drywall taping': 'DRYWALL',
+  'drywall finishing': 'DRYWALL',
+  
+  // PAINTING
+  'painting': 'PAINTING',
+  'painter': 'PAINTING',
+  'painting contractor': 'PAINTING',
+  'painting company': 'PAINTING',
+  'house painter': 'PAINTING',
+  'commercial painter': 'PAINTING',
+  'residential painter': 'PAINTING',
+  'paint': 'PAINTING',
+  
+  // FLOORING
+  'flooring': 'FLOORING',
+  'floor': 'FLOORING',
+  'hardwood': 'FLOORING',
+  'carpet': 'FLOORING',
+  'flooring contractor': 'FLOORING',
+  'flooring company': 'FLOORING',
+  'flooring co': 'FLOORING',
+  'floor installation': 'FLOORING',
+  'vinyl flooring': 'FLOORING',
+  'laminate': 'FLOORING',
+  
+  // LANDSCAPING
+  'landscaping': 'LANDSCAPING',
+  'yard work': 'LANDSCAPING',
+  'lawn care': 'LANDSCAPING',
+  'lawn': 'LANDSCAPING',
+  'landscaper': 'LANDSCAPING',
+  'landscape contractor': 'LANDSCAPING',
+  'landscape company': 'LANDSCAPING',
+  'hardscape': 'LANDSCAPING',
+  'softscape': 'LANDSCAPING',
+  'irrigation': 'LANDSCAPING',
+  
+  // DEMOLITION
+  'demolition': 'DEMOLITION',
+  'demo': 'DEMOLITION',
+  'teardown': 'DEMOLITION',
+  'demolition contractor': 'DEMOLITION',
+  'demolition company': 'DEMOLITION',
+  'tear out': 'DEMOLITION',
+  'strip out': 'DEMOLITION',
+  
+  // MASONRY
+  'masonry': 'MASONRY',
+  'brick': 'MASONRY',
+  'stone': 'MASONRY',
+  'stonework': 'MASONRY',
+  'brickwork': 'MASONRY',
+  'mason': 'MASONRY',
+  'masonry contractor': 'MASONRY',
+  'masonry company': 'MASONRY',
+  'block work': 'MASONRY',
+  'block layer': 'MASONRY',
+  
+  // INSULATION
+  'insulation': 'INSULATION',
+  'thermal': 'INSULATION',
+  'spray foam': 'INSULATION',
+  'insulation contractor': 'INSULATION',
+  'insulation company': 'INSULATION',
+  'insulator': 'INSULATION',
+  'blown insulation': 'INSULATION',
+  'batt insulation': 'INSULATION',
+  
+  // WINDOWS_DOORS
+  'windows doors': 'WINDOWS_DOORS',
+  'window': 'WINDOWS_DOORS',
+  'door': 'WINDOWS_DOORS',
+  'windows': 'WINDOWS_DOORS',
+  'doors': 'WINDOWS_DOORS',
+  'window installation': 'WINDOWS_DOORS',
+  'door installation': 'WINDOWS_DOORS',
+  'window contractor': 'WINDOWS_DOORS',
+  'door contractor': 'WINDOWS_DOORS',
+  'glazing': 'WINDOWS_DOORS',
+  'glass': 'WINDOWS_DOORS',
+  
+  // SIDING
+  'siding': 'SIDING',
+  'exterior': 'SIDING',
+  'vinyl siding': 'SIDING',
+  'siding contractor': 'SIDING',
+  'siding company': 'SIDING',
+  'exterior cladding': 'SIDING',
+  'hardie board': 'SIDING',
+  'james hardie': 'SIDING',
+  
+  // TILE
+  'tile': 'TILE',
+  'tiling': 'TILE',
+  'tile work': 'TILE',
+  'backsplash': 'TILE',
+  'tile contractor': 'TILE',
+  'tile company': 'TILE',
+  'ceramic tile': 'TILE',
+  'porcelain tile': 'TILE',
+  'tile setter': 'TILE',
+  
+  // CABINETRY
+  'cabinetry': 'CABINETRY',
+  'cabinet': 'CABINETRY',
+  'cabinets': 'CABINETRY',
+  'cabinet installation': 'CABINETRY',
+  'cabinet contractor': 'CABINETRY',
+  'cabinet maker': 'CABINETRY',
+  'kitchen cabinets': 'CABINETRY',
+  'custom cabinets': 'CABINETRY',
+  
+  // COUNTERTOPS
+  'countertops': 'COUNTERTOPS',
+  'countertop': 'COUNTERTOPS',
+  'granite': 'COUNTERTOPS',
+  'quartz': 'COUNTERTOPS',
+  'countertop installation': 'COUNTERTOPS',
+  'countertop contractor': 'COUNTERTOPS',
+  'stone fabrication': 'COUNTERTOPS',
+  'marble': 'COUNTERTOPS',
+  
+  // FENCING
+  'fencing': 'FENCING',
+  'fence': 'FENCING',
+  'fences': 'FENCING',
+  'fence contractor': 'FENCING',
+  'fence company': 'FENCING',
+  'fence installation': 'FENCING',
+  'fence builder': 'FENCING',
+  
+  // DECKING
+  'decking': 'DECKING',
+  'deck': 'DECKING',
+  'deck building': 'DECKING',
+  'patio': 'DECKING',
+  'deck contractor': 'DECKING',
+  'deck company': 'DECKING',
+  'deck builder': 'DECKING',
+  'outdoor living': 'DECKING',
+  'pergola': 'DECKING',
+  
+  // SOLAR
+  'solar': 'SOLAR',
+  'solar panel': 'SOLAR',
+  'solar installation': 'SOLAR',
+  'photovoltaic': 'SOLAR',
+  'pv': 'SOLAR',
+  'solar contractor': 'SOLAR',
+  'solar company': 'SOLAR',
+  'solar installer': 'SOLAR',
+  'renewable energy': 'SOLAR',
+};
+
+/**
+ * Post-process AI-extracted trade type to ensure valid enum value.
+ * Maps common variations, abbreviations, and misspellings to valid trade types.
+ */
+function normalizeTradeType(extractedType: string | null | undefined): string | null {
+  if (!extractedType) return null;
+  
+  const normalized = extractedType.toLowerCase().trim();
+  
+  // Check if it's already a valid trade type
+  const validTypes = ['GENERAL_CONTRACTOR', 'ELECTRICAL', 'PLUMBING', 'HVAC', 'ROOFING', 
+    'CONCRETE', 'FRAMING', 'DRYWALL', 'PAINTING', 'FLOORING', 'LANDSCAPING', 'DEMOLITION',
+    'MASONRY', 'INSULATION', 'WINDOWS_DOORS', 'SIDING', 'TILE', 'CABINETRY', 'COUNTERTOPS',
+    'FENCING', 'DECKING', 'SOLAR', 'OTHER'];
+  
+  // Direct match (case-insensitive)
+  const upperType = extractedType.toUpperCase().replace(/\s+/g, '_');
+  if (validTypes.includes(upperType)) {
+    return upperType;
+  }
+  
+  // Check aliases
+  if (TRADE_TYPE_ALIASES[normalized]) {
+    return TRADE_TYPE_ALIASES[normalized];
+  }
+  
+  // Partial match - find the best match based on keywords
+  for (const [alias, tradeType] of Object.entries(TRADE_TYPE_ALIASES)) {
+    if (normalized.includes(alias) || alias.includes(normalized)) {
+      return tradeType;
+    }
+  }
+  
+  // No match found - return OTHER for custom trades
+  return 'OTHER';
+}
+
 // Helper to get SOW suggestions for a trade from database
 async function getSowSuggestionsForTrade(tradeType: string): Promise<string[]> {
   const items = await db
