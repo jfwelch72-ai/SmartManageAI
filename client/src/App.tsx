@@ -61,6 +61,7 @@ import SubcontractsPage from "@/pages/subcontracts";
 import WebsiteBuilderPage from "@/pages/website-builder";
 import BidWizardPage from "@/pages/bid-wizard";
 import EmailAssistantPage from "@/pages/email-assistant";
+import HustlerDashboard from "@/pages/hustler-dashboard";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -185,6 +186,9 @@ function Router() {
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      
+      {/* Hustler Multi-Organization routes (HUSTLER only) */}
+      <Route path="/hustler" component={() => <ProtectedRoute component={HustlerDashboard} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       
       <Route component={NotFound} />
     </Switch>

@@ -117,9 +117,9 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 }
 
 // Type for all valid user roles (must match userRoleEnum in schema.ts)
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER";
 
-// Middleware to require specific roles (all 9 roles supported including SUPER_ADMIN)
+// Middleware to require specific roles (all 10 roles supported including SUPER_ADMIN and HUSTLER)
 export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {

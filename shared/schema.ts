@@ -4,7 +4,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Enums
-export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR"]);
+export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER"]);
 export const projectStatusEnum = pgEnum("project_status", ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"]);
 export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
 export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["MANUAL", "TAKEOFF", "GENERATED"]);
@@ -5037,6 +5037,25 @@ export const userColorPalettes = pgTable("user_color_palettes", {
 export const insertUserColorPaletteSchema = createInsertSchema(userColorPalettes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserColorPalette = z.infer<typeof insertUserColorPaletteSchema>;
 export type UserColorPalette = typeof userColorPalettes.$inferSelect;
+
+// Hustler Multi-Organization System
+// Allows HUSTLER role users to own/manage multiple organizations
+export const hustlerOrganizations = pgTable("hustler_organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  roleOverride: userRoleEnum("role_override"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("hustler_org_user_idx").on(table.userId),
+  orgIdx: index("hustler_org_org_idx").on(table.organizationId),
+  userOrgUnique: unique("hustler_org_user_org_unique").on(table.userId, table.organizationId),
+}));
+
+export const insertHustlerOrganizationSchema = createInsertSchema(hustlerOrganizations).omit({ id: true, createdAt: true });
+export type InsertHustlerOrganization = z.infer<typeof insertHustlerOrganizationSchema>;
+export type HustlerOrganization = typeof hustlerOrganizations.$inferSelect;
 
 // Dashboard Widget Configuration Type (for layout JSON)
 export interface DashboardWidgetConfig {

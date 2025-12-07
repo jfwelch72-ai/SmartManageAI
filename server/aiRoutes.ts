@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
-import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, organizationSowItems, unitsOfMeasure } from "@shared/schema";
+import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, organizations, users, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, organizationSowItems, unitsOfMeasure, hustlerOrganizations } from "@shared/schema";
+import { logInfo, logError, logWarn } from "./utils/logger";
 import { eq, desc, and, sql, asc } from "drizzle-orm";
 import { 
   runAIAnalysis, 
@@ -798,6 +799,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     // Validate and sanitize input
     const validationResult = onboardingCompleteSchema.safeParse(req.body);
     if (!validationResult.success) {
+      logError(`[Onboarding] Validation failed for user ${req.user.id}: ${fromZodError(validationResult.error).toString()}`);
       return res.status(400).json({ 
         error: "Invalid input", 
         details: fromZodError(validationResult.error).toString() 
@@ -809,8 +811,25 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       customSowItems, customWorkTypes, customCalculators 
     } = validationResult.data;
 
-    // Prevent users who already have an organization from creating another
-    if (req.user.organizationId) {
+    // CRITICAL: Explicit trade type validation - NEVER fallback to CONCRETE
+    const validTradeTypes = tradeTypeEnum.enumValues;
+    if (!validTradeTypes.includes(tradeType as any)) {
+      logError(`[Onboarding] INVALID trade type attempted: "${tradeType}" by user ${req.user.id}`);
+      return res.status(400).json({ 
+        error: "Invalid trade type", 
+        message: `Trade type "${tradeType}" is not valid. Valid options: ${validTradeTypes.join(', ')}` 
+      });
+    }
+
+    // Log the onboarding attempt for debugging
+    logInfo(`[Onboarding] Starting for user ${req.user.id} | trade: ${tradeType} | company: ${companyName}`);
+
+    // Check if user is a HUSTLER - they can create multiple organizations
+    const isHustler = req.user.role === 'HUSTLER';
+    
+    // Prevent non-Hustler users who already have an organization from creating another
+    if (req.user.organizationId && !isHustler) {
+      logWarn(`[Onboarding] Non-Hustler user ${req.user.id} already has org ${req.user.organizationId}`);
       return res.status(400).json({ error: "You already belong to an organization" });
     }
 
@@ -851,18 +870,45 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     }).returning();
 
     // Update the user to belong to this organization
-    await db.update(users)
-      .set({ 
+    // For Hustlers creating additional orgs, we don't change their primary organizationId
+    if (isHustler) {
+      // Link Hustler to this new organization via junction table
+      await db.insert(hustlerOrganizations).values({
+        userId: req.user.id,
         organizationId: newOrg.id,
-        role: 'ADMIN', // First user becomes admin
-        isActive: true 
-      })
-      .where(eq(users.id, req.user.id));
+        roleOverride: 'ADMIN', // Hustler gets ADMIN role in new org
+        isActive: true,
+      }).onConflictDoNothing();
+      
+      // If Hustler has no primary org, set this as their primary
+      if (!req.user.organizationId) {
+        await db.update(users)
+          .set({ 
+            organizationId: newOrg.id,
+            isActive: true 
+          })
+          .where(eq(users.id, req.user.id));
+      }
+      
+      logInfo(`[Onboarding] Hustler ${req.user.id} linked to new org ${newOrg.id}`);
+    } else {
+      // Standard user - set as their primary organization
+      await db.update(users)
+        .set({ 
+          organizationId: newOrg.id,
+          role: 'ADMIN', // First user becomes admin
+          isActive: true 
+        })
+        .where(eq(users.id, req.user.id));
+    }
 
     // Copy master SOW items from database template to organization
     // GENERAL_CONTRACTOR gets ALL trade items for multi-trade coordination
     // CUSTOM (OTHER) trades get items created from user input
     const isGeneralContractor = tradeType === 'GENERAL_CONTRACTOR';
+    
+    // LOGGING: Track SOW generation for debugging
+    logInfo(`[Onboarding] SOW generation | isGC: ${isGeneralContractor} | isCustom: ${isCustomTrade} | trade: ${tradeType}`);
     
     if (isCustomTrade) {
       // ============================================
@@ -1167,12 +1213,17 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
       });
     }
 
+    // Final success logging
+    logInfo(`[Onboarding] SUCCESS | org: ${newOrg.id} | trade: ${tradeType} | isHustler: ${isHustler} | company: ${orgName}`);
+
     res.json({ 
       success: true, 
       organization: newOrg,
-      message: "Your account has been configured successfully!" 
+      message: "Your account has been configured successfully!",
+      isHustler,
     });
   } catch (error: any) {
+    logError(`[Onboarding] FAILED: ${error.message || "Unknown error"}`);
     console.error("Onboarding complete error:", error.message || "Unknown error");
     res.status(500).json({ error: "Failed to complete onboarding. Please try again." });
   }

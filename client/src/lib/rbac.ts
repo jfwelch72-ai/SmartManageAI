@@ -10,9 +10,10 @@
  * - MAINTENANCE_MANAGER: Full access to equipment management and receives maintenance/repair requests
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
  * - VENDOR: External vendor portal access - submit pricing to enrolled clients, view enrollments (NO contractor features)
+ * - HUSTLER: Multi-organization role - can switch between linked organizations with management-level access
  */
 
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER";
 
 /**
  * Check if user is a super admin (platform level - NO contractor features)
@@ -57,20 +58,30 @@ export function isHourlyEmployee(role?: string): boolean {
 }
 
 /**
+ * Check if user is a HUSTLER (multi-organization role)
+ */
+export function isHustler(role?: string): boolean {
+  return role === "HUSTLER";
+}
+
+/**
  * Check if user has contractor-level access (excludes SUPER_ADMIN who only does platform admin)
+ * HUSTLER role has contractor access to work across their organizations
  */
 export function hasContractorAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
          role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER" ||
-         role === "HOURLY_EMPLOYEE";
+         role === "HOURLY_EMPLOYEE" || role === "HUSTLER";
 }
 
 /**
  * Check if user has management-level access within an organization (not hourly employee, not super admin)
+ * HUSTLER role has management access to work across their organizations
  */
 export function hasManagementAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
-         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER";
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER" ||
+         role === "HUSTLER";
 }
 
 /**

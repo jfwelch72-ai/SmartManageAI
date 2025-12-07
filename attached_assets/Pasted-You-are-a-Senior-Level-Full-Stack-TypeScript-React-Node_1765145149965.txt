@@ -1,0 +1,219 @@
+You are a Senior-Level Full-Stack TypeScript/React/Node/Drizzle engineer working inside the SmartManageAI repository inside Replit.
+
+Your task is to:
+1. Diagnose the SOW onboarding bug (some users always get Concrete SOW)
+2. Fix the onboarding system so SOW ALWAYS matches the user’s selected trade
+3. Implement a new “HUSTLER” user type that can own/manage MULTIPLE organizations
+4. Integrate the Hustler UX into the frontend
+5. Preserve ALL existing multi-tenant isolation rules
+6. Run a full code audit, typecheck, and build, then produce a final summary of all changes.
+
+===================================================================
+PHASE 0 — REPO ANALYSIS (DO THIS FIRST)
+===================================================================
+
+Before modifying any files:
+
+1. Scan the repo for:
+   - shared/schema.ts
+   - server/aiRoutes.ts
+   - server/routes.ts
+   - server/aiAssistantRoutes.ts
+   - server/auth + middleware
+   - client/src/components
+   - client/src/pages
+
+2. Produce only a **short internal reasoning summary** (not printed to chat) of:
+   - How SOW onboarding currently works
+   - Where tradeType is determined
+   - Where SOW items are copied from masterSowItems → organizationSowItems
+   - Where fallback logic exists that may cause a forced CONCRETE template
+   - How req.user.organizationId is currently used in the system
+
+After internal reasoning → begin implementation below.
+
+===================================================================
+PHASE 1 — FIX SOW GENERATION / ONBOARDING BUG
+===================================================================
+
+Goal: Ensure onboarding *always* loads the correct trade SOW instead of defaulting to CONCRETE.
+
+Required changes:
+
+1. In server/aiRoutes.ts inside `/ai/onboarding/complete`:
+   - Validate tradeType strictly against tradeTypeEnum OR “OTHER”.
+   - If tradeType is invalid or null → return explicit error (do NOT silently use CONCRETE).
+   - Add logging for:
+     - tradeType detected
+     - isGeneralContractor
+     - isCustomTrade
+     - number of SOW items copied
+
+2. Ensure the following logic is correct:
+   - tradeType = GENERAL_CONTRACTOR → pull ALL masterSowItems for ALL trades
+   - tradeType = ANY PRESET TRADE → pull ONLY that trade’s masterSowItems
+   - tradeType = OTHER → generate ONLY customSowItems provided by onboarding
+
+3. In server/routes.ts:
+   - Ensure /api/scope/work-types **never** defaults to CONCRETE.
+   - If org has org-specific SOW items → use ONLY THOSE.
+   - If fallback is needed, fallback to tradeType-specific masterSowItems, not Concrete.
+
+4. Add SOW onboarding tests:
+   - Create sample onboarding inputs for:
+     A) tradeType = ROOFING
+     B) tradeType = ELECTRICAL
+     C) tradeType = OTHER with custom items
+   - Assert correct SOW items exist after org creation.
+
+===================================================================
+PHASE 2 — IMPLEMENT “HUSTLER” MULTI-ORGANIZATION USER MODEL
+===================================================================
+
+Architecture: Option A = “user can own Many Organizations via join table”.
+
+### 2.1 Schema Updates (shared/schema.ts)
+Modify the schema as follows:
+
+1. Add “HUSTLER” to userRoleEnum.
+
+2. Create new table: hustlerOrganizations
+   Columns:
+   - id (uuid, primary key)
+   - userId → references users(id) ON DELETE CASCADE
+   - organizationId → references organizations(id)
+   - roleOverride (nullable userRoleEnum)
+   - createdAt default now()
+
+   Indexes:
+   - userId index
+   - organizationId index
+   - unique(userId, organizationId)
+
+3. Create migration file for the above.
+
+### 2.2 Backend Logic
+
+Modify auth/session system:
+
+- Allow user.role === “HUSTLER”.
+- A HUSTLER can be linked to multiple orgs via hustlerOrganizations table.
+- Add middleware for determining activeOrganizationId:
+
+Logic:
+1. If user is NOT HUSTLER → continue using req.user.organizationId
+2. If user IS HUSTLER:
+   - Read organizationId from:
+     - header: X-Org-Id
+     - OR query param: ?orgId=
+   - Validate that the user belongs to that org via hustlerOrganizations
+   - Reject access with 404 if not linked
+
+Expose new Hustler routes: `/api/hustler/*`
+
+### New API Endpoints
+
+1. GET /api/hustler/organizations
+   - Return orgs the hustler is linked to
+
+2. POST /api/hustler/link-organization
+   - Body: { organizationId, roleOverride }
+   - Link a new org to the hustler (if not already)
+
+3. POST /api/hustler/switch-organization
+   - Body: { organizationId }
+   - Validate membership
+   - Update session token with active organizationId
+
+### 2.3 Link Onboarding to Hustler
+
+Modify onboarding completion:
+- If the current user is HUSTLER:
+  - After creating new organization:
+    - Add row in hustlerOrganizations linking user → org
+    - Default roleOverride = ADMIN
+
+===================================================================
+PHASE 3 — FRONTEND IMPLEMENTATION
+===================================================================
+
+Add Hustler UI components:
+
+### 3.1 Organization Switcher (Header component)
+Component should:
+- Show active org name
+- Dropdown listing linked orgs
+- Call /api/hustler/switch-organization
+- Trigger full React Query invalidation
+
+### 3.2 Hustler Dashboard Page
+Show:
+- List of organizations
+- Ability to link new orgs (optional)
+- Cards with:
+  - org name
+  - trade type
+  - # projects (optional)
+  - button: “Switch to this org”
+
+### 3.3 Guarding
+- If user.role !== “HUSTLER” → do not show switcher or dashboard.
+
+===================================================================
+PHASE 4 — GLOBAL AUDIT / FIX
+===================================================================
+
+Perform a *complete code audit* for:
+
+- Imports
+- Unused code
+- Type errors
+- Missing tradeType checks
+- Missing organizationId guards
+- Incorrect role checks
+- Incorrect SOW item mappings
+- Fallbacks that still force CONCRETE trade
+- Broken pages / components
+
+Fix EVERYTHING that is safe and low-risk.
+
+===================================================================
+PHASE 5 — TYPECHECK & BUILD
+===================================================================
+
+Run:
+- npx tsc --noEmit
+- npm run build
+
+Then provide a human-readable summary:
+
+- ✔️ Did typecheck pass?
+- ✔️ Did build pass?
+- ❌ If errors remain: list each file + cause + recommended fix (DO NOT paste huge logs)
+
+===================================================================
+PHASE 6 — FINAL OUTPUT
+===================================================================
+
+At the end, produce a final summary that includes:
+
+### SOW FIX SUMMARY
+- What bug was found
+- What was corrected
+- How tradeType is now safely determined
+- How fallback behavior was hardened
+
+### HUSTLER SYSTEM SUMMARY
+- New schema tables
+- New backend routes
+- Updated session logic
+- Updated frontend components
+- How isolation is enforced
+
+### FILES CHANGED
+List ALL edited files.
+
+### NEXT STEPS
+Provide recommended follow-up improvements.
+
+BEGIN NOW.

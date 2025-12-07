@@ -12,7 +12,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 **Frontend**: React with TypeScript, Wouter for routing, TanStack Query for data management, styled with Tailwind CSS and shadcn/ui.
 **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
 **Database**: PostgreSQL on Neon, managed with Drizzle ORM.
-**Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across eight user roles, including a platform-level SUPER_ADMIN.
+**Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across ten user roles, including platform-level SUPER_ADMIN and multi-organization HUSTLER roles.
 **Security**: Multi-layered protection including rate limiting, comprehensive audit logging, file validation, and multi-tenant access control with `mustDenyAccess` pattern to prevent cross-tenant data leaks.
 
 **Key Architectural Decisions & Features**:
@@ -36,6 +36,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Labor Cost Rate Management System**: Calculates employee costs using job classifications, employee assignments, and prevailing wage rates, with a defined rate resolution priority.
 *   **AI-Powered Bid Wizard**: A multi-step bid creation workflow featuring AI document analysis (OpenAI GPT-4o) to extract project information and scope items from uploaded documents, followed by estimation.
 *   **Dashboard Customization System**: Comprehensive user dashboard personalization with admin-controlled permissions, edit mode toggle for safe widget management, and customizable color schemes. Features WCAG AA accessibility compliance (4.5:1 contrast ratio validation), preset themes (Default Blue, Forest Green, Sunset Orange, Ocean Blue, Royal Purple), and live preview with validation to prevent invisible text/buttons. Database tables: user_dashboard_permissions, user_dashboard_layouts, user_color_palettes.
+*   **HUSTLER Multi-Organization System**: Specialized user role for users who manage multiple organizations. Features junction table (`hustlerOrganizations`) linking users to multiple orgs with optional role overrides, organization switcher UI component in header, and dedicated dashboard at `/hustler`. API endpoints: `/api/hustler/organizations` (list), `/api/hustler/link-organization`, `/api/hustler/switch-organization`, `/api/hustler/unlink-organization/:id`, `/api/hustler/current-role`. HUSTLER users have management-level access equivalent to ADMIN/MANAGER roles.
 
 *   **Unified Task Model**: Tasks table consolidates manual, email-originated, and AI-generated tasks with sourceType enum (EMAIL/MANUAL/AI_GENERATED/SYSTEM). Email-specific fields (emailThreadId, emailMessageId) enable email-to-task linking. Deprecated: email_tasks table (use unified tasks table instead).
 *   **Operational Infrastructure**: Logger utility (server/utils/logger.ts) with levels (debug/info/warn/error), monitoring hooks (server/utils/monitoring.ts) for response time and error tracking, health endpoint (/healthz) and readiness probe (/readyz) for deployment and load balancer integration.

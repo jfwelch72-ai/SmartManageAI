@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
+import { OrganizationSwitcher } from "./OrganizationSwitcher";
 
 const AI_ASSISTANT_STORAGE_KEY = "smartmanage-ai-assistant-enabled";
 
@@ -75,6 +76,7 @@ export default function TopHeader() {
       <div className="flex h-14 items-center justify-between px-4 gap-4">
         <div className="flex items-center gap-2">
           <SidebarTrigger data-testid="button-sidebar-toggle" />
+          {userRole === 'HUSTLER' && <OrganizationSwitcher />}
         </div>
 
         <div className="flex items-center gap-2">

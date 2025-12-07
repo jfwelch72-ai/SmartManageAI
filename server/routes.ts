@@ -86,6 +86,7 @@ import emailAccountRoutes from "./emailAccountRoutes";
 import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import opsRoutes from "./opsRoutes";
+import hustlerRoutes from "./hustlerRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -174,6 +175,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Dashboard Customization routes
   app.use("/api/dashboard", dashboardCustomizationRoutes);
+
+  // Register Hustler Multi-Organization routes
+  app.use("/api", hustlerRoutes);
 
   // ====================
   // Auth Routes
