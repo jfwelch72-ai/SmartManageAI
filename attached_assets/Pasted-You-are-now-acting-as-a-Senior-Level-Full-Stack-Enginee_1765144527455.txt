@@ -1,0 +1,116 @@
+You are now acting as a Senior Level Full-Stack Engineer reviewing the SmartManageAI codebase inside Replit.
+
+Your goal is to produce a FULL DIAGNOSTIC REPORT of the current system so future patches (SOW fixes + Hustler multi-org system) can be safely generated.
+
+Perform ALL of the following tasks in this exact order:
+
+=====================================================
+1. LIST FILES & STRUCTURE (TOP LEVEL + IMPORTANT SUBFOLDERS)
+=====================================================
+Scan and list the following directories recursively (only file names + paths, not contents):
+
+/server
+/shared
+/client/src
+/migrations
+/utils
+/hooks
+/components
+/routes
+
+Identify if any unexpected or leftover files exist from Cursor (e.g., debug exports, partial files, incomplete folders).
+
+=====================================================
+2. ENUM & ROLE INVENTORY
+=====================================================
+Extract and list:
+
+- tradeTypeEnum values
+- userRoleEnum values
+- any other enums referenced in onboarding, auth, organizations, or SOW logic
+
+Tell me if:
+- "HUSTLER" already exists anywhere
+- any duplicate or unused enums exist
+
+=====================================================
+3. ONBOARDING PIPELINE REPORT
+=====================================================
+Analyze the onboarding flow and output:
+
+- Which file handles trade detection?
+- Which file handles SOW generation?
+- Which file copies masterSowItems?
+- Which file handles custom/OTHER trades?
+- Which fallback mechanism is active?
+- Whether tradeType default logic exists anywhere (possibly forcing "CONCRETE")
+
+Flag any code paths that could cause SOW items to be loaded incorrectly.
+
+=====================================================
+4. SOW GENERATION SYSTEM DIAGNOSTIC
+=====================================================
+Report the presence and condition of all SOW-related systems:
+
+- masterSowItems table
+- organizationSowItems table
+- all SOW routes (search, suggest, add, work-types, onboarding)
+- Whether master templates exist for every trade
+
+Identify:
+- Which trades have entries in masterSowItems
+- Whether GENERAL_CONTRACTOR receives all trades as expected
+- Whether OTHER/custom trades follow the right path
+
+=====================================================
+5. MISSING OR PARTIAL FILE SEARCH
+=====================================================
+Search entire repo for keywords:
+
+"SOW"
+"tradeType"
+"onboarding"
+"masterSowItems"
+"generateTradeSpecificItems"
+"TODO"
+"Hustler"
+
+List:
+- Files containing these terms
+- Any TODOs specific to onboarding or SOW
+- Any incomplete Hustler references left by Cursor
+
+=====================================================
+6. TYPESCRIPT & BUILD HEALTH CHECK
+=====================================================
+Run (virtually simulate if needed):
+
+npx tsc --noEmit
+
+Report:
+- Total TypeScript errors
+- File names causing errors
+- Whether the errors are blocking or safe to ignore
+
+Also report:
+npm run build
+(if possible)
+
+Record whether the frontend and backend compile cleanly.
+
+=====================================================
+7. SUMMARY REPORT
+=====================================================
+Produce a final summary that includes:
+
+- Exact SOW onboarding state (working, partially broken, overwritten, etc.)
+- Whether the SOW bug is confirmed (tradeType inserting wrong templates)
+- Whether any Cursor artifacts need cleanup
+- Whether the repo is healthy enough to begin the Hustler system patch
+
+END OF INSTRUCTIONS.
+
+Do not fix anything yet.
+Do not create files yet.
+
+Only generate the FULL DIAGNOSTIC REPORT.
