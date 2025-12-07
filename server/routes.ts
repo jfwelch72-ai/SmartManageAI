@@ -306,6 +306,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
+  // DEV ONLY: Quick test login for development
+  app.post("/api/dev/test-login", async (req: AuthRequest, res) => {
+    // SECURITY: Only available in development mode
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    try {
+      const { role } = req.body;
+      const validRoles = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER"];
+      
+      if (!role || !validRoles.includes(role)) {
+        res.status(400).json({ error: "Invalid role", validRoles });
+        return;
+      }
+
+      // Find or create dev sandbox organization (for non-SUPER_ADMIN roles)
+      let devOrg = null;
+      if (role !== "SUPER_ADMIN") {
+        [devOrg] = await db
+          .select()
+          .from(organizations)
+          .where(eq(organizations.name, "Dev Sandbox Organization"))
+          .limit(1);
+
+        if (!devOrg) {
+          [devOrg] = await db.insert(organizations).values({
+            name: "Dev Sandbox Organization",
+            slug: "dev-sandbox-org",
+            email: "dev@sandbox.test",
+            tradeType: "GENERAL_CONTRACTOR",
+            isActive: true,
+            onboardingComplete: true,
+          }).returning();
+          console.log("[DEV] Created sandbox organization:", devOrg.id);
+        }
+      }
+
+      // Create test user email based on role
+      const testEmail = `test-${role.toLowerCase()}@dev.test`;
+      
+      // Find or create test user for this role
+      let [testUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, testEmail))
+        .limit(1);
+
+      if (!testUser) {
+        const passwordHash = await hashPassword("test123");
+        [testUser] = await db.insert(users).values({
+          firstName: "Test",
+          lastName: role.replace(/_/g, " "),
+          email: testEmail,
+          role: role as any,
+          isActive: true,
+          passwordHash,
+          organizationId: role === "SUPER_ADMIN" ? null : devOrg?.id,
+        }).returning();
+        console.log(`[DEV] Created test user: ${testEmail} (${role})`);
+      }
+
+      // Generate token and set cookie
+      const token = generateToken(testUser.id, testUser.tokenVersion);
+      setAuthCookie(res, token);
+
+      const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = testUser;
+      res.json({ 
+        user: userWithoutPassword,
+        message: `Logged in as ${role} test account`,
+        isDevAccount: true
+      });
+    } catch (error) {
+      console.error("[DEV] Test login error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get current user (with organization name if available)
   app.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
     try {
