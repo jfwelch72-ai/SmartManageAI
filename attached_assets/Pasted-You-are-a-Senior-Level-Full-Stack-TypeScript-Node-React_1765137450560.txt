@@ -1,0 +1,251 @@
+You are a Senior-Level Full-Stack TypeScript/Node/React/Postgres Engineer working inside the SmartManageAI repository.
+Cursor has already applied a major hardening & multi-tenant security refactor.
+Your job is to verify ALL of Cursor’s updates for correctness and completeness, and produce a full diagnostic report.
+
+DO NOT MAKE CODE CHANGES unless explicitly required for a failing test.
+Your job is audit + verify, not rewrite.
+
+✅ PART 1 – ENVIRONMENT & BUILD VERIFICATION
+
+Perform the following in order:
+
+Run:
+
+npm ci
+
+
+Apply migrations & schema sync:
+
+npm run db:push --force
+
+
+TypeScript build sanity:
+
+npm run typecheck || npx tsc --noEmit
+
+
+Build the full project:
+
+npm run build
+
+
+Record:
+
+All TypeScript errors
+
+All warnings
+
+Any schema drift
+
+Any missing imports
+
+Any build-time crashes
+
+✅ PART 2 – VERIFY CURSOR’S SECURITY + MULTI-TENANT FIXES
+
+Check the following backend modules:
+
+A. Multi-tenant org isolation
+
+Verify that all of these routes now enforce organizationId:
+
+/api/tasks/*
+
+/api/email/*
+
+/api/dashboard/*
+
+/api/production-rates/*
+
+AI assistant routes
+
+AI orchestrator & snapshot builder
+
+Walkthrough/onboarding routes
+
+Dashboard theme routes
+
+Any analytics or ops helper
+
+Ensure:
+
+They reject missing or mismatched organizationId
+
+All queries use eq(...organizationId...)
+
+404 behavior is uniform when org mismatch occurs
+
+List any routes missing org isolation.
+
+B. RBAC
+
+Confirm:
+
+Admin-only dashboard customization routes are protected
+
+Users tab respects customization permissions
+
+Non-admins cannot modify themes unless explicitly allowed
+
+C. Ops endpoints
+
+Verify:
+
+/healthz responds without auth
+
+/readyz performs DB probe
+
+/api/ops/status requires x-ops-token in production
+
+Rate limiter behaves correctly
+
+D. File upload safety
+
+Check:
+
+MIME type validation
+
+File size validation
+
+No raw fileUrl ingestion without safety checks
+
+No cross-org media leakage
+
+organizationId required on attach/upload
+
+✅ PART 3 – VERIFY FRONTEND WIRING
+
+Check these areas for correctness:
+
+A. App Root
+
+Ensure the app is wrapped in:
+
+<AuthProvider>
+  <DashboardCustomizationProvider>
+    ...
+
+B. Theme permissions UI
+
+Confirm:
+
+New Users tab shows customization toggles
+
+API calls properly hit /api/dashboard/permissions/:userId
+
+Unauthorized users cannot open theme editor
+
+C. AI Assistant + Walkthrough
+
+Verify:
+
+Onboarding flow personalizes using firstName
+
+Unassigned org users skip walkthrough
+
+Navigation hints appear correctly
+
+No invalid undefined checks
+
+✅ PART 4 – MIGRATION VERIFICATION
+
+Check migrations applied by Cursor:
+
+001_backfill_token_version.sql
+
+002_backfill_project_financials.sql
+
+New dashboard customization tables (3 tables)
+
+Verify:
+
+All referenced columns exist
+
+Foreign keys align with shared/schema.ts
+
+No missing indexes
+
+No breaking constraints
+
+✅ PART 5 – RUNTIME VERIFICATION
+
+Start the dev server:
+
+npm run dev
+
+
+Execute a runtime smoke test:
+
+Log in as an admin
+
+Log in as a normal user
+
+Switch themes + dashboard layout
+
+Create a task (email/AI/manual)
+
+Confirm:
+
+task isolation per org
+
+production rate analytics return only org-specific data
+
+Hit /healthz and /readyz
+
+Test /api/ops/status with/without token
+
+Record any crashes, 500s, or warnings.
+
+✅ PART 6 – FULL REPORT GENERATION
+
+Produce a structured report with:
+
+A. PASS / FAIL status for each category:
+
+Multi-tenant isolation
+
+RBAC
+
+Ops routes
+
+File upload validation
+
+Dashboard permissions
+
+AI orchestration
+
+Walkthrough personalization
+
+Migrations
+
+TypeScript/build correctness
+
+Frontend integration
+
+Runtime stability
+
+B. List all problematic files, missing guards, validation gaps, or regressions
+C. Recommend fixes ranked by severity:
+
+Critical
+
+High
+
+Medium
+
+Low
+
+D. Specify whether the Cursor patch is:
+
+Safe to merge
+
+Needs partial revision
+
+Unsafe to merge until issues fixed
+
+⚠️ IMPORTANT INSTRUCTION
+
+Do NOT refactor or modify source files unless I specifically authorize it.
+Only analyze, test, and report.
+
+End of Replit Agent Prompt
