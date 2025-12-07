@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator } from "lucide-react";
+import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -76,6 +77,7 @@ export default function OnboardingPage() {
   const [companyName, setCompanyName] = useState("");
   const [websiteInput, setWebsiteInput] = useState("");
   const [showCompanyInput, setShowCompanyInput] = useState(false);
+  const [showReviewStep, setShowReviewStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tradeResearch, setTradeResearch] = useState<TradeResearchResult | null>(null);
   const [isResearching, setIsResearching] = useState(false);
@@ -213,7 +215,7 @@ export default function OnboardingPage() {
             if (followUpData.step) setStep(followUpData.step);
             if (followUpData.isComplete) {
               setIsComplete(true);
-              setShowCompanyInput(true);
+              setShowReviewStep(true);
             }
           }
           return;
@@ -230,7 +232,7 @@ export default function OnboardingPage() {
       if (data.step) setStep(data.step);
       if (data.isComplete) {
         setIsComplete(true);
-        setShowCompanyInput(true);
+        setShowReviewStep(true);
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -367,25 +369,89 @@ export default function OnboardingPage() {
               </ScrollArea>
             </CardContent>
             <CardFooter className="pt-4">
-              {!showCompanyInput ? (
-                <div className="flex gap-2 w-full">
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Type your response..."
-                    disabled={isLoading || isResearching}
-                    data-testid="input-onboarding-message"
-                  />
-                  <Button 
-                    onClick={sendMessage} 
-                    disabled={isLoading || isResearching || !input.trim()}
-                    data-testid="button-send-message"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+              {showReviewStep && !showCompanyInput ? (
+                <div className="w-full space-y-4">
+                  <div className="flex items-center gap-2 text-primary">
+                    <Eye className="h-5 w-5" />
+                    <span className="font-semibold">Review Your Configuration</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Please review the information below before proceeding. You can go back to make changes or continue to finalize your setup.
+                  </p>
+                  
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Trade Type</p>
+                        <p className="text-sm font-medium" data-testid="review-trade-type">
+                          {extractedData.tradeName || extractedData.tradeType || 'Not specified'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Crew Size</p>
+                        <p className="text-sm font-medium" data-testid="review-crew-size">
+                          {extractedData.crewSize ? `${extractedData.crewSize} workers` : 'Not specified'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Region</p>
+                        <p className="text-sm font-medium" data-testid="review-region">
+                          {extractedData.region || 'Not specified'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Materials</p>
+                        <p className="text-sm font-medium" data-testid="review-materials">
+                          {extractedData.materials?.length ? `${extractedData.materials.length} items` : 'None specified'}
+                        </p>
+                      </div>
+                    </div>
+                    {extractedData.workTypes && extractedData.workTypes.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Work Types</p>
+                        <div className="flex flex-wrap gap-1">
+                          {extractedData.workTypes.slice(0, 5).map((type, idx) => (
+                            <Badge key={idx} variant="outline" className="text-xs">
+                              {type}
+                            </Badge>
+                          ))}
+                          {extractedData.workTypes.length > 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{extractedData.workTypes.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setShowReviewStep(false);
+                        setIsComplete(false);
+                      }}
+                      className="flex-1"
+                      data-testid="button-go-back"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Go Back
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        setShowReviewStep(false);
+                        setShowCompanyInput(true);
+                      }}
+                      className="flex-1"
+                      data-testid="button-confirm-continue"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Confirm & Continue
+                    </Button>
+                  </div>
                 </div>
-              ) : (
+              ) : showCompanyInput ? (
                 <div className="w-full space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="companyName">Company Name</Label>
@@ -411,18 +477,49 @@ export default function OnboardingPage() {
                       We'll match your platform colors to your brand
                     </p>
                   </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setShowCompanyInput(false);
+                        setShowReviewStep(true);
+                      }}
+                      data-testid="button-back-to-review"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back
+                    </Button>
+                    <Button 
+                      onClick={completeOnboarding} 
+                      className="flex-1"
+                      disabled={isSubmitting || !companyName.trim()}
+                      data-testid="button-complete-setup"
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                      )}
+                      Complete Setup
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2 w-full">
+                  <Input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Type your response..."
+                    disabled={isLoading || isResearching}
+                    data-testid="input-onboarding-message"
+                  />
                   <Button 
-                    onClick={completeOnboarding} 
-                    className="w-full"
-                    disabled={isSubmitting || !companyName.trim()}
-                    data-testid="button-complete-setup"
+                    onClick={sendMessage} 
+                    disabled={isLoading || isResearching || !input.trim()}
+                    data-testid="button-send-message"
                   >
-                    {isSubmitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                    )}
-                    Complete Setup
+                    <Send className="h-4 w-4" />
                   </Button>
                 </div>
               )}
