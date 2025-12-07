@@ -1,0 +1,144 @@
+You are a Senior-Level TypeScript/Node/React/Drizzle engineer working inside the SmartManageAI repository.
+
+Your tasks are:
+
+====================================================================
+PHASE 1 — DIAGNOSE THE SOW ONBOARDING BUG (DO NOT FIX YET)
+====================================================================
+
+Inspect these files in this exact order to find why some users always receive CONCRETE SOW items:
+
+1. server/aiRoutes.ts  
+   - Locate the `/ai/onboarding/complete` handler
+   - Trace how tradeType is read, validated, normalized, logged, and passed to the SOW creation step
+   - Detect any fallback logic that assigns:
+        - tradeType = "CONCRETE"
+        - isGeneralContractor = false incorrectly
+        - or empty/null tradeType cases
+
+2. server/routes.ts  
+   - Inspect fallback logic in `/api/scope/work-types`
+   - Ensure it is NOT defaulting to CONCRETE when org has no SOW items yet
+
+3. shared/schema.ts  
+   - Verify the tradeTypeEnum matches all trade types used in onboarding
+   - Show if any mismatch or missing enum is causing fallback
+
+4. master_sow_items table logic  
+   - Confirm that every trade type has active SOW items in DB
+   - Identify missing templates which may trigger fallback
+
+Produce a summary of:
+✔ exact cause(s) of wrong SOW selection  
+✔ all files involved  
+✔ how far the bug propagates through onboarding  
+✔ whether the bug is backend-only or also frontend  
+✔ whether any AI onboarding logic incorrectly maps trades  
+
+
+====================================================================
+PHASE 2 — APPLY FIXES TO SOW GENERATION (SERVER + CLIENT)
+====================================================================
+
+Required fixes:
+
+1. Enforce strict tradeType validation:
+   - If tradeType not in tradeTypeEnum → return explicit error
+   - DO NOT fallback to Concrete
+
+2. In onboarding complete flow:
+   - Fix incorrect conditional logic:
+       * isCustomTrade
+       * isGeneralContractor
+       * preset trade path
+   - Ensure correct SOW templates load only for the selected trade
+
+3. Patch fallback logic in:
+   - server/routes.ts (/api/scope/work-types)
+   - server/aiFeatureRoutes.ts (mock trade fallback)
+   - Any legacy code that defaults to Concrete
+
+4. Add logging to identify future mismatches:
+   - tradeType detected
+   - template count loaded
+   - custom SOW count created
+   - fallback detection  
+
+All changes must retain:
+✔ multi-tenant isolation  
+✔ GC mode  
+✔ custom trade support (OTHER)  
+
+
+====================================================================
+PHASE 3 — VERIFY HUSTLER SYSTEM IS FULLY FUNCTIONAL
+====================================================================
+
+Based on diagnostic metadata:
+
+HUSTLER system includes:
+- hustlerOrganizations table  
+- organization switcher UI  
+- API endpoints:
+    * GET  /api/hustler/organizations  
+    * POST /api/hustler/link-organization  
+    * POST /api/hustler/switch-organization  
+    * DELETE /api/hustler/unlink-organization/:id  
+    * GET /api/hustler/current-role
+
+Do the following:
+
+1. Audit all Hustler API endpoints for:
+   - missing mustDenyAccess guards  
+   - missing orgId validation  
+   - missing roleOverride fallbacks  
+
+2. Audit auth middleware:
+   - Ensure if user.role === HUSTLER, the active organization is pulled from:
+       * header X-Org-Id  
+       * OR session override  
+       * OR default to first linked org  
+
+3. Audit frontend:
+   - Ensure org switcher refreshes TanStack cache properly  
+   - Ensure HUSTLER cannot see organizations they are not linked to  
+   - Ensure white-label branding responds to org switching  
+
+Fix any discovered bugs.
+
+
+====================================================================
+PHASE 4 — RUN FULL CODE AUDIT + BUILD
+====================================================================
+
+Perform:
+
+1. Repository-wide static analysis
+2. Drizzle schema-to-migration validation
+3. TypeScript validation:
+   `npx tsc --noEmit`
+4. Build:
+   `npm run build`
+5. Confirm:
+   - No missing imports
+   - No circular dependencies
+   - No unscoped DB queries
+   - No incorrect SOW → estimate mapping
+   - No broken role checks
+
+
+====================================================================
+PHASE 5 — FINAL OUTPUT REPORT (REQUIRED)
+====================================================================
+
+Produce a clean, human-readable report summarizing:
+
+### ✔ What caused the SOW onboarding bug  
+### ✔ How the bug was fixed  
+### ✔ All files changed  
+### ✔ New logic for tradeType validation  
+### ✔ How GC mode and custom trade mode now function  
+### ✔ Hustler system verification results  
+### ✔ Any additional recommended updates  
+
+END OF PROMPT.  
