@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler } from "@/lib/rbac";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Sidebar,
@@ -52,6 +52,7 @@ import {
   LogOut,
   GraduationCap,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -239,6 +240,17 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              {isHustler(userRole) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/hustler")} tooltip="Portfolio">
+                    <Link href="/hustler" data-testid="sidebar-portfolio">
+                      <Zap className="w-4 h-4" />
+                      <span>Portfolio</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isActive("/dashboard")} tooltip="Dashboard">
                   <Link href="/dashboard" data-testid="sidebar-dashboard">

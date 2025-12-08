@@ -35,6 +35,10 @@ export default function LoginPage() {
     if (isSuperAdmin(userData.role)) {
       return '/admin';
     }
+    // HUSTLER users go to portfolio dashboard
+    if (userData.role === 'HUSTLER') {
+      return '/hustler';
+    }
     if (!userData.organizationId) {
       return '/onboarding';
     }

@@ -19,7 +19,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardStats, useProjects, useBids } from "@/hooks/use-data";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FeaturePermissions, hasManagementAccess, isSuperAdmin } from "@/lib/rbac";
+import { FeaturePermissions, hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Notification, CalendarEvent, AITask } from "@shared/schema";
 import { formatDistanceToNow, format, isToday, isTomorrow, isThisWeek } from "date-fns";
@@ -75,6 +75,11 @@ export default function DashboardPage() {
   // Redirect SUPER_ADMIN users to platform admin dashboard
   if (isSuperAdmin(user?.role)) {
     return <Redirect to="/admin" />;
+  }
+  
+  // Redirect HUSTLER users to portfolio dashboard
+  if (isHustler(user?.role)) {
+    return <Redirect to="/hustler" />;
   }
 
   const { greeting, icon: GreetingIcon } = getTimeGreeting();
