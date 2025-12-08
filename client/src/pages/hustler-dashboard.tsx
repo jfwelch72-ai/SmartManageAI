@@ -1,13 +1,48 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
+
+interface PortfolioStats {
+  totalOrganizations: number;
+  totalActiveProjects: number;
+  totalOpenBids: number;
+  totalPendingChangeOrders: number;
+  totalPendingTasks: number;
+  estimatedBidValue: number;
+  organizationBreakdown: Array<{
+    id: string;
+    name: string;
+    tradeType: string;
+    logoUrl: string | null;
+    activeProjects: number;
+    openBids: number;
+    employees: number;
+  }>;
+}
+
+interface AIPortfolioSummary {
+  summary: string;
+  insights: string[];
+  recommendations: string[];
+  metrics?: {
+    projects: { active: number; planning: number; completed: number };
+    bids: { total: number; totalValue: string };
+    pendingApprovals: number;
+  };
+}
 
 interface Organization {
   id: string;
@@ -57,8 +92,32 @@ interface PendingInvite {
   };
 }
 
+interface Delegate {
+  id: string;
+  delegateRole: string;
+  delegateEmail: string | null;
+  status: string;
+  canCreateOrganizations: boolean;
+  canManageAllOrganizations: boolean;
+  canViewFinancials: boolean;
+  canInviteOtherDelegates: boolean;
+  expiresAt: string | null;
+  acceptedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  delegateUser: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  } | null;
+}
+
 export default function HustlerDashboard() {
   const { toast } = useToast();
+  const [showInviteDelegateDialog, setShowInviteDelegateDialog] = useState(false);
+  const [delegateEmail, setDelegateEmail] = useState("");
+  const [delegateRole, setDelegateRole] = useState<string>("COO");
 
   const { data, isLoading, error } = useQuery<HustlerOrganizationsResponse>({
     queryKey: ["/api/hustler/organizations"],
@@ -68,6 +127,65 @@ export default function HustlerDashboard() {
   const { data: pendingInvitesData, isLoading: loadingInvites } = useQuery<{ invites: PendingInvite[] }>({
     queryKey: ["/api/hustler/link-requests/pending"],
     staleTime: 30000,
+  });
+
+  const { data: delegatesData } = useQuery<{ delegates: Delegate[] }>({
+    queryKey: ["/api/hustler/delegates"],
+    staleTime: 30000,
+  });
+
+  const { data: portfolioStats, isLoading: loadingStats } = useQuery<PortfolioStats>({
+    queryKey: ["/api/hustler/portfolio/stats"],
+    staleTime: 60000,
+  });
+
+  const { data: aiSummary, isLoading: loadingAISummary } = useQuery<AIPortfolioSummary>({
+    queryKey: ["/api/hustler/portfolio/ai-summary"],
+    staleTime: 120000,
+  });
+
+  const inviteDelegateMutation = useMutation({
+    mutationFn: async (data: { email: string; delegateRole: string }) => {
+      const response = await apiRequest("POST", "/api/hustler/delegates/invite", data);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hustler/delegates"] });
+      setShowInviteDelegateDialog(false);
+      setDelegateEmail("");
+      toast({
+        title: "Invite Sent",
+        description: result.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed",
+        description: error.message || "Failed to invite delegate",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const revokeDelegateMutation = useMutation({
+    mutationFn: async (delegateId: string) => {
+      const response = await apiRequest("POST", `/api/hustler/delegates/${delegateId}/revoke`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hustler/delegates"] });
+      toast({
+        title: "Access Revoked",
+        description: "Delegate access has been revoked",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed",
+        description: error.message || "Failed to revoke delegate",
+        variant: "destructive",
+      });
+    },
   });
 
   const respondMutation = useMutation({
@@ -172,6 +290,231 @@ export default function HustlerDashboard() {
             Add Organization
           </Button>
         </Link>
+      </div>
+
+      {/* Executive Dashboard - Portfolio Overview */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 text-primary" />
+          Portfolio Overview
+        </h2>
+
+        {/* KPI Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">
+          <Card data-testid="card-stat-orgs">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Organizations</CardTitle>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-orgs">
+                  {portfolioStats?.totalOrganizations || 0}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-projects">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+              <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-projects">
+                  {portfolioStats?.totalActiveProjects || 0}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-bids">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Open Bids</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-bids">
+                  {portfolioStats?.totalOpenBids || 0}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-change-orders">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Pending COs</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-cos">
+                  {portfolioStats?.totalPendingChangeOrders || 0}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-bid-value">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Bid Pipeline</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-pipeline">
+                  ${(portfolioStats?.estimatedBidValue || 0).toLocaleString()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Organization Portfolio Table */}
+        {portfolioStats?.organizationBreakdown && portfolioStats.organizationBreakdown.length > 0 && (
+          <Card className="mb-6" data-testid="card-org-breakdown">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                Organization Health
+              </CardTitle>
+              <CardDescription>Performance overview of each organization in your portfolio</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 font-medium">Organization</th>
+                      <th className="text-center py-2 font-medium">Trade</th>
+                      <th className="text-center py-2 font-medium">Active Projects</th>
+                      <th className="text-center py-2 font-medium">Open Bids</th>
+                      <th className="text-center py-2 font-medium">Employees</th>
+                      <th className="text-center py-2 font-medium">Health</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {portfolioStats.organizationBreakdown.map((org) => {
+                      const healthScore = org.activeProjects > 0 ? "ACTIVE" : org.openBids > 0 ? "BIDDING" : "IDLE";
+                      return (
+                        <tr key={org.id} className="border-b hover-elevate" data-testid={`row-org-${org.id}`}>
+                          <td className="py-3">
+                            <div className="flex items-center gap-2">
+                              {org.logoUrl && (
+                                <img src={org.logoUrl} alt={org.name} className="h-6 w-6 rounded" />
+                              )}
+                              <span className="font-medium">{org.name}</span>
+                            </div>
+                          </td>
+                          <td className="text-center py-3">
+                            <Badge variant="secondary" className="text-xs">
+                              {org.tradeType.replace(/_/g, " ")}
+                            </Badge>
+                          </td>
+                          <td className="text-center py-3 font-semibold" data-testid={`text-org-projects-${org.id}`}>
+                            {org.activeProjects}
+                          </td>
+                          <td className="text-center py-3" data-testid={`text-org-bids-${org.id}`}>
+                            {org.openBids}
+                          </td>
+                          <td className="text-center py-3" data-testid={`text-org-employees-${org.id}`}>
+                            {org.employees}
+                          </td>
+                          <td className="text-center py-3">
+                            <Badge 
+                              variant={healthScore === "ACTIVE" ? "default" : healthScore === "BIDDING" ? "secondary" : "outline"}
+                              data-testid={`badge-org-health-${org.id}`}
+                            >
+                              {healthScore}
+                            </Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* AI Insights Section */}
+        {(aiSummary?.summary || loadingAISummary) && (
+          <Card className="mb-6" data-testid="card-ai-insights">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-yellow-500" />
+                AI Executive Insights
+              </CardTitle>
+              <CardDescription>
+                {loadingAISummary ? (
+                  <Skeleton className="h-4 w-3/4" />
+                ) : (
+                  aiSummary?.summary
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingAISummary ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-4/6" />
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {/* Insights */}
+                  {aiSummary?.insights && aiSummary.insights.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                        <TrendingUp className="h-4 w-4 text-blue-500" />
+                        Key Insights
+                      </h4>
+                      <ul className="space-y-1">
+                        {aiSummary.insights.map((insight, i) => (
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-blue-500 mt-1">•</span>
+                            {insight}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Recommendations */}
+                  {aiSummary?.recommendations && aiSummary.recommendations.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                        <AlertCircle className="h-4 w-4 text-orange-500" />
+                        Recommendations
+                      </h4>
+                      <ul className="space-y-1">
+                        {aiSummary.recommendations.map((rec, i) => (
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-orange-500 mt-1">•</span>
+                            {rec}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {(pendingInvitesData?.invites?.length || 0) > 0 && (
@@ -346,6 +689,145 @@ export default function HustlerDashboard() {
           })}
         </div>
       )}
+
+      {/* Delegate Management Section */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Crown className="h-5 w-5 text-primary" />
+              Executive Team
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Invite COO, CFO or other executives to manage your companies
+            </p>
+          </div>
+          <Dialog open={showInviteDelegateDialog} onOpenChange={setShowInviteDelegateDialog}>
+            <DialogTrigger asChild>
+              <Button variant="outline" data-testid="button-invite-delegate">
+                <UserPlus className="h-4 w-4 mr-2" />
+                Invite Executive
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Invite Executive</DialogTitle>
+                <DialogDescription>
+                  Invite a COO, CFO, or other executive to help manage your organizations
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="delegate-email">Email Address</Label>
+                  <Input
+                    id="delegate-email"
+                    type="email"
+                    placeholder="coo@company.com"
+                    value={delegateEmail}
+                    onChange={(e) => setDelegateEmail(e.target.value)}
+                    data-testid="input-delegate-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="delegate-role">Role</Label>
+                  <Select value={delegateRole} onValueChange={setDelegateRole}>
+                    <SelectTrigger data-testid="select-delegate-role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="COO">COO - Chief Operating Officer</SelectItem>
+                      <SelectItem value="CFO">CFO - Chief Financial Officer</SelectItem>
+                      <SelectItem value="OPERATIONS_MANAGER">Operations Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowInviteDelegateDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => inviteDelegateMutation.mutate({ email: delegateEmail, delegateRole })}
+                    disabled={!delegateEmail || inviteDelegateMutation.isPending}
+                    data-testid="button-send-delegate-invite"
+                  >
+                    {inviteDelegateMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <UserPlus className="h-4 w-4 mr-2" />
+                    )}
+                    Send Invite
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {delegatesData?.delegates && delegatesData.delegates.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {delegatesData.delegates.map((delegate) => (
+              <Card key={delegate.id} data-testid={`card-delegate-${delegate.id}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Briefcase className="h-4 w-4" />
+                        {delegate.delegateRole}
+                      </CardTitle>
+                      <CardDescription>
+                        {delegate.delegateUser
+                          ? `${delegate.delegateUser.firstName || ""} ${delegate.delegateUser.lastName || ""}`.trim() || delegate.delegateUser.email
+                          : delegate.delegateEmail}
+                      </CardDescription>
+                    </div>
+                    <Badge
+                      variant={delegate.status === "APPROVED" ? "default" : delegate.status === "PENDING" ? "secondary" : "outline"}
+                    >
+                      {delegate.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xs text-muted-foreground space-y-1 mb-3">
+                    <p className="flex items-center gap-1">
+                      {delegate.canCreateOrganizations && <Check className="h-3 w-3 text-green-500" />}
+                      {!delegate.canCreateOrganizations && <X className="h-3 w-3 text-red-500" />}
+                      Can create organizations
+                    </p>
+                    <p className="flex items-center gap-1">
+                      {delegate.canViewFinancials && <Check className="h-3 w-3 text-green-500" />}
+                      {!delegate.canViewFinancials && <X className="h-3 w-3 text-red-500" />}
+                      Can view financials
+                    </p>
+                  </div>
+                  {delegate.status !== "REVOKED" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => revokeDelegateMutation.mutate(delegate.id)}
+                      disabled={revokeDelegateMutation.isPending}
+                      className="w-full"
+                      data-testid={`button-revoke-delegate-${delegate.id}`}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Revoke Access
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <Users className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-muted-foreground">
+                No executives invited yet. Invite a COO or CFO to help manage your companies.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

@@ -5122,6 +5122,46 @@ export const insertHustlerLinkRequestSchema = createInsertSchema(hustlerLinkRequ
 export type InsertHustlerLinkRequest = z.infer<typeof insertHustlerLinkRequestSchema>;
 export type HustlerLinkRequest = typeof hustlerLinkRequests.$inferSelect;
 
+// HUSTLER Delegates - COO and other executives who can manage organizations on behalf of the HUSTLER
+export const hustlerDelegateRoleEnum = pgEnum("hustler_delegate_role", ["COO", "CFO", "OPERATIONS_MANAGER"]);
+
+export const hustlerDelegates = pgTable("hustler_delegates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // The HUSTLER who owns this delegate relationship
+  hustlerUserId: varchar("hustler_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // The delegate user (COO, etc.)
+  delegateUserId: varchar("delegate_user_id").references(() => users.id, { onDelete: "cascade" }),
+  // Email for pending invites where delegate user may not exist yet
+  delegateEmail: text("delegate_email"),
+  // The delegate's role in the HUSTLER's portfolio
+  delegateRole: hustlerDelegateRoleEnum("delegate_role").notNull().default("COO"),
+  // Invite token for pending invites
+  inviteToken: text("invite_token"),
+  inviteTokenHash: text("invite_token_hash"),
+  // Status
+  status: hustlerLinkRequestStatusEnum("status").notNull().default("PENDING"),
+  // Permissions - what the delegate can do
+  canCreateOrganizations: boolean("can_create_organizations").notNull().default(true),
+  canManageAllOrganizations: boolean("can_manage_all_organizations").notNull().default(true),
+  canViewFinancials: boolean("can_view_financials").notNull().default(true),
+  canInviteOtherDelegates: boolean("can_invite_other_delegates").notNull().default(false),
+  // Timestamps
+  expiresAt: timestamp("expires_at"),
+  acceptedAt: timestamp("accepted_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  hustlerIdx: index("hustler_delegate_hustler_idx").on(table.hustlerUserId),
+  delegateIdx: index("hustler_delegate_delegate_idx").on(table.delegateUserId),
+  tokenIdx: index("hustler_delegate_token_idx").on(table.inviteTokenHash),
+  uniqueDelegate: unique("hustler_delegate_unique").on(table.hustlerUserId, table.delegateUserId),
+}));
+
+export const insertHustlerDelegateSchema = createInsertSchema(hustlerDelegates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertHustlerDelegate = z.infer<typeof insertHustlerDelegateSchema>;
+export type HustlerDelegate = typeof hustlerDelegates.$inferSelect;
+
 // Dashboard Widget Configuration Type (for layout JSON)
 export interface DashboardWidgetConfig {
   id: string;

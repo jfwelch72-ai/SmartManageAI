@@ -2,8 +2,8 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { users, type User, type SelectUser } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { users, hustlerOrganizations, type User, type SelectUser } from "@shared/schema";
+import { eq, sql, and } from "drizzle-orm";
 
 // Enforce SESSION_SECRET - fail fast if not set
 if (!process.env.SESSION_SECRET) {
@@ -18,7 +18,11 @@ const JWT_SECRET = process.env.SESSION_SECRET;
 const COOKIE_NAME = "auth_token";
 
 // Sanitized user type - excludes sensitive fields (passwordHash, tokenVersion)
-export type SanitizedUser = Omit<SelectUser, 'passwordHash' | 'tokenVersion'>;
+// Adds effectiveRole for HUSTLER users who have organization-specific role overrides
+export type SanitizedUser = Omit<SelectUser, 'passwordHash' | 'tokenVersion'> & {
+  effectiveRole?: string; // The role to use for permission checks (differs from base role for HUSTLERs)
+  isHustlerOwner?: boolean; // True if HUSTLER has owner-level access to current org
+};
 
 export interface AuthRequest extends Request {
   user?: SanitizedUser;
@@ -82,6 +86,32 @@ export async function authMiddleware(
       return;
     }
 
+    // Determine effective role for HUSTLER users
+    // HUSTLERs are owners of their linked organizations and get ADMIN-level access by default
+    let effectiveRole: string | undefined;
+    let isHustlerOwner = false;
+    
+    if (user.role === "HUSTLER" && user.organizationId) {
+      const [link] = await db
+        .select()
+        .from(hustlerOrganizations)
+        .where(
+          and(
+            eq(hustlerOrganizations.userId, user.id),
+            eq(hustlerOrganizations.organizationId, user.organizationId),
+            eq(hustlerOrganizations.isActive, true)
+          )
+        )
+        .limit(1);
+      
+      if (link) {
+        // HUSTLER is the OWNER of linked organizations
+        // roleOverride allows specific role assignment, but defaults to ADMIN (owner-level)
+        effectiveRole = link.roleOverride || "ADMIN";
+        isHustlerOwner = true;
+      }
+    }
+
     // Create sanitized user object - explicitly omit passwordHash and tokenVersion (security critical)
     // TypeScript enforces at compile time that only allowed fields are included
     const sanitized: SanitizedUser = {
@@ -100,6 +130,8 @@ export async function authMiddleware(
       walkthroughCompleted: user.walkthroughCompleted,
       walkthroughStep: user.walkthroughStep,
       walkthroughStartedAt: user.walkthroughStartedAt,
+      effectiveRole,
+      isHustlerOwner,
     };
     req.user = sanitized;
   }
@@ -120,6 +152,7 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER";
 
 // Middleware to require specific roles (all 10 roles supported including SUPER_ADMIN and HUSTLER)
+// For HUSTLER users, checks effectiveRole if available (enables owner-level access to linked orgs)
 export function requireRole(...roles: UserRole[]) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
@@ -127,13 +160,21 @@ export function requireRole(...roles: UserRole[]) {
       return;
     }
 
-    if (!roles.includes(req.user.role as UserRole)) {
+    // For HUSTLER users, use effectiveRole if set (owner-level access to linked organizations)
+    const roleToCheck = req.user.effectiveRole || req.user.role;
+    
+    if (!roles.includes(roleToCheck as UserRole)) {
       res.status(403).json({ error: "Insufficient permissions" });
       return;
     }
 
     next();
   };
+}
+
+// Helper to get the effective role for permission checks
+export function getEffectiveRole(user: SanitizedUser): UserRole {
+  return (user.effectiveRole || user.role) as UserRole;
 }
 
 // Helper function to increment tokenVersion (revokes all existing tokens)

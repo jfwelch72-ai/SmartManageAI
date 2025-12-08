@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
-import { hustlerOrganizations, organizations, users, hustlerLinkRequests } from "@shared/schema";
-import { eq, and, or, desc } from "drizzle-orm";
+import { hustlerOrganizations, organizations, users, hustlerLinkRequests, hustlerDelegates, projects, bids, changeOrders, tasks, estimates } from "@shared/schema";
+import { eq, and, or, desc, isNull, inArray, sql, count, sum } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { z } from "zod";
@@ -16,6 +16,252 @@ const linkOrganizationSchema = z.object({
 
 const switchOrganizationSchema = z.object({
   organizationId: z.string().uuid(),
+});
+
+// ============================================================================
+// HUSTLER EXECUTIVE DASHBOARD - Portfolio Overview
+// Aggregates KPIs across all linked organizations
+// ============================================================================
+// SECURITY NOTE: These endpoints query hustlerOrganizations directly by req.user.id
+// at request time, NOT from session/token data. This ensures:
+// 1. Only ACTIVE links are included (isActive=true check)
+// 2. Revoked links are immediately excluded (fresh DB query each request)
+// 3. No cross-tenant data leakage since org IDs come from validated links only
+// ============================================================================
+
+router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all linked organization IDs
+    const linkedOrgs = await db
+      .select({ organizationId: hustlerOrganizations.organizationId })
+      .from(hustlerOrganizations)
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    if (orgIds.length === 0) {
+      return res.json({
+        totalOrganizations: 0,
+        totalActiveProjects: 0,
+        totalOpenBids: 0,
+        totalPendingChangeOrders: 0,
+        totalPendingTasks: 0,
+        totalLaborHoursThisMonth: 0,
+        estimatedBidValue: 0,
+        organizationBreakdown: [],
+      });
+    }
+
+    // Aggregate stats across all organizations
+    const [projectsResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(projects)
+      .where(
+        and(
+          inArray(projects.gcOrganizationId, orgIds),
+          eq(projects.status, "ACTIVE")
+        )
+      );
+
+    const [bidsResult] = await db
+      .select({ 
+        count: sql<number>`count(*)::int`,
+        totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`
+      })
+      .from(bids)
+      .where(inArray(bids.gcOrganizationId, orgIds));
+
+    const [changeOrdersResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(changeOrders)
+      .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+      .where(
+        and(
+          inArray(projects.gcOrganizationId, orgIds),
+          eq(changeOrders.status, "SUBMITTED")
+        )
+      );
+
+    const [tasksResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .where(
+        and(
+          inArray(tasks.organizationId, orgIds),
+          eq(tasks.status, "PENDING")
+        )
+      );
+
+    // Get organization breakdown with individual stats
+    const orgBreakdown = await Promise.all(orgIds.map(async (orgId) => {
+      const [org] = await db
+        .select({ name: organizations.name, tradeType: organizations.tradeType, logoUrl: organizations.logoUrl })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      const [activeProjects] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(and(eq(projects.gcOrganizationId, orgId), eq(projects.status, "ACTIVE")));
+
+      const [openBids] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(bids)
+        .where(eq(bids.gcOrganizationId, orgId));
+
+      const [employees] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.organizationId, orgId), eq(users.isActive, true)));
+
+      return {
+        id: orgId,
+        name: org?.name || "Unknown",
+        tradeType: org?.tradeType || "OTHER",
+        logoUrl: org?.logoUrl,
+        activeProjects: activeProjects?.count || 0,
+        openBids: openBids?.count || 0,
+        employees: employees?.count || 0,
+      };
+    }));
+
+    res.json({
+      totalOrganizations: orgIds.length,
+      totalActiveProjects: projectsResult?.count || 0,
+      totalOpenBids: bidsResult?.count || 0,
+      totalPendingChangeOrders: changeOrdersResult?.count || 0,
+      totalPendingTasks: tasksResult?.count || 0,
+      estimatedBidValue: parseFloat(bidsResult?.totalValue || "0"),
+      organizationBreakdown: orgBreakdown,
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to fetch portfolio stats: ${error.message}`);
+    res.status(500).json({ error: "Failed to fetch portfolio stats" });
+  }
+});
+
+// Get AI-powered executive summary for HUSTLER portfolio
+router.get("/hustler/portfolio/ai-summary", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all linked organizations
+    const linkedOrgs = await db
+      .select({
+        organizationId: hustlerOrganizations.organizationId,
+        organization: {
+          name: organizations.name,
+          tradeType: organizations.tradeType,
+        }
+      })
+      .from(hustlerOrganizations)
+      .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    if (linkedOrgs.length === 0) {
+      return res.json({
+        summary: "You don't have any linked organizations yet. Create or link organizations to see portfolio insights.",
+        insights: [],
+        recommendations: [],
+      });
+    }
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    // Gather metrics for AI analysis
+    const [projectStats] = await db
+      .select({
+        active: sql<number>`count(*) filter (where status = 'ACTIVE')::int`,
+        planning: sql<number>`count(*) filter (where status = 'PLANNING')::int`,
+        completed: sql<number>`count(*) filter (where status = 'COMPLETE')::int`,
+      })
+      .from(projects)
+      .where(inArray(projects.gcOrganizationId, orgIds));
+
+    const [bidStats] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`,
+      })
+      .from(bids)
+      .where(inArray(bids.gcOrganizationId, orgIds));
+
+    const [pendingApprovals] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(changeOrders)
+      .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+      .where(
+        and(
+          inArray(projects.gcOrganizationId, orgIds),
+          eq(changeOrders.status, "SUBMITTED")
+        )
+      );
+
+    // Build insights based on metrics
+    const insights: string[] = [];
+    const recommendations: string[] = [];
+
+    // Project insights
+    if ((projectStats?.active || 0) > 5) {
+      insights.push(`High activity: ${projectStats?.active} active projects across your portfolio`);
+    }
+    if ((projectStats?.planning || 0) > 3) {
+      insights.push(`${projectStats?.planning} projects in planning stage need attention`);
+      recommendations.push("Review planning stage projects to ensure timely kickoff");
+    }
+
+    // Bid insights
+    const totalBids = bidStats?.total || 0;
+    const totalBidValue = parseFloat(bidStats?.totalValue || "0");
+    if (totalBids > 0) {
+      insights.push(`${totalBids} total bids with $${totalBidValue.toLocaleString()} in estimated value`);
+    }
+    if (totalBids > 5) {
+      recommendations.push("Consider tracking bid outcomes to improve win rate");
+    }
+
+    // Approval insights
+    if ((pendingApprovals?.count || 0) > 3) {
+      insights.push(`${pendingApprovals?.count} change orders awaiting approval`);
+      recommendations.push("Review pending change orders to prevent project delays");
+    }
+
+    // Portfolio size insight
+    insights.push(`Managing ${linkedOrgs.length} organization${linkedOrgs.length > 1 ? 's' : ''}: ${linkedOrgs.map(o => o.organization.name).join(', ')}`);
+
+    const summary = `Your construction portfolio includes ${linkedOrgs.length} organization${linkedOrgs.length > 1 ? 's' : ''} with ${projectStats?.active || 0} active projects and ${totalBids} bids. ${pendingApprovals?.count || 0} items require your attention.`;
+
+    res.json({
+      summary,
+      insights,
+      recommendations,
+      metrics: {
+        projects: projectStats,
+        bids: bidStats,
+        pendingApprovals: pendingApprovals?.count || 0,
+      }
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to generate AI summary: ${error.message}`);
+    res.status(500).json({ error: "Failed to generate portfolio summary" });
+  }
 });
 
 router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
@@ -724,6 +970,324 @@ router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req:
   } catch (error: any) {
     logError(`[Hustler] Failed to revoke invite: ${error.message}`);
     res.status(500).json({ error: "Failed to revoke invite" });
+  }
+});
+
+// ============================================================================
+// HUSTLER DELEGATE (COO) MANAGEMENT
+// Allows HUSTLERs to invite COOs and other executives to manage their portfolio
+// ============================================================================
+
+const inviteDelegateSchema = z.object({
+  email: z.string().email("Valid email required"),
+  delegateRole: z.enum(["COO", "CFO", "OPERATIONS_MANAGER"]).default("COO"),
+  canCreateOrganizations: z.boolean().default(true),
+  canManageAllOrganizations: z.boolean().default(true),
+  canViewFinancials: z.boolean().default(true),
+  canInviteOtherDelegates: z.boolean().default(false),
+});
+
+// Get all delegates for a HUSTLER
+router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const delegates = await db
+      .select({
+        id: hustlerDelegates.id,
+        delegateRole: hustlerDelegates.delegateRole,
+        delegateEmail: hustlerDelegates.delegateEmail,
+        status: hustlerDelegates.status,
+        canCreateOrganizations: hustlerDelegates.canCreateOrganizations,
+        canManageAllOrganizations: hustlerDelegates.canManageAllOrganizations,
+        canViewFinancials: hustlerDelegates.canViewFinancials,
+        canInviteOtherDelegates: hustlerDelegates.canInviteOtherDelegates,
+        expiresAt: hustlerDelegates.expiresAt,
+        acceptedAt: hustlerDelegates.acceptedAt,
+        isActive: hustlerDelegates.isActive,
+        createdAt: hustlerDelegates.createdAt,
+        delegateUser: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
+      })
+      .from(hustlerDelegates)
+      .leftJoin(users, eq(hustlerDelegates.delegateUserId, users.id))
+      .where(eq(hustlerDelegates.hustlerUserId, req.user.id))
+      .orderBy(desc(hustlerDelegates.createdAt));
+
+    res.json({ delegates });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to fetch delegates: ${error.message}`);
+    res.status(500).json({ error: "Failed to fetch delegates" });
+  }
+});
+
+// Invite a delegate (COO, CFO, etc.)
+router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const validationResult = inviteDelegateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ error: "Invalid input", details: validationResult.error.issues });
+    }
+
+    const { email, delegateRole, canCreateOrganizations, canManageAllOrganizations, canViewFinancials, canInviteOtherDelegates } = validationResult.data;
+
+    // Check if already invited
+    const [existing] = await db
+      .select()
+      .from(hustlerDelegates)
+      .where(
+        and(
+          eq(hustlerDelegates.hustlerUserId, req.user.id),
+          eq(hustlerDelegates.delegateEmail, email),
+          eq(hustlerDelegates.status, "PENDING")
+        )
+      );
+
+    if (existing) {
+      return res.status(400).json({ error: "Delegate already has a pending invite" });
+    }
+
+    // Check if user exists
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    // Generate invite token
+    const { token, hash } = generateInviteToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+
+    await db.insert(hustlerDelegates).values({
+      hustlerUserId: req.user.id,
+      delegateUserId: existingUser?.id || null,
+      delegateEmail: email,
+      delegateRole,
+      inviteToken: token,
+      inviteTokenHash: hash,
+      status: "PENDING",
+      canCreateOrganizations,
+      canManageAllOrganizations,
+      canViewFinancials,
+      canInviteOtherDelegates,
+      expiresAt,
+    });
+
+    logInfo(`[Hustler] Delegate invited: email=${email} role=${delegateRole} by=${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: `${delegateRole} invite sent to ${email}`,
+      inviteToken: token, // For testing - in production this would be emailed
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to invite delegate: ${error.message}`);
+    res.status(500).json({ error: "Failed to invite delegate" });
+  }
+});
+
+// Get pending delegate invites for the current user
+router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const invites = await db
+      .select({
+        id: hustlerDelegates.id,
+        delegateRole: hustlerDelegates.delegateRole,
+        status: hustlerDelegates.status,
+        canCreateOrganizations: hustlerDelegates.canCreateOrganizations,
+        canManageAllOrganizations: hustlerDelegates.canManageAllOrganizations,
+        canViewFinancials: hustlerDelegates.canViewFinancials,
+        canInviteOtherDelegates: hustlerDelegates.canInviteOtherDelegates,
+        expiresAt: hustlerDelegates.expiresAt,
+        createdAt: hustlerDelegates.createdAt,
+        hustler: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
+      })
+      .from(hustlerDelegates)
+      .innerJoin(users, eq(hustlerDelegates.hustlerUserId, users.id))
+      .where(
+        and(
+          or(
+            eq(hustlerDelegates.delegateUserId, req.user.id),
+            eq(hustlerDelegates.delegateEmail, req.user.email)
+          ),
+          eq(hustlerDelegates.status, "PENDING")
+        )
+      );
+
+    res.json({ invites });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to fetch delegate invites: ${error.message}`);
+    res.status(500).json({ error: "Failed to fetch delegate invites" });
+  }
+});
+
+// Accept a delegate invite
+router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { delegateId } = req.params;
+
+    const [invite] = await db
+      .select()
+      .from(hustlerDelegates)
+      .where(
+        and(
+          eq(hustlerDelegates.id, delegateId),
+          or(
+            eq(hustlerDelegates.delegateUserId, req.user.id),
+            eq(hustlerDelegates.delegateEmail, req.user.email)
+          ),
+          eq(hustlerDelegates.status, "PENDING")
+        )
+      );
+
+    if (!invite) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+
+    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+      await db.update(hustlerDelegates)
+        .set({ status: "EXPIRED", updatedAt: new Date() })
+        .where(eq(hustlerDelegates.id, delegateId));
+      return res.status(400).json({ error: "Invite has expired" });
+    }
+
+    await db.update(hustlerDelegates)
+      .set({
+        delegateUserId: req.user.id,
+        status: "APPROVED",
+        acceptedAt: new Date(),
+        inviteToken: null,
+        inviteTokenHash: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(hustlerDelegates.id, delegateId));
+
+    logInfo(`[Hustler] Delegate accepted: delegateId=${delegateId} userId=${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: `You are now a ${invite.delegateRole} for this HUSTLER's portfolio`,
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to accept delegate invite: ${error.message}`);
+    res.status(500).json({ error: "Failed to accept invite" });
+  }
+});
+
+// Decline a delegate invite
+router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { delegateId } = req.params;
+
+    const [invite] = await db
+      .select()
+      .from(hustlerDelegates)
+      .where(
+        and(
+          eq(hustlerDelegates.id, delegateId),
+          or(
+            eq(hustlerDelegates.delegateUserId, req.user.id),
+            eq(hustlerDelegates.delegateEmail, req.user.email)
+          ),
+          eq(hustlerDelegates.status, "PENDING")
+        )
+      );
+
+    if (!invite) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+
+    await db.update(hustlerDelegates)
+      .set({
+        status: "REJECTED",
+        inviteToken: null,
+        inviteTokenHash: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(hustlerDelegates.id, delegateId));
+
+    logInfo(`[Hustler] Delegate declined: delegateId=${delegateId} userId=${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: "Invite declined",
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to decline delegate invite: ${error.message}`);
+    res.status(500).json({ error: "Failed to decline invite" });
+  }
+});
+
+// Revoke a delegate (HUSTLER only)
+router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { delegateId } = req.params;
+
+    const [delegate] = await db
+      .select()
+      .from(hustlerDelegates)
+      .where(
+        and(
+          eq(hustlerDelegates.id, delegateId),
+          eq(hustlerDelegates.hustlerUserId, req.user.id)
+        )
+      );
+
+    if (!delegate) {
+      return res.status(404).json({ error: "Delegate not found" });
+    }
+
+    await db.update(hustlerDelegates)
+      .set({
+        status: "REVOKED",
+        isActive: false,
+        inviteToken: null,
+        inviteTokenHash: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(hustlerDelegates.id, delegateId));
+
+    logInfo(`[Hustler] Delegate revoked: delegateId=${delegateId} by=${req.user.id}`);
+
+    res.json({
+      success: true,
+      message: "Delegate access revoked",
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to revoke delegate: ${error.message}`);
+    res.status(500).json({ error: "Failed to revoke delegate" });
   }
 });
 
