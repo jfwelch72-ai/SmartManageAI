@@ -4433,7 +4433,7 @@ export const websiteProjects = pgTable("website_projects", {
   completionDate: date("completion_date"),
   
   // Media
-  featuredImageUrl: text("featured_image_url"),
+  coverImageUrl: text("cover_image_url"),
   beforeImageUrl: text("before_image_url"),
   afterImageUrl: text("after_image_url"),
   
@@ -4449,7 +4449,7 @@ export const websiteProjects = pgTable("website_projects", {
   
   // Display Settings
   status: websiteProjectStatusEnum("status").notNull().default("DRAFT"),
-  featuredProject: boolean("featured_project").default(false),
+  featured: boolean("featured").default(false),
   displayOrder: integer("display_order").default(0),
   
   // Engagement

@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import multer from "multer";
+import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, ilike, or } from "drizzle-orm";
 import { 
@@ -36,8 +38,26 @@ import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import OpenAI from "openai";
+import { ObjectStorageService, objectStorageClient } from "./objectStorage";
 
 const router = express.Router();
+
+// Configure multer for memory storage (for file uploads)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    // Only allow images
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
+// Initialize object storage service
+const objectStorage = new ObjectStorageService();
 
 // Initialize OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -810,18 +830,83 @@ Return a JSON object with:
 // PROJECT GALLERY
 // ============================================
 
+// POST /api/website/upload-image - Upload an image to object storage
+router.post("/upload-image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    // Generate unique filename with extension
+    const ext = file.originalname.split('.').pop() || 'jpg';
+    const uniqueId = randomUUID();
+    const fileName = `gallery/${orgId}/${uniqueId}.${ext}`;
+
+    // Get public search paths for storage
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.status(500).json({ error: "Object storage not configured" });
+    }
+
+    // Use the first public path
+    const basePath = publicPaths[0];
+    const fullPath = `${basePath}/${fileName}`;
+
+    // Parse path to get bucket and object name
+    const pathParts = fullPath.split('/').filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const objectName = pathParts.slice(1).join('/');
+
+    // Upload to object storage
+    const bucket = objectStorageClient.bucket(bucketName);
+    const blob = bucket.file(objectName);
+
+    await blob.save(file.buffer, {
+      metadata: {
+        contentType: file.mimetype,
+      },
+    });
+
+    // Generate public URL
+    const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+
+    res.json({ 
+      url: publicUrl,
+      fileName: file.originalname,
+      size: file.size,
+      mimeType: file.mimetype,
+    });
+  } catch (error) {
+    console.error("Error uploading image:", error);
+    res.status(500).json({ error: "Failed to upload image" });
+  }
+});
+
 // GET /api/website/projects - List gallery projects
 router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
 
-    const projects = await db.query.websiteProjects.findMany({
-      where: orgId ? eq(websiteProjects.organizationId, orgId) : undefined,
-      orderBy: [desc(websiteProjects.createdAt)],
-    });
+    // Use raw SQL to avoid Drizzle ORM schema mismatch issues
+    const result = await db.execute(sql`
+      SELECT * FROM website_projects 
+      WHERE organization_id = ${orgId}
+      ORDER BY created_at DESC
+    `);
 
-    res.json(projects);
+    res.json(result.rows);
   } catch (error) {
     console.error("Error fetching gallery projects:", error);
     res.status(500).json({ error: "Failed to fetch gallery projects" });
@@ -856,18 +941,29 @@ router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) =>
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
 
-    const projectData = {
-      ...req.body,
-      slug,
-      websiteId: website.id,
-      organizationId: orgId,
-    };
+    // Use raw SQL insert to avoid Drizzle ORM schema mismatch issues
+    // The DB has columns that differ from the Drizzle schema definition
+    const { title, shortDescription, projectType, serviceType, clientName, locationCity, locationState, coverImageUrl } = req.body;
+    
+    const result = await db.execute(sql`
+      INSERT INTO website_projects (
+        website_id, organization_id, slug, title, short_description,
+        project_type, service_type, client_name, location_city, location_state,
+        cover_image_url, status
+      ) VALUES (
+        ${website.id}, ${orgId}, ${slug}, ${title}, ${shortDescription || null},
+        ${projectType || null}, ${serviceType || null}, ${clientName || null},
+        ${locationCity || null}, ${locationState || null}, ${coverImageUrl || null}, 'DRAFT'
+      ) RETURNING *
+    `);
+    
+    const project = result.rows[0];
 
-    const [project] = await db.insert(websiteProjects)
-      .values(projectData)
-      .returning();
-
-    await logCreate(user.id, "website_projects", project.id, projectData, req);
+    await logCreate(user.id, "website_projects", project.id as string, {
+      title, shortDescription, projectType, serviceType, clientName,
+      locationCity, locationState, coverImageUrl, slug,
+      websiteId: website.id, organizationId: orgId
+    }, req);
 
     res.status(201).json(project);
   } catch (error) {

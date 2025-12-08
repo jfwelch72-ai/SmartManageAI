@@ -53,6 +53,9 @@ import {
   Save,
   Monitor,
   Tablet,
+  Upload,
+  X,
+  Loader2,
   Smartphone
 } from "lucide-react";
 import { format } from "date-fns";
@@ -116,17 +119,26 @@ interface GalleryProject {
   id: string;
   title: string;
   slug: string;
-  shortDescription: string | null;
-  projectType: string | null;
-  serviceType: string | null;
-  clientName: string | null;
-  locationCity: string | null;
-  locationState: string | null;
+  short_description?: string | null;
+  shortDescription?: string | null;
+  project_type?: string | null;
+  projectType?: string | null;
+  service_type?: string | null;
+  serviceType?: string | null;
+  client_name?: string | null;
+  clientName?: string | null;
+  location_city?: string | null;
+  locationCity?: string | null;
+  location_state?: string | null;
+  locationState?: string | null;
   featured: boolean;
-  coverImageUrl: string | null;
-  completionDate: string | null;
+  cover_image_url?: string | null;
+  coverImageUrl?: string | null;
+  completion_date?: string | null;
+  completionDate?: string | null;
   status: string;
-  viewCount: number;
+  view_count?: number;
+  viewCount?: number;
 }
 
 interface SocialLinks {
@@ -234,8 +246,11 @@ export default function WebsiteBuilderPage() {
     serviceType: "",
     clientName: "",
     locationCity: "",
-    locationState: ""
+    locationState: "",
+    coverImageUrl: ""
   });
+
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [socialForm, setSocialForm] = useState<SocialLinks>({
     facebookUrl: null,
@@ -370,7 +385,7 @@ export default function WebsiteBuilderPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/website/projects"] });
       toast({ title: "Project created successfully" });
       setShowCreateProjectDialog(false);
-      setProjectForm({ title: "", shortDescription: "", projectType: "", serviceType: "", clientName: "", locationCity: "", locationState: "" });
+      setProjectForm({ title: "", shortDescription: "", projectType: "", serviceType: "", clientName: "", locationCity: "", locationState: "", coverImageUrl: "" });
     },
     onError: (error: any) => {
       toast({ title: "Error creating project", description: error.message, variant: "destructive" });
@@ -429,6 +444,48 @@ export default function WebsiteBuilderPage() {
       });
       setShowGenerateBlogDialog(false);
       setShowCreateBlogDialog(true);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Invalid file type", description: "Please select an image file", variant: "destructive" });
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 10MB", variant: "destructive" });
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch('/api/website/upload-image', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      const data = await response.json();
+      setProjectForm(prev => ({ ...prev, coverImageUrl: data.url }));
+      toast({ title: "Image uploaded successfully" });
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -948,8 +1005,8 @@ export default function WebsiteBuilderPage() {
               {projects.map((project) => (
                 <Card key={project.id} className="hover-elevate overflow-hidden" data-testid={`card-project-${project.id}`}>
                   <div className="aspect-video bg-muted relative">
-                    {project.coverImageUrl ? (
-                      <img src={project.coverImageUrl} alt={project.title} className="w-full h-full object-cover" />
+                    {(project.coverImageUrl || project.cover_image_url) ? (
+                      <img src={project.coverImageUrl || project.cover_image_url || ''} alt={project.title} className="w-full h-full object-cover" />
                     ) : (
                       <div className="flex items-center justify-center h-full">
                         <Image className="h-12 w-12 text-muted-foreground" />
@@ -962,11 +1019,11 @@ export default function WebsiteBuilderPage() {
                   <CardContent className="p-4">
                     <h3 className="font-medium mb-1">{project.title}</h3>
                     <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                      {project.shortDescription || "No description"}
+                      {project.shortDescription || project.short_description || "No description"}
                     </p>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{project.locationCity}, {project.locationState}</span>
-                      <span>{project.viewCount} views</span>
+                      <span>{project.locationCity || project.location_city}{(project.locationCity || project.location_city) && (project.locationState || project.location_state) ? ', ' : ''}{project.locationState || project.location_state}</span>
+                      <span>{project.viewCount ?? project.view_count ?? 0} views</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -1674,10 +1731,61 @@ export default function WebsiteBuilderPage() {
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>Cover Image</Label>
+              {projectForm.coverImageUrl ? (
+                <div className="relative">
+                  <img 
+                    src={projectForm.coverImageUrl} 
+                    alt="Cover preview" 
+                    className="w-full h-40 object-cover rounded-lg border"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="destructive"
+                    className="absolute top-2 right-2"
+                    onClick={() => setProjectForm(prev => ({ ...prev, coverImageUrl: "" }))}
+                    data-testid="button-remove-image"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    id="project-image-upload"
+                    data-testid="input-image-upload"
+                    disabled={uploadingImage}
+                  />
+                  <label 
+                    htmlFor="project-image-upload" 
+                    className="cursor-pointer flex flex-col items-center gap-2"
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+                        <span className="text-sm text-muted-foreground">Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-8 w-8 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Click to upload project image</span>
+                        <span className="text-xs text-muted-foreground">PNG, JPG up to 10MB</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateProjectDialog(false)}>Cancel</Button>
-            <Button onClick={() => createProjectMutation.mutate(projectForm)} disabled={createProjectMutation.isPending} data-testid="button-submit-project">
+            <Button onClick={() => createProjectMutation.mutate(projectForm)} disabled={createProjectMutation.isPending || uploadingImage} data-testid="button-submit-project">
               {createProjectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : null}
               Add Project
             </Button>
