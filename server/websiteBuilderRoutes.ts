@@ -773,16 +773,36 @@ Return a JSON object with:
       response_format: { type: "json_object" },
     });
 
-    const content = JSON.parse(response.choices[0]?.message?.content || "{}");
+    const rawContent = response.choices[0]?.message?.content;
+    if (!rawContent) {
+      console.error("OpenAI returned empty content");
+      return res.status(500).json({ error: "AI returned empty response. Please try again." });
+    }
+
+    let content;
+    try {
+      content = JSON.parse(rawContent);
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response:", rawContent);
+      return res.status(500).json({ error: "Failed to parse AI response. Please try again." });
+    }
+
+    if (!content.title || !content.content) {
+      console.error("OpenAI response missing required fields:", content);
+      return res.status(500).json({ error: "AI response missing required fields. Please try again." });
+    }
 
     res.json({ 
       ...content,
       aiGenerated: true,
       aiPrompt: topic,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating blog post:", error);
-    res.status(500).json({ error: "Failed to generate blog post" });
+    const errorMessage = error?.message?.includes("API key") 
+      ? "OpenAI API key not configured" 
+      : "Failed to generate blog post. Please try again.";
+    res.status(500).json({ error: errorMessage });
   }
 });
 

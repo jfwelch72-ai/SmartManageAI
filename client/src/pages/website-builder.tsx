@@ -350,7 +350,8 @@ export default function WebsiteBuilderPage() {
 
   const generateBlogMutation = useMutation({
     mutationFn: async (data: typeof generateBlogForm) => {
-      return await apiRequest("POST", "/api/website/blog/posts/generate", data);
+      const response = await apiRequest("POST", "/api/website/blog/posts/generate", data);
+      return response.json();
     },
     onSuccess: (data: any) => {
       setGeneratedBlogContent(data);
