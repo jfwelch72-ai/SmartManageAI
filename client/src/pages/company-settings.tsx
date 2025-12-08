@@ -1015,7 +1015,7 @@ export default function CompanySettings() {
                   <SelectValue placeholder="Default: Read-only oversight" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Read-only oversight</SelectItem>
+                  <SelectItem value="NONE">Read-only oversight (default)</SelectItem>
                   <SelectItem value="ADMIN">Admin</SelectItem>
                   <SelectItem value="MANAGER">Manager</SelectItem>
                   <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
@@ -1044,7 +1044,7 @@ export default function CompanySettings() {
               onClick={() => inviteHustlerMutation.mutate({
                 hustlerEmail,
                 message: hustlerMessage || undefined,
-                roleOverride: hustlerRoleOverride || undefined,
+                roleOverride: hustlerRoleOverride && hustlerRoleOverride !== "NONE" ? hustlerRoleOverride : undefined,
               })}
               disabled={!hustlerEmail || inviteHustlerMutation.isPending}
               data-testid="button-send-invite"
