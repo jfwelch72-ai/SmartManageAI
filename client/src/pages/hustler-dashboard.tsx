@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 
 interface PortfolioStats {
@@ -115,9 +115,11 @@ interface Delegate {
 
 export default function HustlerDashboard() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [showInviteDelegateDialog, setShowInviteDelegateDialog] = useState(false);
   const [delegateEmail, setDelegateEmail] = useState("");
   const [delegateRole, setDelegateRole] = useState<string>("COO");
+  const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<HustlerOrganizationsResponse>({
     queryKey: ["/api/hustler/organizations"],
@@ -212,20 +214,19 @@ export default function HustlerDashboard() {
 
   const switchMutation = useMutation({
     mutationFn: async (organizationId: string) => {
+      setSwitchingOrgId(organizationId);
       const response = await apiRequest("POST", "/api/hustler/switch-organization", {
         organizationId,
       });
       return response.json();
     },
-    onSuccess: (result) => {
+    onSuccess: (result, organizationId) => {
       queryClient.invalidateQueries();
-      toast({
-        title: "Organization Switched",
-        description: result.message || "Successfully switched organization",
-      });
-      window.location.href = "/";
+      // Navigate to organization detail page
+      setLocation(`/hustler/org/${organizationId}`);
     },
     onError: (error: any) => {
+      setSwitchingOrgId(null);
       toast({
         title: "Switch Failed",
         description: error.message || "Failed to switch organization",
@@ -233,6 +234,12 @@ export default function HustlerDashboard() {
       });
     },
   });
+
+  // Handle clicking an organization row to drill down
+  const handleOrgClick = (orgId: string) => {
+    if (switchingOrgId) return; // Prevent double-clicks
+    switchMutation.mutate(orgId);
+  };
 
   if (error) {
     return (
@@ -408,14 +415,25 @@ export default function HustlerDashboard() {
                   <tbody>
                     {portfolioStats.organizationBreakdown.map((org) => {
                       const healthScore = org.activeProjects > 0 ? "ACTIVE" : org.openBids > 0 ? "BIDDING" : "IDLE";
+                      const isLoading = switchingOrgId === org.id;
                       return (
-                        <tr key={org.id} className="border-b hover-elevate" data-testid={`row-org-${org.id}`}>
+                        <tr 
+                          key={org.id} 
+                          className="border-b hover-elevate cursor-pointer transition-colors" 
+                          onClick={() => handleOrgClick(org.id)}
+                          data-testid={`row-org-${org.id}`}
+                        >
                           <td className="py-3">
                             <div className="flex items-center gap-2">
-                              {org.logoUrl && (
+                              {isLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              ) : org.logoUrl ? (
                                 <img src={org.logoUrl} alt={org.name} className="h-6 w-6 rounded" />
+                              ) : (
+                                <Building2 className="h-5 w-5 text-muted-foreground" />
                               )}
                               <span className="font-medium">{org.name}</span>
+                              {isLoading && <span className="text-xs text-muted-foreground">Switching...</span>}
                             </div>
                           </td>
                           <td className="text-center py-3">
