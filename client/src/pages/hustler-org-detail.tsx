@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, FolderKanban, FileText, Users, ClipboardList, TrendingUp, DollarSign, Calendar, AlertCircle } from "lucide-react";
+import { ArrowLeft, Building2, FolderKanban, FileText, Users, ClipboardList, TrendingUp, DollarSign, Calendar, AlertCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import { queryClient } from "@/lib/queryClient";
 
 interface Organization {
   id: string;
@@ -68,11 +70,22 @@ export default function HustlerOrgDetail() {
   const params = useParams();
   const orgId = params.orgId;
 
-  // Fetch current user context to get organization info
-  const { data: authData } = useQuery<{ user: { organizationId: string }, organization?: Organization }>({
+  // Fetch current user context to get organization info - refetch frequently to catch context switch
+  const { data: authData, isLoading: loadingAuth } = useQuery<{ user: { organizationId: string }, organization?: Organization }>({
     queryKey: ["/api/auth/me"],
-    staleTime: 30000,
+    staleTime: 1000, // Short stale time to catch context switch quickly
+    refetchInterval: (query) => {
+      // Poll every 500ms until org context matches URL param
+      const data = query.state.data;
+      if (data?.user?.organizationId !== orgId) {
+        return 500;
+      }
+      return false; // Stop polling once context is correct
+    },
   });
+
+  // Check if org context is aligned with URL
+  const isContextAligned = authData?.user?.organizationId === orgId;
 
   // Fetch organization details from hustler organizations list
   const { data: hustlerOrgs } = useQuery<{ organizations: Array<{ organizationId: string, organization: Organization }> }>({
@@ -83,27 +96,42 @@ export default function HustlerOrgDetail() {
   // Find the current organization from the hustler's linked orgs
   const currentOrg = hustlerOrgs?.organizations?.find(o => o.organizationId === orgId)?.organization;
 
-  // Fetch projects for this org (uses session context)
+  // Invalidate cached data when org changes - use orgId in queryKey to prevent cross-org pollution
+  useEffect(() => {
+    if (isContextAligned && orgId) {
+      // Invalidate data queries when context is aligned to get fresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders", orgId] });
+    }
+  }, [isContextAligned, orgId]);
+
+  // Fetch projects for this org - only when context is aligned
   const { data: projectsData, isLoading: loadingProjects } = useQuery<{ data: Project[], pagination: { totalCount: number } }>({
-    queryKey: ["/api/projects"],
+    queryKey: ["/api/projects", orgId],
+    enabled: isContextAligned,
     staleTime: 30000,
   });
 
   // Fetch bids for this org
   const { data: bidsData, isLoading: loadingBids } = useQuery<Bid[]>({
-    queryKey: ["/api/bids"],
+    queryKey: ["/api/bids", orgId],
+    enabled: isContextAligned,
     staleTime: 30000,
   });
 
   // Fetch users for this org
   const { data: usersData, isLoading: loadingUsers } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users", orgId],
+    enabled: isContextAligned,
     staleTime: 30000,
   });
 
   // Fetch change orders
   const { data: changeOrdersData, isLoading: loadingChangeOrders } = useQuery<ChangeOrder[]>({
-    queryKey: ["/api/change-orders"],
+    queryKey: ["/api/change-orders", orgId],
+    enabled: isContextAligned,
     staleTime: 30000,
   });
 
@@ -132,6 +160,35 @@ export default function HustlerOrgDetail() {
       default: return "outline";
     }
   };
+
+  // Show loading state while waiting for org context to align
+  if (loadingAuth || !isContextAligned) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center gap-4 mb-6">
+          <Link href="/hustler">
+            <Button variant="ghost" size="icon" data-testid="button-back-portfolio">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 text-primary animate-spin" />
+            </div>
+            <div>
+              <Skeleton className="h-7 w-48 mb-2" />
+              <Skeleton className="h-5 w-32" />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
+          <p className="text-muted-foreground">Switching organization context...</p>
+          <p className="text-sm text-muted-foreground mt-1">Loading {currentOrg?.name || "organization"} data</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6">
