@@ -5082,6 +5082,46 @@ export const insertHustlerOrganizationSchema = createInsertSchema(hustlerOrganiz
 export type InsertHustlerOrganization = z.infer<typeof insertHustlerOrganizationSchema>;
 export type HustlerOrganization = typeof hustlerOrganizations.$inferSelect;
 
+// Hustler Link Requests - Invitation/Request workflow for linking HUSTLERs to organizations
+export const hustlerLinkRequestStatusEnum = pgEnum("hustler_link_request_status", ["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REVOKED"]);
+
+export const hustlerLinkRequests = pgTable("hustler_link_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // The HUSTLER user requesting or being invited
+  hustlerUserId: varchar("hustler_user_id").references(() => users.id, { onDelete: "cascade" }),
+  hustlerEmail: text("hustler_email"), // Email for pending invites where user may not exist yet
+  // The organization to be linked
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // Who initiated the request
+  initiatedByUserId: varchar("initiated_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Type: INVITE (admin invites hustler) or REQUEST (hustler requests access)
+  requestType: text("request_type").notNull().default("INVITE"), // "INVITE" or "REQUEST"
+  // Status workflow
+  status: hustlerLinkRequestStatusEnum("status").notNull().default("PENDING"),
+  // Secure token for email invites
+  inviteToken: text("invite_token"),
+  inviteTokenHash: text("invite_token_hash"),
+  // Optional role override granted upon approval
+  roleOverride: userRoleEnum("role_override"),
+  // Message from requester/inviter
+  message: text("message"),
+  // Timestamps
+  expiresAt: timestamp("expires_at"),
+  respondedAt: timestamp("responded_at"),
+  respondedByUserId: varchar("responded_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  hustlerIdx: index("hustler_link_req_hustler_idx").on(table.hustlerUserId),
+  orgIdx: index("hustler_link_req_org_idx").on(table.organizationId),
+  statusIdx: index("hustler_link_req_status_idx").on(table.status),
+  tokenIdx: index("hustler_link_req_token_idx").on(table.inviteTokenHash),
+}));
+
+export const insertHustlerLinkRequestSchema = createInsertSchema(hustlerLinkRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertHustlerLinkRequest = z.infer<typeof insertHustlerLinkRequestSchema>;
+export type HustlerLinkRequest = typeof hustlerLinkRequests.$inferSelect;
+
 // Dashboard Widget Configuration Type (for layout JSON)
 export interface DashboardWidgetConfig {
   id: string;
