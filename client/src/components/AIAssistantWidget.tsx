@@ -310,7 +310,9 @@ export function AIAssistantWidget() {
     }
   };
 
-  if (!isEnabled || !user) return null;
+  // Always show widget if in walkthrough, even if normally disabled
+  if (!user) return null;
+  if (!isEnabled && !isInWalkthrough) return null;
 
   const currentStep = walkthroughStatus?.walkthrough?.currentStep;
   const progress = walkthroughStatus ? (walkthroughStatus.walkthroughStep / walkthroughStatus.totalSteps) * 100 : 0;
