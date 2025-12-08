@@ -713,6 +713,67 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
       }
     ],
     completionMessage: "You did it, {{firstName}}! Catalog management, communication, orders — you've got the tools to succeed. I'm here if you need anything. Just click my icon. Here's to a great partnership!"
+  },
+
+  HUSTLER: {
+    role: "HUSTLER",
+    roleName: "Multi-Organization Manager",
+    welcomeMessage: "Hey {{firstName}}! Welcome to your Hustler command center! As a Multi-Organization Manager, you've got the power to oversee multiple companies from one account. Let me show you how to navigate your empire!",
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Your Command Center",
+        description: "{{firstName}}, this is where you see the big picture. Your dashboard shows activity across all your linked organizations — switch between them anytime.",
+        action: "Check out your dashboard and see how organization switching works.",
+        targetPage: "/dashboard",
+        tips: [
+          "Use the organization switcher in the header to jump between companies",
+          "Your current organization is always visible at the top",
+          "Dashboard stats reflect the organization you're currently viewing"
+        ],
+        encouragement: "Nice! You're already getting the hang of managing multiple orgs!"
+      },
+      {
+        stepNumber: 2,
+        title: "Organization Management",
+        description: "This is where the magic happens, {{firstName}} — see all your linked organizations, switch contexts, and manage your access across companies.",
+        action: "Head to the Hustler dashboard to see your organization portfolio.",
+        targetPage: "/hustler",
+        tips: [
+          "Link new organizations you've been invited to",
+          "Each org can have different role permissions for you",
+          "You can unlink organizations you no longer need access to"
+        ],
+        encouragement: "You're a true multi-tasker! Keep those organizations in check."
+      },
+      {
+        stepNumber: 3,
+        title: "Cross-Org Projects",
+        description: "{{firstName}}, you can view projects across all your organizations. This helps you track work happening across your entire portfolio.",
+        action: "Check out the Projects section to see work across your organizations.",
+        targetPage: "/projects",
+        tips: [
+          "Remember to switch organizations to see each company's projects",
+          "Use this view to spot patterns across companies",
+          "Compare how different teams handle similar projects"
+        ],
+        encouragement: "Great overview! You're seeing the bigger picture."
+      },
+      {
+        stepNumber: 4,
+        title: "Stay Connected",
+        description: "Last thing, {{firstName}} — Messages keeps you in touch with teams across all your organizations. Important updates, questions, coordination — it all flows here.",
+        action: "Check out Messages to see how cross-org communication works.",
+        targetPage: "/messages",
+        tips: [
+          "Messages are organization-specific — switch orgs to see each team",
+          "Respond promptly to keep all your teams moving",
+          "Use messages for quick coordination between companies"
+        ],
+        encouragement: "And you're ready to hustle! Multiple orgs, one powerful account."
+      }
+    ],
+    completionMessage: "You're set up and ready to roll, {{firstName}}! Managing multiple organizations is no small feat, but you've got all the tools you need. I'm here if you need anything — just click my icon. Go build your empire!"
   }
 };
 
