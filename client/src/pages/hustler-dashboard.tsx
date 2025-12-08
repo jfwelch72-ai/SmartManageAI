@@ -3,10 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, ArrowRightLeft, Plus, MapPin } from "lucide-react";
+import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { formatDistanceToNow } from "date-fns";
 
 interface Organization {
   id: string;
@@ -32,12 +33,63 @@ interface HustlerOrganizationsResponse {
   count: number;
 }
 
+interface PendingInvite {
+  id: string;
+  organizationId: string;
+  requestType: string;
+  status: string;
+  roleOverride: string | null;
+  message: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    tradeType: string;
+    logoUrl: string | null;
+  };
+  invitedBy: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+  };
+}
+
 export default function HustlerDashboard() {
   const { toast } = useToast();
 
   const { data, isLoading, error } = useQuery<HustlerOrganizationsResponse>({
     queryKey: ["/api/hustler/organizations"],
     staleTime: 30000,
+  });
+
+  const { data: pendingInvitesData, isLoading: loadingInvites } = useQuery<{ invites: PendingInvite[] }>({
+    queryKey: ["/api/hustler/link-requests/pending"],
+    staleTime: 30000,
+  });
+
+  const respondMutation = useMutation({
+    mutationFn: async ({ requestId, action }: { requestId: string; action: "approve" | "reject" }) => {
+      const response = await apiRequest("POST", `/api/hustler/link-requests/${requestId}/respond`, { action });
+      return response.json();
+    },
+    onSuccess: (result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hustler/link-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hustler/organizations"] });
+      toast({
+        title: variables.action === "approve" ? "Invite Accepted" : "Invite Declined",
+        description: result.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed",
+        description: error.message || "Failed to respond to invite",
+        variant: "destructive",
+      });
+    },
   });
 
   const switchMutation = useMutation({
@@ -121,6 +173,90 @@ export default function HustlerDashboard() {
           </Button>
         </Link>
       </div>
+
+      {(pendingInvitesData?.invites?.length || 0) > 0 && (
+        <div className="mb-6 space-y-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Mail className="h-5 w-5 text-primary" />
+            Pending Invites
+            <Badge variant="secondary" className="ml-2">
+              {pendingInvitesData?.invites.length}
+            </Badge>
+          </h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {pendingInvitesData?.invites.map((invite) => (
+              <Card key={invite.id} className="border-primary/20 bg-primary/5" data-testid={`card-invite-${invite.id}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{invite.organization.name}</CardTitle>
+                      <CardDescription className="mt-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {invite.organization.tradeType.replace(/_/g, " ")}
+                        </Badge>
+                      </CardDescription>
+                    </div>
+                    {invite.organization.logoUrl && (
+                      <img
+                        src={invite.organization.logoUrl}
+                        alt={invite.organization.name}
+                        className="h-10 w-10 rounded object-contain"
+                      />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    <p>
+                      Invited by {invite.invitedBy.firstName || invite.invitedBy.email} {" "}
+                      {formatDistanceToNow(new Date(invite.createdAt), { addSuffix: true })}
+                    </p>
+                    {invite.roleOverride && (
+                      <p className="flex items-center gap-1 mt-1">
+                        <Users className="h-3 w-3" />
+                        Role: {invite.roleOverride}
+                      </p>
+                    )}
+                  </div>
+                  {invite.message && (
+                    <p className="text-sm italic text-muted-foreground border-l-2 pl-2">
+                      "{invite.message}"
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => respondMutation.mutate({ requestId: invite.id, action: "approve" })}
+                      disabled={respondMutation.isPending}
+                      className="flex-1"
+                      data-testid={`button-accept-${invite.id}`}
+                    >
+                      {respondMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4 mr-1" />
+                          Accept
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => respondMutation.mutate({ requestId: invite.id, action: "reject" })}
+                      disabled={respondMutation.isPending}
+                      data-testid={`button-decline-${invite.id}`}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Decline
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       {data?.count === 0 ? (
         <Card>

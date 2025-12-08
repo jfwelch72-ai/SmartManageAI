@@ -294,8 +294,8 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Only admins/managers can invite
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(req.user.role)) {
+    // Only admins can invite
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
       return res.status(403).json({ error: "Only admins can invite HUSTLERs" });
     }
 
@@ -437,14 +437,14 @@ router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthReques
   }
 });
 
-// Get all link requests for an organization (for admins)
+// Get all link requests for an organization (for admins only)
 router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(req.user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -676,14 +676,14 @@ router.post("/hustler/link-requests/accept-token", requireAuth, async (req: Auth
   }
 });
 
-// Revoke an invite (admin)
+// Revoke an invite (admin only)
 router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user || !req.user.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(req.user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
