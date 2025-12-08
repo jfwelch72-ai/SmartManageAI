@@ -480,12 +480,18 @@ export function AppSidebar() {
           )}
           {isInWalkthrough && (
             <SidebarMenuItem>
-              <div className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
-                <div className="flex items-center gap-2 text-xs text-primary">
-                  <Sparkles className="w-3 h-3" />
-                  <span>Tutorial: Step {walkthroughStatus.walkthroughStep}/{walkthroughStatus.totalSteps}</span>
-                </div>
-              </div>
+              <SidebarMenuButton 
+                onClick={() => window.dispatchEvent(new CustomEvent("open-ai-assistant"))}
+                className="text-primary hover:text-primary"
+                tooltip="Continue Tutorial"
+                data-testid="sidebar-continue-tutorial"
+              >
+                <GraduationCap className="w-4 h-4" />
+                <span>Continue Tutorial</span>
+                <Badge variant="secondary" className="ml-auto text-xs px-1.5 py-0">
+                  {walkthroughStatus.walkthroughStep}/{walkthroughStatus.totalSteps}
+                </Badge>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           )}
           <SidebarMenuItem>
