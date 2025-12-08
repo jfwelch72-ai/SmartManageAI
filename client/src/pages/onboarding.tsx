@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2, FlaskConical } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import { isSuperAdmin } from "@/lib/rbac";
+import { isOrganizationAdmin } from "@/lib/rbac";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -306,8 +306,8 @@ export default function OnboardingPage() {
 
   const progressPercentage = Math.min((step / 7) * 100, 100);
   
-  // Check if SUPER_ADMIN is viewing for troubleshooting
-  const isDevPreview = user && isSuperAdmin(user.role);
+  // Check if ADMIN is viewing for troubleshooting (Dev Admin testing the onboarding flow)
+  const isDevPreview = user && isOrganizationAdmin(user.role);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -320,7 +320,7 @@ export default function OnboardingPage() {
                 Dev Preview Mode
               </p>
               <p className="text-xs text-muted-foreground">
-                You're viewing as Super Admin for troubleshooting
+                You're viewing as Admin for troubleshooting
               </p>
             </div>
             <Badge variant="outline" className="text-orange-500 border-orange-500 shrink-0">

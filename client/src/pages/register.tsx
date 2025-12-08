@@ -6,7 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FlaskConical, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { isSuperAdmin } from "@/lib/rbac";
+import { isOrganizationAdmin } from "@/lib/rbac";
 
 export default function RegisterPage() {
   const [location, setLocation] = useLocation();
@@ -14,12 +14,12 @@ export default function RegisterPage() {
   const { toast } = useToast();
   const [registrationComplete, setRegistrationComplete] = useState(false);
 
-  // Check if SUPER_ADMIN is viewing for troubleshooting
-  const isDevPreview = user && isSuperAdmin(user.role);
+  // Check if ADMIN is viewing for troubleshooting (Dev Admin testing the registration flow)
+  const isDevPreview = user && isOrganizationAdmin(user.role);
 
-  // Redirect if already logged in (except SUPER_ADMIN for troubleshooting)
+  // Redirect if already logged in (except ADMIN for troubleshooting)
   useEffect(() => {
-    if (user && !isSuperAdmin(user.role)) {
+    if (user && !isOrganizationAdmin(user.role)) {
       // If user has no organization, redirect to onboarding
       if (!user.organizationId) {
         setLocation('/onboarding');
@@ -81,7 +81,7 @@ export default function RegisterPage() {
               Dev Preview Mode
             </p>
             <p className="text-xs text-muted-foreground">
-              You're viewing as Super Admin for troubleshooting
+              You're viewing as Admin for troubleshooting
             </p>
           </div>
           <Badge variant="outline" className="text-orange-500 border-orange-500 shrink-0">
