@@ -145,6 +145,8 @@ export function FirstTimeWelcomeModal() {
       // Only dismiss after successful start
       sessionStorage.setItem(DISMISSED_KEY, "true");
       handleClose();
+      // Dispatch event to open the AI assistant widget
+      window.dispatchEvent(new CustomEvent("open-ai-assistant"));
     },
     onError: () => {
       setHasError(true);

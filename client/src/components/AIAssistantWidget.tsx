@@ -104,6 +104,16 @@ export function AIAssistantWidget() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
+  // Listen for custom event to open assistant (dispatched from sidebar "Start Tutorial" button)
+  useEffect(() => {
+    const handleOpenAssistant = () => {
+      setIsOpen(true);
+      setIsMinimized(false);
+    };
+    window.addEventListener("open-ai-assistant", handleOpenAssistant);
+    return () => window.removeEventListener("open-ai-assistant", handleOpenAssistant);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
   }, [isMinimized]);
