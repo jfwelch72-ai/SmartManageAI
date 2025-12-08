@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2 } from "lucide-react";
+import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2, FlaskConical } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { isSuperAdmin } from "@/lib/rbac";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -304,10 +305,29 @@ export default function OnboardingPage() {
   };
 
   const progressPercentage = Math.min((step / 7) * 100, 100);
+  
+  // Check if SUPER_ADMIN is viewing for troubleshooting
+  const isDevPreview = user && isSuperAdmin(user.role);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
+        {isDevPreview && (
+          <div className="mb-4 p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-center gap-2">
+            <FlaskConical className="h-5 w-5 text-orange-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-orange-600 dark:text-orange-400">
+                Dev Preview Mode
+              </p>
+              <p className="text-xs text-muted-foreground">
+                You're viewing as Super Admin for troubleshooting
+              </p>
+            </div>
+            <Badge variant="outline" className="text-orange-500 border-orange-500 shrink-0">
+              DEV
+            </Badge>
+          </div>
+        )}
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold" data-testid="text-onboarding-title">Set Up Your Platform</h1>
           <p className="text-muted-foreground mt-2">
