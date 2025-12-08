@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import WebsitePreviewRenderer from "@/components/website-preview-renderer";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -49,7 +50,10 @@ import {
   Target,
   Copy,
   Wand2,
-  Save
+  Save,
+  Monitor,
+  Tablet,
+  Smartphone
 } from "lucide-react";
 import { format } from "date-fns";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
@@ -181,6 +185,7 @@ export default function WebsiteBuilderPage() {
   const [showCreateProjectDialog, setShowCreateProjectDialog] = useState(false);
   const [showGenerateBlogDialog, setShowGenerateBlogDialog] = useState(false);
   const [generatedBlogContent, setGeneratedBlogContent] = useState<any>(null);
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
 
   const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
   const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
@@ -275,6 +280,13 @@ export default function WebsiteBuilderPage() {
   const { data: contactSubmissions = [] } = useQuery<ContactSubmission[]>({
     queryKey: ["/api/website/contact/submissions"],
     enabled: !!user && canEdit && !!websiteData?.hasWebsite
+  });
+
+  const { data: previewData, isLoading: loadingPreview, refetch: refetchPreview } = useQuery<any>({
+    queryKey: ["/api/website/preview"],
+    enabled: !!user && isAdmin && !!websiteData?.hasWebsite && activeTab === "preview",
+    refetchOnMount: true,
+    staleTime: 0,
   });
 
   const saveWebsiteMutation = useMutation({
@@ -501,7 +513,7 @@ export default function WebsiteBuilderPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-7 w-full max-w-4xl" data-testid="tabs-website-sections">
+        <TabsList className="grid grid-cols-8 w-full max-w-5xl" data-testid="tabs-website-sections">
           <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">Setup</span>
@@ -529,6 +541,10 @@ export default function WebsiteBuilderPage() {
           <TabsTrigger value="leads" className="flex items-center gap-1" data-testid="tab-leads">
             <Mail className="h-4 w-4" />
             <span className="hidden sm:inline">Leads</span>
+          </TabsTrigger>
+          <TabsTrigger value="preview" className="flex items-center gap-1" data-testid="tab-preview">
+            <Eye className="h-4 w-4" />
+            <span className="hidden sm:inline">Preview</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1219,6 +1235,104 @@ export default function WebsiteBuilderPage() {
               </TableBody>
             </Table>
           )}
+        </TabsContent>
+
+        <TabsContent value="preview" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Eye className="h-5 w-5" />
+                    Website Preview
+                  </CardTitle>
+                  <CardDescription>See how your website will look to visitors</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center border rounded-lg p-1 gap-1">
+                    <Button
+                      variant={previewDevice === "desktop" ? "secondary" : "ghost"}
+                      size="icon"
+                      onClick={() => setPreviewDevice("desktop")}
+                      data-testid="button-preview-desktop"
+                    >
+                      <Monitor className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={previewDevice === "tablet" ? "secondary" : "ghost"}
+                      size="icon"
+                      onClick={() => setPreviewDevice("tablet")}
+                      data-testid="button-preview-tablet"
+                    >
+                      <Tablet className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant={previewDevice === "mobile" ? "secondary" : "ghost"}
+                      size="icon"
+                      onClick={() => setPreviewDevice("mobile")}
+                      data-testid="button-preview-mobile"
+                    >
+                      <Smartphone className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchPreview()}
+                    disabled={loadingPreview}
+                    data-testid="button-refresh-preview"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingPreview ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingPreview ? (
+                <div className="flex items-center justify-center h-[600px]">
+                  <div className="text-center space-y-3">
+                    <RefreshCw className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                    <p className="text-muted-foreground">Loading preview...</p>
+                  </div>
+                </div>
+              ) : !previewData ? (
+                <div className="flex items-center justify-center h-[600px]">
+                  <div className="text-center space-y-3">
+                    <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground" />
+                    <p className="text-muted-foreground">No website data available</p>
+                    <p className="text-sm text-muted-foreground">Configure your website in the Setup tab first</p>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  className="mx-auto border rounded-lg overflow-hidden bg-white shadow-sm transition-all duration-300"
+                  style={{
+                    width: previewDevice === "desktop" ? "100%" : previewDevice === "tablet" ? "768px" : "375px",
+                    maxWidth: "100%",
+                  }}
+                >
+                  <div 
+                    className="overflow-y-auto"
+                    style={{ height: "600px" }}
+                  >
+                    <WebsitePreviewRenderer 
+                      data={previewData} 
+                      deviceType={previewDevice}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="border-t pt-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Globe className="h-4 w-4" />
+                <span>
+                  Preview shows how your website will appear. Changes won't be visible until you publish.
+                </span>
+              </div>
+            </CardFooter>
+          </Card>
         </TabsContent>
       </Tabs>
 

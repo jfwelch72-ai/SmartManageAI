@@ -1583,4 +1583,96 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
   }
 });
 
+// ============================================
+// WEBSITE PREVIEW
+// ============================================
+
+// GET /api/website/preview - Get all data needed for website preview
+router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    
+    // Restrict to ADMIN and SUPER_ADMIN only
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    // Get organization ID - SUPER_ADMIN must have an organization context
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required for preview" });
+    }
+
+    // Get website settings
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.organizationId, orgId),
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not configured" });
+    }
+
+    // Get organization info for branding
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+    });
+
+    // Get pages
+    const pages = await db.query.organizationWebsitePages.findMany({
+      where: eq(organizationWebsitePages.organizationId, orgId),
+      orderBy: [asc(organizationWebsitePages.navigationOrder)],
+    });
+
+    // Get published blog posts
+    const blogPosts = await db.query.websiteBlogPosts.findMany({
+      where: and(
+        eq(websiteBlogPosts.organizationId, orgId),
+        eq(websiteBlogPosts.status, "PUBLISHED")
+      ),
+      orderBy: [desc(websiteBlogPosts.publishedAt)],
+      limit: 6,
+    });
+
+    // Get featured projects
+    const projects = await db.query.websiteProjects.findMany({
+      where: and(
+        eq(websiteProjects.organizationId, orgId),
+        eq(websiteProjects.status, "PUBLISHED")
+      ),
+      orderBy: [desc(websiteProjects.completionDate)],
+      limit: 6,
+    });
+
+    // Get social links
+    const socialLinks = await db.query.organizationSocialLinks.findFirst({
+      where: eq(organizationSocialLinks.organizationId, orgId),
+    });
+
+    // Set no-cache headers for preview
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+
+    res.json({
+      website,
+      organization: org ? {
+        name: org.name,
+        tradeType: org.tradeType,
+        region: org.region,
+        logoUrl: org.logoUrl,
+      } : null,
+      pages: pages.filter(p => p.showInNavigation),
+      blogPosts,
+      projects,
+      socialLinks,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error fetching preview data:", error);
+    res.status(500).json({ error: "Failed to fetch preview data" });
+  }
+});
+
 export default router;
