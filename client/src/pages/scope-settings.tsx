@@ -255,28 +255,36 @@ export default function ScopeSettings() {
     : [];
   
   // Find categoryId based on trade + subcategory selection
-  // Returns empty string if no matching category exists (prevents silent misassignment)
+  // Uses multiple matching strategies to handle various category naming conventions
   const findCategoryId = (trade: string, subCategory: string): string => {
     // Format trade name for comparison (underscores to spaces for display matching)
     const tradeFormatted = trade.replace(/_/g, " ");
     
-    // Try to find existing category that matches "TRADE - SubCategory" pattern
+    // Strategy 1: Try exact match with "TRADE - SubCategory" pattern
     const targetName = `${tradeFormatted} - ${subCategory}`;
-    const matchingCategory = workTypeCategories.find(cat => 
+    const exactMatch = workTypeCategories.find(cat => 
       cat.name.toLowerCase() === targetName.toLowerCase()
     );
-    
-    if (matchingCategory) {
-      return matchingCategory.id;
+    if (exactMatch) {
+      return exactMatch.id;
     }
     
-    // If subCategory is "General" or empty, try to find category that just matches the trade name
+    // Strategy 2: Try matching just the subcategory name alone (handles standalone categories like "Curb & Gutter")
+    if (subCategory && subCategory !== "General") {
+      const standaloneMatch = workTypeCategories.find(cat => 
+        cat.name.toLowerCase() === subCategory.toLowerCase()
+      );
+      if (standaloneMatch) {
+        return standaloneMatch.id;
+      }
+    }
+    
+    // Strategy 3: If subCategory is "General" or empty, try to find category that just matches the trade name
     if (!subCategory || subCategory === "General") {
       const tradeCategory = workTypeCategories.find(cat => 
         cat.name.toLowerCase() === trade.toLowerCase() ||
         cat.name.toLowerCase() === tradeFormatted.toLowerCase()
       );
-      
       if (tradeCategory) {
         return tradeCategory.id;
       }
