@@ -2672,6 +2672,74 @@ export type InsertScopeModifier = z.infer<typeof insertScopeModifierSchema>;
 export type ScopeModifier = typeof scopeModifiers.$inferSelect;
 
 // ============================================================
+// MATERIAL CALCULATOR PRESETS
+// Saved dimension configurations for work types
+// ============================================================
+
+// Material Calculator Presets - stores saved dimension configurations
+export const materialCalculatorPresets = pgTable("material_calculator_presets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g., "Standard Curb 6x18", "Heavy Duty Sidewalk"
+  workTypeCode: text("work_type_code"), // Optional link to specific work type code
+  unit: text("unit").notNull(), // LF, SF, etc.
+  
+  // Concrete dimensions
+  concreteDepthInches: decimal("concrete_depth_inches", { precision: 6, scale: 2 }),
+  dimensionWidthInches: decimal("dimension_width_inches", { precision: 6, scale: 2 }),
+  dimensionHeightInches: decimal("dimension_height_inches", { precision: 6, scale: 2 }),
+  concreteWasteFactor: decimal("concrete_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Stone sub-base
+  requiresStoneBase: boolean("requires_stone_base").default(false),
+  stoneType: text("stone_type"),
+  stoneDepthInches: decimal("stone_depth_inches", { precision: 6, scale: 2 }),
+  stoneWasteFactor: decimal("stone_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Excavation
+  requiresExcavation: boolean("requires_excavation").default(false),
+  excavationDepthInches: decimal("excavation_depth_inches", { precision: 6, scale: 2 }),
+  excavationWidthInches: decimal("excavation_width_inches", { precision: 6, scale: 2 }),
+  excavationSwellFactor: decimal("excavation_swell_factor", { precision: 5, scale: 2 }).default("25"),
+  
+  // Wire mesh
+  requiresWireMesh: boolean("requires_wire_mesh").default(false),
+  wireMeshType: text("wire_mesh_type"),
+  wireMeshWasteFactor: decimal("wire_mesh_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Rebar
+  requiresRebar: boolean("requires_rebar").default(false),
+  rebarSize: text("rebar_size"),
+  rebarSpacingInches: decimal("rebar_spacing_inches", { precision: 6, scale: 2 }),
+  rebarWasteFactor: decimal("rebar_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Sealer
+  requiresSealer: boolean("requires_sealer").default(false),
+  sealerType: text("sealer_type"),
+  sealerCoats: integer("sealer_coats").default(1),
+  sealerWasteFactor: decimal("sealer_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Underlayment
+  requiresUnderlayment: boolean("requires_underlayment").default(false),
+  underlaymentType: text("underlayment_type"),
+  underlaymentOverlapInches: decimal("underlayment_overlap_inches", { precision: 6, scale: 2 }),
+  underlaymentWasteFactor: decimal("underlayment_waste_factor", { precision: 5, scale: 2 }).default("10"),
+  
+  // Metadata
+  isDefault: boolean("is_default").default(false), // Mark as default preset for this work type
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("material_calc_presets_org_idx").on(table.organizationId),
+  workTypeIdx: index("material_calc_presets_work_type_idx").on(table.workTypeCode),
+}));
+
+export const insertMaterialCalculatorPresetSchema = createInsertSchema(materialCalculatorPresets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMaterialCalculatorPreset = z.infer<typeof insertMaterialCalculatorPresetSchema>;
+export type MaterialCalculatorPreset = typeof materialCalculatorPresets.$inferSelect;
+
+// ============================================================
 // MASTER MODIFIERS BY TRADE (Template Library)
 // Trade-specific modifiers for scope standardization
 // ============================================================

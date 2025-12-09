@@ -6,7 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle, Shovel, Grid3X3, Ruler, Droplets, Square } from "lucide-react";
+import { ChevronDown, Layers, Mountain, Calculator, AlertTriangle, Shovel, Grid3X3, Ruler, Droplets, Square, Info, Eye, EyeOff, Save, FolderOpen, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 // Stone density constants (tons per cubic yard)
 const STONE_DENSITIES: Record<string, number> = {
@@ -116,6 +121,46 @@ interface MaterialCalculatorProps {
   value: MaterialCalculatorData;
   onChange: (data: MaterialCalculatorData) => void;
   readOnly?: boolean;
+  workTypeCode?: string;
+}
+
+// Preset type for database records
+interface MaterialPreset {
+  id: string;
+  name: string;
+  work_type_code: string | null;
+  unit: string;
+  is_default: boolean;
+  concrete_depth_inches: string | null;
+  dimension_width_inches: string | null;
+  dimension_height_inches: string | null;
+  concrete_waste_factor: string;
+  requires_stone_base: boolean;
+  stone_type: string | null;
+  stone_depth_inches: string | null;
+  stone_waste_factor: string;
+  requires_excavation: boolean;
+  excavation_depth_inches: string | null;
+  excavation_width_inches: string | null;
+  excavation_swell_factor: string;
+  requires_wire_mesh: boolean;
+  wire_mesh_type: string | null;
+  wire_mesh_waste_factor: string;
+  requires_rebar: boolean;
+  rebar_size: string | null;
+  rebar_spacing_inches: string | null;
+  rebar_waste_factor: string;
+  requires_dowels: boolean;
+  dowel_spacing_inches: string | null;
+  joint_length_feet: string | null;
+  requires_sealer: boolean;
+  sealer_type: string | null;
+  sealer_coats: number;
+  sealer_waste_factor: string;
+  requires_underlayment: boolean;
+  underlayment_type: string | null;
+  underlayment_overlap_inches: string | null;
+  underlayment_waste_factor: string;
 }
 
 export function calculateConcreteYards(
@@ -354,6 +399,47 @@ export function calculateUnderlaymentSF(
   return Math.ceil(areaSF * overlapFactor * wasteMultiplier);
 }
 
+// Formula breakdown component for transparency
+function FormulaBreakdown({ 
+  formula, 
+  steps, 
+  result,
+  resultUnit 
+}: { 
+  formula: string; 
+  steps: { label: string; value: string; calculation?: string }[]; 
+  result: number;
+  resultUnit: string;
+}) {
+  return (
+    <div className="mt-2 p-3 bg-muted/50 rounded-md border border-muted text-xs space-y-2" data-testid="formula-breakdown">
+      <div className="flex items-center gap-2 font-medium text-muted-foreground">
+        <Info className="h-3 w-3" />
+        <span>Calculation Formula</span>
+      </div>
+      <div className="font-mono bg-background p-2 rounded border text-xs overflow-x-auto">
+        {formula}
+      </div>
+      <div className="space-y-1">
+        <p className="text-muted-foreground font-medium">Step-by-Step:</p>
+        {steps.map((step, i) => (
+          <div key={i} className="flex justify-between items-center py-1 border-b border-muted last:border-0">
+            <span className="text-muted-foreground">{step.label}</span>
+            <span className="font-mono">
+              {step.calculation && <span className="text-muted-foreground mr-2">{step.calculation} =</span>}
+              {step.value}
+            </span>
+          </div>
+        ))}
+        <div className="flex justify-between items-center py-1 font-medium bg-primary/5 px-2 rounded">
+          <span>Final Result</span>
+          <span className="font-mono">{result.toFixed(2)} {resultUnit}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MaterialCalculator({
   unit,
   quantity,
@@ -361,10 +447,129 @@ export default function MaterialCalculator({
   value,
   onChange,
   readOnly = false,
+  workTypeCode,
 }: MaterialCalculatorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showFormulas, setShowFormulas] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const { toast } = useToast();
   const isLinear = isLinearUnit(unit);
   const isArea = isAreaUnit(unit);
+
+  // Fetch presets for this work type
+  const { data: presets = [] } = useQuery<MaterialPreset[]>({
+    queryKey: ["/api/material-calculator/presets/by-work-type", workTypeCode || "all"],
+    enabled: isOpen && !readOnly,
+  });
+
+  // Save preset mutation
+  const savePresetMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const presetData = {
+        name,
+        workTypeCode: workTypeCode || null,
+        unit,
+        concreteDepthInches: value.concreteDepthInches || null,
+        dimensionWidthInches: value.dimensionWidthInches || null,
+        dimensionHeightInches: value.dimensionHeightInches || null,
+        concreteWasteFactor: value.concreteWasteFactor || "10",
+        requiresStoneBase: value.requiresStoneBase,
+        stoneType: value.stoneType || null,
+        stoneDepthInches: value.stoneDepthInches || null,
+        stoneWasteFactor: value.stoneWasteFactor || "10",
+        requiresExcavation: value.requiresExcavation,
+        excavationDepthInches: value.excavationDepthInches || null,
+        excavationWidthInches: value.excavationWidthInches || null,
+        excavationSwellFactor: value.excavationSwellFactor || "25",
+        requiresWireMesh: value.requiresWireMesh,
+        wireMeshType: value.wireMeshType || null,
+        wireMeshWasteFactor: value.wireMeshWasteFactor || "10",
+        requiresRebar: value.requiresRebar,
+        rebarSize: value.rebarSize || null,
+        rebarSpacingInches: value.rebarSpacingInches || null,
+        rebarWasteFactor: value.rebarWasteFactor || "10",
+        requiresDowels: value.requiresDowels,
+        dowelSpacingInches: value.dowelSpacingInches || null,
+        jointLengthFeet: value.jointLengthFeet || null,
+        requiresSealer: value.requiresSealer,
+        sealerType: value.sealerType || null,
+        sealerCoats: parseInt(value.sealerCoats) || 1,
+        sealerWasteFactor: value.sealerWasteFactor || "10",
+        requiresUnderlayment: value.requiresUnderlayment,
+        underlaymentType: value.underlaymentType || null,
+        underlaymentOverlapInches: value.underlaymentOverlapInches || null,
+        underlaymentWasteFactor: value.underlaymentWasteFactor || "10",
+      };
+      return await apiRequest("/api/material-calculator/presets", {
+        method: "POST",
+        body: JSON.stringify(presetData),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/material-calculator/presets"] });
+      toast({ title: "Preset saved", description: `"${presetName}" has been saved.` });
+      setSaveDialogOpen(false);
+      setPresetName("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save preset.", variant: "destructive" });
+    },
+  });
+
+  // Delete preset mutation
+  const deletePresetMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/material-calculator/presets/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/material-calculator/presets"] });
+      toast({ title: "Preset deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete preset.", variant: "destructive" });
+    },
+  });
+
+  // Load preset into form
+  const loadPreset = (preset: MaterialPreset) => {
+    onChange({
+      ...value,
+      concreteDepthInches: preset.concrete_depth_inches || "",
+      dimensionWidthInches: preset.dimension_width_inches || "",
+      dimensionHeightInches: preset.dimension_height_inches || "",
+      concreteWasteFactor: preset.concrete_waste_factor || "10",
+      requiresStoneBase: preset.requires_stone_base,
+      stoneType: preset.stone_type || "",
+      stoneDepthInches: preset.stone_depth_inches || "",
+      stoneWasteFactor: preset.stone_waste_factor || "10",
+      requiresExcavation: preset.requires_excavation,
+      excavationDepthInches: preset.excavation_depth_inches || "",
+      excavationWidthInches: preset.excavation_width_inches || "",
+      excavationSwellFactor: preset.excavation_swell_factor || "25",
+      requiresWireMesh: preset.requires_wire_mesh,
+      wireMeshType: preset.wire_mesh_type || "",
+      wireMeshWasteFactor: preset.wire_mesh_waste_factor || "10",
+      requiresRebar: preset.requires_rebar,
+      rebarSize: preset.rebar_size || "",
+      rebarSpacingInches: preset.rebar_spacing_inches || "",
+      rebarWasteFactor: preset.rebar_waste_factor || "10",
+      requiresDowels: preset.requires_dowels,
+      dowelSpacingInches: preset.dowel_spacing_inches || "",
+      jointLengthFeet: preset.joint_length_feet || "",
+      requiresSealer: preset.requires_sealer,
+      sealerType: preset.sealer_type || "",
+      sealerCoats: String(preset.sealer_coats || 1),
+      sealerWasteFactor: preset.sealer_waste_factor || "10",
+      requiresUnderlayment: preset.requires_underlayment,
+      underlaymentType: preset.underlayment_type || "",
+      underlaymentOverlapInches: preset.underlayment_overlap_inches || "",
+      underlaymentWasteFactor: preset.underlayment_waste_factor || "10",
+    });
+    toast({ title: "Preset loaded", description: `"${preset.name}" has been applied.` });
+  };
 
   // Auto-detect if this is a concrete item based on description
   const isConcreteItem = useMemo(() => {
@@ -575,6 +780,99 @@ export default function MaterialCalculator({
       
       <CollapsibleContent>
         <div className="space-y-4 p-3 bg-muted/30 rounded-md mt-2">
+          {/* Preset Controls and Show Math Toggle */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Preset Selector */}
+            {!readOnly && presets.length > 0 && (
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                <Select onValueChange={(val) => {
+                  const preset = presets.find(p => p.id === val);
+                  if (preset) loadPreset(preset);
+                }}>
+                  <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-preset">
+                    <SelectValue placeholder="Load preset..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {presets.map((preset) => (
+                      <div key={preset.id} className="flex items-center gap-1">
+                        <SelectItem value={preset.id} className="flex-1 text-xs">
+                          {preset.name}
+                          {preset.is_default && <Badge variant="secondary" className="ml-1 text-[10px]">Default</Badge>}
+                        </SelectItem>
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Save Preset Button */}
+              {!readOnly && (
+                <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs gap-1 h-8"
+                      data-testid="button-save-preset"
+                    >
+                      <Save className="h-3 w-3" />
+                      Save Preset
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Save Material Preset</DialogTitle>
+                      <DialogDescription>
+                        Save current dimension settings as a reusable preset
+                        {workTypeCode && ` for ${workTypeCode}`}.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                      <Label htmlFor="preset-name">Preset Name</Label>
+                      <Input
+                        id="preset-name"
+                        value={presetName}
+                        onChange={(e) => setPresetName(e.target.value)}
+                        placeholder="e.g., Standard Curb 6×18"
+                        data-testid="input-preset-name"
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setSaveDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => savePresetMutation.mutate(presetName)}
+                        disabled={!presetName.trim() || savePresetMutation.isPending}
+                        data-testid="button-confirm-save-preset"
+                      >
+                        {savePresetMutation.isPending ? "Saving..." : "Save Preset"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+
+              {/* Show Math Toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowFormulas(!showFormulas)}
+                className="text-xs gap-1 h-8"
+                data-testid="button-toggle-formulas"
+              >
+                {showFormulas ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showFormulas ? "Hide Math" : "Show Math"}
+              </Button>
+            </div>
+          </div>
+          
           {/* Concrete Section */}
           <Card className="border-primary/20">
             <CardHeader className="py-3 px-4">
@@ -665,6 +963,81 @@ export default function MaterialCalculator({
                   </div>
                 )}
               </div>
+              
+              {/* Concrete Formula Breakdown */}
+              {showFormulas && concreteYards > 0 && (
+                <FormulaBreakdown
+                  formula={isLinear 
+                    ? `(Quantity × Width × Height) ÷ 1728 ÷ 27 × (1 + Waste%)`
+                    : `(Quantity × Depth ÷ 12) ÷ 27 × (1 + Waste%)`
+                  }
+                  steps={isLinear ? [
+                    { 
+                      label: "Quantity (LF)", 
+                      value: `${quantity} LF` 
+                    },
+                    { 
+                      label: "Width", 
+                      value: `${value.dimensionWidthInches || "6"}"`,
+                    },
+                    { 
+                      label: "Height/Depth", 
+                      value: `${value.dimensionHeightInches || value.concreteDepthInches || "4"}"`,
+                    },
+                    { 
+                      label: "Volume (cubic inches)", 
+                      calculation: `${quantity} × ${value.dimensionWidthInches || "6"} × ${value.dimensionHeightInches || value.concreteDepthInches || "4"}`,
+                      value: `${(quantity * (parseFloat(value.dimensionWidthInches) || 6) * (parseFloat(value.dimensionHeightInches) || parseFloat(value.concreteDepthInches) || 4)).toLocaleString()} cu in`
+                    },
+                    { 
+                      label: "Convert to cubic feet", 
+                      calculation: `÷ 1728`,
+                      value: `${((quantity * (parseFloat(value.dimensionWidthInches) || 6) * (parseFloat(value.dimensionHeightInches) || parseFloat(value.concreteDepthInches) || 4)) / 1728).toFixed(2)} cu ft`
+                    },
+                    { 
+                      label: "Convert to cubic yards", 
+                      calculation: `÷ 27`,
+                      value: `${((quantity * (parseFloat(value.dimensionWidthInches) || 6) * (parseFloat(value.dimensionHeightInches) || parseFloat(value.concreteDepthInches) || 4)) / 1728 / 27).toFixed(2)} CY`
+                    },
+                    { 
+                      label: `Add ${value.concreteWasteFactor || "10"}% waste`, 
+                      calculation: `× 1.${(value.concreteWasteFactor || "10").padStart(2, "0")}`,
+                      value: `${concreteYards.toFixed(2)} CY`
+                    },
+                  ] : [
+                    { 
+                      label: "Quantity (SF)", 
+                      value: `${quantity} SF` 
+                    },
+                    { 
+                      label: "Depth", 
+                      value: `${value.concreteDepthInches || "4"}"`,
+                    },
+                    { 
+                      label: "Depth in feet", 
+                      calculation: `${value.concreteDepthInches || "4"} ÷ 12`,
+                      value: `${((parseFloat(value.concreteDepthInches) || 4) / 12).toFixed(3)} ft`
+                    },
+                    { 
+                      label: "Volume (cubic feet)", 
+                      calculation: `${quantity} × ${((parseFloat(value.concreteDepthInches) || 4) / 12).toFixed(3)}`,
+                      value: `${(quantity * ((parseFloat(value.concreteDepthInches) || 4) / 12)).toFixed(2)} cu ft`
+                    },
+                    { 
+                      label: "Convert to cubic yards", 
+                      calculation: `÷ 27`,
+                      value: `${((quantity * ((parseFloat(value.concreteDepthInches) || 4) / 12)) / 27).toFixed(2)} CY`
+                    },
+                    { 
+                      label: `Add ${value.concreteWasteFactor || "10"}% waste`, 
+                      calculation: `× 1.${(value.concreteWasteFactor || "10").padStart(2, "0")}`,
+                      value: `${concreteYards.toFixed(2)} CY`
+                    },
+                  ]}
+                  result={concreteYards}
+                  resultUnit="Cubic Yards"
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -752,6 +1125,68 @@ export default function MaterialCalculator({
                     </div>
                   )}
                 </div>
+                
+                {/* Stone Formula Breakdown */}
+                {showFormulas && stoneTons > 0 && (() => {
+                  const stoneDepth = parseFloat(value.stoneDepthInches) || 4;
+                  const stoneWidth = parseFloat(value.dimensionWidthInches) || 24;
+                  const density = STONE_DENSITIES[value.stoneType || "CRUSHED_STONE"];
+                  const wasteFactor = parseFloat(value.stoneWasteFactor) || 10;
+                  
+                  return (
+                    <FormulaBreakdown
+                      formula={isLinear 
+                        ? `(LF × Width × Depth) ÷ 1728 ÷ 27 × Density × (1 + Waste%)`
+                        : `(SF × Depth ÷ 12) ÷ 27 × Density × (1 + Waste%)`
+                      }
+                      steps={isLinear ? [
+                        { label: "Quantity (LF)", value: `${quantity} LF` },
+                        { label: "Width", value: `${stoneWidth}"` },
+                        { label: "Depth", value: `${stoneDepth}"` },
+                        { 
+                          label: "Volume (cubic yards)", 
+                          calculation: `(${quantity} × ${stoneWidth} × ${stoneDepth}) ÷ 46656`,
+                          value: `${((quantity * stoneWidth * stoneDepth) / 46656).toFixed(3)} CY`
+                        },
+                        { 
+                          label: `Apply density (${STONE_TYPE_LABELS[value.stoneType || "CRUSHED_STONE"]})`, 
+                          calculation: `× ${density} t/yd³`,
+                          value: `${(((quantity * stoneWidth * stoneDepth) / 46656) * density).toFixed(2)} tons`
+                        },
+                        { 
+                          label: `Add ${wasteFactor}% waste`, 
+                          calculation: `× 1.${wasteFactor.toString().padStart(2, "0")}`,
+                          value: `${stoneTons.toFixed(2)} tons`
+                        },
+                      ] : [
+                        { label: "Quantity (SF)", value: `${quantity} SF` },
+                        { label: "Depth", value: `${stoneDepth}"` },
+                        { 
+                          label: "Volume (cubic feet)", 
+                          calculation: `${quantity} × (${stoneDepth} ÷ 12)`,
+                          value: `${(quantity * stoneDepth / 12).toFixed(2)} cu ft`
+                        },
+                        { 
+                          label: "Convert to cubic yards", 
+                          calculation: `÷ 27`,
+                          value: `${((quantity * stoneDepth / 12) / 27).toFixed(3)} CY`
+                        },
+                        { 
+                          label: `Apply density (${STONE_TYPE_LABELS[value.stoneType || "CRUSHED_STONE"]})`, 
+                          calculation: `× ${density} t/yd³`,
+                          value: `${(((quantity * stoneDepth / 12) / 27) * density).toFixed(2)} tons`
+                        },
+                        { 
+                          label: `Add ${wasteFactor}% waste`, 
+                          calculation: `× 1.${wasteFactor.toString().padStart(2, "0")}`,
+                          value: `${stoneTons.toFixed(2)} tons`
+                        },
+                      ]}
+                      result={stoneTons}
+                      resultUnit="Tons"
+                    />
+                  );
+                })()}
 
                 {/* Warning for specs */}
                 <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded text-xs text-amber-700 dark:text-amber-300">
@@ -843,6 +1278,58 @@ export default function MaterialCalculator({
                     </div>
                   )}
                 </div>
+                
+                {/* Excavation Formula Breakdown */}
+                {showFormulas && excavationYards > 0 && (() => {
+                  const excDepth = parseFloat(value.excavationDepthInches) || 12;
+                  const excWidth = parseFloat(value.excavationWidthInches) || 24;
+                  const swellFactor = parseFloat(value.excavationSwellFactor) || 25;
+                  const inGroundYards = excavationYards / (1 + swellFactor / 100);
+                  
+                  return (
+                    <FormulaBreakdown
+                      formula={isLinear 
+                        ? `(LF × Width × Depth) ÷ 46656 × (1 + Swell%)`
+                        : `(SF × Depth ÷ 12) ÷ 27 × (1 + Swell%)`
+                      }
+                      steps={isLinear ? [
+                        { label: "Quantity (LF)", value: `${quantity} LF` },
+                        { label: "Trench Width", value: `${excWidth}"` },
+                        { label: "Excavation Depth", value: `${excDepth}"` },
+                        { 
+                          label: "In-ground volume", 
+                          calculation: `(${quantity} × ${excWidth} × ${excDepth}) ÷ 46656`,
+                          value: `${inGroundYards.toFixed(3)} CY`
+                        },
+                        { 
+                          label: `Apply ${swellFactor}% swell factor`, 
+                          calculation: `× 1.${swellFactor.toString().padStart(2, "0")}`,
+                          value: `${excavationYards.toFixed(2)} CY`
+                        },
+                      ] : [
+                        { label: "Quantity (SF)", value: `${quantity} SF` },
+                        { label: "Excavation Depth", value: `${excDepth}"` },
+                        { 
+                          label: "Volume (cubic feet)", 
+                          calculation: `${quantity} × (${excDepth} ÷ 12)`,
+                          value: `${(quantity * excDepth / 12).toFixed(2)} cu ft`
+                        },
+                        { 
+                          label: "In-ground volume", 
+                          calculation: `÷ 27`,
+                          value: `${inGroundYards.toFixed(3)} CY`
+                        },
+                        { 
+                          label: `Apply ${swellFactor}% swell factor`, 
+                          calculation: `× 1.${swellFactor.toString().padStart(2, "0")}`,
+                          value: `${excavationYards.toFixed(2)} CY`
+                        },
+                      ]}
+                      result={excavationYards}
+                      resultUnit="Cubic Yards"
+                    />
+                  );
+                })()}
 
                 {/* Excavation notes */}
                 <div className="flex items-start gap-2 p-2 bg-orange-50 dark:bg-orange-950/30 rounded text-xs text-orange-700 dark:text-orange-300">

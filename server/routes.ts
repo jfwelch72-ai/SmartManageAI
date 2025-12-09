@@ -7889,6 +7889,216 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Material Calculator Presets
+  // Save and load dimension configurations for work types
+  // ====================
+
+  // Get all presets for the organization
+  app.get("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      const result = await db.execute(sql`
+        SELECT * FROM material_calculator_presets 
+        WHERE organization_id = ${organizationId}
+        ORDER BY is_default DESC, name ASC
+      `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Get material calculator presets error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get presets for a specific work type code
+  app.get("/api/material-calculator/presets/by-work-type/:workTypeCode", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      const result = await db.execute(sql`
+        SELECT * FROM material_calculator_presets 
+        WHERE organization_id = ${organizationId}
+          AND (work_type_code = ${req.params.workTypeCode} OR work_type_code IS NULL)
+        ORDER BY 
+          CASE WHEN work_type_code = ${req.params.workTypeCode} THEN 0 ELSE 1 END,
+          is_default DESC, 
+          name ASC
+      `);
+
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Get presets by work type error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create a new preset
+  app.post("/api/material-calculator/presets", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      const userId = req.user!.id;
+      if (!organizationId) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      const { name, workTypeCode, unit, ...dimensions } = req.body;
+
+      if (!name || !unit) {
+        res.status(400).json({ error: "Name and unit are required" });
+        return;
+      }
+
+      const result = await db.execute(sql`
+        INSERT INTO material_calculator_presets (
+          organization_id, name, work_type_code, unit,
+          concrete_depth_inches, dimension_width_inches, dimension_height_inches, concrete_waste_factor,
+          requires_stone_base, stone_type, stone_depth_inches, stone_waste_factor,
+          requires_excavation, excavation_depth_inches, excavation_width_inches, excavation_swell_factor,
+          requires_wire_mesh, wire_mesh_type, wire_mesh_waste_factor,
+          requires_rebar, rebar_size, rebar_spacing_inches, rebar_waste_factor,
+          requires_dowels, dowel_spacing_inches, joint_length_feet,
+          requires_sealer, sealer_type, sealer_coats, sealer_waste_factor,
+          requires_underlayment, underlayment_type, underlayment_overlap_inches, underlayment_waste_factor,
+          is_default, created_by_id
+        ) VALUES (
+          ${organizationId}, ${name}, ${workTypeCode || null}, ${unit},
+          ${dimensions.concreteDepthInches || null}, ${dimensions.dimensionWidthInches || null}, 
+          ${dimensions.dimensionHeightInches || null}, ${dimensions.concreteWasteFactor || '10'},
+          ${dimensions.requiresStoneBase || false}, ${dimensions.stoneType || null}, 
+          ${dimensions.stoneDepthInches || null}, ${dimensions.stoneWasteFactor || '10'},
+          ${dimensions.requiresExcavation || false}, ${dimensions.excavationDepthInches || null}, 
+          ${dimensions.excavationWidthInches || null}, ${dimensions.excavationSwellFactor || '25'},
+          ${dimensions.requiresWireMesh || false}, ${dimensions.wireMeshType || null}, 
+          ${dimensions.wireMeshWasteFactor || '10'},
+          ${dimensions.requiresRebar || false}, ${dimensions.rebarSize || null}, 
+          ${dimensions.rebarSpacingInches || null}, ${dimensions.rebarWasteFactor || '10'},
+          ${dimensions.requiresDowels || false}, ${dimensions.dowelSpacingInches || null},
+          ${dimensions.jointLengthFeet || null},
+          ${dimensions.requiresSealer || false}, ${dimensions.sealerType || null}, 
+          ${dimensions.sealerCoats || 1}, ${dimensions.sealerWasteFactor || '10'},
+          ${dimensions.requiresUnderlayment || false}, ${dimensions.underlaymentType || null}, 
+          ${dimensions.underlaymentOverlapInches || null}, ${dimensions.underlaymentWasteFactor || '10'},
+          ${dimensions.isDefault || false}, ${userId}
+        )
+        RETURNING *
+      `);
+
+      res.status(201).json(result.rows[0]);
+    } catch (error) {
+      console.error("Create material calculator preset error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update a preset
+  app.put("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      // Verify ownership
+      const existing = await db.execute(sql`
+        SELECT id FROM material_calculator_presets 
+        WHERE id = ${req.params.id} AND organization_id = ${organizationId}
+      `);
+
+      if (existing.rows.length === 0) {
+        res.status(404).json({ error: "Preset not found" });
+        return;
+      }
+
+      const { name, workTypeCode, unit, ...dimensions } = req.body;
+
+      const result = await db.execute(sql`
+        UPDATE material_calculator_presets SET
+          name = COALESCE(${name}, name),
+          work_type_code = ${workTypeCode || null},
+          unit = COALESCE(${unit}, unit),
+          concrete_depth_inches = ${dimensions.concreteDepthInches || null},
+          dimension_width_inches = ${dimensions.dimensionWidthInches || null},
+          dimension_height_inches = ${dimensions.dimensionHeightInches || null},
+          concrete_waste_factor = COALESCE(${dimensions.concreteWasteFactor}, '10'),
+          requires_stone_base = COALESCE(${dimensions.requiresStoneBase}, false),
+          stone_type = ${dimensions.stoneType || null},
+          stone_depth_inches = ${dimensions.stoneDepthInches || null},
+          stone_waste_factor = COALESCE(${dimensions.stoneWasteFactor}, '10'),
+          requires_excavation = COALESCE(${dimensions.requiresExcavation}, false),
+          excavation_depth_inches = ${dimensions.excavationDepthInches || null},
+          excavation_width_inches = ${dimensions.excavationWidthInches || null},
+          excavation_swell_factor = COALESCE(${dimensions.excavationSwellFactor}, '25'),
+          requires_wire_mesh = COALESCE(${dimensions.requiresWireMesh}, false),
+          wire_mesh_type = ${dimensions.wireMeshType || null},
+          wire_mesh_waste_factor = COALESCE(${dimensions.wireMeshWasteFactor}, '10'),
+          requires_rebar = COALESCE(${dimensions.requiresRebar}, false),
+          rebar_size = ${dimensions.rebarSize || null},
+          rebar_spacing_inches = ${dimensions.rebarSpacingInches || null},
+          rebar_waste_factor = COALESCE(${dimensions.rebarWasteFactor}, '10'),
+          requires_dowels = COALESCE(${dimensions.requiresDowels}, false),
+          dowel_spacing_inches = ${dimensions.dowelSpacingInches || null},
+          joint_length_feet = ${dimensions.jointLengthFeet || null},
+          requires_sealer = COALESCE(${dimensions.requiresSealer}, false),
+          sealer_type = ${dimensions.sealerType || null},
+          sealer_coats = COALESCE(${dimensions.sealerCoats}, 1),
+          sealer_waste_factor = COALESCE(${dimensions.sealerWasteFactor}, '10'),
+          requires_underlayment = COALESCE(${dimensions.requiresUnderlayment}, false),
+          underlayment_type = ${dimensions.underlaymentType || null},
+          underlayment_overlap_inches = ${dimensions.underlaymentOverlapInches || null},
+          underlayment_waste_factor = COALESCE(${dimensions.underlaymentWasteFactor}, '10'),
+          is_default = COALESCE(${dimensions.isDefault}, false),
+          updated_at = NOW()
+        WHERE id = ${req.params.id} AND organization_id = ${organizationId}
+        RETURNING *
+      `);
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("Update material calculator preset error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete a preset
+  app.delete("/api/material-calculator/presets/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      // Verify ownership and delete
+      const result = await db.execute(sql`
+        DELETE FROM material_calculator_presets 
+        WHERE id = ${req.params.id} AND organization_id = ${organizationId}
+        RETURNING id
+      `);
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "Preset not found" });
+        return;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete material calculator preset error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Organization-Specific Work Categories
   // Get work categories based on organization's SOW items (trade-specific)
   // ====================
