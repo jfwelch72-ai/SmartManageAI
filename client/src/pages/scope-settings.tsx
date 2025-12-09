@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench } from "lucide-react";
+import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench, ChevronDown, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -266,6 +266,75 @@ export default function ScopeSettings() {
   const unitOptions = ["SF", "LF", "SY", "CY", "EA", "TON", "LS"];
   const dimensionTypeOptions = ["", "length_width_depth", "length_height_thickness"];
 
+  // Group categories by parent trade (e.g., "ROOFING - Low Slope" and "ROOFING - Steep Slope" -> grouped under "ROOFING")
+  interface GroupedTrade {
+    parentTrade: string;
+    subCategories: WorkTypeCategory[];
+  }
+
+  const groupedByTrade = (): GroupedTrade[] => {
+    const tradeMap = new Map<string, WorkTypeCategory[]>();
+    
+    for (const category of workTypeCategories) {
+      // Parse category name - look for pattern "TRADE - SubCategory"
+      const dashIndex = category.name.indexOf(" - ");
+      let parentTrade: string;
+      
+      if (dashIndex > 0) {
+        parentTrade = category.name.substring(0, dashIndex).trim();
+      } else {
+        // No dash, use full name as parent trade
+        parentTrade = category.name;
+      }
+      
+      if (!tradeMap.has(parentTrade)) {
+        tradeMap.set(parentTrade, []);
+      }
+      tradeMap.get(parentTrade)!.push(category);
+    }
+    
+    // Convert to array and sort by parent trade name
+    return Array.from(tradeMap.entries())
+      .map(([parentTrade, subCategories]) => ({
+        parentTrade,
+        subCategories: subCategories.sort((a, b) => a.displayOrder - b.displayOrder)
+      }))
+      .sort((a, b) => a.parentTrade.localeCompare(b.parentTrade));
+  };
+
+  // Get sub-category label (part after " - " or null if no dash)
+  const getSubCategoryLabel = (categoryName: string): string | null => {
+    const dashIndex = categoryName.indexOf(" - ");
+    if (dashIndex > 0) {
+      return categoryName.substring(dashIndex + 3).trim();
+    }
+    return null;
+  };
+
+  // Track collapsed trades (all expanded by default)
+  const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(new Set());
+  
+  const isTradeExpanded = (tradeName: string) => !collapsedTrades.has(tradeName);
+  
+  const toggleTrade = (tradeName: string) => {
+    setCollapsedTrades(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(tradeName)) {
+        newSet.delete(tradeName);
+      } else {
+        newSet.add(tradeName);
+      }
+      return newSet;
+    });
+  };
+  
+  const handleKeyDown = (e: React.KeyboardEvent, tradeName: string) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleTrade(tradeName);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="flex items-center justify-between mb-6">
@@ -330,57 +399,91 @@ export default function ScopeSettings() {
             <div className="text-center py-8">Loading work types...</div>
           ) : (
             <div className="space-y-4">
-              {workTypeCategories.map((category) => (
-                <Card key={category.id}>
-                  <CardHeader className="py-3">
-                    <CardTitle className="text-lg">{category.name}</CardTitle>
+              {groupedByTrade().map((group) => (
+                <Card key={group.parentTrade} data-testid={`trade-group-${group.parentTrade.toLowerCase().replace(/\s+/g, '-')}`}>
+                  <CardHeader 
+                    className="py-3 cursor-pointer hover-elevate"
+                    onClick={() => toggleTrade(group.parentTrade)}
+                    onKeyDown={(e) => handleKeyDown(e, group.parentTrade)}
+                    tabIndex={0}
+                    role="button"
+                    aria-expanded={isTradeExpanded(group.parentTrade)}
+                    data-testid={`toggle-trade-${group.parentTrade.toLowerCase().replace(/\s+/g, '-')}`}
+                  >
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      {isTradeExpanded(group.parentTrade) ? (
+                        <ChevronDown className="h-5 w-5" />
+                      ) : (
+                        <ChevronRight className="h-5 w-5" />
+                      )}
+                      {group.parentTrade}
+                      <Badge variant="secondary" className="ml-2">
+                        {group.subCategories.reduce((sum, cat) => sum + cat.workTypes.length, 0)} items
+                      </Badge>
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    {category.workTypes.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No work types in this category</p>
-                    ) : (
-                      <div className="grid gap-2">
-                        {category.workTypes.map((workType) => (
-                          <div
-                            key={workType.id}
-                            className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
-                            data-testid={`work-type-item-${workType.id}`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className="font-medium">{workType.name}</span>
-                              <Badge variant="outline">{workType.defaultUnit}</Badge>
-                              {workType.requiresDimensions && (
-                                <Badge variant="secondary">Dimensions Required</Badge>
-                              )}
-                              {workType.isCustom && (
-                                <Badge>Custom</Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEditWorkType(workType)}
-                                data-testid={`button-edit-work-type-${workType.id}`}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              {workType.isCustom && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteWorkTypeMutation.mutate(workType.id)}
-                                  data-testid={`button-delete-work-type-${workType.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              )}
-                            </div>
+                  
+                  {isTradeExpanded(group.parentTrade) && (
+                    <CardContent className="space-y-4">
+                      {group.subCategories.map((category) => {
+                        const subLabel = getSubCategoryLabel(category.name);
+                        return (
+                          <div key={category.id} className="space-y-2">
+                            {/* Show sub-category label if it exists */}
+                            {subLabel && (
+                              <h4 className="text-sm font-semibold text-muted-foreground border-b pb-1 mb-2">
+                                {subLabel}
+                              </h4>
+                            )}
+                            {category.workTypes.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">No work types in this category</p>
+                            ) : (
+                              <div className="grid gap-2">
+                                {category.workTypes.map((workType) => (
+                                  <div
+                                    key={workType.id}
+                                    className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
+                                    data-testid={`work-type-item-${workType.id}`}
+                                  >
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <span className="font-medium">{workType.name}</span>
+                                      <Badge variant="outline">{workType.defaultUnit}</Badge>
+                                      {workType.requiresDimensions && (
+                                        <Badge variant="secondary">Dimensions Required</Badge>
+                                      )}
+                                      {workType.isCustom && (
+                                        <Badge>Custom</Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleEditWorkType(workType)}
+                                        data-testid={`button-edit-work-type-${workType.id}`}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      {workType.isCustom && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => deleteWorkTypeMutation.mutate(workType.id)}
+                                          data-testid={`button-delete-work-type-${workType.id}`}
+                                        >
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
+                        );
+                      })}
+                    </CardContent>
+                  )}
                 </Card>
               ))}
             </div>
