@@ -644,6 +644,7 @@ export default function ScopeSettings() {
                   <SelectContent>
                     <SelectItem value="length_width_depth">Length x Width x Depth (Footings)</SelectItem>
                     <SelectItem value="length_height_thickness">Length x Height x Thickness (Walls)</SelectItem>
+                    <SelectItem value="length_width_thickness">Length x Width x Thickness (Flatwork)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

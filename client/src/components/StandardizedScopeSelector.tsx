@@ -135,6 +135,11 @@ export default function StandardizedScopeSelector({
         if (parts.length > 0) {
           name += ` (${parts.join("' x ")}')`;
         }
+      } else if (selectedWorkType.dimensionType === "length_width_thickness") {
+        const parts = [dimensions.length, dimensions.width, dimensions.thickness].filter(Boolean);
+        if (parts.length > 0) {
+          name += ` (${parts.join("' x ")}')`;
+        }
       }
     }
     return name;
@@ -319,6 +324,43 @@ export default function StandardizedScopeSelector({
                     value={dimensions.height || ""}
                     onChange={(e) => setDimensions({ ...dimensions, height: e.target.value })}
                     data-testid="input-dimension-height"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Thickness (in)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="Thickness"
+                    value={dimensions.thickness || ""}
+                    onChange={(e) => setDimensions({ ...dimensions, thickness: e.target.value })}
+                    data-testid="input-dimension-thickness"
+                  />
+                </div>
+              </div>
+            )}
+            {selectedWorkType.dimensionType === "length_width_thickness" && (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Length (ft)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="Length"
+                    value={dimensions.length || ""}
+                    onChange={(e) => setDimensions({ ...dimensions, length: e.target.value })}
+                    data-testid="input-dimension-length"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Width (ft)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="Width"
+                    value={dimensions.width || ""}
+                    onChange={(e) => setDimensions({ ...dimensions, width: e.target.value })}
+                    data-testid="input-dimension-width"
                   />
                 </div>
                 <div>
