@@ -573,15 +573,41 @@ router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) =
 
     const { status } = req.query;
 
-    const posts = await db.query.websiteBlogPosts.findMany({
-      where: and(
-        orgId ? eq(websiteBlogPosts.organizationId, orgId) : undefined,
-        status ? eq(websiteBlogPosts.status, status as "DRAFT" | "PUBLISHED" | "ARCHIVED") : undefined
-      ),
-      orderBy: [desc(websiteBlogPosts.createdAt)],
-    });
-
-    res.json(posts);
+    // Use raw SQL to avoid Drizzle ORM schema mismatch issues
+    let query;
+    // Handle SUPER_ADMIN case (no org filter) vs regular user (org filter)
+    if (orgId) {
+      if (status) {
+        query = sql`
+          SELECT * FROM website_blog_posts 
+          WHERE organization_id = ${orgId} AND status = ${status}
+          ORDER BY created_at DESC
+        `;
+      } else {
+        query = sql`
+          SELECT * FROM website_blog_posts 
+          WHERE organization_id = ${orgId}
+          ORDER BY created_at DESC
+        `;
+      }
+    } else {
+      // SUPER_ADMIN: return all posts
+      if (status) {
+        query = sql`
+          SELECT * FROM website_blog_posts 
+          WHERE status = ${status}
+          ORDER BY created_at DESC
+        `;
+      } else {
+        query = sql`
+          SELECT * FROM website_blog_posts 
+          ORDER BY created_at DESC
+        `;
+      }
+    }
+    
+    const result = await db.execute(query);
+    res.json(result.rows);
   } catch (error) {
     console.error("Error fetching blog posts:", error);
     res.status(500).json({ error: "Failed to fetch blog posts" });
@@ -616,20 +642,34 @@ router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) 
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
 
-    const postData = {
-      ...req.body,
-      slug,
-      websiteId: website.id,
-      organizationId: orgId,
-      authorId: user.id,
-      authorName: `${user.firstName} ${user.lastName}`,
-    };
+    // Extract fields from request body
+    const { title, excerpt, content, contentHtml, contentJson, category, tags, 
+            featuredImageUrl, coverImageUrl, metaTitle, metaDescription, 
+            keywords, aiGenerated, aiPrompt } = req.body;
+    
+    const authorName = `${user.firstName} ${user.lastName}`;
 
-    const [post] = await db.insert(websiteBlogPosts)
-      .values(postData)
-      .returning();
+    // Use raw SQL to avoid Drizzle ORM schema mismatch issues
+    const result = await db.execute(sql`
+      INSERT INTO website_blog_posts (
+        website_id, organization_id, slug, title, excerpt, content,
+        content_html, content_json, category, tags, featured_image_url,
+        cover_image_url, author_id, author_name, meta_title, meta_description,
+        keywords, ai_generated, ai_prompt, status
+      ) VALUES (
+        ${website.id}, ${orgId}, ${slug}, ${title}, ${excerpt || null}, ${content || null},
+        ${contentHtml || null}, ${contentJson || null}, ${category || null}, ${tags || null}, ${featuredImageUrl || null},
+        ${coverImageUrl || null}, ${user.id}, ${authorName}, ${metaTitle || null}, ${metaDescription || null},
+        ${keywords || null}, ${aiGenerated || false}, ${aiPrompt || null}, 'DRAFT'
+      ) RETURNING *
+    `);
+    
+    const post = result.rows[0];
 
-    await logCreate(user.id, "website_blog_posts", post.id, postData, req);
+    await logCreate(user.id, "website_blog_posts", post.id as string, {
+      title, excerpt, content, contentHtml, category, tags, slug,
+      websiteId: website.id, organizationId: orgId, authorId: user.id, authorName
+    }, req);
 
     res.status(201).json(post);
   } catch (error) {
@@ -900,11 +940,21 @@ router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => 
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
 
     // Use raw SQL to avoid Drizzle ORM schema mismatch issues
-    const result = await db.execute(sql`
-      SELECT * FROM website_projects 
-      WHERE organization_id = ${orgId}
-      ORDER BY created_at DESC
-    `);
+    // Handle SUPER_ADMIN case (no org filter) vs regular user (org filter)
+    let result;
+    if (orgId) {
+      result = await db.execute(sql`
+        SELECT * FROM website_projects 
+        WHERE organization_id = ${orgId}
+        ORDER BY created_at DESC
+      `);
+    } else {
+      // SUPER_ADMIN: return all projects
+      result = await db.execute(sql`
+        SELECT * FROM website_projects 
+        ORDER BY created_at DESC
+      `);
+    }
 
     res.json(result.rows);
   } catch (error) {
