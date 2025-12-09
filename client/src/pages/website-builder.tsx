@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Globe,
   FileText,
@@ -198,6 +199,30 @@ export default function WebsiteBuilderPage() {
   const [showGenerateBlogDialog, setShowGenerateBlogDialog] = useState(false);
   const [generatedBlogContent, setGeneratedBlogContent] = useState<any>(null);
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  
+  // Edit states
+  const [showEditBlogDialog, setShowEditBlogDialog] = useState(false);
+  const [selectedBlogPost, setSelectedBlogPost] = useState<BlogPost | null>(null);
+  const [editBlogForm, setEditBlogForm] = useState({
+    title: "",
+    excerpt: "",
+    content: "",
+    category: "",
+    status: "DRAFT"
+  });
+  
+  const [showEditProjectDialog, setShowEditProjectDialog] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<GalleryProject | null>(null);
+  const [editProjectForm, setEditProjectForm] = useState({
+    title: "",
+    shortDescription: "",
+    projectType: "",
+    serviceType: "",
+    clientName: "",
+    locationCity: "",
+    locationState: "",
+    coverImageUrl: ""
+  });
 
   const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
   const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
@@ -391,6 +416,67 @@ export default function WebsiteBuilderPage() {
       toast({ title: "Error creating project", description: error.message, variant: "destructive" });
     }
   });
+
+  // Edit mutations
+  const editBlogMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof editBlogForm }) => {
+      return await apiRequest("PATCH", `/api/website/blog/posts/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/blog/posts"] });
+      toast({ title: "Blog post updated successfully" });
+      setShowEditBlogDialog(false);
+      setSelectedBlogPost(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error updating blog post", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const editProjectMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof editProjectForm }) => {
+      return await apiRequest("PATCH", `/api/website/projects/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/projects"] });
+      toast({ title: "Project updated successfully" });
+      setShowEditProjectDialog(false);
+      setSelectedProject(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error updating project", description: error.message, variant: "destructive" });
+    }
+  });
+
+  // Edit handlers
+  const handleEditBlog = (post: BlogPost) => {
+    const p = post as any;
+    setSelectedBlogPost(post);
+    setEditBlogForm({
+      title: post.title || "",
+      excerpt: post.excerpt || "",
+      content: p.content || p.content_html || "",
+      category: post.category || "",
+      status: post.status || "DRAFT"
+    });
+    setShowEditBlogDialog(true);
+  };
+
+  const handleEditProject = (project: GalleryProject) => {
+    const pr = project as any;
+    setSelectedProject(project);
+    setEditProjectForm({
+      title: project.title || "",
+      shortDescription: project.shortDescription || pr.short_description || "",
+      projectType: project.projectType || pr.project_type || "",
+      serviceType: project.serviceType || pr.service_type || "",
+      clientName: project.clientName || pr.client_name || "",
+      locationCity: project.locationCity || pr.location_city || "",
+      locationState: project.locationState || pr.location_state || "",
+      coverImageUrl: project.coverImageUrl || pr.cover_image_url || ""
+    });
+    setShowEditProjectDialog(true);
+  };
 
   const saveSocialMutation = useMutation({
     mutationFn: async (data: SocialLinks) => {
@@ -964,7 +1050,7 @@ export default function WebsiteBuilderPage() {
                       <TableCell>{viewCount}</TableCell>
                       <TableCell>{createdAt ? format(new Date(createdAt), "MMM d, yyyy") : "-"}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" data-testid={`button-edit-blog-${post.id}`}>
+                        <Button variant="ghost" size="icon" onClick={() => handleEditBlog(post)} data-testid={`button-edit-blog-${post.id}`}>
                           <Edit className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -1023,10 +1109,17 @@ export default function WebsiteBuilderPage() {
                     )}
                   </div>
                   <CardContent className="p-4">
-                    <h3 className="font-medium mb-1">{project.title}</h3>
-                    <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                      {project.shortDescription || project.short_description || "No description"}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium mb-1">{project.title}</h3>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                          {project.shortDescription || project.short_description || "No description"}
+                        </p>
+                      </div>
+                      <Button variant="ghost" size="icon" onClick={() => handleEditProject(project)} data-testid={`button-edit-project-${project.id}`}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{project.locationCity || project.location_city}{(project.locationCity || project.location_city) && (project.locationState || project.location_state) ? ', ' : ''}{project.locationState || project.location_state}</span>
                       <span>{project.viewCount ?? project.view_count ?? 0} views</span>
@@ -1664,11 +1757,12 @@ export default function WebsiteBuilderPage() {
       </Dialog>
 
       <Dialog open={showCreateProjectDialog} onOpenChange={setShowCreateProjectDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Add Portfolio Project</DialogTitle>
             <DialogDescription>Showcase a completed project in your gallery</DialogDescription>
           </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Project Title</Label>
@@ -1795,11 +1889,204 @@ export default function WebsiteBuilderPage() {
               )}
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateProjectDialog(false)}>Cancel</Button>
             <Button onClick={() => createProjectMutation.mutate(projectForm)} disabled={createProjectMutation.isPending || uploadingImage} data-testid="button-submit-project">
               {createProjectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : null}
               Add Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Blog Post Dialog */}
+      <Dialog open={showEditBlogDialog} onOpenChange={setShowEditBlogDialog}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Blog Post</DialogTitle>
+            <DialogDescription>Update your blog post content</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Title</Label>
+                <Input
+                  value={editBlogForm.title}
+                  onChange={(e) => setEditBlogForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Blog post title"
+                  data-testid="input-edit-blog-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Excerpt</Label>
+                <Textarea
+                  value={editBlogForm.excerpt}
+                  onChange={(e) => setEditBlogForm(prev => ({ ...prev, excerpt: e.target.value }))}
+                  placeholder="Brief summary of the post..."
+                  rows={2}
+                  data-testid="input-edit-blog-excerpt"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Content</Label>
+                <Textarea
+                  value={editBlogForm.content}
+                  onChange={(e) => setEditBlogForm(prev => ({ ...prev, content: e.target.value }))}
+                  placeholder="Write your blog post content..."
+                  rows={8}
+                  data-testid="input-edit-blog-content"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Input
+                    value={editBlogForm.category}
+                    onChange={(e) => setEditBlogForm(prev => ({ ...prev, category: e.target.value }))}
+                    placeholder="e.g., Construction Tips"
+                    data-testid="input-edit-blog-category"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={editBlogForm.status} onValueChange={(v) => setEditBlogForm(prev => ({ ...prev, status: v }))}>
+                    <SelectTrigger data-testid="select-edit-blog-status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="PUBLISHED">Published</SelectItem>
+                      <SelectItem value="ARCHIVED">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditBlogDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={() => selectedBlogPost && editBlogMutation.mutate({ id: selectedBlogPost.id, data: editBlogForm })} 
+              disabled={editBlogMutation.isPending}
+              data-testid="button-save-blog"
+            >
+              {editBlogMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Project Dialog */}
+      <Dialog open={showEditProjectDialog} onOpenChange={setShowEditProjectDialog}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+            <DialogDescription>Update your portfolio project</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Project Title</Label>
+                <Input
+                  value={editProjectForm.title}
+                  onChange={(e) => setEditProjectForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Downtown Office Building Renovation"
+                  data-testid="input-edit-project-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Short Description</Label>
+                <Textarea
+                  value={editProjectForm.shortDescription}
+                  onChange={(e) => setEditProjectForm(prev => ({ ...prev, shortDescription: e.target.value }))}
+                  placeholder="A brief overview of the project..."
+                  rows={2}
+                  data-testid="input-edit-project-description"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Project Type</Label>
+                  <Select value={editProjectForm.projectType} onValueChange={(v) => setEditProjectForm(prev => ({ ...prev, projectType: v }))}>
+                    <SelectTrigger data-testid="select-edit-project-type">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="commercial">Commercial</SelectItem>
+                      <SelectItem value="residential">Residential</SelectItem>
+                      <SelectItem value="industrial">Industrial</SelectItem>
+                      <SelectItem value="institutional">Institutional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Service Type</Label>
+                  <Input
+                    value={editProjectForm.serviceType}
+                    onChange={(e) => setEditProjectForm(prev => ({ ...prev, serviceType: e.target.value }))}
+                    placeholder="Renovation"
+                    data-testid="input-edit-service-type"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Client Name (optional)</Label>
+                <Input
+                  value={editProjectForm.clientName}
+                  onChange={(e) => setEditProjectForm(prev => ({ ...prev, clientName: e.target.value }))}
+                  placeholder="ABC Corporation"
+                  data-testid="input-edit-client-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>City</Label>
+                  <Input
+                    value={editProjectForm.locationCity}
+                    onChange={(e) => setEditProjectForm(prev => ({ ...prev, locationCity: e.target.value }))}
+                    placeholder="Dallas"
+                    data-testid="input-edit-location-city"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>State</Label>
+                  <Input
+                    value={editProjectForm.locationState}
+                    onChange={(e) => setEditProjectForm(prev => ({ ...prev, locationState: e.target.value }))}
+                    placeholder="TX"
+                    data-testid="input-edit-location-state"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Cover Image URL</Label>
+                <Input
+                  value={editProjectForm.coverImageUrl}
+                  onChange={(e) => setEditProjectForm(prev => ({ ...prev, coverImageUrl: e.target.value }))}
+                  placeholder="https://..."
+                  data-testid="input-edit-cover-image"
+                />
+                {editProjectForm.coverImageUrl && (
+                  <img 
+                    src={editProjectForm.coverImageUrl} 
+                    alt="Cover preview" 
+                    className="w-full h-40 object-cover rounded-lg border mt-2"
+                  />
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditProjectDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={() => selectedProject && editProjectMutation.mutate({ id: selectedProject.id, data: editProjectForm })} 
+              disabled={editProjectMutation.isPending}
+              data-testid="button-save-project"
+            >
+              {editProjectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

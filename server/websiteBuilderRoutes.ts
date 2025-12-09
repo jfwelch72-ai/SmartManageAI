@@ -714,24 +714,60 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
 
     const orgId = user.organizationId;
 
-    const existing = await db.query.websiteBlogPosts.findFirst({
-      where: and(
-        eq(websiteBlogPosts.id, id),
-        orgId ? eq(websiteBlogPosts.organizationId, orgId) : undefined
-      ),
-    });
+    // Use raw SQL to check existing and avoid Drizzle ORM schema mismatch
+    let existingResult;
+    if (orgId) {
+      existingResult = await db.execute(sql`
+        SELECT id FROM website_blog_posts 
+        WHERE id = ${id} AND organization_id = ${orgId}
+      `);
+    } else {
+      existingResult = await db.execute(sql`
+        SELECT id FROM website_blog_posts WHERE id = ${id}
+      `);
+    }
 
-    if (!existing) {
+    if (existingResult.rows.length === 0) {
       return res.status(404).json({ error: "Blog post not found" });
     }
 
-    const [updated] = await db.update(websiteBlogPosts)
-      .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(websiteBlogPosts.id, id))
-      .returning();
+    // Build update query with raw SQL - include org scoping for security
+    const { title, excerpt, content, category, status } = req.body;
+    const updatedAt = new Date().toISOString();
+    
+    let result;
+    if (orgId) {
+      result = await db.execute(sql`
+        UPDATE website_blog_posts
+        SET 
+          title = COALESCE(${title}, title),
+          excerpt = COALESCE(${excerpt}, excerpt),
+          content = COALESCE(${content}, content),
+          content_html = COALESCE(${content}, content_html),
+          category = COALESCE(${category}, category),
+          status = COALESCE(${status}, status),
+          updated_at = ${updatedAt}
+        WHERE id = ${id} AND organization_id = ${orgId}
+        RETURNING *
+      `);
+    } else {
+      // SUPER_ADMIN case - no org filter
+      result = await db.execute(sql`
+        UPDATE website_blog_posts
+        SET 
+          title = COALESCE(${title}, title),
+          excerpt = COALESCE(${excerpt}, excerpt),
+          content = COALESCE(${content}, content),
+          content_html = COALESCE(${content}, content_html),
+          category = COALESCE(${category}, category),
+          status = COALESCE(${status}, status),
+          updated_at = ${updatedAt}
+        WHERE id = ${id}
+        RETURNING *
+      `);
+    }
 
-    await logUpdate(user.id, "website_blog_posts", id, existing, updated, req);
-
+    const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
     console.error("Error updating blog post:", error);
@@ -1064,25 +1100,64 @@ router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Respons
 
     const orgId = user.organizationId;
     
-    // Verify project belongs to user's organization
-    const existing = await db.query.websiteProjects.findFirst({
-      where: and(
-        eq(websiteProjects.id, id),
-        orgId ? eq(websiteProjects.organizationId, orgId) : undefined
-      ),
-    });
+    // Use raw SQL to check existing and avoid Drizzle ORM schema mismatch
+    let existingResult;
+    if (orgId) {
+      existingResult = await db.execute(sql`
+        SELECT id FROM website_projects 
+        WHERE id = ${id} AND organization_id = ${orgId}
+      `);
+    } else {
+      existingResult = await db.execute(sql`
+        SELECT id FROM website_projects WHERE id = ${id}
+      `);
+    }
 
-    if (!existing) {
+    if (existingResult.rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
 
-    const [updated] = await db.update(websiteProjects)
-      .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(websiteProjects.id, id))
-      .returning();
+    // Build update query with raw SQL - include org scoping for security
+    const { title, shortDescription, projectType, serviceType, clientName, locationCity, locationState, coverImageUrl } = req.body;
+    const updatedAt = new Date().toISOString();
+    
+    let result;
+    if (orgId) {
+      result = await db.execute(sql`
+        UPDATE website_projects
+        SET 
+          title = COALESCE(${title}, title),
+          short_description = COALESCE(${shortDescription}, short_description),
+          project_type = COALESCE(${projectType}, project_type),
+          service_type = COALESCE(${serviceType}, service_type),
+          client_name = COALESCE(${clientName}, client_name),
+          location_city = COALESCE(${locationCity}, location_city),
+          location_state = COALESCE(${locationState}, location_state),
+          cover_image_url = COALESCE(${coverImageUrl}, cover_image_url),
+          updated_at = ${updatedAt}
+        WHERE id = ${id} AND organization_id = ${orgId}
+        RETURNING *
+      `);
+    } else {
+      // SUPER_ADMIN case - no org filter
+      result = await db.execute(sql`
+        UPDATE website_projects
+        SET 
+          title = COALESCE(${title}, title),
+          short_description = COALESCE(${shortDescription}, short_description),
+          project_type = COALESCE(${projectType}, project_type),
+          service_type = COALESCE(${serviceType}, service_type),
+          client_name = COALESCE(${clientName}, client_name),
+          location_city = COALESCE(${locationCity}, location_city),
+          location_state = COALESCE(${locationState}, location_state),
+          cover_image_url = COALESCE(${coverImageUrl}, cover_image_url),
+          updated_at = ${updatedAt}
+        WHERE id = ${id}
+        RETURNING *
+      `);
+    }
 
-    await logUpdate(user.id, "website_projects", id, existing, updated, req);
-
+    const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
     console.error("Error updating gallery project:", error);
