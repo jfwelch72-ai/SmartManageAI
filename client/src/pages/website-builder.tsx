@@ -223,6 +223,19 @@ export default function WebsiteBuilderPage() {
     locationState: "",
     coverImageUrl: ""
   });
+  
+  const [showEditPageDialog, setShowEditPageDialog] = useState(false);
+  const [selectedPage, setSelectedPage] = useState<any>(null);
+  const [editPageForm, setEditPageForm] = useState({
+    pageType: "CUSTOM",
+    pageTitle: "",
+    pageSlug: "",
+    navigationLabel: "",
+    showInNavigation: true,
+    status: "DRAFT",
+    metaTitle: "",
+    metaDescription: ""
+  });
 
   const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
   const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
@@ -285,6 +298,20 @@ export default function WebsiteBuilderPage() {
     youtubeUrl: null,
     tiktokUrl: null
   });
+
+  // AI Social Post Generator state
+  const [socialPostForm, setSocialPostForm] = useState({
+    platform: "FACEBOOK",
+    topic: "",
+    tone: "professional"
+  });
+  const [generatedSocialPost, setGeneratedSocialPost] = useState<{
+    content: string;
+    hashtags: string[];
+    suggestedImagePrompt: string;
+    bestTimeToPost: string;
+    engagementTips: string;
+  } | null>(null);
 
   const { data: websiteData, isLoading: loadingWebsite } = useQuery<{ hasWebsite: boolean; website: Website | null }>({
     queryKey: ["/api/website"],
@@ -448,6 +475,21 @@ export default function WebsiteBuilderPage() {
     }
   });
 
+  const editPageMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof editPageForm }) => {
+      return await apiRequest("PATCH", `/api/website/pages/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      toast({ title: "Page updated successfully" });
+      setShowEditPageDialog(false);
+      setSelectedPage(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error updating page", description: error.message, variant: "destructive" });
+    }
+  });
+
   // Edit handlers
   const handleEditBlog = (post: BlogPost) => {
     const p = post as any;
@@ -478,6 +520,21 @@ export default function WebsiteBuilderPage() {
     setShowEditProjectDialog(true);
   };
 
+  const handleEditPage = (page: any) => {
+    setSelectedPage(page);
+    setEditPageForm({
+      pageType: page.pageType || page.page_type || "CUSTOM",
+      pageTitle: page.pageTitle || page.page_title || "",
+      pageSlug: page.pageSlug || page.page_slug || "",
+      navigationLabel: page.navigationLabel || page.navigation_label || "",
+      showInNavigation: page.showInNavigation ?? page.show_in_navigation ?? true,
+      status: page.status || "DRAFT",
+      metaTitle: page.metaTitle || page.meta_title || "",
+      metaDescription: page.metaDescription || page.meta_description || ""
+    });
+    setShowEditPageDialog(true);
+  };
+
   const saveSocialMutation = useMutation({
     mutationFn: async (data: SocialLinks) => {
       return await apiRequest("POST", "/api/website/social", data);
@@ -488,6 +545,27 @@ export default function WebsiteBuilderPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error saving social links", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const generateSocialPostMutation = useMutation({
+    mutationFn: async (data: typeof socialPostForm) => {
+      const response = await apiRequest("POST", "/api/website/social/generate-post", data);
+      return response.json() as Promise<{
+        content: string;
+        hashtags: string[];
+        suggestedImagePrompt: string;
+        bestTimeToPost: string;
+        engagementTips: string;
+      }>;
+    },
+    onSuccess: (data) => {
+      setGeneratedSocialPost(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/website/social/history"] });
+      toast({ title: "Social post generated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error generating post", description: error.message, variant: "destructive" });
     }
   });
 
@@ -958,7 +1036,7 @@ export default function WebsiteBuilderPage() {
                           AI
                         </Badge>
                       )}
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-page-${page.id}`}>
+                      <Button variant="ghost" size="icon" onClick={() => handleEditPage(page)} data-testid={`button-edit-page-${page.id}`}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     </div>
@@ -1229,7 +1307,7 @@ export default function WebsiteBuilderPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Platform</Label>
-                  <Select defaultValue="FACEBOOK">
+                  <Select value={socialPostForm.platform} onValueChange={(v) => setSocialPostForm(prev => ({ ...prev, platform: v }))}>
                     <SelectTrigger data-testid="select-social-platform">
                       <SelectValue placeholder="Select platform" />
                     </SelectTrigger>
@@ -1243,20 +1321,114 @@ export default function WebsiteBuilderPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
+                  <Label>Tone</Label>
+                  <Select value={socialPostForm.tone} onValueChange={(v) => setSocialPostForm(prev => ({ ...prev, tone: v }))}>
+                    <SelectTrigger data-testid="select-social-tone">
+                      <SelectValue placeholder="Select tone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="casual">Casual</SelectItem>
+                      <SelectItem value="friendly">Friendly</SelectItem>
+                      <SelectItem value="informative">Informative</SelectItem>
+                      <SelectItem value="promotional">Promotional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label>Topic / Theme</Label>
                   <Textarea
-                    placeholder="Describe what you want to post about..."
+                    value={socialPostForm.topic}
+                    onChange={(e) => setSocialPostForm(prev => ({ ...prev, topic: e.target.value }))}
+                    placeholder="Describe what you want to post about... (e.g., Showcase a recent project completion, Share safety tips for summer construction)"
                     rows={3}
                     data-testid="input-social-topic"
                   />
                 </div>
-                <Button className="w-full" data-testid="button-generate-social">
-                  <Sparkles className="h-4 w-4 mr-1" />
+                <Button 
+                  className="w-full" 
+                  onClick={() => generateSocialPostMutation.mutate(socialPostForm)}
+                  disabled={generateSocialPostMutation.isPending || !socialPostForm.topic.trim()}
+                  data-testid="button-generate-social"
+                >
+                  {generateSocialPostMutation.isPending ? (
+                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 mr-1" />
+                  )}
                   Generate Post
                 </Button>
               </CardContent>
             </Card>
           </div>
+
+          {/* Generated Post Display */}
+          {generatedSocialPost && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5" />
+                  Generated Post
+                </CardTitle>
+                <CardDescription>Review and copy your AI-generated content</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Post Content</Label>
+                  <div className="relative">
+                    <div className="p-4 bg-muted rounded-lg whitespace-pre-wrap" data-testid="text-generated-post">
+                      {generatedSocialPost.content}
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="absolute top-2 right-2"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedSocialPost.content + (generatedSocialPost.hashtags?.length ? '\n\n' + generatedSocialPost.hashtags.map(h => '#' + h).join(' ') : ''));
+                        toast({ title: "Copied to clipboard" });
+                      }}
+                      data-testid="button-copy-post"
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                {generatedSocialPost.hashtags && generatedSocialPost.hashtags.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Suggested Hashtags</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {generatedSocialPost.hashtags.map((tag, i) => (
+                        <Badge key={i} variant="secondary" data-testid={`badge-hashtag-${i}`}>#{tag}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  {generatedSocialPost.bestTimeToPost && (
+                    <div className="space-y-1">
+                      <Label className="text-sm text-muted-foreground">Best Time to Post</Label>
+                      <p className="text-sm font-medium" data-testid="text-best-time">{generatedSocialPost.bestTimeToPost}</p>
+                    </div>
+                  )}
+                  {generatedSocialPost.engagementTips && (
+                    <div className="space-y-1">
+                      <Label className="text-sm text-muted-foreground">Engagement Tips</Label>
+                      <p className="text-sm" data-testid="text-engagement-tips">{generatedSocialPost.engagementTips}</p>
+                    </div>
+                  )}
+                </div>
+                {generatedSocialPost.suggestedImagePrompt && (
+                  <div className="space-y-2">
+                    <Label>Suggested Image Prompt</Label>
+                    <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg" data-testid="text-image-prompt">
+                      {generatedSocialPost.suggestedImagePrompt}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -2086,6 +2258,122 @@ export default function WebsiteBuilderPage() {
               data-testid="button-save-project"
             >
               {editProjectMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Page Dialog */}
+      <Dialog open={showEditPageDialog} onOpenChange={setShowEditPageDialog}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit Page</DialogTitle>
+            <DialogDescription>Update your website page settings</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Page Type</Label>
+                <Select value={editPageForm.pageType} onValueChange={(v) => setEditPageForm(prev => ({ ...prev, pageType: v }))}>
+                  <SelectTrigger data-testid="select-edit-page-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="HOME">Home</SelectItem>
+                    <SelectItem value="ABOUT">About</SelectItem>
+                    <SelectItem value="SERVICES">Services</SelectItem>
+                    <SelectItem value="PROJECTS">Projects</SelectItem>
+                    <SelectItem value="BLOG">Blog</SelectItem>
+                    <SelectItem value="CONTACT">Contact</SelectItem>
+                    <SelectItem value="SAFETY">Safety</SelectItem>
+                    <SelectItem value="CAREERS">Careers</SelectItem>
+                    <SelectItem value="TEAM">Team</SelectItem>
+                    <SelectItem value="FAQ">FAQ</SelectItem>
+                    <SelectItem value="CUSTOM">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Page Title</Label>
+                <Input
+                  value={editPageForm.pageTitle}
+                  onChange={(e) => {
+                    const title = e.target.value;
+                    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                    setEditPageForm(prev => ({ ...prev, pageTitle: title, pageSlug: slug }));
+                  }}
+                  placeholder="About Us"
+                  data-testid="input-edit-page-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>URL Slug</Label>
+                <Input
+                  value={editPageForm.pageSlug}
+                  onChange={(e) => setEditPageForm(prev => ({ ...prev, pageSlug: e.target.value }))}
+                  placeholder="about-us"
+                  data-testid="input-edit-page-slug"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Navigation Label</Label>
+                <Input
+                  value={editPageForm.navigationLabel}
+                  onChange={(e) => setEditPageForm(prev => ({ ...prev, navigationLabel: e.target.value }))}
+                  placeholder="About"
+                  data-testid="input-edit-page-nav-label"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={editPageForm.status} onValueChange={(v) => setEditPageForm(prev => ({ ...prev, status: v }))}>
+                  <SelectTrigger data-testid="select-edit-page-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="PUBLISHED">Published</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch 
+                  checked={editPageForm.showInNavigation} 
+                  onCheckedChange={(checked) => setEditPageForm(prev => ({ ...prev, showInNavigation: checked }))}
+                  data-testid="switch-edit-page-navigation"
+                />
+                <Label>Show in Navigation</Label>
+              </div>
+              <div className="space-y-2">
+                <Label>Meta Title (SEO)</Label>
+                <Input
+                  value={editPageForm.metaTitle}
+                  onChange={(e) => setEditPageForm(prev => ({ ...prev, metaTitle: e.target.value }))}
+                  placeholder="Page Title | Company Name"
+                  data-testid="input-edit-page-meta-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Meta Description (SEO)</Label>
+                <Textarea
+                  value={editPageForm.metaDescription}
+                  onChange={(e) => setEditPageForm(prev => ({ ...prev, metaDescription: e.target.value }))}
+                  placeholder="A brief description for search engines..."
+                  rows={2}
+                  data-testid="input-edit-page-meta-description"
+                />
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditPageDialog(false)}>Cancel</Button>
+            <Button 
+              onClick={() => selectedPage && editPageMutation.mutate({ id: selectedPage.id, data: editPageForm })} 
+              disabled={editPageMutation.isPending}
+              data-testid="button-save-page"
+            >
+              {editPageMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
               Save Changes
             </Button>
           </DialogFooter>

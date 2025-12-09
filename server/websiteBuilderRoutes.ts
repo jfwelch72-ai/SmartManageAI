@@ -1375,20 +1375,28 @@ Return a JSON object with:
 
     const postContent = JSON.parse(response.choices[0]?.message?.content || "{}");
 
-    // Save to history
+    // Save to history using raw SQL to avoid schema mismatch
     if (user.organizationId) {
-      await db.insert(socialPostHistory).values({
-        organizationId: user.organizationId,
-        platform: platform as any,
-        postContent: postContent.content,
-        hashtags: postContent.hashtags,
-        sourceType,
-        sourceId,
-        aiPrompt: topic,
-        tone,
-        suggestedImagePrompt: postContent.suggestedImagePrompt,
-        createdById: user.id,
-      });
+      const hashtagsArray = postContent.hashtags || [];
+      // Convert array to PostgreSQL text[] format
+      const hashtagsValue = `{${hashtagsArray.map((h: string) => `"${h.replace(/"/g, '\\"')}"`).join(',')}}`;
+      
+      await db.execute(sql`
+        INSERT INTO social_post_history 
+        (organization_id, platform, post_content, hashtags, source_type, source_id, ai_prompt, tone, suggested_image_prompt, created_by_id)
+        VALUES (
+          ${user.organizationId},
+          ${platform},
+          ${postContent.content},
+          ${hashtagsValue}::text[],
+          ${sourceType || null},
+          ${sourceId || null},
+          ${topic},
+          ${tone || 'professional'},
+          ${postContent.suggestedImagePrompt || null},
+          ${user.id}
+        )
+      `);
     }
 
     res.json(postContent);
