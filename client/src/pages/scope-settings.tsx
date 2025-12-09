@@ -65,6 +65,33 @@ interface TradeConfigResponse {
   tradeTypes: { value: string; label: string }[];
 }
 
+// Trade to sub-category mapping for hierarchical selection
+const TRADE_SUBCATEGORIES: Record<string, string[]> = {
+  CONCRETE: ["Flatwork", "Walls", "Foundations", "Footings", "Curb & Gutter", "Decorative", "Stamped", "Precast"],
+  EARTHWORK: ["Excavation", "Grading", "Backfill", "Compaction", "Trenching", "Site Prep", "Erosion Control"],
+  ASPHALT_PAVING: ["Paving", "Seal Coating", "Striping", "Patching", "Milling", "Overlay"],
+  ROOFING: ["Low Slope", "Steep Slope", "Metal Roofing", "Shingles", "Tile", "TPO/EPDM", "Built-Up", "Repairs"],
+  ELECTRICAL: ["Rough-In", "Trim-Out", "Panel Work", "Lighting", "Low Voltage", "Service Upgrade", "Generator"],
+  PLUMBING: ["Rough-In", "Trim-Out", "Water Heater", "Fixtures", "Drain/Sewer", "Gas Piping", "Water Service"],
+  HVAC: ["Ductwork", "Equipment", "Controls", "Refrigeration", "Ventilation", "Split Systems", "Package Units"],
+  CARPENTRY: ["Framing", "Rough Carpentry", "Finish Carpentry", "Trim", "Cabinets", "Doors", "Hardware"],
+  MASONRY: ["Block", "Brick", "Stone", "Veneer", "Fireplace", "Chimney", "Retaining Walls"],
+  DRYWALL: ["Hanging", "Finishing", "Texture", "Acoustical", "Metal Framing", "Insulation"],
+  PAINTING: ["Interior", "Exterior", "Prep Work", "Staining", "Specialty Coatings", "Wallcovering"],
+  FLOORING: ["Tile", "Hardwood", "LVP/LVT", "Carpet", "Epoxy", "Polished Concrete", "VCT"],
+  LANDSCAPING: ["Softscape", "Hardscape", "Irrigation", "Lighting", "Fencing", "Pavers", "Retaining Walls"],
+  DEMOLITION: ["Selective Demo", "Full Demo", "Hazmat Abatement", "Concrete Removal", "Interior Strip-Out"],
+  STEEL_ERECTION: ["Structural Steel", "Misc Metals", "Ornamental", "Stairs/Rails", "Decking"],
+  GLAZING: ["Storefront", "Curtain Wall", "Windows", "Doors", "Skylights", "Mirrors", "Shower Enclosures"],
+  INSULATION: ["Batt Insulation", "Blown-In", "Spray Foam", "Rigid Board", "Fire Stopping"],
+  FIRE_PROTECTION: ["Sprinkler Systems", "Fire Alarms", "Suppression", "Standpipes", "Extinguishers"],
+  LOW_VOLTAGE: ["Data/Network", "Security", "Audio/Video", "Access Control", "Fire Alarm", "Intercom"],
+  SOLAR: ["Roof Mount", "Ground Mount", "Battery Storage", "Inverters", "Electrical Tie-In"],
+  WATERPROOFING: ["Below Grade", "Above Grade", "Decks/Balconies", "Foundation", "Caulking/Sealants"],
+  GENERAL_CONTRACTOR: ["General Conditions", "Supervision", "Temporary Facilities", "Site Management", "Coordination"],
+  OTHER: ["Custom", "Miscellaneous", "Specialty"]
+};
+
 export default function ScopeSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -87,6 +114,10 @@ export default function ScopeSettings() {
   const [showModifierDialog, setShowModifierDialog] = useState(false);
   const [editingWorkType, setEditingWorkType] = useState<WorkType | null>(null);
   const [editingModifier, setEditingModifier] = useState<Modifier | null>(null);
+  
+  // Two-level category selection state
+  const [selectedTrade, setSelectedTrade] = useState("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("");
 
   const [workTypeForm, setWorkTypeForm] = useState({
     categoryId: "",
@@ -211,6 +242,65 @@ export default function ScopeSettings() {
       dimensionType: "",
       displayOrder: 100
     });
+    setSelectedTrade("");
+    setSelectedSubCategory("");
+  };
+  
+  // Get available trades from the mapping
+  const availableTrades = Object.keys(TRADE_SUBCATEGORIES).sort();
+  
+  // Get sub-categories for selected trade (always include "General" as first option for fallback)
+  const availableSubCategories = selectedTrade 
+    ? ["General", ...(TRADE_SUBCATEGORIES[selectedTrade] || [])] 
+    : [];
+  
+  // Find categoryId based on trade + subcategory selection
+  // Returns empty string if no matching category exists (prevents silent misassignment)
+  const findCategoryId = (trade: string, subCategory: string): string => {
+    // Format trade name for comparison (underscores to spaces for display matching)
+    const tradeFormatted = trade.replace(/_/g, " ");
+    
+    // Try to find existing category that matches "TRADE - SubCategory" pattern
+    const targetName = `${tradeFormatted} - ${subCategory}`;
+    const matchingCategory = workTypeCategories.find(cat => 
+      cat.name.toLowerCase() === targetName.toLowerCase()
+    );
+    
+    if (matchingCategory) {
+      return matchingCategory.id;
+    }
+    
+    // If subCategory is "General" or empty, try to find category that just matches the trade name
+    if (!subCategory || subCategory === "General") {
+      const tradeCategory = workTypeCategories.find(cat => 
+        cat.name.toLowerCase() === trade.toLowerCase() ||
+        cat.name.toLowerCase() === tradeFormatted.toLowerCase()
+      );
+      
+      if (tradeCategory) {
+        return tradeCategory.id;
+      }
+    }
+    
+    // No match found - return empty to trigger validation
+    return "";
+  };
+  
+  // Check if current selection has a valid category match
+  const hasValidCategoryMatch = !!(selectedTrade && selectedSubCategory && workTypeForm.categoryId);
+  
+  // Handle trade selection change
+  const handleTradeChange = (trade: string) => {
+    setSelectedTrade(trade);
+    setSelectedSubCategory("");
+    setWorkTypeForm(prev => ({ ...prev, categoryId: "" }));
+  };
+  
+  // Handle sub-category selection change  
+  const handleSubCategoryChange = (subCategory: string) => {
+    setSelectedSubCategory(subCategory);
+    const categoryId = findCategoryId(selectedTrade, subCategory);
+    setWorkTypeForm(prev => ({ ...prev, categoryId }));
   };
 
   const resetModifierForm = () => {
@@ -233,6 +323,24 @@ export default function ScopeSettings() {
       dimensionType: workType.dimensionType || "",
       displayOrder: workType.displayOrder
     });
+    
+    // Parse category name to set trade and sub-category for editing
+    const category = workTypeCategories.find(cat => cat.id === workType.categoryId);
+    if (category) {
+      const dashIndex = category.name.indexOf(" - ");
+      if (dashIndex > 0) {
+        const trade = category.name.substring(0, dashIndex).trim().toUpperCase().replace(/\s+/g, "_");
+        const subCat = category.name.substring(dashIndex + 3).trim();
+        setSelectedTrade(trade);
+        setSelectedSubCategory(subCat);
+      } else {
+        // No dash - use full name as trade, set "General" as sub-category
+        const trade = category.name.toUpperCase().replace(/\s+/g, "_");
+        setSelectedTrade(trade);
+        setSelectedSubCategory("General");
+      }
+    }
+    
     setShowWorkTypeDialog(true);
   };
 
@@ -569,24 +677,58 @@ export default function ScopeSettings() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Category</Label>
-              <Select
-                value={workTypeForm.categoryId}
-                onValueChange={(value) => setWorkTypeForm({ ...workTypeForm, categoryId: value })}
-              >
-                <SelectTrigger data-testid="select-work-type-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workTypeCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Two-level category selection */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Trade Category</Label>
+                <Select
+                  value={selectedTrade}
+                  onValueChange={handleTradeChange}
+                >
+                  <SelectTrigger data-testid="select-trade-category">
+                    <SelectValue placeholder="Select trade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTrades.map((trade) => (
+                      <SelectItem key={trade} value={trade}>
+                        {trade.replace(/_/g, " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Sub-Category</Label>
+                <Select
+                  value={selectedSubCategory}
+                  onValueChange={handleSubCategoryChange}
+                  disabled={!selectedTrade}
+                >
+                  <SelectTrigger data-testid="select-sub-category">
+                    <SelectValue placeholder={selectedTrade ? "Select sub-category" : "Select trade first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSubCategories.map((subCat) => (
+                      <SelectItem key={subCat} value={subCat}>
+                        {subCat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            
+            {/* Validation message when category match not found */}
+            {selectedTrade && selectedSubCategory && !workTypeForm.categoryId && (
+              <div className="p-3 rounded-lg border border-destructive/50 bg-destructive/10 text-sm">
+                <span className="font-medium text-destructive">Category not found:</span>
+                <span className="text-muted-foreground ml-1">
+                  No matching category exists for "{selectedTrade.replace(/_/g, " ")} - {selectedSubCategory}". 
+                  Try selecting "General" or a different sub-category that matches your existing categories.
+                </span>
+              </div>
+            )}
+            
             <div>
               <Label>Name</Label>
               <Input
