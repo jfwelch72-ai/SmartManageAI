@@ -937,34 +937,40 @@ export default function WebsiteBuilderPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {blogPosts.map((post) => (
-                  <TableRow key={post.id} data-testid={`row-blog-${post.id}`}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{post.title}</span>
-                        {post.aiGenerated && (
-                          <Badge variant="outline" className="text-xs">
-                            <Sparkles className="h-3 w-3 mr-1" />
-                            AI
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{post.category || "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={post.status === "PUBLISHED" ? "default" : post.status === "ARCHIVED" ? "secondary" : "outline"}>
-                        {post.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{post.viewCount}</TableCell>
-                    <TableCell>{format(new Date(post.createdAt), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" data-testid={`button-edit-blog-${post.id}`}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {blogPosts.map((post) => {
+                  const p = post as any;
+                  const createdAt = post.createdAt || p.created_at;
+                  const viewCount = post.viewCount ?? p.view_count ?? 0;
+                  const aiGenerated = post.aiGenerated || p.ai_generated;
+                  return (
+                    <TableRow key={post.id} data-testid={`row-blog-${post.id}`}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{post.title}</span>
+                          {aiGenerated && (
+                            <Badge variant="outline" className="text-xs">
+                              <Sparkles className="h-3 w-3 mr-1" />
+                              AI
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{post.category || "-"}</TableCell>
+                      <TableCell>
+                        <Badge variant={post.status === "PUBLISHED" ? "default" : post.status === "ARCHIVED" ? "secondary" : "outline"}>
+                          {post.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{viewCount}</TableCell>
+                      <TableCell>{createdAt ? format(new Date(createdAt), "MMM d, yyyy") : "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" data-testid={`button-edit-blog-${post.id}`}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -1260,36 +1266,42 @@ export default function WebsiteBuilderPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {contactSubmissions.map((submission) => (
-                  <TableRow key={submission.id} className={!submission.read ? "bg-muted/50" : ""} data-testid={`row-submission-${submission.id}`}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{submission.name}</p>
-                        <p className="text-sm text-muted-foreground">{submission.email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>{submission.subject || "-"}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        {!submission.read && (
-                          <Badge variant="secondary">Unread</Badge>
-                        )}
-                        {submission.responded && (
-                          <Badge variant="outline">Responded</Badge>
-                        )}
-                        {submission.convertedToCrm && (
-                          <Badge>CRM</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{format(new Date(submission.createdAt), "MMM d, yyyy")}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" data-testid={`button-view-submission-${submission.id}`}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {contactSubmissions.map((submission) => {
+                  const s = submission as any;
+                  const createdAt = submission.createdAt || s.created_at;
+                  const responded = submission.responded ?? false;
+                  const convertedToCrm = submission.convertedToCrm || s.converted_to_crm;
+                  return (
+                    <TableRow key={submission.id} className={!submission.read ? "bg-muted/50" : ""} data-testid={`row-submission-${submission.id}`}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{submission.name}</p>
+                          <p className="text-sm text-muted-foreground">{submission.email}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{submission.subject || "-"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {!submission.read && (
+                            <Badge variant="secondary">Unread</Badge>
+                          )}
+                          {responded && (
+                            <Badge variant="outline">Responded</Badge>
+                          )}
+                          {convertedToCrm && (
+                            <Badge>CRM</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{createdAt ? format(new Date(createdAt), "MMM d, yyyy") : "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" data-testid={`button-view-submission-${submission.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
