@@ -115,6 +115,7 @@ export default function BidEstimate() {
   const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
   const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("");
   const [useHierarchicalBuilder, setUseHierarchicalBuilder] = useState<boolean>(true);
+  const [catalogPricedMaterials, setCatalogPricedMaterials] = useState<Set<string>>(new Set());
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -285,89 +286,264 @@ export default function BidEstimate() {
     setSelectedCatalogCategory(value);
   };
   
+  // Normalize unit strings for consistent matching across catalog variants
+  const normalizeUnit = (unit: string): string => {
+    const normalized = (unit || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    // Map various unit labels to standard abbreviations
+    const unitMap: Record<string, string> = {
+      // Cubic yards (concrete, excavation)
+      "CY": "CY", "CUBICYARD": "CY", "CUBICYARDS": "CY", "YARD": "CY", "YARDS": "CY", 
+      "YD": "CY", "YDS": "CY", "CUYD": "CY", "CUYDS": "CY", "CUBYD": "CY", "CUBYDS": "CY",
+      "CUBICYD": "CY", "CUBICYDS": "CY", "CUD": "CY", "CUDS": "CY", "YARDCUBIC": "CY",
+      // Tons (stone, aggregate)
+      "TON": "TON", "TONS": "TON", "TN": "TON", "TNS": "TON",
+      // Rolls (wire mesh)
+      "ROLL": "ROLL", "ROLLS": "ROLL", "RL": "ROLL", "RLS": "ROLL",
+      // Each/pieces (rebar, dowels)
+      "EA": "EA", "EACH": "EA", "PC": "EA", "PCS": "EA", "PIECE": "EA", "PIECES": "EA", 
+      "BAR": "EA", "BARS": "EA", "UNIT": "EA", "UNITS": "EA",
+      // Linear feet (rebar)
+      "LF": "LF", "LINEARFOOT": "LF", "LINEARFEET": "LF", "FT": "LF", "FEET": "LF", "FOOT": "LF",
+      "LINFT": "LF", "LINFOOT": "LF", "LINFEET": "LF",
+      // Gallons (sealer)
+      "GAL": "GAL", "GALLON": "GAL", "GALLONS": "GAL", "GALS": "GAL",
+      // Dowels (specific unit)
+      "DOWEL": "DOWEL", "DOWELS": "DOWEL",
+      // Square feet (underlayment)
+      "SF": "SF", "SQFT": "SF", "SQUAREFOOT": "SF", "SQUAREFEET": "SF", "SQF": "SF",
+    };
+    
+    // Check direct match first
+    if (unitMap[normalized]) {
+      return unitMap[normalized];
+    }
+    
+    // Rule-based matching for variants not in the map
+    // Cubic yard variants: starts with CU and ends with Y/YD/YDS
+    if ((normalized.startsWith("CU") || normalized.startsWith("CUBIC")) && 
+        (normalized.endsWith("Y") || normalized.endsWith("YD") || normalized.endsWith("YDS") || normalized.endsWith("YARD") || normalized.endsWith("YARDS"))) {
+      return "CY";
+    }
+    // Square foot variants: starts with SQ and ends with F/FT/FOOT/FEET
+    if ((normalized.startsWith("SQ") || normalized.startsWith("SQUARE")) && 
+        (normalized.endsWith("F") || normalized.endsWith("FT") || normalized.endsWith("FOOT") || normalized.endsWith("FEET"))) {
+      return "SF";
+    }
+    // Linear foot variants: starts with LIN and ends with F/FT/FOOT/FEET
+    if (normalized.startsWith("LIN") && 
+        (normalized.endsWith("F") || normalized.endsWith("FT") || normalized.endsWith("FOOT") || normalized.endsWith("FEET"))) {
+      return "LF";
+    }
+    
+    return normalized;
+  };
+  
+  // Detect material type from catalog item name/description
+  const detectMaterialTypeFromName = (itemName: string): string | null => {
+    const name = (itemName || "").toLowerCase();
+    if (name.includes("dowel")) return "dowels";
+    if (name.includes("rebar") || name.includes("re-bar") || name.includes("reinforcing bar")) return "rebar";
+    if (name.includes("excavat") || name.includes("haul") || name.includes("backfill") || name.includes("dirt") || name.includes("soil")) return "excavation";
+    if (name.includes("concrete") || name.includes("readymix") || name.includes("ready-mix") || name.includes("ready mix")) return "concrete";
+    if (name.includes("stone") || name.includes("gravel") || name.includes("aggregate") || name.includes("base")) return "stone";
+    if (name.includes("mesh") || name.includes("wire")) return "wireMesh";
+    if (name.includes("sealer") || name.includes("seal")) return "sealer";
+    if (name.includes("underlayment") || name.includes("vapor barrier") || name.includes("membrane")) return "underlayment";
+    return null;
+  };
+  
   // Apply catalog pricing to form - uses calculated quantities from Material Calculator
   const applyCatalogPrice = (item: CatalogPriceItem) => {
     const scopeQuantity = form.getValues("quantity") || 1;
     const unitPrice = parseFloat(item.unitPrice);
-    const itemUnit = (item.unit || "").toUpperCase();
+    const normalizedUnit = normalizeUnit(item.unit || "");
+    
+    // First, try to detect material type from catalog item name (more accurate)
+    const nameBasedMaterialType = detectMaterialTypeFromName(item.itemName);
     
     // Map catalog item unit to the correct calculated quantity from Material Calculator
     // This ensures we multiply unit price by the CALCULATED quantity, not the scope quantity
     let materialQuantity = scopeQuantity;
     let quantitySource = "scope";
+    let materialType: string | null = null; // Track which material type was priced
     
-    // Concrete materials (priced per CY)
-    if (itemUnit === "CY" || itemUnit === "YARD" || itemUnit === "YARDS") {
+    // If we detected material type from name, use it with appropriate quantity
+    if (nameBasedMaterialType) {
       const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
       const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
-      // Use concrete if available, otherwise excavation, otherwise fall back
-      if (concreteYards > 0) {
-        materialQuantity = concreteYards;
-        quantitySource = "calculated concrete";
-      } else if (excavationYards > 0) {
-        materialQuantity = excavationYards;
-        quantitySource = "calculated excavation";
-      }
-    }
-    // Stone/aggregate materials (priced per TON)
-    else if (itemUnit === "TON" || itemUnit === "TONS") {
       const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
-      if (stoneTons > 0) {
-        materialQuantity = stoneTons;
-        quantitySource = "calculated stone";
-      }
-    }
-    // Wire mesh (priced per ROLL)
-    else if (itemUnit === "ROLL" || itemUnit === "ROLLS") {
       const meshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
-      if (meshRolls > 0) {
-        materialQuantity = meshRolls;
-        quantitySource = "calculated wire mesh";
-      }
-    }
-    // Rebar (priced per EA or count)
-    else if (itemUnit === "EA" || itemUnit === "EACH" || itemUnit === "PC" || itemUnit === "PCS" || itemUnit === "BAR" || itemUnit === "BARS") {
       const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
-      if (rebarCount > 0) {
-        materialQuantity = rebarCount;
-        quantitySource = "calculated rebar";
-      }
-    }
-    // Rebar (priced per LF)
-    else if (itemUnit === "LF" || itemUnit === "FT" || itemUnit === "FEET") {
-      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
-      if (rebarFeet > 0) {
-        materialQuantity = rebarFeet;
-        quantitySource = "calculated rebar LF";
-      }
-    }
-    // Sealer (priced per GAL)
-    else if (itemUnit === "GAL" || itemUnit === "GALLON" || itemUnit === "GALLONS") {
-      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
-      if (sealerGallons > 0) {
-        materialQuantity = sealerGallons;
-        quantitySource = "calculated sealer";
-      }
-    }
-    // Dowels (priced per EA)
-    else if (itemUnit === "DOWEL" || itemUnit === "DOWELS") {
       const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-      if (dowelCount > 0) {
-        materialQuantity = dowelCount;
-        quantitySource = "calculated dowels";
+      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
+      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+      
+      switch (nameBasedMaterialType) {
+        case "concrete":
+          if (concreteYards > 0) {
+            materialQuantity = concreteYards;
+            quantitySource = "calculated concrete";
+            materialType = "concrete";
+          }
+          break;
+        case "excavation":
+          if (excavationYards > 0) {
+            materialQuantity = excavationYards;
+            quantitySource = "calculated excavation";
+            materialType = "excavation";
+          }
+          break;
+        case "stone":
+          if (stoneTons > 0) {
+            materialQuantity = stoneTons;
+            quantitySource = "calculated stone";
+            materialType = "stone";
+          }
+          break;
+        case "wireMesh":
+          if (meshRolls > 0) {
+            materialQuantity = meshRolls;
+            quantitySource = "calculated wire mesh";
+            materialType = "wireMesh";
+          }
+          break;
+        case "rebar":
+          if (rebarCount > 0) {
+            materialQuantity = rebarCount;
+            quantitySource = "calculated rebar";
+            materialType = "rebar";
+          }
+          break;
+        case "dowels":
+          if (dowelCount > 0) {
+            materialQuantity = dowelCount;
+            quantitySource = "calculated dowels";
+            materialType = "dowels";
+          }
+          break;
+        case "sealer":
+          if (sealerGallons > 0) {
+            materialQuantity = sealerGallons;
+            quantitySource = "calculated sealer";
+            materialType = "sealer";
+          }
+          break;
+        case "underlayment":
+          if (underlaymentSF > 0) {
+            materialQuantity = underlaymentSF;
+            quantitySource = "calculated underlayment";
+            materialType = "underlayment";
+          }
+          break;
       }
     }
-    // SF-priced items use underlayment calculation or scope quantity
-    else if (itemUnit === "SF" || itemUnit === "SQFT") {
-      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
-      if (underlaymentSF > 0) {
-        materialQuantity = underlaymentSF;
-        quantitySource = "calculated underlayment";
+    
+    // Fallback to unit-based detection if name didn't match or quantity was 0
+    if (!materialType) {
+      // Concrete materials (priced per CY)
+      if (normalizedUnit === "CY") {
+        const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
+        const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
+        // Use concrete if available, otherwise excavation, otherwise fall back
+        if (concreteYards > 0) {
+          materialQuantity = concreteYards;
+          quantitySource = "calculated concrete";
+          materialType = "concrete";
+        } else if (excavationYards > 0) {
+          materialQuantity = excavationYards;
+          quantitySource = "calculated excavation";
+          materialType = "excavation";
+        }
+      }
+      // Stone/aggregate materials (priced per TON)
+      else if (normalizedUnit === "TON") {
+        const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
+        if (stoneTons > 0) {
+          materialQuantity = stoneTons;
+          quantitySource = "calculated stone";
+          materialType = "stone";
+        }
+      }
+      // Wire mesh (priced per ROLL)
+      else if (normalizedUnit === "ROLL") {
+        const meshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
+        if (meshRolls > 0) {
+          materialQuantity = meshRolls;
+          quantitySource = "calculated wire mesh";
+          materialType = "wireMesh";
+        }
+      }
+      // EA unit - check item name to determine if dowels or rebar
+      else if (normalizedUnit === "EA") {
+        const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
+        const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
+        // Prefer dowels if only dowels have quantity, otherwise rebar
+        if (dowelCount > 0 && rebarCount === 0) {
+          materialQuantity = dowelCount;
+          quantitySource = "calculated dowels";
+          materialType = "dowels";
+        } else if (rebarCount > 0) {
+          materialQuantity = rebarCount;
+          quantitySource = "calculated rebar";
+          materialType = "rebar";
+        } else if (dowelCount > 0) {
+          materialQuantity = dowelCount;
+          quantitySource = "calculated dowels";
+          materialType = "dowels";
+        }
+      }
+      // Rebar (priced per LF)
+      else if (normalizedUnit === "LF") {
+        const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
+        if (rebarFeet > 0) {
+          materialQuantity = rebarFeet;
+          quantitySource = "calculated rebar LF";
+          materialType = "rebar";
+        }
+      }
+      // Sealer (priced per GAL)
+      else if (normalizedUnit === "GAL") {
+        const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
+        if (sealerGallons > 0) {
+          materialQuantity = sealerGallons;
+          quantitySource = "calculated sealer";
+          materialType = "sealer";
+        }
+      }
+      // Dowels (priced per DOWEL unit specifically)
+      else if (normalizedUnit === "DOWEL") {
+        const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
+        if (dowelCount > 0) {
+          materialQuantity = dowelCount;
+          quantitySource = "calculated dowels";
+          materialType = "dowels";
+        }
+      }
+      // SF-priced items use underlayment calculation or scope quantity
+      else if (normalizedUnit === "SF") {
+        const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+        if (underlaymentSF > 0) {
+          materialQuantity = underlaymentSF;
+          quantitySource = "calculated underlayment";
+          materialType = "underlayment";
+        }
       }
     }
     
     const totalMaterialCost = unitPrice * materialQuantity;
-    form.setValue("materialCost", totalMaterialCost);
+    
+    // Add to existing material cost instead of replacing
+    const currentMaterialCost = Number(form.getValues("materialCost")) || 0;
+    form.setValue("materialCost", currentMaterialCost + totalMaterialCost);
+    
+    // Track which material type was priced via catalog
+    if (materialType) {
+      setCatalogPricedMaterials(prev => {
+        const newSet = new Set(prev);
+        newSet.add(materialType!);
+        return newSet;
+      });
+    }
     
     // Don't change the unit - keep scope unit (SF) separate from material unit (CY)
     // The line item quantity is the scope quantity, material cost uses calculated quantity
@@ -393,6 +569,7 @@ export default function BidEstimate() {
       setHierarchicalUnit("");
       setMaterialCalcData(getDefaultMaterialCalculatorData());
       setSelectedCatalogCategory("");
+      setCatalogPricedMaterials(new Set());
     }
   };
   
@@ -1407,6 +1584,7 @@ export default function BidEstimate() {
                       materialCalcData={materialCalcData}
                       onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
                       currentMaterialCost={Number(form.watch("materialCost")) || 0}
+                      catalogPricedMaterials={catalogPricedMaterials}
                     />
 
                     {/* Cost Per Unit Preview */}
@@ -1954,6 +2132,7 @@ export default function BidEstimate() {
                       materialCalcData={materialCalcData}
                       onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
                       currentMaterialCost={Number(form.watch("materialCost")) || 0}
+                      catalogPricedMaterials={catalogPricedMaterials}
                     />
 
                     {/* Cost Per Unit Preview */}
@@ -2061,6 +2240,7 @@ export default function BidEstimate() {
                         form.reset();
                         setMaterialCalcData(getDefaultMaterialCalculatorData());
                         setSelectedCatalogCategory("");
+                        setCatalogPricedMaterials(new Set());
                       }} data-testid="button-cancel-edit">
                         Cancel
                       </Button>

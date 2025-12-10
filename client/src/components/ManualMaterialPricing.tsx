@@ -10,6 +10,7 @@ interface ManualMaterialPricingProps {
   materialCalcData: MaterialCalculatorData;
   onMaterialCostChange: (totalCost: number) => void;
   currentMaterialCost: number;
+  catalogPricedMaterials?: Set<string>;
 }
 
 interface MaterialPricingItem {
@@ -24,6 +25,7 @@ export function ManualMaterialPricing({
   materialCalcData,
   onMaterialCostChange,
   currentMaterialCost,
+  catalogPricedMaterials = new Set(),
 }: ManualMaterialPricingProps) {
   const [materialPrices, setMaterialPrices] = useState<Record<string, number>>({
     concrete: 0,
@@ -59,7 +61,8 @@ export function ManualMaterialPricing({
     { key: "underlayment", label: "Underlayment", quantity: underlaymentSF, unit: "SF", unitPrice: materialPrices.underlayment },
   ];
 
-  const activeMaterials = materials.filter(m => m.quantity > 0);
+  // Filter out materials that already have catalog prices applied
+  const activeMaterials = materials.filter(m => m.quantity > 0 && !catalogPricedMaterials.has(m.key));
 
   const calculateTotal = () => {
     return activeMaterials.reduce((sum, m) => sum + (m.quantity * m.unitPrice), 0);
