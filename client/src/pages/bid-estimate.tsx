@@ -284,18 +284,100 @@ export default function BidEstimate() {
     setSelectedCatalogCategory(value);
   };
   
-  // Apply catalog pricing to form
+  // Apply catalog pricing to form - uses calculated quantities from Material Calculator
   const applyCatalogPrice = (item: CatalogPriceItem) => {
-    const quantity = form.getValues("quantity") || 1;
+    const scopeQuantity = form.getValues("quantity") || 1;
     const unitPrice = parseFloat(item.unitPrice);
-    const totalMaterialCost = unitPrice * quantity;
-    form.setValue("materialCost", totalMaterialCost);
-    if (item.unit) {
-      form.setValue("unit", item.unit);
+    const itemUnit = (item.unit || "").toUpperCase();
+    
+    // Map catalog item unit to the correct calculated quantity from Material Calculator
+    // This ensures we multiply unit price by the CALCULATED quantity, not the scope quantity
+    let materialQuantity = scopeQuantity;
+    let quantitySource = "scope";
+    
+    // Concrete materials (priced per CY)
+    if (itemUnit === "CY" || itemUnit === "YARD" || itemUnit === "YARDS") {
+      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
+      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
+      // Use concrete if available, otherwise excavation, otherwise fall back
+      if (concreteYards > 0) {
+        materialQuantity = concreteYards;
+        quantitySource = "calculated concrete";
+      } else if (excavationYards > 0) {
+        materialQuantity = excavationYards;
+        quantitySource = "calculated excavation";
+      }
     }
+    // Stone/aggregate materials (priced per TON)
+    else if (itemUnit === "TON" || itemUnit === "TONS") {
+      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
+      if (stoneTons > 0) {
+        materialQuantity = stoneTons;
+        quantitySource = "calculated stone";
+      }
+    }
+    // Wire mesh (priced per ROLL)
+    else if (itemUnit === "ROLL" || itemUnit === "ROLLS") {
+      const meshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
+      if (meshRolls > 0) {
+        materialQuantity = meshRolls;
+        quantitySource = "calculated wire mesh";
+      }
+    }
+    // Rebar (priced per EA or count)
+    else if (itemUnit === "EA" || itemUnit === "EACH" || itemUnit === "PC" || itemUnit === "PCS" || itemUnit === "BAR" || itemUnit === "BARS") {
+      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
+      if (rebarCount > 0) {
+        materialQuantity = rebarCount;
+        quantitySource = "calculated rebar";
+      }
+    }
+    // Rebar (priced per LF)
+    else if (itemUnit === "LF" || itemUnit === "FT" || itemUnit === "FEET") {
+      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
+      if (rebarFeet > 0) {
+        materialQuantity = rebarFeet;
+        quantitySource = "calculated rebar LF";
+      }
+    }
+    // Sealer (priced per GAL)
+    else if (itemUnit === "GAL" || itemUnit === "GALLON" || itemUnit === "GALLONS") {
+      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
+      if (sealerGallons > 0) {
+        materialQuantity = sealerGallons;
+        quantitySource = "calculated sealer";
+      }
+    }
+    // Dowels (priced per EA)
+    else if (itemUnit === "DOWEL" || itemUnit === "DOWELS") {
+      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
+      if (dowelCount > 0) {
+        materialQuantity = dowelCount;
+        quantitySource = "calculated dowels";
+      }
+    }
+    // SF-priced items use underlayment calculation or scope quantity
+    else if (itemUnit === "SF" || itemUnit === "SQFT") {
+      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+      if (underlaymentSF > 0) {
+        materialQuantity = underlaymentSF;
+        quantitySource = "calculated underlayment";
+      }
+    }
+    
+    const totalMaterialCost = unitPrice * materialQuantity;
+    form.setValue("materialCost", totalMaterialCost);
+    
+    // Don't change the unit - keep scope unit (SF) separate from material unit (CY)
+    // The line item quantity is the scope quantity, material cost uses calculated quantity
+    
+    const description = quantitySource === "scope" 
+      ? `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} = $${totalMaterialCost.toFixed(2)}`
+      : `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} ${item.unit} (${quantitySource}) = $${totalMaterialCost.toFixed(2)}`;
+    
     toast({
       title: "Catalog price applied",
-      description: `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit}`
+      description
     });
   };
   
@@ -1240,6 +1322,85 @@ export default function BidEstimate() {
                       ) : null;
                     })()}
 
+                    {/* Calculated Material Quantities Summary - verify the math */}
+                    {(() => {
+                      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
+                      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
+                      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
+                      const wireMeshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
+                      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
+                      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
+                      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
+                      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
+                      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+                      
+                      const hasCalculatedQuantities = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
+                        wireMeshRolls > 0 || rebarCount > 0 || sealerGallons > 0 || dowelCount > 0 || underlaymentSF > 0;
+                      
+                      if (!hasCalculatedQuantities) return null;
+                      
+                      return (
+                        <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
+                              <Calculator className="h-4 w-4" />
+                              Calculated Material Quantities
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              These quantities will be used for material cost calculations (not the scope quantity)
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="flex flex-wrap gap-2">
+                              {concreteYards > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-concrete-yards">
+                                  Concrete: {concreteYards.toFixed(2)} CY
+                                </Badge>
+                              )}
+                              {stoneTons > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-stone-tons">
+                                  Stone: {stoneTons.toFixed(2)} TON
+                                </Badge>
+                              )}
+                              {excavationYards > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-excavation-yards">
+                                  Excavation: {excavationYards.toFixed(2)} CY
+                                </Badge>
+                              )}
+                              {wireMeshRolls > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-wire-mesh-rolls">
+                                  Wire Mesh: {wireMeshRolls.toFixed(1)} ROLLS
+                                </Badge>
+                              )}
+                              {rebarCount > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-rebar-count">
+                                  Rebar: {rebarCount.toFixed(0)} EA ({rebarFeet.toFixed(0)} LF)
+                                </Badge>
+                              )}
+                              {dowelCount > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-dowel-count">
+                                  Dowels: {dowelCount.toFixed(0)} EA
+                                </Badge>
+                              )}
+                              {sealerGallons > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-sealer-gallons">
+                                  Sealer: {sealerGallons.toFixed(1)} GAL
+                                </Badge>
+                              )}
+                              {underlaymentSF > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="badge-underlayment-sf">
+                                  Underlayment: {underlaymentSF.toFixed(0)} SF
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Select a catalog item to auto-calculate material cost using these quantities
+                            </p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })()}
+
                     {/* Cost Per Unit Preview */}
                     {(() => {
                       const watchedValues = form.watch();
@@ -1699,6 +1860,85 @@ export default function BidEstimate() {
                           onChange={setMaterialCalcData}
                         />
                       ) : null;
+                    })()}
+
+                    {/* Calculated Material Quantities Summary - verify the math (Edit Dialog) */}
+                    {(() => {
+                      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
+                      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
+                      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
+                      const wireMeshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
+                      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
+                      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
+                      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
+                      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
+                      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+                      
+                      const hasCalculatedQuantities = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
+                        wireMeshRolls > 0 || rebarCount > 0 || sealerGallons > 0 || dowelCount > 0 || underlaymentSF > 0;
+                      
+                      if (!hasCalculatedQuantities) return null;
+                      
+                      return (
+                        <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
+                              <Calculator className="h-4 w-4" />
+                              Calculated Material Quantities
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              These quantities will be used for material cost calculations (not the scope quantity)
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="flex flex-wrap gap-2">
+                              {concreteYards > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-concrete-yards">
+                                  Concrete: {concreteYards.toFixed(2)} CY
+                                </Badge>
+                              )}
+                              {stoneTons > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-stone-tons">
+                                  Stone: {stoneTons.toFixed(2)} TON
+                                </Badge>
+                              )}
+                              {excavationYards > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-excavation-yards">
+                                  Excavation: {excavationYards.toFixed(2)} CY
+                                </Badge>
+                              )}
+                              {wireMeshRolls > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-wire-mesh-rolls">
+                                  Wire Mesh: {wireMeshRolls.toFixed(1)} ROLLS
+                                </Badge>
+                              )}
+                              {rebarCount > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-rebar-count">
+                                  Rebar: {rebarCount.toFixed(0)} EA ({rebarFeet.toFixed(0)} LF)
+                                </Badge>
+                              )}
+                              {dowelCount > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-dowel-count">
+                                  Dowels: {dowelCount.toFixed(0)} EA
+                                </Badge>
+                              )}
+                              {sealerGallons > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-sealer-gallons">
+                                  Sealer: {sealerGallons.toFixed(1)} GAL
+                                </Badge>
+                              )}
+                              {underlaymentSF > 0 && (
+                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-underlayment-sf">
+                                  Underlayment: {underlaymentSF.toFixed(0)} SF
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Select a catalog item to auto-calculate material cost using these quantities
+                            </p>
+                          </CardContent>
+                        </Card>
+                      );
                     })()}
 
                     {/* Cost Per Unit Preview */}
