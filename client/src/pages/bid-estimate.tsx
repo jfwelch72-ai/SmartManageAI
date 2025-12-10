@@ -13,6 +13,7 @@ import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/Stan
 import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
 import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
+import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
 import { 
   Dialog, 
@@ -1295,8 +1296,8 @@ export default function BidEstimate() {
                       />
                     </div>
 
-                    {/* Material Calculator - show for concrete, excavation, and related work */}
-                    {(() => {
+                    {/* Material Calculator - show for concrete, excavation, and related work (only in Manual Entry mode) */}
+                    {!useHierarchicalBuilder && (() => {
                       const watchedValues = form.watch();
                       const unit = watchedValues.unit;
                       const quantity = Number(watchedValues.quantity) || 0;
@@ -1394,12 +1395,19 @@ export default function BidEstimate() {
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">
-                              Select a catalog item to auto-calculate material cost using these quantities
+                              Use catalog pricing or enter manual unit prices below
                             </p>
                           </CardContent>
                         </Card>
                       );
                     })()}
+
+                    {/* Manual Material Pricing - for materials without catalog prices */}
+                    <ManualMaterialPricing
+                      materialCalcData={materialCalcData}
+                      onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
+                      currentMaterialCost={Number(form.watch("materialCost")) || 0}
+                    />
 
                     {/* Cost Per Unit Preview */}
                     {(() => {
@@ -1934,12 +1942,19 @@ export default function BidEstimate() {
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">
-                              Select a catalog item to auto-calculate material cost using these quantities
+                              Use catalog pricing or enter manual unit prices below
                             </p>
                           </CardContent>
                         </Card>
                       );
                     })()}
+
+                    {/* Manual Material Pricing - for Edit dialog */}
+                    <ManualMaterialPricing
+                      materialCalcData={materialCalcData}
+                      onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
+                      currentMaterialCost={Number(form.watch("materialCost")) || 0}
+                    />
 
                     {/* Cost Per Unit Preview */}
                     {(() => {
