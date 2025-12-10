@@ -319,15 +319,19 @@ export default function BidEstimate() {
     if (data) {
       form.setValue("description", data.canonicalName);
       form.setValue("unit", data.unit);
-      form.setValue("scopeWorkTypeId", data.workTypeId);
       form.setValue("quantity", hierarchicalQuantity);
+      // Note: Don't set scopeWorkTypeId - hierarchical selection uses organizationSowItems IDs
+      // which are different from scope_work_types table. Leave it undefined.
+      form.setValue("scopeWorkTypeId", undefined);
       
-      // Use reliable categoryCode from API response
+      // Find matching category from workCategories - categoryCode must match a valid category
       const matchedCategory = workCategories.find(c => 
         c.value === data.categoryCode ||
         c.value === data.tradeName.toUpperCase().replace(/ /g, "_")
       );
-      const mappedCategory = matchedCategory?.value || data.categoryCode || "GENERAL";
+      // Only use valid categories; fall back to GENERAL if no match found
+      const defaultCategory = workCategories.find(c => c.isDefault)?.value || "GENERAL";
+      const mappedCategory = matchedCategory?.value || defaultCategory;
       form.setValue("category", mappedCategory);
       setSelectedCatalogCategory(mappedCategory);
     }
