@@ -368,4 +368,352 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
+// ============================================================================
+// OAuth Routes for Gmail and Outlook
+// ============================================================================
+
+// OAuth configuration - these should be set as environment variables
+const GMAIL_CONFIG = {
+  clientId: process.env.GOOGLE_CLIENT_ID || "",
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+  redirectUri: process.env.GOOGLE_REDIRECT_URI || "",
+  scopes: [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/userinfo.email",
+  ],
+};
+
+const OUTLOOK_CONFIG = {
+  clientId: process.env.MICROSOFT_CLIENT_ID || "",
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET || "",
+  redirectUri: process.env.MICROSOFT_REDIRECT_URI || "",
+  scopes: [
+    "https://graph.microsoft.com/Mail.Read",
+    "https://graph.microsoft.com/Mail.Send",
+    "https://graph.microsoft.com/User.Read",
+    "offline_access",
+  ],
+};
+
+// GET /api/email/oauth/gmail/initiate - Start Gmail OAuth flow
+router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!GMAIL_CONFIG.clientId || !GMAIL_CONFIG.clientSecret) {
+      return res.status(503).json({ 
+        error: "Gmail integration not configured",
+        message: "Please contact your administrator to set up Google OAuth credentials"
+      });
+    }
+
+    // Store user info in session for callback
+    const state = Buffer.from(JSON.stringify({
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+      timestamp: Date.now()
+    })).toString("base64url");
+
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.set("client_id", GMAIL_CONFIG.clientId);
+    authUrl.searchParams.set("redirect_uri", GMAIL_CONFIG.redirectUri);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", GMAIL_CONFIG.scopes.join(" "));
+    authUrl.searchParams.set("access_type", "offline");
+    authUrl.searchParams.set("prompt", "consent");
+    authUrl.searchParams.set("state", state);
+
+    return res.redirect(authUrl.toString());
+  } catch (error) {
+    console.error("Error initiating Gmail OAuth:", error);
+    return res.redirect("/email?error=oauth_init_failed");
+  }
+});
+
+// GET /api/email/oauth/gmail/callback - Handle Gmail OAuth callback
+router.get("/oauth/gmail/callback", async (req, res) => {
+  try {
+    const { code, state, error: oauthError } = req.query;
+
+    if (oauthError) {
+      console.error("Gmail OAuth error:", oauthError);
+      return res.redirect("/email?error=oauth_denied");
+    }
+
+    if (!code || !state) {
+      return res.redirect("/email?error=missing_params");
+    }
+
+    // Decode state to get user info
+    let userInfo: { userId: string; organizationId: string; timestamp: number };
+    try {
+      userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
+    } catch {
+      return res.redirect("/email?error=invalid_state");
+    }
+
+    // Check timestamp (15 minute expiry)
+    if (Date.now() - userInfo.timestamp > 15 * 60 * 1000) {
+      return res.redirect("/email?error=state_expired");
+    }
+
+    // Exchange code for tokens
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: code as string,
+        client_id: GMAIL_CONFIG.clientId,
+        client_secret: GMAIL_CONFIG.clientSecret,
+        redirect_uri: GMAIL_CONFIG.redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      console.error("Failed to exchange Gmail code:", await tokenResponse.text());
+      return res.redirect("/email?error=token_exchange_failed");
+    }
+
+    const tokens = await tokenResponse.json() as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in: number;
+      id_token?: string;
+    };
+
+    // Get user email from Google
+    const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+
+    if (!userResponse.ok) {
+      return res.redirect("/email?error=user_info_failed");
+    }
+
+    const googleUser = await userResponse.json() as { email: string; name?: string };
+
+    // Check if account already exists
+    const [existing] = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.emailAddress, googleUser.email),
+          eq(emailAccounts.organizationId, userInfo.organizationId),
+          eq(emailAccounts.userId, userInfo.userId)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      // Update existing account with new tokens
+      await db
+        .update(emailAccounts)
+        .set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || existing.refreshToken,
+          expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, existing.id));
+    } else {
+      // Create new account
+      await db.insert(emailAccounts).values({
+        id: crypto.randomUUID(),
+        organizationId: userInfo.organizationId,
+        userId: userInfo.userId,
+        provider: "GMAIL",
+        emailAddress: googleUser.email,
+        displayName: googleUser.name || null,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        oauthProviderId: googleUser.email,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    return res.redirect("/email?success=gmail_connected");
+  } catch (error) {
+    console.error("Error in Gmail OAuth callback:", error);
+    return res.redirect("/email?error=callback_failed");
+  }
+});
+
+// GET /api/email/oauth/outlook/initiate - Start Outlook/Microsoft OAuth flow
+router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!OUTLOOK_CONFIG.clientId || !OUTLOOK_CONFIG.clientSecret) {
+      return res.status(503).json({ 
+        error: "Outlook integration not configured",
+        message: "Please contact your administrator to set up Microsoft OAuth credentials"
+      });
+    }
+
+    // Store user info in state for callback
+    const state = Buffer.from(JSON.stringify({
+      userId: req.user.id,
+      organizationId: req.user.organizationId,
+      timestamp: Date.now()
+    })).toString("base64url");
+
+    const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+    authUrl.searchParams.set("client_id", OUTLOOK_CONFIG.clientId);
+    authUrl.searchParams.set("redirect_uri", OUTLOOK_CONFIG.redirectUri);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", OUTLOOK_CONFIG.scopes.join(" "));
+    authUrl.searchParams.set("response_mode", "query");
+    authUrl.searchParams.set("state", state);
+
+    return res.redirect(authUrl.toString());
+  } catch (error) {
+    console.error("Error initiating Outlook OAuth:", error);
+    return res.redirect("/email?error=oauth_init_failed");
+  }
+});
+
+// GET /api/email/oauth/outlook/callback - Handle Outlook OAuth callback
+router.get("/oauth/outlook/callback", async (req, res) => {
+  try {
+    const { code, state, error: oauthError, error_description } = req.query;
+
+    if (oauthError) {
+      console.error("Outlook OAuth error:", oauthError, error_description);
+      return res.redirect("/email?error=oauth_denied");
+    }
+
+    if (!code || !state) {
+      return res.redirect("/email?error=missing_params");
+    }
+
+    // Decode state to get user info
+    let userInfo: { userId: string; organizationId: string; timestamp: number };
+    try {
+      userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
+    } catch {
+      return res.redirect("/email?error=invalid_state");
+    }
+
+    // Check timestamp (15 minute expiry)
+    if (Date.now() - userInfo.timestamp > 15 * 60 * 1000) {
+      return res.redirect("/email?error=state_expired");
+    }
+
+    // Exchange code for tokens
+    const tokenResponse = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: code as string,
+        client_id: OUTLOOK_CONFIG.clientId,
+        client_secret: OUTLOOK_CONFIG.clientSecret,
+        redirect_uri: OUTLOOK_CONFIG.redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      console.error("Failed to exchange Outlook code:", await tokenResponse.text());
+      return res.redirect("/email?error=token_exchange_failed");
+    }
+
+    const tokens = await tokenResponse.json() as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in: number;
+    };
+
+    // Get user info from Microsoft Graph
+    const userResponse = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+
+    if (!userResponse.ok) {
+      return res.redirect("/email?error=user_info_failed");
+    }
+
+    const msUser = await userResponse.json() as { 
+      mail?: string; 
+      userPrincipalName: string; 
+      displayName?: string;
+      id: string;
+    };
+
+    const emailAddress = msUser.mail || msUser.userPrincipalName;
+
+    // Check if account already exists
+    const [existing] = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.emailAddress, emailAddress),
+          eq(emailAccounts.organizationId, userInfo.organizationId),
+          eq(emailAccounts.userId, userInfo.userId)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      // Update existing account with new tokens
+      await db
+        .update(emailAccounts)
+        .set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || existing.refreshToken,
+          expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          isActive: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, existing.id));
+    } else {
+      // Create new account
+      await db.insert(emailAccounts).values({
+        id: crypto.randomUUID(),
+        organizationId: userInfo.organizationId,
+        userId: userInfo.userId,
+        provider: "OUTLOOK",
+        emailAddress: emailAddress,
+        displayName: msUser.displayName || null,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        oauthProviderId: msUser.id,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    return res.redirect("/email?success=outlook_connected");
+  } catch (error) {
+    console.error("Error in Outlook OAuth callback:", error);
+    return res.redirect("/email?error=callback_failed");
+  }
+});
+
+// GET /api/email/oauth/status - Check if OAuth providers are configured
+router.get("/oauth/status", requireAuth, async (req: AuthRequest, res) => {
+  return res.json({
+    gmail: {
+      configured: !!(GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret && GMAIL_CONFIG.redirectUri),
+    },
+    outlook: {
+      configured: !!(OUTLOOK_CONFIG.clientId && OUTLOOK_CONFIG.clientSecret && OUTLOOK_CONFIG.redirectUri),
+    },
+  });
+});
+
 export default router;
