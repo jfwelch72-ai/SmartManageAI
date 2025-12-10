@@ -7889,6 +7889,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ====================
+  // Hierarchical Scope Selection for Line Items
+  // Returns Trade → Subcategory → Work Types structure for GC and specialty trades
+  // ====================
+
+  app.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+
+      // Get organization trade type
+      const [org] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+
+      if (!org) {
+        res.status(404).json({ error: "Organization not found" });
+        return;
+      }
+
+      const isGC = org.tradeType === "GENERAL_CONTRACTOR";
+
+      // Get organization SOW items
+      const sowItems = await db
+        .select()
+        .from(organizationSowItems)
+        .where(
+          and(
+            eq(organizationSowItems.organizationId, organizationId),
+            eq(organizationSowItems.isActive, true)
+          )
+        )
+        .orderBy(organizationSowItems.displayOrder);
+
+      // Build hierarchical structure
+      // For GC: Trade → Subcategory → Work Types
+      // For specialty: Single Trade → Category → Work Types
+      const hierarchyMap = new Map<string, Map<string, typeof sowItems>>();
+
+      for (const item of sowItems) {
+        let tradeName: string;
+        let subcategoryName: string;
+
+        if (isGC && item.categoryName.includes(" - ")) {
+          // Parse "TRADE_TYPE - Subcategory" format
+          const parts = item.categoryName.split(" - ");
+          tradeName = parts[0].replace(/_/g, " ");
+          subcategoryName = parts.slice(1).join(" - ");
+        } else {
+          // Specialty trade: use org trade type as the trade
+          tradeName = org.tradeType.replace(/_/g, " ");
+          subcategoryName = item.categoryName;
+        }
+
+        if (!hierarchyMap.has(tradeName)) {
+          hierarchyMap.set(tradeName, new Map());
+        }
+        const tradeMap = hierarchyMap.get(tradeName)!;
+
+        if (!tradeMap.has(subcategoryName)) {
+          tradeMap.set(subcategoryName, []);
+        }
+        tradeMap.get(subcategoryName)!.push(item);
+      }
+
+      // Convert to array structure for frontend
+      const hierarchy = Array.from(hierarchyMap.entries()).map(([tradeName, subcategoryMap]) => {
+        // Derive category code from trade name for reliable form mapping
+        const categoryCode = tradeName.toUpperCase().replace(/ /g, "_");
+        
+        return {
+          tradeName,
+          categoryCode, // Include reliable category code for form mapping
+          subcategories: Array.from(subcategoryMap.entries()).map(([subcategoryName, items]) => ({
+            subcategoryName,
+            workTypes: items.map(item => ({
+              id: item.id,
+              name: item.name,
+              code: item.code,
+              description: item.description,
+              unit: item.unit,
+              categoryName: item.categoryName, // Include original categoryName for reference
+              requiresDimensions: item.requiresDimensions,
+              dimensionLabel: item.dimensionLabel,
+            })),
+          })).sort((a, b) => a.subcategoryName.localeCompare(b.subcategoryName)),
+        };
+      }).sort((a, b) => a.tradeName.localeCompare(b.tradeName));
+
+      res.json({
+        isGC,
+        tradeType: org.tradeType,
+        hierarchy,
+      });
+    } catch (error) {
+      console.error("Get hierarchical scope error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
   // Material Calculator Presets
   // Save and load dimension configurations for work types
   // ====================

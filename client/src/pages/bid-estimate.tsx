@@ -10,6 +10,7 @@ import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
 import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
@@ -107,8 +108,12 @@ export default function BidEstimate() {
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
   const [selectedScopeData, setSelectedScopeData] = useState<ScopeSelectionData | null>(null);
+  const [hierarchicalSelection, setHierarchicalSelection] = useState<LineItemSelectionData | null>(null);
+  const [hierarchicalQuantity, setHierarchicalQuantity] = useState<number>(0);
+  const [hierarchicalUnit, setHierarchicalUnit] = useState<string>("");
   const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
   const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("");
+  const [useHierarchicalBuilder, setUseHierarchicalBuilder] = useState<boolean>(true);
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -300,8 +305,31 @@ export default function BidEstimate() {
     if (!open) {
       form.reset();
       setSelectedScopeData(null);
+      setHierarchicalSelection(null);
+      setHierarchicalQuantity(0);
+      setHierarchicalUnit("");
       setMaterialCalcData(getDefaultMaterialCalculatorData());
       setSelectedCatalogCategory("");
+    }
+  };
+  
+  // Handle hierarchical selection and sync with form
+  const handleHierarchicalSelectionChange = (data: LineItemSelectionData | null) => {
+    setHierarchicalSelection(data);
+    if (data) {
+      form.setValue("description", data.canonicalName);
+      form.setValue("unit", data.unit);
+      form.setValue("scopeWorkTypeId", data.workTypeId);
+      form.setValue("quantity", hierarchicalQuantity);
+      
+      // Use reliable categoryCode from API response
+      const matchedCategory = workCategories.find(c => 
+        c.value === data.categoryCode ||
+        c.value === data.tradeName.toUpperCase().replace(/ /g, "_")
+      );
+      const mappedCategory = matchedCategory?.value || data.categoryCode || "GENERAL";
+      form.setValue("category", mappedCategory);
+      setSelectedCatalogCategory(mappedCategory);
     }
   };
 
@@ -772,130 +800,194 @@ export default function BidEstimate() {
                   Add Line Item
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Add Manual Line Item</DialogTitle>
+                  <DialogTitle>Add Line Item</DialogTitle>
                   <DialogDescription>
-                    Create a custom estimate line item with detailed cost breakdown
+                    Select scope of work and configure pricing details
                   </DialogDescription>
                 </DialogHeader>
+                
+                {/* Mode Toggle */}
+                <div className="flex items-center gap-2 border-b pb-3 mb-4">
+                  <Button
+                    type="button"
+                    variant={useHierarchicalBuilder ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setUseHierarchicalBuilder(true)}
+                    data-testid="button-hierarchical-mode"
+                  >
+                    <Layers className="h-4 w-4 mr-2" />
+                    Guided Selection
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!useHierarchicalBuilder ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setUseHierarchicalBuilder(false)}
+                    data-testid="button-manual-mode"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Manual Entry
+                  </Button>
+                </div>
+                
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    {/* Standardized SOW Selector */}
-                    <div className="border rounded-md p-4 bg-muted/30">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Layers className="h-4 w-4 text-primary" />
-                        <span className="text-sm font-medium">Standardized Scope of Work</span>
-                        <span className="text-xs text-muted-foreground ml-auto">Recommended for tracking</span>
-                      </div>
-                      <StandardizedScopeSelector
-                        value={selectedScopeData || undefined}
-                        onChange={handleScopeSelect}
-                        showDimensionInputs={false}
-                      />
-                      {selectedScopeData && (
-                        <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/30 rounded border border-green-200 dark:border-green-900">
-                          <p className="text-xs text-green-700 dark:text-green-400">
-                            SOW selected: Description, unit, and category have been auto-filled. You can still customize them below.
-                          </p>
+                    {useHierarchicalBuilder ? (
+                      /* Hierarchical SOW Builder - Progressive Selection Mode */
+                      <>
+                        <HierarchicalLineItemBuilder
+                          onSelectionChange={handleHierarchicalSelectionChange}
+                          quantity={hierarchicalQuantity}
+                          onQuantityChange={(q) => {
+                            setHierarchicalQuantity(q);
+                            form.setValue("quantity", q);
+                          }}
+                          unit={hierarchicalUnit}
+                          onUnitChange={(u) => {
+                            setHierarchicalUnit(u);
+                            form.setValue("unit", u);
+                          }}
+                          materialCalcData={materialCalcData}
+                          onMaterialCalcChange={setMaterialCalcData}
+                        />
+                        
+                        {hierarchicalSelection && (
+                          <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-900">
+                            <p className="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-2">
+                              <CheckCircle className="h-4 w-4" />
+                              Scope selected: {hierarchicalSelection.canonicalName}
+                            </p>
+                            <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                              Trade: {hierarchicalSelection.tradeName} → {hierarchicalSelection.subcategoryName} → {hierarchicalSelection.workTypeName}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      /* Classic Mode - StandardizedScopeSelector */
+                      <div className="border rounded-md p-4 bg-muted/30">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Layers className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium">Standardized Scope of Work</span>
+                          <span className="text-xs text-muted-foreground ml-auto">Optional</span>
                         </div>
-                      )}
-                    </div>
+                        <StandardizedScopeSelector
+                          value={selectedScopeData || undefined}
+                          onChange={handleScopeSelect}
+                          showDimensionInputs={false}
+                        />
+                        {selectedScopeData && (
+                          <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/30 rounded border border-green-200 dark:border-green-900">
+                            <p className="text-xs text-green-700 dark:text-green-400">
+                              SOW selected: Description, unit, and category have been auto-filled.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="description"
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                              <Input 
-                                placeholder="e.g., Foundation excavation" 
-                                {...field}
-                                data-testid="input-description"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Category</FormLabel>
-                            <Select onValueChange={handleCategoryChange} value={field.value}>
+                    {/* Basic Fields - Only show in manual mode */}
+                    {!useHierarchicalBuilder && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="description"
+                          render={({ field }) => (
+                            <FormItem className="col-span-2">
+                              <FormLabel>Description</FormLabel>
                               <FormControl>
-                                <SelectTrigger data-testid="select-category">
-                                  <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
+                                <Input 
+                                  placeholder="e.g., Foundation excavation" 
+                                  {...field}
+                                  data-testid="input-description"
+                                />
                               </FormControl>
-                              <SelectContent>
-                                {workCategories.length > 0 ? (
-                                  workCategories.map((cat) => (
-                                    <SelectItem key={cat.value} value={cat.value}>
-                                      {cat.label}
-                                      {cat.itemCount > 0 && (
-                                        <span className="ml-2 text-xs text-muted-foreground">
-                                          ({cat.itemCount})
-                                        </span>
-                                      )}
-                                    </SelectItem>
-                                  ))
-                                ) : (
-                                  <>
-                                    <SelectItem value="GENERAL">General</SelectItem>
-                                    <SelectItem value="EXCAVATION">Excavation</SelectItem>
-                                    <SelectItem value="CONCRETE">Concrete</SelectItem>
-                                    <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
-                                    <SelectItem value="UTILITIES">Utilities</SelectItem>
-                                    <SelectItem value="GRADING">Grading</SelectItem>
-                                    <SelectItem value="OTHER">Other</SelectItem>
-                                  </>
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="unit"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Unit</FormLabel>
-                            <FormControl>
-                              <UomSelect
-                                value={field.value}
-                                onChange={field.onChange}
-                                placeholder="Select unit"
-                                data-testid="select-unit"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                        <FormField
+                          control={form.control}
+                          name="category"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Category</FormLabel>
+                              <Select onValueChange={handleCategoryChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-category">
+                                    <SelectValue placeholder="Select a category" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {workCategories.length > 0 ? (
+                                    workCategories.map((cat) => (
+                                      <SelectItem key={cat.value} value={cat.value}>
+                                        {cat.label}
+                                        {cat.itemCount > 0 && (
+                                          <span className="ml-2 text-xs text-muted-foreground">
+                                            ({cat.itemCount})
+                                          </span>
+                                        )}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <>
+                                      <SelectItem value="GENERAL">General</SelectItem>
+                                      <SelectItem value="EXCAVATION">Excavation</SelectItem>
+                                      <SelectItem value="CONCRETE">Concrete</SelectItem>
+                                      <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
+                                      <SelectItem value="UTILITIES">Utilities</SelectItem>
+                                      <SelectItem value="GRADING">Grading</SelectItem>
+                                      <SelectItem value="OTHER">Other</SelectItem>
+                                    </>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="quantity"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Quantity</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0" data-testid="input-quantity" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                        <FormField
+                          control={form.control}
+                          name="unit"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Unit</FormLabel>
+                              <FormControl>
+                                <UomSelect
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder="Select unit"
+                                  data-testid="select-unit"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
+                        <FormField
+                          control={form.control}
+                          name="quantity"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Quantity</FormLabel>
+                              <FormControl>
+                                <Input type="number" step="0.01" {...field} placeholder="0" data-testid="input-quantity" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    {/* Cost Fields */}
+                    <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
                         name="materialCost"
