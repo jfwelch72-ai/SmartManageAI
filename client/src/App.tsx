@@ -63,6 +63,9 @@ import BidWizardPage from "@/pages/bid-wizard";
 import EmailAssistantPage from "@/pages/email-assistant";
 import HustlerDashboard from "@/pages/hustler-dashboard";
 import HustlerOrgDetail from "@/pages/hustler-org-detail";
+import BidNetworkPage from "@/pages/bid-network";
+import BidNetworkDetailPage from "@/pages/bid-network-detail";
+import BidInboxPage from "@/pages/bid-inbox";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -169,6 +172,12 @@ function Router() {
       {/* AI Analysis routes */}
       <Route path="/ai-bid-analysis" component={() => <ProtectedRoute component={AIBidAnalysisPage} permission={RoutePermissions.AI_BID_ANALYSIS} />} />
       <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={AIContractAnalysisPage} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} />} />
+      
+      {/* Bid Network routes */}
+      <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bid-inbox" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
       
       {/* Tools routes */}
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />

@@ -12,6 +12,11 @@ import {
 import { eq, and, or, desc, sql, isNull, ne } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
+import { 
+  sendBidInvitationNotification, 
+  sendBidResponseNotification,
+  sendClarificationNotification 
+} from "./bidNetworkNotifications";
 
 const router = Router();
 
@@ -447,10 +452,33 @@ router.post("/invitations/send", requireAuth, async (req: AuthRequest, res: Resp
       
       createdInvitations.push(invitation);
       
-      // Create in-app notification for platform members
+      // Send email notification for platform members
       if (invitee.organizationId) {
-        // Get admin users of the invited org to notify
-        // For now, we'll just log this - full notification implementation would query users
+        // Get GC organization name
+        const [gcOrg] = await db
+          .select({ name: organizations.name })
+          .from(organizations)
+          .where(eq(organizations.id, user.organizationId!));
+        
+        // Send email notification (fire and forget)
+        sendBidInvitationNotification(
+          invitee.organizationId,
+          {
+            id: request.id,
+            title: request.title,
+            scopeOfWork: request.scopeOfWork,
+            bidDueDate: new Date(request.bidDueDate),
+            requiredTrades: request.requiredTrades || [],
+            projectCity: request.projectCity || undefined,
+            projectState: request.projectState || undefined,
+            gcOrganizationName: gcOrg?.name || "Unknown GC",
+          },
+          {
+            id: invitation.id,
+            personalMessage: personalMessage || undefined,
+          }
+        ).catch(err => logError("Email notification failed", err));
+        
         logInfo("Bid invitation sent", { 
           invitationId: invitation.id, 
           toOrganization: invitee.organizationId 
@@ -720,6 +748,40 @@ router.post("/responses", requireAuth, async (req: AuthRequest, res: Response) =
           .update(subcontractorBidRequests)
           .set({ responseCount: sql`${subcontractorBidRequests.responseCount} + 1` })
           .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
+      }
+      
+      // Send email notification to GC when submitted
+      if (data.status === "SUBMITTED") {
+        // Get request and GC org
+        const [bidRequest] = await db
+          .select()
+          .from(subcontractorBidRequests)
+          .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
+        
+        const [subOrg] = await db
+          .select({ name: organizations.name })
+          .from(organizations)
+          .where(eq(organizations.id, user.organizationId!));
+        
+        if (bidRequest) {
+          sendBidResponseNotification(
+            bidRequest.organizationId,
+            {
+              id: bidRequest.id,
+              title: bidRequest.title,
+              scopeOfWork: bidRequest.scopeOfWork,
+              bidDueDate: new Date(bidRequest.bidDueDate),
+              requiredTrades: bidRequest.requiredTrades || [],
+              gcOrganizationName: "", // Not needed for this notification
+            },
+            {
+              id: created.id,
+              totalBidAmount: created.totalBidAmount,
+              subOrganizationName: subOrg?.name || "Unknown Sub",
+              submittedAt: new Date(),
+            }
+          ).catch(err => logError("Response notification failed", err));
+        }
       }
       
       logInfo("Bid response created", { responseId: created.id, invitationId: data.invitationId });

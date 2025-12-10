@@ -53,6 +53,8 @@ import {
   GraduationCap,
   Sparkles,
   Zap,
+  Network,
+  Inbox,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -320,6 +322,28 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              
+              {hasManagementAccess(userRole) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/bid-network")} tooltip="Bid Network">
+                    <Link href="/bid-network" data-testid="sidebar-bid-network">
+                      <Network className="w-4 h-4" />
+                      <span>Bid Network</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              
+              {hasManagementAccess(userRole) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/bid-inbox")} tooltip="Bid Inbox">
+                    <Link href="/bid-inbox" data-testid="sidebar-bid-inbox">
+                      <Inbox className="w-4 h-4" />
+                      <span>Bid Inbox</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               
               {hasManagementAccess(userRole) && (
                 <SidebarMenuItem>
