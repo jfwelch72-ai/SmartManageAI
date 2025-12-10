@@ -30,6 +30,29 @@ const STONE_TYPE_LABELS: Record<string, string> = {
   RECYCLED_CONCRETE: "Recycled Concrete",
 };
 
+// Stone size/gradation options
+const STONE_SIZES: Record<string, { label: string; description: string }> = {
+  "304": { label: "#304 Limestone", description: "Fine graded base material" },
+  "#1": { label: "#1 Stone", description: "3-4 inch diameter" },
+  "#2": { label: "#2 Stone", description: "2-3 inch diameter" },
+  "#3": { label: "#3 Stone", description: "1.5-2 inch diameter" },
+  "#4": { label: "#4 Stone", description: "1-1.5 inch diameter" },
+  "#57": { label: "#57 Stone", description: "3/4-1 inch (common gravel)" },
+  "#67": { label: "#67 Stone", description: "1/2-3/4 inch" },
+  "#8": { label: "#8 Stone", description: "3/8-1/2 inch (pea gravel)" },
+  "#9": { label: "#9 Stone", description: "1/4-3/8 inch (screenings)" },
+  "#10": { label: "#10 Stone", description: "1/8 inch (stone dust)" },
+  "RIP_RAP": { label: "Rip Rap", description: "Large erosion control (6-24 inch)" },
+};
+
+// Reinforcement fabrication types
+const REBAR_FAB_TYPES: Record<string, { label: string; description: string }> = {
+  FIELD_TIED: { label: "Field Tied (Loose)", description: "Rebar cut and tied on-site" },
+  PREFAB_MAT: { label: "Prefab Mat", description: "Pre-fabricated flat mats" },
+  PREFAB_CAGE: { label: "Prefab Cage", description: "Pre-fabricated column/beam cages" },
+  FIBER_MESH: { label: "Fiber Mesh", description: "Synthetic fiber reinforcement alternative" },
+};
+
 // Wire mesh constants
 const WIRE_MESH_TYPES: Record<string, { label: string; coverageSF: number }> = {
   "6x6_W1.4": { label: "6x6 W1.4/W1.4 (Light)", coverageSF: 100 },
@@ -80,6 +103,7 @@ export interface MaterialCalculatorData {
   calculatedConcreteYards: string;
   requiresStoneBase: boolean;
   stoneType: string;
+  stoneSize: string;
   stoneDepthInches: string;
   stoneWasteFactor: string;
   calculatedStoneTons: string;
@@ -94,6 +118,7 @@ export interface MaterialCalculatorData {
   calculatedWireMeshRolls: string;
   requiresRebar: boolean;
   rebarSize: string;
+  rebarFabType: string;
   rebarSpacingInches: string;
   rebarWasteFactor: string;
   calculatedRebarCount: string;
@@ -137,6 +162,7 @@ interface MaterialPreset {
   concrete_waste_factor: string;
   requires_stone_base: boolean;
   stone_type: string | null;
+  stone_size: string | null;
   stone_depth_inches: string | null;
   stone_waste_factor: string;
   requires_excavation: boolean;
@@ -148,6 +174,7 @@ interface MaterialPreset {
   wire_mesh_waste_factor: string;
   requires_rebar: boolean;
   rebar_size: string | null;
+  rebar_fab_type: string | null;
   rebar_spacing_inches: string | null;
   rebar_waste_factor: string;
   requires_dowels: boolean;
@@ -476,6 +503,7 @@ export default function MaterialCalculator({
         concreteWasteFactor: value.concreteWasteFactor || "10",
         requiresStoneBase: value.requiresStoneBase,
         stoneType: value.stoneType || null,
+        stoneSize: value.stoneSize || null,
         stoneDepthInches: value.stoneDepthInches || null,
         stoneWasteFactor: value.stoneWasteFactor || "10",
         requiresExcavation: value.requiresExcavation,
@@ -487,6 +515,7 @@ export default function MaterialCalculator({
         wireMeshWasteFactor: value.wireMeshWasteFactor || "10",
         requiresRebar: value.requiresRebar,
         rebarSize: value.rebarSize || null,
+        rebarFabType: value.rebarFabType || null,
         rebarSpacingInches: value.rebarSpacingInches || null,
         rebarWasteFactor: value.rebarWasteFactor || "10",
         requiresDowels: value.requiresDowels,
@@ -543,6 +572,7 @@ export default function MaterialCalculator({
       concreteWasteFactor: preset.concrete_waste_factor || "10",
       requiresStoneBase: preset.requires_stone_base,
       stoneType: preset.stone_type || "",
+      stoneSize: preset.stone_size || "#57",
       stoneDepthInches: preset.stone_depth_inches || "",
       stoneWasteFactor: preset.stone_waste_factor || "10",
       requiresExcavation: preset.requires_excavation,
@@ -554,6 +584,7 @@ export default function MaterialCalculator({
       wireMeshWasteFactor: preset.wire_mesh_waste_factor || "10",
       requiresRebar: preset.requires_rebar,
       rebarSize: preset.rebar_size || "",
+      rebarFabType: preset.rebar_fab_type || "FIELD_TIED",
       rebarSpacingInches: preset.rebar_spacing_inches || "",
       rebarWasteFactor: preset.rebar_waste_factor || "10",
       requiresDowels: preset.requires_dowels,
@@ -1079,6 +1110,29 @@ export default function MaterialCalculator({
                   </div>
                   
                   <div>
+                    <Label className="text-xs">Stone Size/Gradation</Label>
+                    <Select
+                      value={value.stoneSize || "#57"}
+                      onValueChange={(val) => updateValue("stoneSize", val)}
+                      disabled={readOnly}
+                    >
+                      <SelectTrigger data-testid="select-stone-size">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(STONE_SIZES).map(([key, config]) => (
+                          <SelectItem key={key} value={key}>
+                            {config.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground">
+                      {STONE_SIZES[value.stoneSize || "#57"]?.description || "Select size"}
+                    </span>
+                  </div>
+                  
+                  <div>
                     <Label className="text-xs">Stone Depth (inches)</Label>
                     <Input
                       type="number"
@@ -1446,6 +1500,29 @@ export default function MaterialCalculator({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  
+                  <div>
+                    <Label className="text-xs">Fabrication Type</Label>
+                    <Select
+                      value={value.rebarFabType || "FIELD_TIED"}
+                      onValueChange={(val) => updateValue("rebarFabType", val)}
+                      disabled={readOnly}
+                    >
+                      <SelectTrigger data-testid="select-rebar-fab-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(REBAR_FAB_TYPES).map(([key, config]) => (
+                          <SelectItem key={key} value={key}>
+                            {config.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground">
+                      {REBAR_FAB_TYPES[value.rebarFabType || "FIELD_TIED"]?.description || ""}
+                    </span>
                   </div>
                   
                   <div>
@@ -1868,6 +1945,7 @@ export function getDefaultMaterialCalculatorData(): MaterialCalculatorData {
     calculatedConcreteYards: "0",
     requiresStoneBase: false,
     stoneType: "CRUSHED_STONE",
+    stoneSize: "#57",
     stoneDepthInches: "",
     stoneWasteFactor: "10",
     calculatedStoneTons: "0",
@@ -1882,6 +1960,7 @@ export function getDefaultMaterialCalculatorData(): MaterialCalculatorData {
     calculatedWireMeshRolls: "0",
     requiresRebar: false,
     rebarSize: "#4",
+    rebarFabType: "FIELD_TIED",
     rebarSpacingInches: "12",
     rebarWasteFactor: "10",
     calculatedRebarCount: "0",

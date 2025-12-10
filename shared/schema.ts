@@ -2693,6 +2693,7 @@ export const materialCalculatorPresets = pgTable("material_calculator_presets", 
   // Stone sub-base
   requiresStoneBase: boolean("requires_stone_base").default(false),
   stoneType: text("stone_type"),
+  stoneSize: text("stone_size"), // Stone gradation: #304, #1, #2, #4, #57, #67, #8, etc.
   stoneDepthInches: decimal("stone_depth_inches", { precision: 6, scale: 2 }),
   stoneWasteFactor: decimal("stone_waste_factor", { precision: 5, scale: 2 }).default("10"),
   
@@ -2710,6 +2711,7 @@ export const materialCalculatorPresets = pgTable("material_calculator_presets", 
   // Rebar
   requiresRebar: boolean("requires_rebar").default(false),
   rebarSize: text("rebar_size"),
+  rebarFabType: text("rebar_fab_type"), // Fabrication type: FIELD_TIED, PREFAB_MAT, PREFAB_CAGE, FIBER_MESH
   rebarSpacingInches: decimal("rebar_spacing_inches", { precision: 6, scale: 2 }),
   rebarWasteFactor: decimal("rebar_waste_factor", { precision: 5, scale: 2 }).default("10"),
   

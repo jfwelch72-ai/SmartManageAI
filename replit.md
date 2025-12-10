@@ -22,7 +22,16 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Comprehensive Project Lifecycle Management**: CRUD operations for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material (T&M) Tracking. Includes a guided 5-step Bid Cost Builder Workflow.
 *   **Project Tracking Systems**: Comprehensive Project Delay Tracking System and an Inspection Scheduling System.
 *   **AI Integration**: Features an AI Senior PM + CFO System for various tasks (generation, analysis, scheduling, automation). Includes AI Auto-Takeoff (with OpenAI Vision), AI Scheduling Assistant, AI Jobsite Camera Analysis (with OpenAI Vision), Vendor Pricing Sync, Client Portal, AI Change Order Generator, Mobile/Offline Mode, AI module analyzers (Scheduling, Delays, Costs, Equipment, Vendor Pricing, Project Health), and AI Bid Document Analysis (with OpenAI Vision).
-*   **Takeoff & Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, and a material calculator.
+*   **Takeoff & Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, and an enhanced material calculator. The Material Calculator supports:
+    - **Concrete calculations**: Depth, width, height, waste factor, with CY output
+    - **Stone sub-base**: Stone type (Crushed Stone, Limestone, Compacted Base, Pea Gravel, Recycled Concrete) with density, stone size/gradation (#304, #1-#10, #57, #67, Rip Rap) for aggregate specification, depth, and tonnage calculation
+    - **Excavation**: Depth, width, swell factor, with CY output
+    - **Wire mesh**: Type selection (6x6 W1.4, W2.9, W4, 4x4 W2.9), waste factor, with roll calculation
+    - **Rebar reinforcement**: Size (#3-#6), fabrication type (Field Tied, Prefab Mat, Prefab Cage, Fiber Mesh), spacing, waste factor, with bar count and linear feet output
+    - **Dowels**: Spacing, joint length, with dowel count output
+    - **Sealer**: Type, coats, waste factor, with gallon calculation
+    - **Underlayment**: Type (6MIL_POLY), overlap, waste factor, with SF output
+    - **Preset system**: Save/load material configurations per work type for reuse
 *   **Hierarchical Line Item Builder**: Progressive selection interface for adding estimate line items. For GC organizations: Trade → Subcategory → Work Type → Modifiers flow. For specialty trades: simplified Category → Work Type flow. Features mode toggle between "Guided Selection" (hierarchical) and "Manual Entry" modes. API endpoint: `/api/scope/hierarchical` returns hierarchical structure with `categoryCode` for reliable form mapping. Component: `HierarchicalLineItemBuilder.tsx` integrates with MaterialCalculator and form syncing. **Important**: Hierarchical mode uses `organizationSowItems` table for scope data, NOT `scope_work_types` table - do not set `scopeWorkTypeId` FK in hierarchical mode. Category mapping falls back to GENERAL when trade doesn't match known workCategories.
 *   **CRM System**: Manages various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
 *   **Time-Clock System**: Native time-clock with GPS, shift management, labor hour tracking, and a Manager Approval Workflow.
