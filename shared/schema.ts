@@ -5232,6 +5232,281 @@ export const insertHustlerDelegateSchema = createInsertSchema(hustlerDelegates).
 export type InsertHustlerDelegate = z.infer<typeof insertHustlerDelegateSchema>;
 export type HustlerDelegate = typeof hustlerDelegates.$inferSelect;
 
+// ============================================
+// SUBCONTRACTOR BID REQUEST NETWORK SYSTEM
+// Platform-wide bid solicitation like PlanHub/BuildingConnected
+// ============================================
+
+// Enums for bid request network
+export const bidRequestStatusEnum = pgEnum("bid_request_status", [
+  "DRAFT",           // GC is preparing the request
+  "OPEN",            // Request is open for submissions
+  "CLOSED",          // Deadline passed or manually closed
+  "AWARDED",         // A sub has been selected
+  "CANCELLED"        // Request cancelled
+]);
+
+export const bidInvitationStatusEnum = pgEnum("bid_invitation_status", [
+  "PENDING",         // Invitation sent, awaiting response
+  "VIEWED",          // Sub has viewed the invitation
+  "DECLINED",        // Sub declined to bid
+  "RESPONDED",       // Sub submitted a quote
+  "WITHDRAWN"        // Sub withdrew their response
+]);
+
+export const bidResponseStatusEnum = pgEnum("bid_response_status", [
+  "DRAFT",           // Sub is preparing response
+  "SUBMITTED",       // Response submitted
+  "UNDER_REVIEW",    // GC is reviewing
+  "SHORTLISTED",     // GC marked as potential winner
+  "AWARDED",         // Sub won the bid
+  "NOT_SELECTED",    // Sub not selected
+  "WITHDRAWN"        // Sub withdrew response
+]);
+
+// Organization Network Settings - Admin toggles for bid network participation
+export const organizationNetworkSettings = pgTable("organization_network_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
+  
+  // Master toggles
+  isNetworkEnabled: boolean("is_network_enabled").notNull().default(true),           // Overall participation in network
+  canReceiveBidInvites: boolean("can_receive_bid_invites").notNull().default(true),  // Receive invites from other orgs
+  canSendBidRequests: boolean("can_send_bid_requests").notNull().default(true),      // Send invites to other orgs
+  
+  // Trade specialties (for matching) - array of trade types this org performs
+  tradeSpecialties: text("trade_specialties").array(),  // Store as array of trade type strings
+  
+  // Preferences
+  autoAcceptFromTrustedGCs: boolean("auto_accept_from_trusted_gcs").notNull().default(false),
+  trustedGCOrganizationIds: text("trusted_gc_organization_ids").array(),
+  maxActiveInvites: integer("max_active_invites").default(50),
+  notifyByEmail: boolean("notify_by_email").notNull().default(true),
+  notifyInApp: boolean("notify_in_app").notNull().default(true),
+  
+  // Profile info visible to network
+  companyDescription: text("company_description"),
+  serviceAreas: text("service_areas").array(),  // Geographic regions served
+  certifications: text("certifications").array(),
+  yearsInBusiness: integer("years_in_business"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_network_settings_org_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationNetworkSettingsSchema = createInsertSchema(organizationNetworkSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationNetworkSettings = z.infer<typeof insertOrganizationNetworkSettingsSchema>;
+export type OrganizationNetworkSettings = typeof organizationNetworkSettings.$inferSelect;
+
+// Subcontractor Bid Requests - GC creates a request for quotes
+export const subcontractorBidRequests = pgTable("subcontractor_bid_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  
+  // Request details
+  title: text("title").notNull(),
+  description: text("description"),
+  scopeOfWork: text("scope_of_work").notNull(),
+  
+  // Trade requirements
+  requiredTrades: text("required_trades").array().notNull(),  // Trade types needed
+  
+  // Timeline
+  bidDueDate: timestamp("bid_due_date").notNull(),
+  projectStartDate: date("project_start_date"),
+  projectEndDate: date("project_end_date"),
+  
+  // Location
+  projectAddress: text("project_address"),
+  projectCity: text("project_city"),
+  projectState: text("project_state"),
+  projectZip: text("project_zip"),
+  
+  // Budget hints (optional - GC may not want to disclose)
+  budgetRangeMin: decimal("budget_range_min", { precision: 14, scale: 2 }),
+  budgetRangeMax: decimal("budget_range_max", { precision: 14, scale: 2 }),
+  showBudgetToSubs: boolean("show_budget_to_subs").notNull().default(false),
+  
+  // Requirements
+  requiresBonding: boolean("requires_bonding").notNull().default(false),
+  requiresInsurance: boolean("requires_insurance").notNull().default(true),
+  insuranceMinimum: decimal("insurance_minimum", { precision: 14, scale: 2 }),
+  specialRequirements: text("special_requirements"),
+  
+  // Attached documents (scope docs, plans, specs)
+  attachedFileUrls: text("attached_file_urls").array(),
+  attachedFileNames: text("attached_file_names").array(),
+  
+  // Status
+  status: bidRequestStatusEnum("status").notNull().default("DRAFT"),
+  publishedAt: timestamp("published_at"),
+  closedAt: timestamp("closed_at"),
+  awardedAt: timestamp("awarded_at"),
+  awardedToOrganizationId: varchar("awarded_to_organization_id").references(() => organizations.id),
+  
+  // GC notes (private, not visible to subs)
+  internalNotes: text("internal_notes"),
+  
+  // Tracking
+  viewCount: integer("view_count").notNull().default(0),
+  inviteCount: integer("invite_count").notNull().default(0),
+  responseCount: integer("response_count").notNull().default(0),
+  
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("sub_bid_req_org_idx").on(table.organizationId),
+  projectIdx: index("sub_bid_req_project_idx").on(table.projectId),
+  statusIdx: index("sub_bid_req_status_idx").on(table.status),
+  dueDateIdx: index("sub_bid_req_due_date_idx").on(table.bidDueDate),
+}));
+
+export const insertSubcontractorBidRequestSchema = createInsertSchema(subcontractorBidRequests).omit({ id: true, createdAt: true, updatedAt: true, publishedAt: true, closedAt: true, awardedAt: true, viewCount: true, inviteCount: true, responseCount: true });
+export type InsertSubcontractorBidRequest = z.infer<typeof insertSubcontractorBidRequestSchema>;
+export type SubcontractorBidRequest = typeof subcontractorBidRequests.$inferSelect;
+
+// Subcontractor Bid Invitations - Tracks which subs are invited to bid
+export const subcontractorBidInvitations = pgTable("subcontractor_bid_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidRequestId: varchar("bid_request_id").notNull().references(() => subcontractorBidRequests.id, { onDelete: "cascade" }),
+  
+  // Invited organization (platform member)
+  invitedOrganizationId: varchar("invited_organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // OR external contact (non-platform member)
+  externalCompanyName: text("external_company_name"),
+  externalContactName: text("external_contact_name"),
+  externalContactEmail: text("external_contact_email"),
+  externalContactPhone: text("external_contact_phone"),
+  
+  // Invitation details
+  invitedTradeType: tradeTypeEnum("invited_trade_type"),
+  personalMessage: text("personal_message"),
+  
+  // Status tracking
+  status: bidInvitationStatusEnum("status").notNull().default("PENDING"),
+  viewedAt: timestamp("viewed_at"),
+  respondedAt: timestamp("responded_at"),
+  declinedReason: text("declined_reason"),
+  
+  // Notifications
+  emailSentAt: timestamp("email_sent_at"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  reminderCount: integer("reminder_count").notNull().default(0),
+  
+  invitedByUserId: varchar("invited_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  requestIdx: index("sub_bid_inv_request_idx").on(table.bidRequestId),
+  orgIdx: index("sub_bid_inv_org_idx").on(table.invitedOrganizationId),
+  statusIdx: index("sub_bid_inv_status_idx").on(table.status),
+  uniqueInvite: unique("sub_bid_inv_unique").on(table.bidRequestId, table.invitedOrganizationId),
+}));
+
+export const insertSubcontractorBidInvitationSchema = createInsertSchema(subcontractorBidInvitations).omit({ id: true, createdAt: true, updatedAt: true, viewedAt: true, respondedAt: true, emailSentAt: true, reminderSentAt: true, reminderCount: true });
+export type InsertSubcontractorBidInvitation = z.infer<typeof insertSubcontractorBidInvitationSchema>;
+export type SubcontractorBidInvitation = typeof subcontractorBidInvitations.$inferSelect;
+
+// Subcontractor Bid Responses - Sub's submitted quotes
+export const subcontractorBidResponses = pgTable("subcontractor_bid_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invitationId: varchar("invitation_id").notNull().references(() => subcontractorBidInvitations.id, { onDelete: "cascade" }),
+  bidRequestId: varchar("bid_request_id").notNull().references(() => subcontractorBidRequests.id, { onDelete: "cascade" }),
+  respondingOrganizationId: varchar("responding_organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Quote details
+  totalBidAmount: decimal("total_bid_amount", { precision: 14, scale: 2 }).notNull(),
+  laborCost: decimal("labor_cost", { precision: 14, scale: 2 }),
+  materialCost: decimal("material_cost", { precision: 14, scale: 2 }),
+  equipmentCost: decimal("equipment_cost", { precision: 14, scale: 2 }),
+  otherCost: decimal("other_cost", { precision: 14, scale: 2 }),
+  
+  // Quote breakdown (optional detailed line items as JSON)
+  lineItemsJson: text("line_items_json"),
+  
+  // Proposal details
+  proposalNotes: text("proposal_notes"),
+  scopeInclusions: text("scope_inclusions"),
+  scopeExclusions: text("scope_exclusions"),
+  assumptions: text("assumptions"),
+  
+  // Timeline
+  proposedStartDate: date("proposed_start_date"),
+  proposedDuration: integer("proposed_duration"),  // in days
+  proposedDurationUnit: text("proposed_duration_unit").default("DAYS"),  // DAYS, WEEKS
+  
+  // Attached documents
+  attachedFileUrls: text("attached_file_urls").array(),
+  attachedFileNames: text("attached_file_names").array(),
+  
+  // Validity
+  quoteValidUntil: date("quote_valid_until"),
+  
+  // Status
+  status: bidResponseStatusEnum("status").notNull().default("DRAFT"),
+  submittedAt: timestamp("submitted_at"),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedByUserId: varchar("reviewed_by_user_id").references(() => users.id),
+  
+  // GC feedback (private)
+  gcInternalRating: integer("gc_internal_rating"),  // 1-5 stars
+  gcInternalNotes: text("gc_internal_notes"),
+  
+  // Sub's internal notes (private to sub)
+  subInternalNotes: text("sub_internal_notes"),
+  
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  invitationIdx: index("sub_bid_resp_invitation_idx").on(table.invitationId),
+  requestIdx: index("sub_bid_resp_request_idx").on(table.bidRequestId),
+  orgIdx: index("sub_bid_resp_org_idx").on(table.respondingOrganizationId),
+  statusIdx: index("sub_bid_resp_status_idx").on(table.status),
+}));
+
+export const insertSubcontractorBidResponseSchema = createInsertSchema(subcontractorBidResponses).omit({ id: true, createdAt: true, updatedAt: true, submittedAt: true, reviewedAt: true });
+export type InsertSubcontractorBidResponse = z.infer<typeof insertSubcontractorBidResponseSchema>;
+export type SubcontractorBidResponse = typeof subcontractorBidResponses.$inferSelect;
+
+// Bid Request Clarifications - Q&A thread for bid requests
+export const bidRequestClarifications = pgTable("bid_request_clarifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidRequestId: varchar("bid_request_id").notNull().references(() => subcontractorBidRequests.id, { onDelete: "cascade" }),
+  
+  // Who asked/answered
+  askedByOrganizationId: varchar("asked_by_organization_id").references(() => organizations.id),
+  askedByUserId: varchar("asked_by_user_id").references(() => users.id),
+  
+  // Question
+  question: text("question").notNull(),
+  questionAskedAt: timestamp("question_asked_at").notNull().defaultNow(),
+  
+  // Answer (by GC)
+  answer: text("answer"),
+  answeredByUserId: varchar("answered_by_user_id").references(() => users.id),
+  answeredAt: timestamp("answered_at"),
+  
+  // Visibility
+  isPublicToAllInvitees: boolean("is_public_to_all_invitees").notNull().default(false),  // If true, all invitees can see Q&A
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  requestIdx: index("bid_clarification_request_idx").on(table.bidRequestId),
+  askedByIdx: index("bid_clarification_asked_by_idx").on(table.askedByOrganizationId),
+}));
+
+export const insertBidRequestClarificationSchema = createInsertSchema(bidRequestClarifications).omit({ id: true, createdAt: true, updatedAt: true, answeredAt: true });
+export type InsertBidRequestClarification = z.infer<typeof insertBidRequestClarificationSchema>;
+export type BidRequestClarification = typeof bidRequestClarifications.$inferSelect;
+
 // Dashboard Widget Configuration Type (for layout JSON)
 export interface DashboardWidgetConfig {
   id: string;

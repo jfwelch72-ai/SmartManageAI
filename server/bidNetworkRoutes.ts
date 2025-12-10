@@ -1,0 +1,1011 @@
+import { Router, Response } from "express";
+import { db } from "./db";
+import { 
+  organizationNetworkSettings, 
+  subcontractorBidRequests, 
+  subcontractorBidInvitations, 
+  subcontractorBidResponses,
+  bidRequestClarifications,
+  organizations,
+  projects
+} from "@shared/schema";
+import { eq, and, or, desc, sql, isNull, ne } from "drizzle-orm";
+import { requireAuth, AuthRequest } from "./auth";
+import { logInfo, logError } from "./utils/logger";
+
+const router = Router();
+
+// ============================================
+// ORGANIZATION NETWORK SETTINGS
+// ============================================
+
+// Get organization's network settings
+router.get("/settings/:organizationId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { organizationId } = req.params;
+    const user = req.user!;
+    
+    // Security: User must belong to the organization or be SUPER_ADMIN
+    if (user.organizationId !== organizationId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const [settings] = await db
+      .select()
+      .from(organizationNetworkSettings)
+      .where(eq(organizationNetworkSettings.organizationId, organizationId));
+    
+    if (!settings) {
+      // Return default settings if none exist
+      return res.json({
+        organizationId,
+        isNetworkEnabled: true,
+        canReceiveBidInvites: true,
+        canSendBidRequests: true,
+        tradeSpecialties: [],
+        notifyByEmail: true,
+        notifyInApp: true,
+        exists: false
+      });
+    }
+    
+    res.json({ ...settings, exists: true });
+  } catch (error) {
+    logError("Failed to get network settings", error as Error);
+    res.status(500).json({ error: "Failed to get network settings" });
+  }
+});
+
+// Create or update organization's network settings
+router.post("/settings", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const data = req.body;
+    
+    // Security: Only ADMIN or SUPER_ADMIN can change settings
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Only admins can modify network settings" });
+    }
+    
+    // Determine target organization with proper authorization
+    let organizationId: string;
+    
+    if (data.organizationId && data.organizationId !== user.organizationId) {
+      // Attempting to modify another organization's settings
+      // Only SUPER_ADMIN can do this
+      if (user.role !== "SUPER_ADMIN") {
+        return res.status(403).json({ error: "Cannot modify settings for another organization" });
+      }
+      organizationId = data.organizationId;
+    } else {
+      // Use user's own organization
+      organizationId = user.organizationId!;
+    }
+    
+    // Check if settings exist
+    const [existing] = await db
+      .select()
+      .from(organizationNetworkSettings)
+      .where(eq(organizationNetworkSettings.organizationId, organizationId));
+    
+    if (existing) {
+      // Update
+      const [updated] = await db
+        .update(organizationNetworkSettings)
+        .set({
+          ...data,
+          updatedAt: new Date()
+        })
+        .where(eq(organizationNetworkSettings.organizationId, organizationId))
+        .returning();
+      
+      logInfo("Network settings updated", { organizationId, userId: user.id });
+      return res.json(updated);
+    } else {
+      // Create
+      const [created] = await db
+        .insert(organizationNetworkSettings)
+        .values({
+          ...data,
+          organizationId
+        })
+        .returning();
+      
+      logInfo("Network settings created", { organizationId, userId: user.id });
+      return res.json(created);
+    }
+  } catch (error) {
+    logError("Failed to save network settings", error as Error);
+    res.status(500).json({ error: "Failed to save network settings" });
+  }
+});
+
+// ============================================
+// BID REQUESTS (GC Creates)
+// ============================================
+
+// List bid requests for an organization (as GC)
+router.get("/requests", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { status, projectId } = req.query;
+    
+    // Build conditions array
+    const conditions = [eq(subcontractorBidRequests.organizationId, user.organizationId!)];
+    
+    if (status && status !== "all") {
+      conditions.push(eq(subcontractorBidRequests.status, status as any));
+    }
+    
+    if (projectId) {
+      conditions.push(eq(subcontractorBidRequests.projectId, projectId as string));
+    }
+    
+    const results = await db
+      .select({
+        request: subcontractorBidRequests,
+        project: projects
+      })
+      .from(subcontractorBidRequests)
+      .leftJoin(projects, eq(subcontractorBidRequests.projectId, projects.id))
+      .where(and(...conditions))
+      .orderBy(desc(subcontractorBidRequests.createdAt));
+    
+    res.json(results.map(r => ({
+      ...r.request,
+      project: r.project
+    })));
+  } catch (error) {
+    logError("Failed to list bid requests", error as Error);
+    res.status(500).json({ error: "Failed to list bid requests" });
+  }
+});
+
+// Get single bid request with invitations and responses
+router.get("/requests/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, id));
+    
+    if (!request) {
+      return res.status(404).json({ error: "Bid request not found" });
+    }
+    
+    // Security: Only the owning org can see full details
+    if (request.organizationId !== user.organizationId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    // Get invitations
+    const invitations = await db
+      .select({
+        invitation: subcontractorBidInvitations,
+        organization: organizations
+      })
+      .from(subcontractorBidInvitations)
+      .leftJoin(organizations, eq(subcontractorBidInvitations.invitedOrganizationId, organizations.id))
+      .where(eq(subcontractorBidInvitations.bidRequestId, id));
+    
+    // Get responses
+    const responses = await db
+      .select({
+        response: subcontractorBidResponses,
+        organization: organizations
+      })
+      .from(subcontractorBidResponses)
+      .leftJoin(organizations, eq(subcontractorBidResponses.respondingOrganizationId, organizations.id))
+      .where(eq(subcontractorBidResponses.bidRequestId, id));
+    
+    res.json({
+      ...request,
+      invitations: invitations.map(i => ({
+        ...i.invitation,
+        organization: i.organization
+      })),
+      responses: responses.map(r => ({
+        ...r.response,
+        organization: r.organization
+      }))
+    });
+  } catch (error) {
+    logError("Failed to get bid request", error as Error);
+    res.status(500).json({ error: "Failed to get bid request" });
+  }
+});
+
+// Create a new bid request
+router.post("/requests", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const data = req.body;
+    
+    // Check if org can send bid requests
+    const [settings] = await db
+      .select()
+      .from(organizationNetworkSettings)
+      .where(eq(organizationNetworkSettings.organizationId, user.organizationId!));
+    
+    if (settings && !settings.canSendBidRequests) {
+      return res.status(403).json({ error: "Your organization has disabled sending bid requests" });
+    }
+    
+    const [request] = await db
+      .insert(subcontractorBidRequests)
+      .values({
+        ...data,
+        organizationId: user.organizationId!,
+        createdByUserId: user.id,
+        status: data.status || "DRAFT"
+      })
+      .returning();
+    
+    logInfo("Bid request created", { requestId: request.id, organizationId: user.organizationId });
+    res.status(201).json(request);
+  } catch (error) {
+    logError("Failed to create bid request", error as Error);
+    res.status(500).json({ error: "Failed to create bid request" });
+  }
+});
+
+// Update a bid request
+router.patch("/requests/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    const data = req.body;
+    
+    // Verify ownership
+    const [existing] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, id));
+    
+    if (!existing || existing.organizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Bid request not found" });
+    }
+    
+    // Handle status changes
+    const updates: any = { ...data, updatedAt: new Date() };
+    
+    if (data.status === "OPEN" && existing.status === "DRAFT") {
+      updates.publishedAt = new Date();
+    }
+    if (data.status === "CLOSED" && existing.status === "OPEN") {
+      updates.closedAt = new Date();
+    }
+    if (data.status === "AWARDED") {
+      updates.awardedAt = new Date();
+    }
+    
+    const [updated] = await db
+      .update(subcontractorBidRequests)
+      .set(updates)
+      .where(eq(subcontractorBidRequests.id, id))
+      .returning();
+    
+    logInfo("Bid request updated", { requestId: id, status: updated.status });
+    res.json(updated);
+  } catch (error) {
+    logError("Failed to update bid request", error as Error);
+    res.status(500).json({ error: "Failed to update bid request" });
+  }
+});
+
+// Delete a bid request (only if DRAFT)
+router.delete("/requests/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    
+    const [existing] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, id));
+    
+    if (!existing || existing.organizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Bid request not found" });
+    }
+    
+    if (existing.status !== "DRAFT") {
+      return res.status(400).json({ error: "Can only delete draft bid requests" });
+    }
+    
+    await db.delete(subcontractorBidRequests).where(eq(subcontractorBidRequests.id, id));
+    
+    logInfo("Bid request deleted", { requestId: id });
+    res.json({ success: true });
+  } catch (error) {
+    logError("Failed to delete bid request", error as Error);
+    res.status(500).json({ error: "Failed to delete bid request" });
+  }
+});
+
+// ============================================
+// FIND MATCHING SUBCONTRACTORS
+// ============================================
+
+// Find subcontractors matching trade requirements
+router.get("/match-subs", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { trades } = req.query;
+    
+    if (!trades) {
+      return res.status(400).json({ error: "trades parameter required" });
+    }
+    
+    const tradeList = (trades as string).split(",");
+    
+    // Find organizations with matching trade specialties that can receive invites
+    const matchingSubs = await db
+      .select({
+        organization: organizations,
+        settings: organizationNetworkSettings
+      })
+      .from(organizations)
+      .leftJoin(organizationNetworkSettings, eq(organizations.id, organizationNetworkSettings.organizationId))
+      .where(
+        and(
+          // Not the requesting org
+          ne(organizations.id, user.organizationId!),
+          // Network enabled and can receive invites
+          or(
+            isNull(organizationNetworkSettings.id),
+            and(
+              eq(organizationNetworkSettings.isNetworkEnabled, true),
+              eq(organizationNetworkSettings.canReceiveBidInvites, true)
+            )
+          )
+        )
+      );
+    
+    // Filter by trade match
+    const filtered = matchingSubs.filter(sub => {
+      // Match by organization's tradeType
+      if (tradeList.includes(sub.organization.tradeType)) {
+        return true;
+      }
+      // Match by network settings trade specialties
+      if (sub.settings?.tradeSpecialties) {
+        return sub.settings.tradeSpecialties.some(t => tradeList.includes(t));
+      }
+      return false;
+    });
+    
+    res.json(filtered.map(s => ({
+      id: s.organization.id,
+      name: s.organization.name,
+      tradeType: s.organization.tradeType,
+      tradeSpecialties: s.settings?.tradeSpecialties || [],
+      logoUrl: s.organization.logoUrl,
+      companyDescription: s.settings?.companyDescription,
+      serviceAreas: s.settings?.serviceAreas || [],
+      certifications: s.settings?.certifications || []
+    })));
+  } catch (error) {
+    logError("Failed to find matching subs", error as Error);
+    res.status(500).json({ error: "Failed to find matching subcontractors" });
+  }
+});
+
+// ============================================
+// INVITATIONS (GC Sends)
+// ============================================
+
+// Send invitations to subcontractors
+router.post("/invitations/send", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { bidRequestId, invitees, personalMessage } = req.body;
+    
+    // Verify bid request ownership
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, bidRequestId));
+    
+    if (!request || request.organizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Bid request not found" });
+    }
+    
+    const createdInvitations = [];
+    
+    for (const invitee of invitees) {
+      // Check if already invited
+      if (invitee.organizationId) {
+        const [existing] = await db
+          .select()
+          .from(subcontractorBidInvitations)
+          .where(and(
+            eq(subcontractorBidInvitations.bidRequestId, bidRequestId),
+            eq(subcontractorBidInvitations.invitedOrganizationId, invitee.organizationId)
+          ));
+        
+        if (existing) continue;
+      }
+      
+      const [invitation] = await db
+        .insert(subcontractorBidInvitations)
+        .values({
+          bidRequestId,
+          invitedOrganizationId: invitee.organizationId || null,
+          externalCompanyName: invitee.externalCompanyName,
+          externalContactName: invitee.externalContactName,
+          externalContactEmail: invitee.externalContactEmail,
+          externalContactPhone: invitee.externalContactPhone,
+          invitedTradeType: invitee.tradeType,
+          personalMessage,
+          invitedByUserId: user.id,
+          status: "PENDING"
+        })
+        .returning();
+      
+      createdInvitations.push(invitation);
+      
+      // Create in-app notification for platform members
+      if (invitee.organizationId) {
+        // Get admin users of the invited org to notify
+        // For now, we'll just log this - full notification implementation would query users
+        logInfo("Bid invitation sent", { 
+          invitationId: invitation.id, 
+          toOrganization: invitee.organizationId 
+        });
+      }
+    }
+    
+    // Update invite count on request
+    await db
+      .update(subcontractorBidRequests)
+      .set({ 
+        inviteCount: sql`${subcontractorBidRequests.inviteCount} + ${createdInvitations.length}`,
+        updatedAt: new Date()
+      })
+      .where(eq(subcontractorBidRequests.id, bidRequestId));
+    
+    res.status(201).json(createdInvitations);
+  } catch (error) {
+    logError("Failed to send invitations", error as Error);
+    res.status(500).json({ error: "Failed to send invitations" });
+  }
+});
+
+// ============================================
+// SUBCONTRACTOR BID INBOX
+// ============================================
+
+// List invitations received by subcontractor
+router.get("/inbox", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { status } = req.query;
+    
+    let conditions = [eq(subcontractorBidInvitations.invitedOrganizationId, user.organizationId!)];
+    
+    if (status && status !== "all") {
+      conditions.push(eq(subcontractorBidInvitations.status, status as any));
+    }
+    
+    const invitations = await db
+      .select({
+        invitation: subcontractorBidInvitations,
+        request: subcontractorBidRequests,
+        gcOrganization: organizations
+      })
+      .from(subcontractorBidInvitations)
+      .innerJoin(subcontractorBidRequests, eq(subcontractorBidInvitations.bidRequestId, subcontractorBidRequests.id))
+      .innerJoin(organizations, eq(subcontractorBidRequests.organizationId, organizations.id))
+      .where(and(...conditions))
+      .orderBy(desc(subcontractorBidInvitations.createdAt));
+    
+    res.json(invitations.map(i => ({
+      ...i.invitation,
+      request: {
+        ...i.request,
+        // Hide internal notes from subs
+        internalNotes: undefined,
+        // Hide budget if not allowed
+        budgetRangeMin: i.request.showBudgetToSubs ? i.request.budgetRangeMin : undefined,
+        budgetRangeMax: i.request.showBudgetToSubs ? i.request.budgetRangeMax : undefined
+      },
+      gcOrganization: {
+        id: i.gcOrganization.id,
+        name: i.gcOrganization.name,
+        logoUrl: i.gcOrganization.logoUrl
+      }
+    })));
+  } catch (error) {
+    logError("Failed to list inbox", error as Error);
+    res.status(500).json({ error: "Failed to list bid invitations" });
+  }
+});
+
+// View invitation details (marks as viewed)
+router.get("/inbox/:invitationId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { invitationId } = req.params;
+    
+    const [invitation] = await db
+      .select({
+        invitation: subcontractorBidInvitations,
+        request: subcontractorBidRequests,
+        gcOrganization: organizations
+      })
+      .from(subcontractorBidInvitations)
+      .innerJoin(subcontractorBidRequests, eq(subcontractorBidInvitations.bidRequestId, subcontractorBidRequests.id))
+      .innerJoin(organizations, eq(subcontractorBidRequests.organizationId, organizations.id))
+      .where(eq(subcontractorBidInvitations.id, invitationId));
+    
+    if (!invitation || invitation.invitation.invitedOrganizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Invitation not found" });
+    }
+    
+    // Mark as viewed if first view
+    if (invitation.invitation.status === "PENDING" && !invitation.invitation.viewedAt) {
+      await db
+        .update(subcontractorBidInvitations)
+        .set({ 
+          viewedAt: new Date(),
+          status: "VIEWED",
+          updatedAt: new Date()
+        })
+        .where(eq(subcontractorBidInvitations.id, invitationId));
+      
+      // Increment view count on request
+      await db
+        .update(subcontractorBidRequests)
+        .set({ viewCount: sql`${subcontractorBidRequests.viewCount} + 1` })
+        .where(eq(subcontractorBidRequests.id, invitation.request.id));
+    }
+    
+    // Get any existing response
+    const [response] = await db
+      .select()
+      .from(subcontractorBidResponses)
+      .where(and(
+        eq(subcontractorBidResponses.invitationId, invitationId),
+        eq(subcontractorBidResponses.respondingOrganizationId, user.organizationId!)
+      ));
+    
+    // Get clarifications
+    const clarifications = await db
+      .select()
+      .from(bidRequestClarifications)
+      .where(and(
+        eq(bidRequestClarifications.bidRequestId, invitation.request.id),
+        or(
+          eq(bidRequestClarifications.askedByOrganizationId, user.organizationId!),
+          eq(bidRequestClarifications.isPublicToAllInvitees, true)
+        )
+      ))
+      .orderBy(desc(bidRequestClarifications.createdAt));
+    
+    res.json({
+      ...invitation.invitation,
+      request: {
+        ...invitation.request,
+        internalNotes: undefined,
+        budgetRangeMin: invitation.request.showBudgetToSubs ? invitation.request.budgetRangeMin : undefined,
+        budgetRangeMax: invitation.request.showBudgetToSubs ? invitation.request.budgetRangeMax : undefined
+      },
+      gcOrganization: {
+        id: invitation.gcOrganization.id,
+        name: invitation.gcOrganization.name,
+        logoUrl: invitation.gcOrganization.logoUrl
+      },
+      myResponse: response || null,
+      clarifications
+    });
+  } catch (error) {
+    logError("Failed to get invitation", error as Error);
+    res.status(500).json({ error: "Failed to get invitation details" });
+  }
+});
+
+// Decline invitation
+router.post("/inbox/:invitationId/decline", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { invitationId } = req.params;
+    const { reason } = req.body;
+    
+    const [invitation] = await db
+      .select()
+      .from(subcontractorBidInvitations)
+      .where(eq(subcontractorBidInvitations.id, invitationId));
+    
+    if (!invitation || invitation.invitedOrganizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Invitation not found" });
+    }
+    
+    await db
+      .update(subcontractorBidInvitations)
+      .set({
+        status: "DECLINED",
+        declinedReason: reason,
+        respondedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(subcontractorBidInvitations.id, invitationId));
+    
+    logInfo("Bid invitation declined", { invitationId, organizationId: user.organizationId });
+    res.json({ success: true });
+  } catch (error) {
+    logError("Failed to decline invitation", error as Error);
+    res.status(500).json({ error: "Failed to decline invitation" });
+  }
+});
+
+// ============================================
+// BID RESPONSES (Sub Submits)
+// ============================================
+
+// Create/update response
+router.post("/responses", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const data = req.body;
+    
+    // Verify invitation exists and belongs to user's org
+    const [invitation] = await db
+      .select()
+      .from(subcontractorBidInvitations)
+      .where(eq(subcontractorBidInvitations.id, data.invitationId));
+    
+    if (!invitation || invitation.invitedOrganizationId !== user.organizationId) {
+      return res.status(404).json({ error: "Invitation not found" });
+    }
+    
+    // Check for existing response
+    const [existing] = await db
+      .select()
+      .from(subcontractorBidResponses)
+      .where(eq(subcontractorBidResponses.invitationId, data.invitationId));
+    
+    if (existing) {
+      // Update existing
+      const [updated] = await db
+        .update(subcontractorBidResponses)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+          submittedAt: data.status === "SUBMITTED" ? new Date() : existing.submittedAt
+        })
+        .where(eq(subcontractorBidResponses.id, existing.id))
+        .returning();
+      
+      // Update invitation status
+      if (data.status === "SUBMITTED") {
+        await db
+          .update(subcontractorBidInvitations)
+          .set({ status: "RESPONDED", respondedAt: new Date(), updatedAt: new Date() })
+          .where(eq(subcontractorBidInvitations.id, data.invitationId));
+        
+        // Update response count on request
+        if (existing.status !== "SUBMITTED") {
+          await db
+            .update(subcontractorBidRequests)
+            .set({ responseCount: sql`${subcontractorBidRequests.responseCount} + 1` })
+            .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
+        }
+      }
+      
+      return res.json(updated);
+    } else {
+      // Create new
+      const [created] = await db
+        .insert(subcontractorBidResponses)
+        .values({
+          ...data,
+          bidRequestId: invitation.bidRequestId,
+          respondingOrganizationId: user.organizationId!,
+          createdByUserId: user.id,
+          submittedAt: data.status === "SUBMITTED" ? new Date() : null
+        })
+        .returning();
+      
+      // Update invitation status
+      if (data.status === "SUBMITTED") {
+        await db
+          .update(subcontractorBidInvitations)
+          .set({ status: "RESPONDED", respondedAt: new Date(), updatedAt: new Date() })
+          .where(eq(subcontractorBidInvitations.id, data.invitationId));
+        
+        await db
+          .update(subcontractorBidRequests)
+          .set({ responseCount: sql`${subcontractorBidRequests.responseCount} + 1` })
+          .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
+      }
+      
+      logInfo("Bid response created", { responseId: created.id, invitationId: data.invitationId });
+      return res.status(201).json(created);
+    }
+  } catch (error) {
+    logError("Failed to save response", error as Error);
+    res.status(500).json({ error: "Failed to save response" });
+  }
+});
+
+// Get response by ID
+router.get("/responses/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    
+    const [response] = await db
+      .select()
+      .from(subcontractorBidResponses)
+      .where(eq(subcontractorBidResponses.id, id));
+    
+    if (!response) {
+      return res.status(404).json({ error: "Response not found" });
+    }
+    
+    // Get request to check ownership
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, response.bidRequestId));
+    
+    // Security: Either the sub who created it or the GC who owns the request
+    const isOwner = response.respondingOrganizationId === user.organizationId;
+    const isGC = request?.organizationId === user.organizationId;
+    
+    if (!isOwner && !isGC && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    // Hide internal notes based on who's viewing
+    const result = { ...response };
+    if (!isOwner) {
+      result.subInternalNotes = null;
+    }
+    if (!isGC) {
+      result.gcInternalRating = null;
+      result.gcInternalNotes = null;
+    }
+    
+    res.json(result);
+  } catch (error) {
+    logError("Failed to get response", error as Error);
+    res.status(500).json({ error: "Failed to get response" });
+  }
+});
+
+// GC updates response status (shortlist, award, etc.)
+router.patch("/responses/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    const { status, gcInternalRating, gcInternalNotes } = req.body;
+    
+    // Get response and verify GC ownership
+    const [response] = await db
+      .select()
+      .from(subcontractorBidResponses)
+      .where(eq(subcontractorBidResponses.id, id));
+    
+    if (!response) {
+      return res.status(404).json({ error: "Response not found" });
+    }
+    
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, response.bidRequestId));
+    
+    if (!request || request.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const [updated] = await db
+      .update(subcontractorBidResponses)
+      .set({
+        status,
+        gcInternalRating,
+        gcInternalNotes,
+        reviewedAt: new Date(),
+        reviewedByUserId: user.id,
+        updatedAt: new Date()
+      })
+      .where(eq(subcontractorBidResponses.id, id))
+      .returning();
+    
+    // If awarding, update the request
+    if (status === "AWARDED") {
+      await db
+        .update(subcontractorBidRequests)
+        .set({
+          status: "AWARDED",
+          awardedAt: new Date(),
+          awardedToOrganizationId: response.respondingOrganizationId,
+          updatedAt: new Date()
+        })
+        .where(eq(subcontractorBidRequests.id, response.bidRequestId));
+    }
+    
+    logInfo("Bid response status updated", { responseId: id, status });
+    res.json(updated);
+  } catch (error) {
+    logError("Failed to update response status", error as Error);
+    res.status(500).json({ error: "Failed to update response status" });
+  }
+});
+
+// ============================================
+// CLARIFICATIONS (Q&A)
+// ============================================
+
+// Ask a clarification question
+router.post("/clarifications", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { bidRequestId, question } = req.body;
+    
+    // Verify sub has an invitation
+    const [invitation] = await db
+      .select()
+      .from(subcontractorBidInvitations)
+      .where(and(
+        eq(subcontractorBidInvitations.bidRequestId, bidRequestId),
+        eq(subcontractorBidInvitations.invitedOrganizationId, user.organizationId!)
+      ));
+    
+    if (!invitation) {
+      return res.status(403).json({ error: "You must be invited to ask questions" });
+    }
+    
+    const [clarification] = await db
+      .insert(bidRequestClarifications)
+      .values({
+        bidRequestId,
+        askedByOrganizationId: user.organizationId!,
+        askedByUserId: user.id,
+        question,
+        isPublicToAllInvitees: false
+      })
+      .returning();
+    
+    logInfo("Clarification question asked", { clarificationId: clarification.id });
+    res.status(201).json(clarification);
+  } catch (error) {
+    logError("Failed to ask clarification", error as Error);
+    res.status(500).json({ error: "Failed to submit question" });
+  }
+});
+
+// Answer a clarification (GC only)
+router.patch("/clarifications/:id/answer", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+    const { answer, isPublicToAllInvitees } = req.body;
+    
+    // Get clarification and verify GC ownership
+    const [clarification] = await db
+      .select()
+      .from(bidRequestClarifications)
+      .where(eq(bidRequestClarifications.id, id));
+    
+    if (!clarification) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+    
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, clarification.bidRequestId));
+    
+    if (!request || request.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const [updated] = await db
+      .update(bidRequestClarifications)
+      .set({
+        answer,
+        answeredByUserId: user.id,
+        answeredAt: new Date(),
+        isPublicToAllInvitees: isPublicToAllInvitees ?? clarification.isPublicToAllInvitees,
+        updatedAt: new Date()
+      })
+      .where(eq(bidRequestClarifications.id, id))
+      .returning();
+    
+    res.json(updated);
+  } catch (error) {
+    logError("Failed to answer clarification", error as Error);
+    res.status(500).json({ error: "Failed to submit answer" });
+  }
+});
+
+// Get clarifications for a request (GC view)
+router.get("/requests/:requestId/clarifications", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { requestId } = req.params;
+    
+    // Verify GC ownership
+    const [request] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, requestId));
+    
+    if (!request || request.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const clarifications = await db
+      .select({
+        clarification: bidRequestClarifications,
+        askedByOrg: organizations
+      })
+      .from(bidRequestClarifications)
+      .leftJoin(organizations, eq(bidRequestClarifications.askedByOrganizationId, organizations.id))
+      .where(eq(bidRequestClarifications.bidRequestId, requestId))
+      .orderBy(desc(bidRequestClarifications.createdAt));
+    
+    res.json(clarifications.map(c => ({
+      ...c.clarification,
+      askedByOrganization: c.askedByOrg ? {
+        id: c.askedByOrg.id,
+        name: c.askedByOrg.name
+      } : null
+    })));
+  } catch (error) {
+    logError("Failed to get clarifications", error as Error);
+    res.status(500).json({ error: "Failed to get clarifications" });
+  }
+});
+
+// ============================================
+// DASHBOARD STATS
+// ============================================
+
+// Get bid network stats for organization
+router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    
+    // Outgoing requests (as GC)
+    const outgoingStats = await db
+      .select({
+        status: subcontractorBidRequests.status,
+        count: sql<number>`count(*)::int`
+      })
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.organizationId, user.organizationId!))
+      .groupBy(subcontractorBidRequests.status);
+    
+    // Incoming invitations (as Sub)
+    const incomingStats = await db
+      .select({
+        status: subcontractorBidInvitations.status,
+        count: sql<number>`count(*)::int`
+      })
+      .from(subcontractorBidInvitations)
+      .where(eq(subcontractorBidInvitations.invitedOrganizationId, user.organizationId!))
+      .groupBy(subcontractorBidInvitations.status);
+    
+    res.json({
+      outgoing: {
+        total: outgoingStats.reduce((acc, s) => acc + s.count, 0),
+        byStatus: Object.fromEntries(outgoingStats.map(s => [s.status, s.count]))
+      },
+      incoming: {
+        total: incomingStats.reduce((acc, s) => acc + s.count, 0),
+        byStatus: Object.fromEntries(incomingStats.map(s => [s.status, s.count]))
+      }
+    });
+  } catch (error) {
+    logError("Failed to get bid network stats", error as Error);
+    res.status(500).json({ error: "Failed to get stats" });
+  }
+});
+
+export default router;

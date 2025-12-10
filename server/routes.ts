@@ -87,6 +87,7 @@ import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import opsRoutes from "./opsRoutes";
 import hustlerRoutes from "./hustlerRoutes";
+import bidNetworkRoutes from "./bidNetworkRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -178,6 +179,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Hustler Multi-Organization routes
   app.use("/api", hustlerRoutes);
+
+  // Register Subcontractor Bid Network routes
+  app.use("/api/bid-network", bidNetworkRoutes);
 
   // ====================
   // Auth Routes
