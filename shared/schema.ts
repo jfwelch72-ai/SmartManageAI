@@ -770,6 +770,76 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   billingStatusIdx: index("daily_scope_progress_billing_status_idx").on(table.billingStatus),
 }));
 
+// Project Material Budgets table - snapshots bid/estimate material quantities when project is created
+// This captures the "target" budget for variance tracking
+export const projectMaterialBudgets = pgTable("project_material_budgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
+  
+  // Material description and unit from estimate
+  description: text("description").notNull(),
+  unit: text("unit").notNull(),
+  
+  // Budgeted quantities and costs (from estimate at time of project creation)
+  budgetedQuantity: decimal("budgeted_quantity", { precision: 12, scale: 2 }).notNull(),
+  budgetedUnitCost: decimal("budgeted_unit_cost", { precision: 10, scale: 2 }).notNull().default('0'),
+  budgetedTotalCost: decimal("budgeted_total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  
+  // Running actual totals (updated as usage entries are added)
+  actualQuantityUsed: decimal("actual_quantity_used", { precision: 12, scale: 2 }).notNull().default('0'),
+  actualTotalCost: decimal("actual_total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  
+  // Variance tracking
+  varianceQuantity: decimal("variance_quantity", { precision: 12, scale: 2 }).notNull().default('0'),
+  variancePercent: decimal("variance_percent", { precision: 6, scale: 2 }).notNull().default('0'),
+  
+  // Alert thresholds
+  alertThresholdPercent: decimal("alert_threshold_percent", { precision: 5, scale: 2 }).notNull().default('90'),
+  alertTriggered: boolean("alert_triggered").notNull().default(false),
+  alertTriggeredAt: timestamp("alert_triggered_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("project_material_budgets_project_id_idx").on(table.projectId),
+  scopeItemIdIdx: index("project_material_budgets_scope_item_id_idx").on(table.scopeItemId),
+  alertTriggeredIdx: index("project_material_budgets_alert_triggered_idx").on(table.alertTriggered),
+}));
+
+// Project Material Usage table - tracks actual daily material consumption from field reps
+export const projectMaterialUsage = pgTable("project_material_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
+  materialBudgetId: varchar("material_budget_id").references(() => projectMaterialBudgets.id, { onDelete: "set null" }),
+  dailyScopeProgressId: varchar("daily_scope_progress_id").references(() => dailyScopeProgress.id, { onDelete: "set null" }),
+  
+  // Usage details
+  usageDate: date("usage_date").notNull(),
+  description: text("description").notNull(),
+  quantityUsed: decimal("quantity_used", { precision: 12, scale: 2 }).notNull(),
+  unit: text("unit").notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull().default('0'),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  
+  // Optional vendor/receipt tracking
+  vendorName: text("vendor_name"),
+  receiptReference: text("receipt_reference"),
+  notes: text("notes"),
+  
+  // Who entered this record
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("project_material_usage_project_id_idx").on(table.projectId),
+  scopeItemIdIdx: index("project_material_usage_scope_item_id_idx").on(table.scopeItemId),
+  usageDateIdx: index("project_material_usage_usage_date_idx").on(table.usageDate),
+  materialBudgetIdIdx: index("project_material_usage_material_budget_id_idx").on(table.materialBudgetId),
+}));
+
 // Media table (photos and videos)
 export const media = pgTable("media", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1926,6 +1996,28 @@ export type ScopeItem = typeof scopeItems.$inferSelect;
 
 export type InsertDailyScopeProgress = z.infer<typeof insertDailyScopeProgressSchema>;
 export type DailyScopeProgress = typeof dailyScopeProgress.$inferSelect;
+
+export const insertProjectMaterialBudgetSchema = createInsertSchema(projectMaterialBudgets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  actualQuantityUsed: true,
+  actualTotalCost: true,
+  varianceQuantity: true,
+  variancePercent: true,
+  alertTriggered: true,
+  alertTriggeredAt: true,
+});
+export type InsertProjectMaterialBudget = z.infer<typeof insertProjectMaterialBudgetSchema>;
+export type ProjectMaterialBudget = typeof projectMaterialBudgets.$inferSelect;
+
+export const insertProjectMaterialUsageSchema = createInsertSchema(projectMaterialUsage).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProjectMaterialUsage = z.infer<typeof insertProjectMaterialUsageSchema>;
+export type ProjectMaterialUsage = typeof projectMaterialUsage.$inferSelect;
 
 export type InsertMedia = z.infer<typeof insertMediaSchema>;
 export type Media = typeof media.$inferSelect;
