@@ -27,7 +27,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **CRM System**: Manages various organizational entities (CONTRACTOR, SUBCONTRACTOR, SUPPLIER, VENDOR, RENTAL_VENDOR, OWNER_REP) with vendor pricing and rental equipment catalogs.
 *   **Time-Clock System**: Native time-clock with GPS, shift management, labor hour tracking, and Manager Approval Workflow.
 *   **Audit & Compliance**: Comprehensive audit logging and a system for managing Organization Documents with versioning and expiration tracking.
-*   **Production Rate Tracking & Auto-Population**: Analyzes historical data to calculate production rates and automatically estimate labor hours for estimate line items with confidence scoring. Enforces strict organization scoping for data access.
+*   **Production Rate Tracking & Auto-Population**: Comprehensive production analytics system that tracks crew productivity, labor cost per UOM, material cost per UOM (from budgeted estimates), and profitability per UOM. Auto-captures metrics when time clock shifts are approved, linking to scope items worked. Features a Cost Analytics dashboard with KPI cards, sortable metrics table by description/unit, and confidence scoring (HIGH/MEDIUM/LOW based on data quantity). Supports quantity-size bucketing for size-based analysis. Integrates with AI Orchestrator for profitability insights and AI Assistant for natural language production rate queries.
 *   **Internal Messaging System**: Secure team communication.
 *   **Equipment Management System**: Fleet and tool tracking, project assignment, repair workflows, and preventative maintenance.
 *   **White-Label Branding**: System-wide rebranding capabilities for the platform and PDF generation.
