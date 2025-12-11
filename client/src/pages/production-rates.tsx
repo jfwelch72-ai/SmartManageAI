@@ -739,16 +739,16 @@ export default function ProductionRatesPage() {
                   </CardHeader>
                   <CardContent className="text-sm text-muted-foreground space-y-2">
                     <p>
-                      <strong>Labor Cost/Unit:</strong> The average labor cost incurred per unit of work. Calculated from approved time clock shifts with labor hours and crew wage rates.
+                      <strong>Labor Cost/Unit:</strong> Actual labor cost per unit. Calculated from approved time clock shifts with labor hours and crew wage rates.
                     </p>
                     <p>
-                      <strong>Material Cost/Unit:</strong> The average material expense per unit. Tracked from material receipts and procurement linked to scope items.
+                      <strong>Material Cost/Unit:</strong> Material expense per unit based on budgeted estimates from the linked estimate line items. When scope items are linked to estimates with material costs, those budgeted costs are used to calculate per-unit metrics.
                     </p>
                     <p>
-                      <strong>Profit/Unit:</strong> Revenue minus costs per unit. Green indicates profitable work, red indicates a loss that needs investigation.
+                      <strong>Profit/Unit:</strong> Unit revenue (from scope item pricing) minus total costs per unit. Green indicates profitable work, red indicates a loss that needs investigation.
                     </p>
                     <p>
-                      <strong>Confidence Level:</strong> HIGH = 10+ entries with cost data, MEDIUM = 5-9 entries, LOW = less than 5 entries. Higher confidence means more reliable benchmarks.
+                      <strong>Confidence Level:</strong> Based on data quantity - HIGH (10+ days, 3+ projects), MEDIUM (5-9 days, 2+ projects), LOW (2-4 days). Higher confidence means more reliable benchmarks for future bidding.
                     </p>
                   </CardContent>
                 </Card>
