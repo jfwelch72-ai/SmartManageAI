@@ -91,25 +91,38 @@ interface CostMetric {
   totalLaborHours: number;
   totalLaborCost: number;
   totalMaterialCost: number;
-  entryCount: number;
+  totalEquipmentCost: number;
+  totalCost: number;
+  avgQuantityPerDay: number;
+  avgCrewSize: number;
   avgLaborHoursPerUnit: number;
   avgLaborCostPerUnit: number;
   avgMaterialCostPerUnit: number;
-  avgProfitPerUnit: number | null;
-  confidenceLevel: string;
+  avgEquipmentCostPerUnit: number;
+  avgTotalCostPerUnit: number;
+  avgRevenuePerUnit: number;
+  avgProfitPerUnit: number;
+  profitMargin: number;
+  totalDays: number;
+  totalProjects: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+  hasLaborData: boolean;
+  hasMaterialData: boolean;
 }
 
 interface CostMetricsResponse {
-  metrics: CostMetric[];
+  rates: CostMetric[];
   summary: {
     totalSOWTypes: number;
     totalQuantity: number;
     totalLaborHours: number;
     totalLaborCost: number;
     totalMaterialCost: number;
-    totalEntries: number;
-    entriesWithLaborData: number;
-    entriesWithMaterialData: number;
+    totalEquipmentCost: number;
+    totalCost: number;
+    totalProjects: number;
+    ratesWithLaborData: number;
+    ratesWithMaterialData: number;
   };
   availableUnits: string[];
 }
@@ -195,7 +208,7 @@ export default function ProductionRatesPage() {
     enabled: activeTab === "cost-analytics",
   });
 
-  const filteredCostMetrics = (costData?.metrics || [])
+  const filteredCostMetrics = (costData?.rates || [])
     .filter(metric => metric.description.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => {
       const multiplier = costSortDirection === "asc" ? 1 : -1;
@@ -559,7 +572,7 @@ export default function ProductionRatesPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">${(costData?.summary.totalLaborCost || 0).toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">{costData?.summary.entriesWithLaborData || 0} entries with data</p>
+                      <p className="text-xs text-muted-foreground">{costData?.summary.ratesWithLaborData || 0} items with data</p>
                     </CardContent>
                   </Card>
 
@@ -570,7 +583,7 @@ export default function ProductionRatesPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">${(costData?.summary.totalMaterialCost || 0).toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">{costData?.summary.entriesWithMaterialData || 0} entries with data</p>
+                      <p className="text-xs text-muted-foreground">{costData?.summary.ratesWithMaterialData || 0} items with data</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -706,7 +719,7 @@ export default function ProductionRatesPage() {
                                   {metric.totalQuantity.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {getConfidenceBadge(metric.confidenceLevel)}
+                                  {getConfidenceBadge(metric.confidence)}
                                 </TableCell>
                               </TableRow>
                             ))}

@@ -3,7 +3,7 @@ import { db } from "./db";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
   payrollNotifications, organizations, notifications, dailyScopeProgress,
-  scopeItems, projectEmployeeRates
+  scopeItems, projectEmployeeRates, estimateLineItems
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -47,10 +47,26 @@ async function captureProductionRateFromShift(
     // Format work date as YYYY-MM-DD
     const workDateStr = workDate.toISOString().split('T')[0];
 
-    // Get all scope progress entries for this project/date
+    // Get all scope progress entries for this project/date with linked scope items and estimate line items
     const progressEntries = await db
-      .select()
+      .select({
+        id: dailyScopeProgress.id,
+        scopeItemId: dailyScopeProgress.scopeItemId,
+        projectId: dailyScopeProgress.projectId,
+        workDate: dailyScopeProgress.workDate,
+        quantityCompleted: dailyScopeProgress.quantityCompleted,
+        materialCost: dailyScopeProgress.materialCost,
+        notes: dailyScopeProgress.notes,
+        // From scope items
+        scopeItemQuantity: scopeItems.quantity,
+        estimateLineItemId: scopeItems.estimateLineItemId,
+        // From estimate line items - budgeted material cost
+        budgetedMaterialCost: estimateLineItems.materialCost,
+        budgetedQuantity: estimateLineItems.quantity,
+      })
       .from(dailyScopeProgress)
+      .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+      .leftJoin(estimateLineItems, eq(scopeItems.estimateLineItemId, estimateLineItems.id))
       .where(and(
         eq(dailyScopeProgress.projectId, projectId),
         eq(dailyScopeProgress.workDate, workDateStr)
@@ -110,12 +126,26 @@ async function captureProductionRateFromShift(
       const entryLaborHours = totalProjectLaborHours * proportion;
       const entryLaborCost = totalProjectLaborCost * proportion;
       
+      // Calculate material cost from linked estimate line item
+      // Use budgeted material cost per unit from the estimate if available
+      let entryMaterialCost = parseFloat(entry.materialCost || "0");
+      
+      if (entryMaterialCost === 0 && entry.budgetedMaterialCost && entry.budgetedQuantity) {
+        const budgetedQty = parseFloat(entry.budgetedQuantity);
+        const budgetedMaterial = parseFloat(entry.budgetedMaterialCost);
+        if (budgetedQty > 0) {
+          // Calculate material cost based on quantity completed and budgeted per-unit cost
+          const materialCostPerUnit = budgetedMaterial / budgetedQty;
+          entryMaterialCost = qty * materialCostPerUnit;
+        }
+      }
+      
       // Calculate per-unit metrics
       const perUnitMetrics = calculatePerUnitMetrics(
         qty,
         entryLaborHours,
         entryLaborCost,
-        parseFloat(entry.materialCost || "0")
+        entryMaterialCost
       );
 
       // Update the scope progress entry with production rate data
@@ -124,6 +154,7 @@ async function captureProductionRateFromShift(
         .set({
           laborHours: entryLaborHours.toFixed(2),
           laborCost: entryLaborCost.toFixed(2),
+          materialCost: entryMaterialCost.toFixed(2),
           crewSize,
           ...perUnitMetrics,
           updatedAt: new Date(),
