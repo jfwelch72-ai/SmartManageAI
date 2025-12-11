@@ -83,6 +83,29 @@ SmartManageAI Construction Management Platform is a comprehensive tool for manag
 - CFO Dashboard (/cfo): Financial analysis and profitability insights
 - Automatic analysis of daily notes for actionable items
 
+### 13. Production Rate Analytics (/production-rates)
+- Track crew productivity per scope of work item
+- Historical data analysis: quantity per day, labor hours per unit, cost per unit
+- Profitability analysis: compare actual costs vs bid prices
+- Filter by: SOW description, unit of measure, date range, project, quantity range
+- Use production data to improve future estimates
+
+#### Production Rate Query Examples
+Users can ask questions like:
+- "What is my production rate for 4\" sidewalk?"
+- "How many SF of flatwork can my crew complete per day?"
+- "What's my labor cost per SF for concrete work?"
+- "What is the profitability on 6\" curb work?"
+- "How long would it take to complete 500 SF of flatwork?"
+- "What should I estimate for 1000 LF of colored curb?"
+
+The system tracks:
+- **Productivity**: Quantity per day, crew size
+- **Labor costs**: Hours per unit, cost per unit
+- **Material costs**: Cost per unit from procurement
+- **Profitability**: Revenue per unit vs cost per unit, profit margin
+- **Confidence level**: Based on amount of historical data
+
 ## User Roles (RBAC)
 1. **ADMIN**: Full access to all features, user management, system settings
 2. **MANAGER**: Project management, bid oversight, reports, team management

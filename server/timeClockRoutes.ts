@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { db } from "./db";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
-  payrollNotifications, organizations, notifications
+  payrollNotifications, organizations, notifications, dailyScopeProgress,
+  scopeItems, projectEmployeeRates
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -10,12 +11,132 @@ import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
+import { calculatePerUnitMetrics } from "./productionRateService";
 
 // Geolocation radius check (in meters)
 const GEOFENCE_RADIUS = 200; // 200 meters
 
 // Maximum shift hours before auto-clock-out
 const MAX_SHIFT_HOURS = 16;
+
+// Capture production rate data from approved shift
+// Links labor hours and costs to dailyScopeProgress entries
+async function captureProductionRateFromShift(
+  projectId: string,
+  userId: string,
+  workDate: Date,
+  laborHours: number,
+  burdenMultiplier: number = 1.0
+): Promise<void> {
+  try {
+    // Get user's cost rate for this project
+    const [employeeRate] = await db
+      .select()
+      .from(projectEmployeeRates)
+      .where(and(
+        eq(projectEmployeeRates.projectId, projectId),
+        eq(projectEmployeeRates.userId, userId)
+      ))
+      .limit(1);
+
+    // Default rate if no specific rate configured
+    const regularRate = employeeRate ? parseFloat(employeeRate.regularRate) : 35; // Default $35/hr
+    const baseLaborCost = laborHours * regularRate;
+    const burdenedLaborCost = baseLaborCost * burdenMultiplier;
+
+    // Format work date as YYYY-MM-DD
+    const workDateStr = workDate.toISOString().split('T')[0];
+
+    // Get all scope progress entries for this project/date
+    const progressEntries = await db
+      .select()
+      .from(dailyScopeProgress)
+      .where(and(
+        eq(dailyScopeProgress.projectId, projectId),
+        eq(dailyScopeProgress.workDate, workDateStr)
+      ));
+
+    if (progressEntries.length === 0) {
+      // No scope progress logged for this date - nothing to update
+      return;
+    }
+
+    // Get all approved shifts for this project/date to calculate crew size and total hours
+    const approvedShifts = await db
+      .select()
+      .from(timeClockShifts)
+      .where(and(
+        eq(timeClockShifts.projectId, projectId),
+        eq(timeClockShifts.approvalStatus, "APPROVED"),
+        sql`DATE(${timeClockShifts.clockIn}) = ${workDateStr}`
+      ));
+
+    const crewSize = approvedShifts.length;
+    
+    // Calculate total labor hours and cost for all shifts on this date
+    let totalProjectLaborHours = 0;
+    let totalProjectLaborCost = 0;
+    
+    for (const shift of approvedShifts) {
+      const shiftHours = parseFloat(shift.totalHours || "0");
+      totalProjectLaborHours += shiftHours;
+      
+      // Get rate for this user
+      const [userRate] = await db
+        .select()
+        .from(projectEmployeeRates)
+        .where(and(
+          eq(projectEmployeeRates.projectId, projectId),
+          eq(projectEmployeeRates.userId, shift.userId)
+        ))
+        .limit(1);
+      
+      const rate = userRate ? parseFloat(userRate.regularRate) : 35;
+      totalProjectLaborCost += shiftHours * rate * burdenMultiplier;
+    }
+
+    // Calculate total quantity completed across all scope items for the day
+    const totalQuantity = progressEntries.reduce((sum, entry) => 
+      sum + parseFloat(entry.quantityCompleted), 0
+    );
+
+    if (totalQuantity <= 0) return;
+
+    // Distribute labor hours and costs proportionally across scope items
+    for (const entry of progressEntries) {
+      const qty = parseFloat(entry.quantityCompleted);
+      const proportion = qty / totalQuantity;
+      
+      const entryLaborHours = totalProjectLaborHours * proportion;
+      const entryLaborCost = totalProjectLaborCost * proportion;
+      
+      // Calculate per-unit metrics
+      const perUnitMetrics = calculatePerUnitMetrics(
+        qty,
+        entryLaborHours,
+        entryLaborCost,
+        parseFloat(entry.materialCost || "0")
+      );
+
+      // Update the scope progress entry with production rate data
+      await db
+        .update(dailyScopeProgress)
+        .set({
+          laborHours: entryLaborHours.toFixed(2),
+          laborCost: entryLaborCost.toFixed(2),
+          crewSize,
+          ...perUnitMetrics,
+          updatedAt: new Date(),
+        })
+        .where(eq(dailyScopeProgress.id, entry.id));
+    }
+    
+    console.log(`Production rate data captured for project ${projectId} on ${workDateStr}: ${totalProjectLaborHours}hrs, $${totalProjectLaborCost.toFixed(2)} across ${progressEntries.length} scope items`);
+  } catch (error) {
+    console.error("Error capturing production rate data:", error);
+    // Don't throw - this is a non-critical enhancement
+  }
+}
 
 // Calculate distance between two coordinates (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -666,6 +787,18 @@ export function registerTimeClockRoutes(app: Express): void {
         oldValue: JSON.stringify({ status: "PENDING" }),
         newValue: JSON.stringify({ status: "APPROVED", createTimeEntry: data.createTimeEntry, timeEntryId }),
       }, req);
+
+      // Capture production rate data - links labor hours/costs to scope progress
+      if (shift.projectId && shift.clockIn) {
+        const totalHours = parseFloat(shift.totalHours || "0");
+        // Fire and forget - don't block the response
+        captureProductionRateFromShift(
+          shift.projectId,
+          shift.userId,
+          shift.clockIn,
+          totalHours
+        ).catch(err => console.error("Production rate capture failed:", err));
+      }
 
       res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });
     } catch (error) {

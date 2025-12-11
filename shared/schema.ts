@@ -729,6 +729,7 @@ export const scopeItems = pgTable("scope_items", {
 }));
 
 // Daily Scope Progress table - tracks daily quantities completed for each scope item
+// Also captures production rate data: labor hours, costs, crew size for historical analysis
 export const dailyScopeProgress = pgTable("daily_scope_progress", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
@@ -740,6 +741,25 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   billedDate: timestamp("billed_date"),
   billedById: varchar("billed_by_id").references(() => users.id),
   notes: text("notes"),
+  
+  // Production Rate Tracking - Labor
+  laborHours: decimal("labor_hours", { precision: 10, scale: 2 }),
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
+  crewSize: integer("crew_size"),
+  
+  // Production Rate Tracking - Materials
+  materialCost: decimal("material_cost", { precision: 12, scale: 2 }),
+  
+  // Production Rate Tracking - Equipment
+  equipmentHours: decimal("equipment_hours", { precision: 10, scale: 2 }),
+  equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }),
+  
+  // Computed per-unit metrics (stored for query performance)
+  laborHoursPerUnit: decimal("labor_hours_per_unit", { precision: 10, scale: 4 }),
+  laborCostPerUnit: decimal("labor_cost_per_unit", { precision: 10, scale: 4 }),
+  materialCostPerUnit: decimal("material_cost_per_unit", { precision: 10, scale: 4 }),
+  totalCostPerUnit: decimal("total_cost_per_unit", { precision: 10, scale: 4 }),
+  
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

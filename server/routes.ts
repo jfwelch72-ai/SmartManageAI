@@ -5167,6 +5167,306 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Enhanced production rates with full cost and profitability metrics
+  // Returns labor hours/cost, material cost, total cost, profit per unit
+  app.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { description, unit, startDate, endDate, projectCode, minQuantity, maxQuantity } = req.query;
+      
+      // SECURITY: Multi-tenant isolation
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.json({ 
+          rates: [], 
+          summary: { 
+            totalSOWTypes: 0, 
+            totalQuantity: 0,
+            totalLaborHours: 0, 
+            totalLaborCost: 0, 
+            totalMaterialCost: 0,
+            totalCost: 0 
+          } 
+        });
+      }
+
+      // Build query for daily scope progress with cost metrics
+      const conditions: any[] = [];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+      if (description) {
+        conditions.push(sql`LOWER(${scopeItems.description}) LIKE LOWER(${'%' + description + '%'})`);
+      }
+      if (unit) {
+        conditions.push(eq(scopeItems.unit, unit as string));
+      }
+      if (startDate) {
+        conditions.push(sql`${dailyScopeProgress.workDate} >= ${startDate}`);
+      }
+      if (endDate) {
+        conditions.push(sql`${dailyScopeProgress.workDate} <= ${endDate}`);
+      }
+      if (projectCode) {
+        conditions.push(eq(projects.code, projectCode as string));
+      }
+
+      const results = await db
+        .select({
+          description: scopeItems.description,
+          unit: scopeItems.unit,
+          unitPrice: scopeItems.unitPrice,
+          projectCode: projects.code,
+          projectName: projects.name,
+          workDate: dailyScopeProgress.workDate,
+          quantityCompleted: dailyScopeProgress.quantityCompleted,
+          laborHours: dailyScopeProgress.laborHours,
+          laborCost: dailyScopeProgress.laborCost,
+          materialCost: dailyScopeProgress.materialCost,
+          equipmentCost: dailyScopeProgress.equipmentCost,
+          crewSize: dailyScopeProgress.crewSize,
+          laborHoursPerUnit: dailyScopeProgress.laborHoursPerUnit,
+          laborCostPerUnit: dailyScopeProgress.laborCostPerUnit,
+          materialCostPerUnit: dailyScopeProgress.materialCostPerUnit,
+          totalCostPerUnit: dailyScopeProgress.totalCostPerUnit,
+        })
+        .from(dailyScopeProgress)
+        .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+        .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .limit(5000);
+
+      // Filter by quantity range if specified
+      let filteredResults = results;
+      if (minQuantity || maxQuantity) {
+        filteredResults = results.filter(r => {
+          const qty = parseFloat(r.quantityCompleted);
+          if (minQuantity && qty < parseFloat(minQuantity as string)) return false;
+          if (maxQuantity && qty > parseFloat(maxQuantity as string)) return false;
+          return true;
+        });
+      }
+
+      // Aggregate by description + unit
+      const aggregated = new Map<string, {
+        description: string;
+        unit: string;
+        avgUnitPrice: number;
+        unitPriceCount: number;
+        totalQuantity: number;
+        totalLaborHours: number;
+        totalLaborCost: number;
+        totalMaterialCost: number;
+        totalEquipmentCost: number;
+        crewSizes: number[];
+        projectCodes: Set<string>;
+        workDates: Set<string>;
+        laborHoursPerUnit: number[];
+        laborCostPerUnit: number[];
+        materialCostPerUnit: number[];
+        totalCostPerUnit: number[];
+      }>();
+
+      for (const entry of filteredResults) {
+        const key = `${entry.description}|||${entry.unit}`;
+        
+        if (!aggregated.has(key)) {
+          aggregated.set(key, {
+            description: entry.description,
+            unit: entry.unit,
+            avgUnitPrice: 0,
+            unitPriceCount: 0,
+            totalQuantity: 0,
+            totalLaborHours: 0,
+            totalLaborCost: 0,
+            totalMaterialCost: 0,
+            totalEquipmentCost: 0,
+            crewSizes: [],
+            projectCodes: new Set(),
+            workDates: new Set(),
+            laborHoursPerUnit: [],
+            laborCostPerUnit: [],
+            materialCostPerUnit: [],
+            totalCostPerUnit: [],
+          });
+        }
+
+        const agg = aggregated.get(key)!;
+        const qty = parseFloat(entry.quantityCompleted) || 0;
+        agg.totalQuantity += qty;
+        
+        if (entry.laborHours) agg.totalLaborHours += parseFloat(entry.laborHours);
+        if (entry.laborCost) agg.totalLaborCost += parseFloat(entry.laborCost);
+        if (entry.materialCost) agg.totalMaterialCost += parseFloat(entry.materialCost);
+        if (entry.equipmentCost) agg.totalEquipmentCost += parseFloat(entry.equipmentCost);
+        if (entry.crewSize) agg.crewSizes.push(entry.crewSize);
+        if (entry.unitPrice) {
+          agg.avgUnitPrice += parseFloat(entry.unitPrice);
+          agg.unitPriceCount += 1;
+        }
+        if (entry.laborHoursPerUnit) agg.laborHoursPerUnit.push(parseFloat(entry.laborHoursPerUnit));
+        if (entry.laborCostPerUnit) agg.laborCostPerUnit.push(parseFloat(entry.laborCostPerUnit));
+        if (entry.materialCostPerUnit) agg.materialCostPerUnit.push(parseFloat(entry.materialCostPerUnit));
+        if (entry.totalCostPerUnit) agg.totalCostPerUnit.push(parseFloat(entry.totalCostPerUnit));
+        
+        agg.projectCodes.add(entry.projectCode);
+        agg.workDates.add(entry.workDate);
+      }
+
+      // Calculate final metrics
+      const rates = Array.from(aggregated.values()).map(agg => {
+        const totalCost = agg.totalLaborCost + agg.totalMaterialCost + agg.totalEquipmentCost;
+        const avgUnitPrice = agg.unitPriceCount > 0 ? agg.avgUnitPrice / agg.unitPriceCount : 0;
+        
+        // Calculate per-unit averages from stored values or compute from totals
+        const avgLaborHoursPerUnit = agg.laborHoursPerUnit.length > 0
+          ? agg.laborHoursPerUnit.reduce((a, b) => a + b, 0) / agg.laborHoursPerUnit.length
+          : (agg.totalQuantity > 0 ? agg.totalLaborHours / agg.totalQuantity : 0);
+        
+        const avgLaborCostPerUnit = agg.laborCostPerUnit.length > 0
+          ? agg.laborCostPerUnit.reduce((a, b) => a + b, 0) / agg.laborCostPerUnit.length
+          : (agg.totalQuantity > 0 ? agg.totalLaborCost / agg.totalQuantity : 0);
+        
+        const avgMaterialCostPerUnit = agg.materialCostPerUnit.length > 0
+          ? agg.materialCostPerUnit.reduce((a, b) => a + b, 0) / agg.materialCostPerUnit.length
+          : (agg.totalQuantity > 0 ? agg.totalMaterialCost / agg.totalQuantity : 0);
+        
+        const avgEquipmentCostPerUnit = agg.totalQuantity > 0 ? agg.totalEquipmentCost / agg.totalQuantity : 0;
+        const avgTotalCostPerUnit = avgLaborCostPerUnit + avgMaterialCostPerUnit + avgEquipmentCostPerUnit;
+        
+        const avgProfitPerUnit = avgUnitPrice - avgTotalCostPerUnit;
+        const profitMargin = avgUnitPrice > 0 ? (avgProfitPerUnit / avgUnitPrice) * 100 : 0;
+        
+        const avgCrewSize = agg.crewSizes.length > 0 
+          ? agg.crewSizes.reduce((a, b) => a + b, 0) / agg.crewSizes.length 
+          : 0;
+        
+        const totalDays = agg.workDates.size;
+        const avgQuantityPerDay = totalDays > 0 ? agg.totalQuantity / totalDays : 0;
+        
+        // Determine confidence
+        let confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' = 'NONE';
+        const totalProjects = agg.projectCodes.size;
+        if (totalDays >= 10 && totalProjects >= 3) confidence = 'HIGH';
+        else if (totalDays >= 5 && totalProjects >= 2) confidence = 'MEDIUM';
+        else if (totalDays >= 2) confidence = 'LOW';
+
+        return {
+          description: agg.description,
+          unit: agg.unit,
+          // Productivity metrics
+          totalQuantity: Math.round(agg.totalQuantity * 100) / 100,
+          avgQuantityPerDay: Math.round(avgQuantityPerDay * 100) / 100,
+          avgCrewSize: Math.round(avgCrewSize * 10) / 10,
+          // Labor metrics
+          totalLaborHours: Math.round(agg.totalLaborHours * 100) / 100,
+          totalLaborCost: Math.round(agg.totalLaborCost * 100) / 100,
+          avgLaborHoursPerUnit: Math.round(avgLaborHoursPerUnit * 1000) / 1000,
+          avgLaborCostPerUnit: Math.round(avgLaborCostPerUnit * 100) / 100,
+          // Material metrics
+          totalMaterialCost: Math.round(agg.totalMaterialCost * 100) / 100,
+          avgMaterialCostPerUnit: Math.round(avgMaterialCostPerUnit * 100) / 100,
+          // Equipment metrics
+          totalEquipmentCost: Math.round(agg.totalEquipmentCost * 100) / 100,
+          avgEquipmentCostPerUnit: Math.round(avgEquipmentCostPerUnit * 100) / 100,
+          // Total cost metrics
+          totalCost: Math.round(totalCost * 100) / 100,
+          avgTotalCostPerUnit: Math.round(avgTotalCostPerUnit * 100) / 100,
+          // Profitability
+          avgRevenuePerUnit: Math.round(avgUnitPrice * 100) / 100,
+          avgProfitPerUnit: Math.round(avgProfitPerUnit * 100) / 100,
+          profitMargin: Math.round(profitMargin * 10) / 10,
+          // Statistics
+          totalDays,
+          totalProjects,
+          confidence,
+          hasLaborData: agg.totalLaborHours > 0,
+          hasMaterialData: agg.totalMaterialCost > 0,
+        };
+      });
+
+      // Sort by confidence then by data completeness
+      rates.sort((a, b) => {
+        const confidenceOrder = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+        return confidenceOrder[a.confidence] - confidenceOrder[b.confidence] || b.totalDays - a.totalDays;
+      });
+
+      // Summary totals
+      const summary = {
+        totalSOWTypes: rates.length,
+        totalQuantity: rates.reduce((sum, r) => sum + r.totalQuantity, 0),
+        totalLaborHours: rates.reduce((sum, r) => sum + r.totalLaborHours, 0),
+        totalLaborCost: rates.reduce((sum, r) => sum + r.totalLaborCost, 0),
+        totalMaterialCost: rates.reduce((sum, r) => sum + r.totalMaterialCost, 0),
+        totalEquipmentCost: rates.reduce((sum, r) => sum + r.totalEquipmentCost, 0),
+        totalCost: rates.reduce((sum, r) => sum + r.totalCost, 0),
+        totalProjects: new Set(filteredResults.map(r => r.projectCode)).size,
+        ratesWithLaborData: rates.filter(r => r.hasLaborData).length,
+        ratesWithMaterialData: rates.filter(r => r.hasMaterialData).length,
+      };
+
+      const availableUnits = Array.from(new Set(rates.map(r => r.unit))).sort();
+
+      res.json({
+        rates,
+        summary,
+        availableUnits,
+      });
+    } catch (error) {
+      console.error("Get production rate metrics error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Estimate costs using production rate data
+  // Query: "What will it cost to do 500 SF of 4" sidewalk?"
+  app.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+    try {
+      const { description, unit, quantity } = req.query;
+      
+      if (!description || !unit || !quantity) {
+        res.status(400).json({ error: "description, unit, and quantity are required" });
+        return;
+      }
+
+      // SECURITY: Multi-tenant isolation
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { estimateLaborHoursFromProductionRate } = await import("./productionRateService");
+      
+      const estimate = await estimateLaborHoursFromProductionRate(
+        description as string,
+        unit as string,
+        parseFloat(quantity as string),
+        orgId || ""
+      );
+
+      res.json({
+        description,
+        unit,
+        requestedQuantity: parseFloat(quantity as string),
+        estimate: {
+          suggestedLaborHours: estimate.suggestedLaborHours,
+          suggestedLaborCost: estimate.suggestedLaborCost,
+          suggestedMaterialCost: estimate.suggestedMaterialCost,
+          suggestedTotalCost: estimate.suggestedTotalCost,
+          laborHoursPerUnit: estimate.laborHoursPerUnit,
+          laborCostPerUnit: estimate.laborCostPerUnit,
+          materialCostPerUnit: estimate.materialCostPerUnit,
+          totalCostPerUnit: estimate.totalCostPerUnit,
+          productionRate: estimate.productionRateUsed,
+          confidence: estimate.confidence,
+          dataSource: estimate.dataSource,
+        },
+      });
+    } catch (error) {
+      console.error("Get production rate estimate error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // CRM Routes
   // ====================

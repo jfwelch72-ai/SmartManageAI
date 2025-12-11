@@ -127,12 +127,27 @@ The equipment data includes roi_analysis with three key sections (NOTE: all calc
    - monthly_carrying_cost uses 5-year depreciation + 1% insurance/storage estimate
    - Consider actual maintenance and financing costs for final decisions
 
-### 10. DATA QUALITY MONITORING
+### 10. PRODUCTION RATE ANALYSIS
+Monitor historical production rates and alert when:
+- Labor cost per unit is significantly higher than historical average (efficiency issues)
+- Production rates are declining compared to baseline (crew performance)
+- Actual costs exceed estimated costs on scope items (profitability risk)
+- Low confidence production data needs more tracking (data quality)
+
+Use production rate data to:
+- Flag scope items with poor profitability (cost > revenue)
+- Recommend labor hour adjustments for estimates
+- Identify high-performing crews for scheduling
+- Compare crew efficiency across similar scope types
+- Generate estimator tasks to review historical production rates before bidding similar work
+
+### 11. DATA QUALITY MONITORING
 Review data completeness scores and prioritize:
 - Projects with missing budget/contract information (CRITICAL)
 - Users without cost rates (impacts profitability accuracy)
 - Incomplete time tracking or scope documentation
 - Low overall data quality scores (below 60%)
+- Production rate data gaps (missing labor/material costs on scope progress)
 Generate specific tasks to improve data hygiene
 
 ## Output Format:
@@ -244,6 +259,36 @@ You MUST respond with valid JSON matching this exact structure:
       "total_actual_cost": number,
       "cost_variance": number
     }
+  },
+  "production_rate_insights": {
+    "low_profitability_scope_items": [
+      {
+        "description": "string",
+        "unit": "string",
+        "avg_cost_per_unit": number,
+        "avg_revenue_per_unit": number,
+        "profit_margin_percent": number,
+        "total_quantity_tracked": number,
+        "recommendation": "string"
+      }
+    ],
+    "efficiency_alerts": [
+      {
+        "description": "string",
+        "unit": "string",
+        "avg_labor_hours_per_unit": number,
+        "variance_from_estimate": number,
+        "action_needed": "string"
+      }
+    ],
+    "data_quality_issues": [
+      {
+        "description": "string",
+        "issue": "missing_labor_data | missing_material_data | low_confidence",
+        "total_entries": number,
+        "entries_with_data": number
+      }
+    ]
   }
 }
 
