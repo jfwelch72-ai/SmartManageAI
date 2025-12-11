@@ -7,11 +7,12 @@ import {
   projects,
   bids,
   crmOrganisations,
+  users,
   type EmailMessage,
   type EmailThread,
   emailClassificationEnum
 } from '@shared/schema';
-import { eq, and, ilike, or, desc, sql } from 'drizzle-orm';
+import { eq, and, ilike, or, desc, sql, inArray } from 'drizzle-orm';
 
 // Email classification categories
 export const EMAIL_CLASSIFICATIONS = emailClassificationEnum.enumValues;
@@ -462,6 +463,96 @@ export async function matchEmailToEntities(
 }
 
 /**
+ * Resolve task owner based on classification and project assignment
+ * Uses RBAC roles to determine the appropriate assignee
+ */
+async function resolveTaskOwner(
+  classification: EmailClassification,
+  organizationId: string,
+  projectId?: string
+): Promise<string | null> {
+  // Map email classifications to appropriate user roles
+  const classificationRoleMap: Record<string, string[]> = {
+    'BID_INVITE': ['ESTIMATOR', 'MANAGER', 'ADMIN'],
+    'BID_RFI': ['ESTIMATOR', 'MANAGER', 'ADMIN'],
+    'CHANGE_ORDER_REQUEST': ['MANAGER', 'ADMIN', 'ESTIMATOR'],
+    'PAY_APP': ['OFFICE_MANAGER', 'MANAGER', 'ADMIN'],
+    'INVOICE': ['OFFICE_MANAGER', 'ADMIN'],
+    'SAFETY_ISSUE': ['SUPERINTENDENT', 'MANAGER', 'ADMIN'],
+    'DELAY_NOTICE': ['SUPERINTENDENT', 'MANAGER', 'ADMIN'],
+    'SUBMITTAL_REQUEST': ['ESTIMATOR', 'SUPERINTENDENT', 'MANAGER'],
+    'DELIVERY_NOTICE': ['SUPERINTENDENT', 'FOREMAN'],
+    'TIME_CLOCK_ISSUE': ['OFFICE_MANAGER', 'MANAGER', 'ADMIN'],
+    'VENDOR_PRICING': ['ESTIMATOR', 'MANAGER'],
+    'PROJECT_UPDATE': ['MANAGER', 'SUPERINTENDENT', 'ADMIN'],
+  };
+
+  const preferredRoles = classificationRoleMap[classification] || ['MANAGER', 'ADMIN'];
+
+  // If project is specified, try to get project-specific assignees first
+  if (projectId) {
+    const [project] = await db
+      .select({
+        superintendentId: projects.superintendentId,
+        projectManagerId: projects.projectManagerId,
+        estimatorId: projects.estimatorId,
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+    if (project) {
+      // For safety/delay issues, prefer superintendent
+      if (['SAFETY_ISSUE', 'DELAY_NOTICE', 'DELIVERY_NOTICE'].includes(classification) && project.superintendentId) {
+        return project.superintendentId;
+      }
+      // For bid/estimate related, prefer estimator
+      if (['BID_INVITE', 'BID_RFI', 'SUBMITTAL_REQUEST', 'VENDOR_PRICING'].includes(classification) && project.estimatorId) {
+        return project.estimatorId;
+      }
+      // For general project updates and change orders, prefer project manager
+      if (['PROJECT_UPDATE', 'CHANGE_ORDER_REQUEST'].includes(classification) && project.projectManagerId) {
+        return project.projectManagerId;
+      }
+    }
+  }
+
+  // Fallback: Find any user in the organization with the preferred role
+  for (const role of preferredRoles) {
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.organizationId, organizationId),
+          eq(users.role, role as any),
+          eq(users.isActive, true)
+        )
+      )
+      .limit(1);
+
+    if (user) {
+      return user.id;
+    }
+  }
+
+  // Ultimate fallback: Find any admin in the organization
+  const [admin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.role, 'ADMIN'),
+        eq(users.isActive, true)
+      )
+    )
+    .limit(1);
+
+  return admin?.id || null;
+}
+
+/**
  * Create a task from email analysis
  */
 export async function createTaskFromEmail(
@@ -505,11 +596,21 @@ export async function createTaskFromEmail(
     }
   }
 
+  // Resolve task owner based on classification and project
+  const assignedToId = await resolveTaskOwner(
+    analysis.classification,
+    organizationId,
+    matchedEntities.projectId
+  );
+
+  console.log(`[EmailAI] Task assignment resolved: classification=${analysis.classification}, assignedToId=${assignedToId || 'UNASSIGNED'}`);
+
   const [task] = await db
     .insert(emailTasks)
     .values({
       organizationId,
       createdByUserId,
+      assignedToUserId: assignedToId || undefined,
       title: analysis.suggestedTaskTitle.substring(0, 200),
       description: analysis.suggestedTaskDescription?.substring(0, 2000),
       status: 'PENDING',
@@ -525,6 +626,9 @@ export async function createTaskFromEmail(
         classification: analysis.classification,
         confidence: analysis.confidence,
         extractedEntities: analysis.extractedEntities,
+        assignmentReason: assignedToId 
+          ? `Auto-assigned based on classification: ${analysis.classification}`
+          : 'No suitable assignee found - task added to escalation queue',
       }),
     })
     .returning({ id: emailTasks.id });

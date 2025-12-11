@@ -816,6 +816,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get comprehensive dashboard snapshot for AI analysis
+  app.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Organization required for dashboard snapshot" });
+      }
+
+      const { buildDashboardSnapshot, buildAISnapshotData } = await import("./dataPipelineService");
+      
+      const snapshot = await buildDashboardSnapshot(orgId);
+      const aiData = await buildAISnapshotData(orgId);
+      
+      res.json({ snapshot, aiData });
+    } catch (error) {
+      console.error("Dashboard snapshot error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Aggregate time tracking data for production rate calculations
+  app.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !orgId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      const { startDate, endDate } = req.body;
+      const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const end = endDate ? new Date(endDate) : new Date();
+
+      const { aggregateTimeTrackingToProductionRates } = await import("./dataPipelineService");
+      
+      const result = await aggregateTimeTrackingToProductionRates(orgId, start, end);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Time tracking aggregation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // User Management Routes
   // ====================

@@ -10,6 +10,8 @@ import {
   insertEstimateSchema,
   insertEstimateLineItemSchema,
   organizations,
+  procurementItems,
+  scopeItems,
   type EstimateLineItem,
 } from "@shared/schema";
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
@@ -688,11 +690,12 @@ export function registerEstimateRoutes(app: Express) {
     }
   });
 
-  // Approve estimate and sync to project budget
+  // Approve estimate and sync to project budget, create procurement items and scope items
   app.post("/api/estimates/:estimateId/approve", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const userId = req.user!.id;
+      const { createProcurement = true, createScopeItems = true } = req.body;
 
       // Check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
       if (!hasEstimateAccess(req.user!.role)) {
@@ -737,9 +740,68 @@ export function registerEstimateRoutes(app: Express) {
             updatedAt: new Date(),
           })
           .where(eq(projects.id, estimate.projectId));
-      }
 
-      res.json({ success: true, total, estimateId, projectId: estimate.projectId });
+        // Create procurement items from estimate line items with material costs
+        let procurementItemsCreated = 0;
+        if (createProcurement) {
+          const materialLineItems = lineItems.filter(item => Number(item.materialCost) > 0);
+          
+          for (const item of materialLineItems) {
+            await db.insert(procurementItems).values({
+              projectId: estimate.projectId,
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+              unitCost: (Number(item.materialCost) / Math.max(Number(item.quantity), 1)).toFixed(2),
+              status: "PLANNED",
+              neededByDate: null,
+            });
+            procurementItemsCreated++;
+          }
+        }
+
+        // Create scope items from all estimate line items for tracking
+        let scopeItemsCreated = 0;
+        if (createScopeItems) {
+          for (const item of lineItems) {
+            // Check if scope item already exists for this estimate line item
+            const existingScopeItem = await db.query.scopeItems.findFirst({
+              where: eq(scopeItems.estimateLineItemId, item.id),
+            });
+
+            if (!existingScopeItem) {
+              await db.insert(scopeItems).values({
+                projectId: estimate.projectId,
+                estimateLineItemId: item.id,
+                description: item.description,
+                unit: item.unit,
+                totalQuantity: item.quantity,
+                completedQuantity: "0",
+                billedQuantity: "0",
+                unitPrice: (Number(item.totalCost) / Math.max(Number(item.quantity), 1)).toFixed(2),
+                billingStatus: "NOT_READY",
+                estimatedConcreteYards: item.calculatedConcreteYards,
+                estimatedStoneTons: item.calculatedStoneTons,
+                estimatedExcavationYards: item.calculatedExcavationYards,
+              });
+              scopeItemsCreated++;
+            }
+          }
+        }
+
+        console.log(`[Estimate Approval] Created ${procurementItemsCreated} procurement items and ${scopeItemsCreated} scope items for project ${estimate.projectId}`);
+        
+        res.json({ 
+          success: true, 
+          total, 
+          estimateId, 
+          projectId: estimate.projectId,
+          procurementItemsCreated,
+          scopeItemsCreated,
+        });
+      } else {
+        res.json({ success: true, total, estimateId, projectId: null });
+      }
     } catch (error) {
       console.error("Error approving estimate:", error);
       res.status(500).json({ error: "Failed to approve estimate" });
@@ -1199,6 +1261,90 @@ Provide comprehensive financial analysis and recommendations.`
       }
       console.error("Error auto-populating labor hours:", error);
       res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  // Sync material calculator results to estimate line item
+  app.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Safe numeric parsing helper
+      const safeNumber = (val: unknown): number | undefined => {
+        if (val === undefined || val === null || val === '') return undefined;
+        const num = Number(val);
+        if (isNaN(num) || !isFinite(num) || num < 0) return undefined;
+        return num;
+      };
+
+      const concreteYards = safeNumber(req.body.concreteYards);
+      const stoneTons = safeNumber(req.body.stoneTons);
+      const excavationYards = safeNumber(req.body.excavationYards);
+      const wireMeshSqFt = safeNumber(req.body.wireMeshSqFt);
+      const rebarPounds = safeNumber(req.body.rebarPounds);
+      const dowelCount = safeNumber(req.body.dowelCount);
+      const sealerGallons = safeNumber(req.body.sealerGallons);
+      const underlaymentSqFt = safeNumber(req.body.underlaymentSqFt);
+      const totalMaterialCost = safeNumber(req.body.totalMaterialCost);
+
+      // Verify estimate exists
+      const estimate = await db.query.estimates.findFirst({
+        where: eq(estimates.id, estimateId),
+      });
+
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      // Verify line item exists
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ),
+      });
+
+      if (!lineItem) {
+        return res.status(404).json({ error: "Line item not found" });
+      }
+
+      // Update line item with material calculations
+      const updateData: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+
+      if (concreteYards !== undefined) updateData.calculatedConcreteYards = concreteYards.toString();
+      if (stoneTons !== undefined) updateData.calculatedStoneTons = stoneTons.toString();
+      if (excavationYards !== undefined) updateData.calculatedExcavationYards = excavationYards.toString();
+      if (wireMeshSqFt !== undefined) updateData.calculatedWireMeshSqFt = wireMeshSqFt.toString();
+      if (rebarPounds !== undefined) updateData.calculatedRebarPounds = rebarPounds.toString();
+      if (dowelCount !== undefined) updateData.calculatedDowelCount = dowelCount.toString();
+      if (sealerGallons !== undefined) updateData.calculatedSealerGallons = sealerGallons.toString();
+      if (underlaymentSqFt !== undefined) updateData.calculatedUnderlaymentSqFt = underlaymentSqFt.toString();
+      if (totalMaterialCost !== undefined) updateData.materialCost = totalMaterialCost.toString();
+
+      const [updatedLineItem] = await db.update(estimateLineItems)
+        .set(updateData)
+        .where(and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ))
+        .returning();
+
+      console.log(`[MaterialSync] Synced material data for line item ${lineItemId}`);
+
+      res.json({
+        success: true,
+        message: "Material calculations synced successfully",
+        lineItem: updatedLineItem,
+      });
+    } catch (error) {
+      console.error("Error syncing material calculations:", error);
+      res.status(500).json({ error: "Failed to sync material calculations" });
     }
   });
 }
