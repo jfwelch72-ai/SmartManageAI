@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { Calendar, User, Filter, X, Edit2, Save, XCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calendar, User, Filter, X, Edit2, Save, XCircle, Package, ChevronDown, ChevronUp, Plus, Loader2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -25,6 +27,22 @@ interface ProjectNote {
   createdAt: string;
 }
 
+interface ScopeItem {
+  id: string;
+  description: string;
+  unit: string;
+  quantity?: string;
+}
+
+interface MaterialBudget {
+  id: string;
+  scopeItemId: string;
+  description: string;
+  unit: string;
+  budgetedQuantity: string;
+  actualQuantityUsed: string;
+}
+
 interface DailyNoteFeedProps {
   projectId: string;
   availableUsers?: Array<{ id: string; firstName: string; lastName: string }>;
@@ -40,8 +58,15 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
   const [endDateFilter, setEndDateFilter] = useState<string>("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  
+  const [showMaterialTracking, setShowMaterialTracking] = useState(false);
+  const [selectedScopeItemId, setSelectedScopeItemId] = useState<string>("");
+  const [quantityCompleted, setQuantityCompleted] = useState("");
+  const [materialUsed, setMaterialUsed] = useState("");
+  const [materialUnit, setMaterialUnit] = useState("");
+  const [materialCost, setMaterialCost] = useState("");
+  const [vendorName, setVendorName] = useState("");
 
-  // Build query params
   const queryParams = new URLSearchParams();
   if (authorFilter && authorFilter !== "all") {
     queryParams.append("authorId", authorFilter);
@@ -55,13 +80,21 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
 
   const queryString = queryParams.toString();
 
-  // Fetch notes
   const { data: notes = [], isLoading } = useQuery<ProjectNote[]>({
     queryKey: ["/api/projects", projectId, "notes", queryString],
     enabled: !!projectId,
   });
 
-  // Create note mutation
+  const { data: scopeItems = [] } = useQuery<ScopeItem[]>({
+    queryKey: ["/api/projects", projectId, "scope-items"],
+    enabled: !!projectId && showMaterialTracking,
+  });
+
+  const { data: materialBudgets = [] } = useQuery<{ budget: MaterialBudget; scopeItem: any }[]>({
+    queryKey: ["/api/projects", projectId, "material-budgets"],
+    enabled: !!projectId && showMaterialTracking,
+  });
+
   const createNoteMutation = useMutation({
     mutationFn: async (text: string) => {
       return apiRequest("POST", `/api/projects/${projectId}/notes`, { 
@@ -86,7 +119,29 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
     },
   });
 
-  // Update note mutation
+  const addMaterialUsageMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest("POST", `/api/projects/${projectId}/material-usage`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "material-budgets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "material-usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "material-budgets", "summary"] });
+      resetMaterialFields();
+      toast({
+        title: "Material Usage Recorded",
+        description: "Material usage has been added and budgets updated.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to record material usage.",
+      });
+    },
+  });
+
   const updateNoteMutation = useMutation({
     mutationFn: async ({ noteId, text }: { noteId: string; text: string }) => {
       return apiRequest("PATCH", `/api/projects/${projectId}/notes/${noteId}`, { text });
@@ -109,9 +164,37 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
     },
   });
 
-  const handleSubmit = () => {
+  const resetMaterialFields = () => {
+    setSelectedScopeItemId("");
+    setQuantityCompleted("");
+    setMaterialUsed("");
+    setMaterialUnit("");
+    setMaterialCost("");
+    setVendorName("");
+  };
+
+  const handleSubmit = async () => {
+    const hasMaterialData = showMaterialTracking && selectedScopeItemId && materialUsed;
+    
     if (newNote.trim()) {
-      createNoteMutation.mutate(newNote);
+      await createNoteMutation.mutateAsync(newNote);
+    }
+
+    if (hasMaterialData) {
+      const selectedScope = scopeItems.find(s => s.id === selectedScopeItemId);
+      const materialBudget = materialBudgets.find(b => b.budget.scopeItemId === selectedScopeItemId);
+      
+      await addMaterialUsageMutation.mutateAsync({
+        scopeItemId: selectedScopeItemId,
+        materialBudgetId: materialBudget?.budget.id || null,
+        usageDate: format(new Date(), "yyyy-MM-dd"),
+        description: `Daily usage - ${selectedScope?.description || "Material"}`,
+        quantityUsed: materialUsed,
+        unit: materialUnit || selectedScope?.unit || "UNIT",
+        unitCost: materialCost ? (parseFloat(materialCost) / parseFloat(materialUsed)).toFixed(2) : "0",
+        vendorName: vendorName || null,
+        notes: quantityCompleted ? `Quantity completed: ${quantityCompleted} ${selectedScope?.unit || ""}` : null,
+      });
     }
   };
 
@@ -143,29 +226,191 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
   };
 
   const hasActiveFilters = authorFilter !== "all" || startDateFilter || endDateFilter;
+  const isSubmitting = createNoteMutation.isPending || addMaterialUsageMutation.isPending;
+  const canSubmit = newNote.trim() || (showMaterialTracking && selectedScopeItemId && materialUsed);
+
+  const selectedScope = scopeItems.find(s => s.id === selectedScopeItemId);
+  const selectedBudget = materialBudgets.find(b => b.budget.scopeItemId === selectedScopeItemId);
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add Daily Note</CardTitle>
+          <CardTitle>Daily Field Report</CardTitle>
+          <CardDescription>
+            Document today's progress and optionally track material usage
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Textarea
-            placeholder="Document today's progress, issues, or important updates..."
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            className="min-h-24"
-            data-testid="textarea-daily-note"
-            disabled={createNoteMutation.isPending}
-          />
-          <Button 
-            onClick={handleSubmit} 
-            data-testid="button-add-daily-note"
-            disabled={!newNote.trim() || createNoteMutation.isPending}
-          >
-            {createNoteMutation.isPending ? "Adding..." : "Add Note"}
-          </Button>
+          <div className="space-y-2">
+            <Label htmlFor="daily-note">Notes & Progress</Label>
+            <Textarea
+              id="daily-note"
+              placeholder="Document today's progress, issues, or important updates..."
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              className="min-h-24"
+              data-testid="textarea-daily-note"
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <Collapsible open={showMaterialTracking} onOpenChange={setShowMaterialTracking}>
+            <CollapsibleTrigger asChild>
+              <Button 
+                variant="outline" 
+                className="w-full justify-between gap-2"
+                data-testid="button-toggle-material-tracking"
+              >
+                <span className="flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Material Usage Tracking
+                </span>
+                {showMaterialTracking ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-4 space-y-4">
+              <div className="p-4 border rounded-md bg-muted/30 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="scope-item">Scope Item Worked</Label>
+                  <Select value={selectedScopeItemId} onValueChange={setSelectedScopeItemId}>
+                    <SelectTrigger id="scope-item" data-testid="select-scope-item">
+                      <SelectValue placeholder="Select scope item..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {scopeItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.description} ({item.unit})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedScope && selectedBudget && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline">
+                      Budget: {Number(selectedBudget.budget.budgetedQuantity).toLocaleString()} {selectedBudget.budget.unit}
+                    </Badge>
+                    <Badge variant={
+                      Number(selectedBudget.budget.actualQuantityUsed) / Number(selectedBudget.budget.budgetedQuantity) >= 0.9 
+                        ? "destructive" 
+                        : "secondary"
+                    }>
+                      Used: {Number(selectedBudget.budget.actualQuantityUsed).toLocaleString()} {selectedBudget.budget.unit}
+                    </Badge>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity-completed">Quantity Completed Today</Label>
+                    <Input
+                      id="quantity-completed"
+                      type="number"
+                      step="0.01"
+                      placeholder="0"
+                      value={quantityCompleted}
+                      onChange={(e) => setQuantityCompleted(e.target.value)}
+                      data-testid="input-quantity-completed"
+                      disabled={isSubmitting}
+                    />
+                    {selectedScope && (
+                      <p className="text-xs text-muted-foreground">Unit: {selectedScope.unit}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="material-used">Material Used</Label>
+                    <Input
+                      id="material-used"
+                      type="number"
+                      step="0.01"
+                      placeholder="0"
+                      value={materialUsed}
+                      onChange={(e) => setMaterialUsed(e.target.value)}
+                      data-testid="input-material-used"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="material-unit">Unit</Label>
+                    <Input
+                      id="material-unit"
+                      placeholder={selectedScope?.unit || "SF, CY, etc."}
+                      value={materialUnit}
+                      onChange={(e) => setMaterialUnit(e.target.value)}
+                      data-testid="input-material-unit"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="material-cost">Total Cost ($)</Label>
+                    <Input
+                      id="material-cost"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={materialCost}
+                      onChange={(e) => setMaterialCost(e.target.value)}
+                      data-testid="input-material-cost"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="vendor-name">Vendor (Optional)</Label>
+                    <Input
+                      id="vendor-name"
+                      placeholder="Vendor name"
+                      value={vendorName}
+                      onChange={(e) => setVendorName(e.target.value)}
+                      data-testid="input-vendor-name"
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={handleSubmit} 
+              data-testid="button-add-daily-note"
+              disabled={!canSubmit || isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Entry
+                </>
+              )}
+            </Button>
+            {showMaterialTracking && selectedScopeItemId && (
+              <Button 
+                variant="ghost" 
+                onClick={resetMaterialFields}
+                disabled={isSubmitting}
+                data-testid="button-reset-material"
+              >
+                Clear Material Data
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

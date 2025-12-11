@@ -21,6 +21,7 @@ import {
   equipmentRateProfiles,
   rentalEquipmentCatalog,
   rentalEquipmentUsages,
+  projectMaterialBudgets,
 } from "@shared/schema";
 import { sql, desc, eq } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
@@ -221,6 +222,32 @@ export interface DataSnapshot {
         monthly_carrying_cost: number;
       }[];
     };
+  };
+  material_budgets: {
+    total_projects_with_budgets: number;
+    total_budgeted_cost: number;
+    total_actual_cost: number;
+    overall_variance: number;
+    overall_variance_percent: number;
+    alerts_triggered: number;
+    projects_at_risk: {
+      project_code: string;
+      project_name: string;
+      items_at_risk: number;
+      budgeted_cost: number;
+      actual_cost: number;
+      variance_percent: number;
+    }[];
+    material_alerts: {
+      project_code: string;
+      project_name: string;
+      material_description: string;
+      budgeted_quantity: number;
+      used_quantity: number;
+      remaining_quantity: number;
+      usage_percent: number;
+      recommendation: string;
+    }[];
   };
 }
 
@@ -908,6 +935,92 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .sort((a, b) => b.monthly_carrying_cost - a.monthly_carrying_cost)
     .slice(0, 10);
 
+  // Material budget variance analysis
+  const allMaterialBudgets = await db
+    .select({
+      id: projectMaterialBudgets.id,
+      projectId: projectMaterialBudgets.projectId,
+      description: projectMaterialBudgets.description,
+      unit: projectMaterialBudgets.unit,
+      budgetedQuantity: projectMaterialBudgets.budgetedQuantity,
+      budgetedTotalCost: projectMaterialBudgets.budgetedTotalCost,
+      actualQuantityUsed: projectMaterialBudgets.actualQuantityUsed,
+      actualTotalCost: projectMaterialBudgets.actualTotalCost,
+      variancePercent: projectMaterialBudgets.variancePercent,
+      alertTriggered: projectMaterialBudgets.alertTriggered,
+    })
+    .from(projectMaterialBudgets)
+    .limit(1000);
+
+  // Calculate overall material budget metrics
+  const totalMaterialBudgeted = allMaterialBudgets.reduce((sum, b) => sum + Number(b.budgetedTotalCost || 0), 0);
+  const totalMaterialActual = allMaterialBudgets.reduce((sum, b) => sum + Number(b.actualTotalCost || 0), 0);
+  const materialAlertCount = allMaterialBudgets.filter(b => b.alertTriggered).length;
+
+  // Group by project for at-risk analysis
+  const materialByProject = new Map<string, { budgets: typeof allMaterialBudgets; totalBudgeted: number; totalActual: number; atRisk: number }>();
+  for (const budget of allMaterialBudgets) {
+    if (!materialByProject.has(budget.projectId)) {
+      materialByProject.set(budget.projectId, { budgets: [], totalBudgeted: 0, totalActual: 0, atRisk: 0 });
+    }
+    const projectData = materialByProject.get(budget.projectId)!;
+    projectData.budgets.push(budget);
+    projectData.totalBudgeted += Number(budget.budgetedTotalCost || 0);
+    projectData.totalActual += Number(budget.actualTotalCost || 0);
+    if (Number(budget.variancePercent || 0) >= 90) {
+      projectData.atRisk++;
+    }
+  }
+
+  // Get projects at risk (any materials over 90%)
+  const projectsAtRisk: { project_code: string; project_name: string; items_at_risk: number; budgeted_cost: number; actual_cost: number; variance_percent: number }[] = [];
+  for (const [projectId, data] of materialByProject.entries()) {
+    if (data.atRisk > 0) {
+      const project = activeProjects.find(p => p.code === projectIdToCode.get(projectId)) || 
+                      { code: projectIdToCode.get(projectId) || projectId, name: "Unknown Project" };
+      const variancePercent = data.totalBudgeted > 0 ? (data.totalActual / data.totalBudgeted) * 100 : 0;
+      projectsAtRisk.push({
+        project_code: project.code,
+        project_name: project.name,
+        items_at_risk: data.atRisk,
+        budgeted_cost: Math.round(data.totalBudgeted * 100) / 100,
+        actual_cost: Math.round(data.totalActual * 100) / 100,
+        variance_percent: Math.round(variancePercent * 10) / 10,
+      });
+    }
+  }
+
+  // Get specific material alerts (items at 90%+)
+  const materialAlerts = allMaterialBudgets
+    .filter(b => Number(b.variancePercent || 0) >= 90)
+    .slice(0, 20)
+    .map(b => {
+      const budgetedQty = Number(b.budgetedQuantity || 0);
+      const usedQty = Number(b.actualQuantityUsed || 0);
+      const remainingQty = budgetedQty - usedQty;
+      const usagePercent = Number(b.variancePercent || 0);
+      const projectCode = projectIdToCode.get(b.projectId) || b.projectId;
+      const project = activeProjects.find(p => p.code === projectCode);
+      
+      let recommendation = "Consider creating a change order for additional materials.";
+      if (usagePercent >= 100) {
+        recommendation = "CRITICAL: Material budget exceeded. Create change order immediately.";
+      } else if (usagePercent >= 95) {
+        recommendation = "URGENT: Nearly exhausted. Prepare change order now.";
+      }
+
+      return {
+        project_code: projectCode,
+        project_name: project?.name || "Unknown Project",
+        material_description: b.description,
+        budgeted_quantity: budgetedQty,
+        used_quantity: usedQty,
+        remaining_quantity: remainingQty,
+        usage_percent: Math.round(usagePercent * 10) / 10,
+        recommendation,
+      };
+    });
+
   return {
     generated_at: now.toISOString(),
     projects: {
@@ -1017,6 +1130,18 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
         frequently_rented_equipment: frequentlyRentedEquipment,
         underutilized_owned: underutilizedOwned,
       },
+    },
+    material_budgets: {
+      total_projects_with_budgets: materialByProject.size,
+      total_budgeted_cost: Math.round(totalMaterialBudgeted * 100) / 100,
+      total_actual_cost: Math.round(totalMaterialActual * 100) / 100,
+      overall_variance: Math.round((totalMaterialActual - totalMaterialBudgeted) * 100) / 100,
+      overall_variance_percent: totalMaterialBudgeted > 0 
+        ? Math.round((totalMaterialActual / totalMaterialBudgeted) * 1000) / 10 
+        : 0,
+      alerts_triggered: materialAlertCount,
+      projects_at_risk: projectsAtRisk,
+      material_alerts: materialAlerts,
     },
   };
 }

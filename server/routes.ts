@@ -1883,6 +1883,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[Bid Conversion] Syncing ${lineItems.length} line items to scope of work`);
 
         // Create scope items from estimate line items
+        const { projectMaterialBudgets } = await import("@shared/schema");
+        
         for (const lineItem of lineItems) {
           // Check if scope item already exists for this line item
           const existingScopeItem = await db.query.scopeItems.findFirst({
@@ -1893,7 +1895,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Create new scope item linked to estimate line item
             // Copy estimated material quantities from estimate for variance tracking
             const lineItemAny = lineItem as any;
-            await db.insert(scopeItems).values({
+            const [newScopeItem] = await db.insert(scopeItems).values({
               projectId: newProject.id,
               estimateLineItemId: lineItem.id,
               subcontractorQuoteId: lineItemAny.subcontractorQuoteId || null,
@@ -1909,9 +1911,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
               estimatedExcavationYards: lineItemAny.calculatedExcavationYards || null,
               // Set initial material responsibility based on subcontractor assignment
               materialResponsibility: lineItemAny.subcontractorQuoteId ? "SUBCONTRACTOR" : "TFR",
-            });
+            }).returning();
+
+            // Create material budget snapshot from estimate line item
+            // This captures the "bid material quantities" for variance tracking
+            const materialCost = Number(lineItem.materialCost || 0);
+            const quantity = Number(lineItem.quantity || 0);
+            
+            if (materialCost > 0 && quantity > 0) {
+              const unitCost = materialCost / quantity;
+              await db.insert(projectMaterialBudgets).values({
+                projectId: newProject.id,
+                scopeItemId: newScopeItem.id,
+                estimateLineItemId: lineItem.id,
+                description: lineItem.description,
+                unit: lineItem.unit,
+                budgetedQuantity: lineItem.quantity,
+                budgetedUnitCost: unitCost.toFixed(2),
+                budgetedTotalCost: materialCost.toFixed(2),
+              });
+            }
           }
         }
+        
+        console.log(`[Bid Conversion] Created material budgets for project ${newProject.code}`);
       }
 
       // Transfer ALL subcontractor quotes to project (preserving for later selection)
@@ -4575,6 +4598,335 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       console.error("Delete daily progress error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // =============================
+  // Project Material Budget & Usage Routes
+  // =============================
+  // Tracks bid material quantities vs actual usage for variance analysis and alerts
+
+  // Get material budgets for a project (with usage summaries)
+  app.get("/api/projects/:projectId/material-budgets", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialBudgets, projectMaterialUsage, scopeItems: scopeItemsTable } = await import("@shared/schema");
+      
+      const budgets = await db
+        .select({
+          budget: projectMaterialBudgets,
+          scopeItem: {
+            id: scopeItemsTable.id,
+            description: scopeItemsTable.description,
+            unit: scopeItemsTable.unit,
+            totalQuantity: scopeItemsTable.totalQuantity,
+            completedQuantity: scopeItemsTable.completedQuantity,
+          }
+        })
+        .from(projectMaterialBudgets)
+        .leftJoin(scopeItemsTable, eq(projectMaterialBudgets.scopeItemId, scopeItemsTable.id))
+        .where(eq(projectMaterialBudgets.projectId, req.params.projectId))
+        .orderBy(projectMaterialBudgets.description);
+
+      res.json(budgets);
+    } catch (error) {
+      console.error("Get material budgets error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get material budget summary for a project (aggregated stats)
+  app.get("/api/projects/:projectId/material-budgets/summary", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialBudgets } = await import("@shared/schema");
+      
+      const budgets = await db
+        .select()
+        .from(projectMaterialBudgets)
+        .where(eq(projectMaterialBudgets.projectId, req.params.projectId));
+
+      const totalBudgetedCost = budgets.reduce((sum, b) => sum + Number(b.budgetedTotalCost || 0), 0);
+      const totalActualCost = budgets.reduce((sum, b) => sum + Number(b.actualTotalCost || 0), 0);
+      const itemsAtRisk = budgets.filter(b => Number(b.variancePercent || 0) >= 90).length;
+      const alertsTriggered = budgets.filter(b => b.alertTriggered).length;
+
+      res.json({
+        totalItems: budgets.length,
+        totalBudgetedCost,
+        totalActualCost,
+        variance: totalActualCost - totalBudgetedCost,
+        variancePercent: totalBudgetedCost > 0 ? ((totalActualCost / totalBudgetedCost) * 100).toFixed(2) : 0,
+        itemsAtRisk,
+        alertsTriggered,
+      });
+    } catch (error) {
+      console.error("Get material budget summary error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get material usage entries for a project
+  app.get("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialUsage, scopeItems: scopeItemsTable } = await import("@shared/schema");
+      
+      const usage = await db
+        .select({
+          usage: projectMaterialUsage,
+          scopeItem: {
+            id: scopeItemsTable.id,
+            description: scopeItemsTable.description,
+            unit: scopeItemsTable.unit,
+          },
+          createdBy: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+          }
+        })
+        .from(projectMaterialUsage)
+        .leftJoin(scopeItemsTable, eq(projectMaterialUsage.scopeItemId, scopeItemsTable.id))
+        .leftJoin(users, eq(projectMaterialUsage.createdById, users.id))
+        .where(eq(projectMaterialUsage.projectId, req.params.projectId))
+        .orderBy(desc(projectMaterialUsage.usageDate), desc(projectMaterialUsage.createdAt));
+
+      res.json(usage);
+    } catch (error) {
+      console.error("Get material usage error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create material usage entry (and update budget tracking)
+  app.post("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialUsage, projectMaterialBudgets, insertProjectMaterialUsageSchema } = await import("@shared/schema");
+      
+      // Validate input
+      const validationResult = insertProjectMaterialUsageSchema.safeParse({
+        ...req.body,
+        projectId: req.params.projectId,
+        createdById: req.user!.id,
+      });
+
+      if (!validationResult.success) {
+        res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+        return;
+      }
+
+      // Calculate total cost if not provided
+      const data = validationResult.data;
+      if (!data.totalCost && data.quantityUsed && data.unitCost) {
+        data.totalCost = (Number(data.quantityUsed) * Number(data.unitCost)).toFixed(2);
+      }
+
+      // Insert usage entry
+      const [newUsage] = await db.insert(projectMaterialUsage).values(data).returning();
+
+      // Update material budget if linked
+      if (data.materialBudgetId) {
+        // Get all usage for this budget to recalculate
+        const allUsage = await db
+          .select()
+          .from(projectMaterialUsage)
+          .where(eq(projectMaterialUsage.materialBudgetId, data.materialBudgetId));
+
+        const totalQuantityUsed = allUsage.reduce((sum, u) => sum + Number(u.quantityUsed || 0), 0);
+        const totalCostUsed = allUsage.reduce((sum, u) => sum + Number(u.totalCost || 0), 0);
+
+        // Get budget to calculate variance
+        const [budget] = await db
+          .select()
+          .from(projectMaterialBudgets)
+          .where(eq(projectMaterialBudgets.id, data.materialBudgetId));
+
+        if (budget) {
+          const budgetedQty = Number(budget.budgetedQuantity || 0);
+          const varianceQty = totalQuantityUsed - budgetedQty;
+          const variancePercent = budgetedQty > 0 ? (totalQuantityUsed / budgetedQty) * 100 : 0;
+          const shouldAlert = variancePercent >= Number(budget.alertThresholdPercent || 90);
+          const alertJustTriggered = shouldAlert && !budget.alertTriggered;
+
+          await db
+            .update(projectMaterialBudgets)
+            .set({
+              actualQuantityUsed: totalQuantityUsed.toString(),
+              actualTotalCost: totalCostUsed.toString(),
+              varianceQuantity: varianceQty.toString(),
+              variancePercent: variancePercent.toFixed(2),
+              alertTriggered: shouldAlert,
+              alertTriggeredAt: alertJustTriggered ? new Date() : budget.alertTriggeredAt,
+              updatedAt: new Date(),
+            })
+            .where(eq(projectMaterialBudgets.id, data.materialBudgetId));
+
+          // Create notification if alert just triggered
+          if (alertJustTriggered) {
+            try {
+              // Get project details
+              const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId));
+              if (project) {
+                // Notify admins and managers about material overage
+                const managers = await db.select().from(users).where(
+                  sql`${users.role} IN ('ADMIN', 'MANAGER', 'OFFICE_MANAGER')`
+                );
+                
+                for (const manager of managers) {
+                  await db.insert(notifications).values({
+                    userId: manager.id,
+                    type: "SYSTEM",
+                    title: "Material Budget Alert",
+                    message: `${budget.description} on project ${project.name} (${project.code}) has reached ${variancePercent.toFixed(1)}% of budgeted quantity. Consider a change order.`,
+                    resourceType: "PROJECT",
+                    resourceId: req.params.projectId,
+                  });
+                }
+              }
+            } catch (notifError) {
+              console.error("Failed to create material alert notification:", notifError);
+            }
+          }
+        }
+      }
+
+      res.status(201).json(newUsage);
+    } catch (error) {
+      console.error("Create material usage error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update material usage entry
+  app.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialUsage, projectMaterialBudgets } = await import("@shared/schema");
+      
+      const [existing] = await db
+        .select()
+        .from(projectMaterialUsage)
+        .where(eq(projectMaterialUsage.id, req.params.usageId));
+
+      if (!existing) {
+        res.status(404).json({ error: "Usage entry not found" });
+        return;
+      }
+
+      // Check permissions
+      const isCreator = existing.createdById === req.user!.id;
+      const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+      if (!isCreator && !isAuthorized) {
+        res.status(403).json({ error: "Permission denied" });
+        return;
+      }
+
+      // Update the entry
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date(),
+      };
+
+      // Recalculate total cost if quantity or unit cost changed
+      if (updateData.quantityUsed || updateData.unitCost) {
+        const qty = updateData.quantityUsed || existing.quantityUsed;
+        const cost = updateData.unitCost || existing.unitCost;
+        updateData.totalCost = (Number(qty) * Number(cost)).toFixed(2);
+      }
+
+      const [updated] = await db
+        .update(projectMaterialUsage)
+        .set(updateData)
+        .where(eq(projectMaterialUsage.id, req.params.usageId))
+        .returning();
+
+      // Recalculate budget totals if linked
+      const budgetId = updated.materialBudgetId || existing.materialBudgetId;
+      if (budgetId) {
+        const allUsage = await db
+          .select()
+          .from(projectMaterialUsage)
+          .where(eq(projectMaterialUsage.materialBudgetId, budgetId));
+
+        const totalQuantityUsed = allUsage.reduce((sum, u) => sum + Number(u.quantityUsed || 0), 0);
+        const totalCostUsed = allUsage.reduce((sum, u) => sum + Number(u.totalCost || 0), 0);
+
+        const [budget] = await db.select().from(projectMaterialBudgets).where(eq(projectMaterialBudgets.id, budgetId));
+        if (budget) {
+          const budgetedQty = Number(budget.budgetedQuantity || 0);
+          const variancePercent = budgetedQty > 0 ? (totalQuantityUsed / budgetedQty) * 100 : 0;
+
+          await db.update(projectMaterialBudgets).set({
+            actualQuantityUsed: totalQuantityUsed.toString(),
+            actualTotalCost: totalCostUsed.toString(),
+            varianceQuantity: (totalQuantityUsed - budgetedQty).toString(),
+            variancePercent: variancePercent.toFixed(2),
+            alertTriggered: variancePercent >= Number(budget.alertThresholdPercent || 90),
+            updatedAt: new Date(),
+          }).where(eq(projectMaterialBudgets.id, budgetId));
+        }
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update material usage error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete material usage entry
+  app.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { projectMaterialUsage, projectMaterialBudgets } = await import("@shared/schema");
+      
+      const [existing] = await db
+        .select()
+        .from(projectMaterialUsage)
+        .where(eq(projectMaterialUsage.id, req.params.usageId));
+
+      if (!existing) {
+        res.status(404).json({ error: "Usage entry not found" });
+        return;
+      }
+
+      const isCreator = existing.createdById === req.user!.id;
+      const isAuthorized = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(req.user!.role);
+      if (!isCreator && !isAuthorized) {
+        res.status(403).json({ error: "Permission denied" });
+        return;
+      }
+
+      const budgetId = existing.materialBudgetId;
+
+      await db.delete(projectMaterialUsage).where(eq(projectMaterialUsage.id, req.params.usageId));
+
+      // Recalculate budget totals if linked
+      if (budgetId) {
+        const allUsage = await db
+          .select()
+          .from(projectMaterialUsage)
+          .where(eq(projectMaterialUsage.materialBudgetId, budgetId));
+
+        const totalQuantityUsed = allUsage.reduce((sum, u) => sum + Number(u.quantityUsed || 0), 0);
+        const totalCostUsed = allUsage.reduce((sum, u) => sum + Number(u.totalCost || 0), 0);
+
+        const [budget] = await db.select().from(projectMaterialBudgets).where(eq(projectMaterialBudgets.id, budgetId));
+        if (budget) {
+          const budgetedQty = Number(budget.budgetedQuantity || 0);
+          const variancePercent = budgetedQty > 0 ? (totalQuantityUsed / budgetedQty) * 100 : 0;
+
+          await db.update(projectMaterialBudgets).set({
+            actualQuantityUsed: totalQuantityUsed.toString(),
+            actualTotalCost: totalCostUsed.toString(),
+            varianceQuantity: (totalQuantityUsed - budgetedQty).toString(),
+            variancePercent: variancePercent.toFixed(2),
+            alertTriggered: variancePercent >= Number(budget.alertThresholdPercent || 90),
+            updatedAt: new Date(),
+          }).where(eq(projectMaterialBudgets.id, budgetId));
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete material usage error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

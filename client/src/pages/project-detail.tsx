@@ -21,6 +21,7 @@ import JobInformationForm from "@/components/JobInformationForm";
 import TMTicketsSection from "@/components/TMTicketsSection";
 import DelaysSection from "@/components/DelaysSection";
 import InspectionsSection from "@/components/InspectionsSection";
+import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
 import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -1911,6 +1912,22 @@ export default function ProjectDetailPage() {
     queryKey: ["/api/users"],
   });
 
+  // Material budget summary query for alerts
+  interface MaterialBudgetSummary {
+    totalItems: number;
+    totalBudgetedCost: number;
+    totalActualCost: number;
+    variance: number;
+    variancePercent: number;
+    itemsAtRisk: number;
+    alertsTriggered: number;
+  }
+  
+  const { data: materialBudgetSummary } = useQuery<MaterialBudgetSummary>({
+    queryKey: ["/api/projects", project?.id, "material-budgets", "summary"],
+    enabled: !!project?.id,
+  });
+
   // Subcontractor payables query (for payment tracking on this project)
   const { data: allPayables = [] } = useQuery<Array<{
     paymentId: string;
@@ -2454,10 +2471,35 @@ export default function ProjectDetailPage() {
           </Alert>
         )}
 
+        {materialBudgetSummary && materialBudgetSummary.alertsTriggered > 0 && (
+          <Alert variant="destructive" className="mb-6" data-testid="alert-material-budget">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Material Budget Alert</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
+              <span>
+                {materialBudgetSummary.alertsTriggered} material{materialBudgetSummary.alertsTriggered > 1 ? "s" : ""} have reached 90%+ of budgeted quantity. Consider creating a change order to cover additional materials.
+              </span>
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => setActiveTab("materials")}
+                data-testid="button-view-materials-alert"
+              >
+                <Package className="h-4 w-4 mr-2" />
+                View Materials
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="scope" data-testid="tab-scope">Scope & Progress</TabsTrigger>
+            <TabsTrigger value="materials" data-testid="tab-materials">
+              <Package className="h-4 w-4 mr-1" />
+              Materials
+            </TabsTrigger>
             <TabsTrigger value="change-orders" data-testid="tab-change-orders">
               Change Orders
               {changeOrders.filter(co => co.status === "SUBMITTED").length > 0 && (
@@ -3086,6 +3128,10 @@ export default function ProjectDetailPage() {
                 <ScopeProgressTracker scopeItems={scopeItems} isLoading={scopeLoading} projectCode={projectCode} />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="materials">
+            <MaterialBudgetTracker projectId={project.id} projectCode={projectCode} scopeItems={scopeItems} />
           </TabsContent>
 
           <ChangeOrdersTab 

@@ -3,7 +3,7 @@ import { db } from "./db";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
   payrollNotifications, organizations, notifications, dailyScopeProgress,
-  scopeItems, projectEmployeeRates, estimateLineItems
+  scopeItems, projectEmployeeRates, estimateLineItems, projectMaterialUsage
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -58,7 +58,7 @@ async function captureProductionRateFromShift(
         materialCost: dailyScopeProgress.materialCost,
         notes: dailyScopeProgress.notes,
         // From scope items
-        scopeItemQuantity: scopeItems.quantity,
+        scopeItemQuantity: scopeItems.totalQuantity,
         estimateLineItemId: scopeItems.estimateLineItemId,
         // From estimate line items - budgeted material cost
         budgetedMaterialCost: estimateLineItems.materialCost,
@@ -118,6 +118,31 @@ async function captureProductionRateFromShift(
 
     if (totalQuantity <= 0) return;
 
+    // Fetch actual material usage for this project and date
+    const actualMaterialUsage = await db
+      .select({
+        scopeItemId: projectMaterialUsage.scopeItemId,
+        totalCost: sql<string>`SUM(CAST(${projectMaterialUsage.totalCost} AS DECIMAL(15,2)))`,
+        totalQuantity: sql<string>`SUM(CAST(${projectMaterialUsage.quantityUsed} AS DECIMAL(15,2)))`,
+      })
+      .from(projectMaterialUsage)
+      .where(and(
+        eq(projectMaterialUsage.projectId, projectId),
+        eq(projectMaterialUsage.usageDate, workDateStr)
+      ))
+      .groupBy(projectMaterialUsage.scopeItemId);
+
+    // Create a lookup map for actual material costs by scope item
+    const actualMaterialByScope = new Map<string, { totalCost: number; totalQuantity: number }>();
+    for (const usage of actualMaterialUsage) {
+      if (usage.scopeItemId) {
+        actualMaterialByScope.set(usage.scopeItemId, {
+          totalCost: parseFloat(usage.totalCost || "0"),
+          totalQuantity: parseFloat(usage.totalQuantity || "0"),
+        });
+      }
+    }
+
     // Distribute labor hours and costs proportionally across scope items
     for (const entry of progressEntries) {
       const qty = parseFloat(entry.quantityCompleted);
@@ -126,17 +151,30 @@ async function captureProductionRateFromShift(
       const entryLaborHours = totalProjectLaborHours * proportion;
       const entryLaborCost = totalProjectLaborCost * proportion;
       
-      // Calculate material cost from linked estimate line item
-      // Use budgeted material cost per unit from the estimate if available
-      let entryMaterialCost = parseFloat(entry.materialCost || "0");
+      // Priority for material cost:
+      // 1. Use actual material usage from projectMaterialUsage (if available)
+      // 2. Fall back to manually entered materialCost on dailyScopeProgress
+      // 3. Fall back to budgeted material cost from estimate line item
+      let entryMaterialCost = 0;
+      let materialSource = "none";
       
-      if (entryMaterialCost === 0 && entry.budgetedMaterialCost && entry.budgetedQuantity) {
+      // Check for actual material usage first (most accurate)
+      const actualUsage = actualMaterialByScope.get(entry.scopeItemId);
+      if (actualUsage && actualUsage.totalCost > 0) {
+        entryMaterialCost = actualUsage.totalCost;
+        materialSource = "actual";
+      } else if (entry.materialCost && parseFloat(entry.materialCost) > 0) {
+        // Fall back to manually entered cost on progress entry
+        entryMaterialCost = parseFloat(entry.materialCost);
+        materialSource = "manual";
+      } else if (entry.budgetedMaterialCost && entry.budgetedQuantity) {
+        // Fall back to budgeted cost from estimate
         const budgetedQty = parseFloat(entry.budgetedQuantity);
         const budgetedMaterial = parseFloat(entry.budgetedMaterialCost);
         if (budgetedQty > 0) {
-          // Calculate material cost based on quantity completed and budgeted per-unit cost
           const materialCostPerUnit = budgetedMaterial / budgetedQty;
           entryMaterialCost = qty * materialCostPerUnit;
+          materialSource = "budgeted";
         }
       }
       
