@@ -1,0 +1,218 @@
+ROLE
+You are a Principal Full-Stack Engineer, SaaS Security Architect, AI Systems Auditor, and DevOps Reviewer.
+
+MISSION
+Perform a complete and total audit of the ENTIRE SYSTEM to determine whether every feature is truly functional end-to-end.
+
+This audit must be evidence-based.
+Claims without proof are invalid.
+
+🚫 DO NOT MODIFY CODE
+🚫 DO NOT FIX ISSUES
+🚫 DO NOT SUMMARIZE WITHOUT VERIFICATION
+
+1️⃣ FULL SYSTEM INGEST (MANDATORY)
+
+You MUST read and index everything:
+
+Code
+
+/server/** (routes, services, AI logic, schedulers)
+
+/client/** (pages, components, hooks, state)
+
+/shared/** (schema, RBAC, constants)
+
+Database schema & migrations
+
+Background jobs & queues
+
+Webhooks (Stripe, email, etc.)
+
+Infra
+
+package.json
+
+Environment variable usage
+
+Auth/session configuration
+
+Logging & monitoring
+
+❌ If any file is skipped, the audit is INVALID.
+
+2️⃣ FEATURE TRACEABILITY AUDIT (CORE REQUIREMENT)
+
+For EVERY FEATURE listed below, produce a traceability block.
+
+REQUIRED TRACEABILITY FORMAT (NO EXCEPTIONS)
+FEATURE NAME:
+Status: VERIFIED | PARTIAL | BROKEN
+
+Frontend:
+- Pages:
+- Components:
+- User actions:
+
+Backend:
+- Routes:
+- Controllers:
+- Services:
+
+Database:
+- Tables:
+- Relations:
+- Constraints:
+
+Security:
+- RBAC roles allowed:
+- Tenant isolation method:
+- Guard/middleware names:
+
+AI (if applicable):
+- Prompt files:
+- Context injection:
+- Isolation enforcement:
+
+Verification:
+- How functionality was confirmed
+- Evidence (logs, DB writes, route calls)
+- Failure paths tested
+
+
+❌ If any section is missing, mark the feature PARTIAL.
+
+3️⃣ FEATURES TO AUDIT (NO ADDING / NO REMOVING)
+
+Authentication & Session
+RBAC (10 roles)
+Multi-Tenant Architecture
+Project Management
+Bid Management
+Estimating Engine
+Time Clock System
+Production Rate Tracking
+AI PM + CFO System
+Email AI System
+Dashboard Customization
+Website Builder
+Subcontractor Payables
+Bid Network
+Automated Feature Tour
+Vendor Portal
+Equipment Management
+CRM System
+Change Orders
+Delay Tracking
+Inspection Scheduling
+Internal Messaging
+Organization Documents
+Labor Cost Rates
+HUSTLER Multi-Org
+
+4️⃣ ROUTE & CALLER VERIFICATION (CRITICAL)
+
+For every backend route:
+
+Confirm a frontend caller exists
+
+Confirm RBAC is enforced
+
+Confirm tenant scoping exists
+
+Confirm validation & error handling exists
+
+Flag:
+
+Orphaned routes
+
+Orphaned UI
+
+Public routes missing guards
+
+5️⃣ MULTI-TENANT LEAKAGE AUDIT
+
+Explicitly test for:
+
+Cross-org data access
+
+Multi-org users (HUSTLER)
+
+AI context bleed
+
+Background job isolation
+
+Any uncertainty = FAILURE.
+
+6️⃣ AI SYSTEM SAFETY & ISOLATION AUDIT
+
+Validate:
+
+Prompt grounding
+
+Tenant-aware memory
+
+Task scheduling isolation
+
+Failure & hallucination handling
+
+Injection prevention
+
+7️⃣ SECURITY & COMPLIANCE AUDIT
+
+Audit:
+
+Auth/session safety
+
+File uploads
+
+Webhook verification
+
+Logging of sensitive data
+
+Rate limiting & abuse vectors
+
+Rank findings:
+
+CRITICAL
+
+HIGH
+
+MEDIUM
+
+LOW
+
+8️⃣ FINAL CERTIFICATION REPORT
+
+Deliver ONE report with:
+
+A. Executive Verdict
+
+System readiness score (0-100)
+
+Can this be safely used in production? YES / NO
+
+B. Feature Certification Table
+
+VERIFIED
+
+PARTIAL
+
+BROKEN
+
+C. Blocking Issues (must fix before production)
+D. Non-Blocking Issues
+E. Security Findings
+F. AI-Specific Risks
+G. Ordered Fix Roadmap
+🚨 HARD RULES
+
+Do NOT rely on previous summaries
+
+Do NOT assume anything works
+
+Evidence over opinions
+
+Be brutally honest
+
+BEGIN FULL SYSTEM AUDIT NOW.
