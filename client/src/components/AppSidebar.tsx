@@ -57,6 +57,9 @@ import {
   Inbox,
 } from "lucide-react";
 import { useState } from "react";
+import { useEntitlements } from "@/hooks/useEntitlements";
+import { Button } from "@/components/ui/button";
+import { Crown } from "lucide-react";
 
 interface WalkthroughStatus {
   walkthroughCompleted: boolean;
@@ -87,10 +90,13 @@ export function AppSidebar() {
     enabled: !!user,
     refetchOnWindowFocus: false,
   });
+  
+  const { entitlements } = useEntitlements();
 
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
   const isInWalkthrough = tour.isTourActive;
+  const showUpgradeButton = entitlements?.planTier === "free";
 
   if (!user) return null;
 
@@ -475,6 +481,19 @@ export function AppSidebar() {
       
       <SidebarFooter className="border-t">
         <SidebarMenu>
+          {showUpgradeButton && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Upgrade Plan">
+                <Link href="/billing" data-testid="sidebar-upgrade-plan">
+                  <Crown className="w-4 h-4 text-yellow-500" />
+                  <span className="text-yellow-600 dark:text-yellow-400">Upgrade Plan</span>
+                  <Badge variant="secondary" className="ml-auto text-xs px-1.5 py-0 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                    Pro
+                  </Badge>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           {showTutorialButton && !isInWalkthrough && (
             <SidebarMenuItem>
               <SidebarMenuButton 
