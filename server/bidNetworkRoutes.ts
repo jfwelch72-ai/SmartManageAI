@@ -56,7 +56,7 @@ router.get("/settings/:organizationId", requireAuth, async (req: AuthRequest, re
     
     res.json({ ...settings, exists: true });
   } catch (error) {
-    logError("Failed to get network settings", error as Error);
+    logError("Failed to get network settings", undefined, error as Error);
     res.status(500).json({ error: "Failed to get network settings" });
   }
 });
@@ -120,7 +120,7 @@ router.post("/settings", requireAuth, async (req: AuthRequest, res: Response) =>
       return res.json(created);
     }
   } catch (error) {
-    logError("Failed to save network settings", error as Error);
+    logError("Failed to save network settings", undefined, error as Error);
     res.status(500).json({ error: "Failed to save network settings" });
   }
 });
@@ -161,7 +161,7 @@ router.get("/requests", requireAuth, async (req: AuthRequest, res: Response) => 
       project: r.project
     })));
   } catch (error) {
-    logError("Failed to list bid requests", error as Error);
+    logError("Failed to list bid requests", undefined, error as Error);
     res.status(500).json({ error: "Failed to list bid requests" });
   }
 });
@@ -218,7 +218,7 @@ router.get("/requests/:id", requireAuth, async (req: AuthRequest, res: Response)
       }))
     });
   } catch (error) {
-    logError("Failed to get bid request", error as Error);
+    logError("Failed to get bid request", undefined, error as Error);
     res.status(500).json({ error: "Failed to get bid request" });
   }
 });
@@ -249,10 +249,10 @@ router.post("/requests", requireAuth, async (req: AuthRequest, res: Response) =>
       })
       .returning();
     
-    logInfo("Bid request created", { requestId: request.id, organizationId: user.organizationId });
+    logInfo("Bid request created", { requestId: request.id, organizationId: user.organizationId || undefined });
     res.status(201).json(request);
   } catch (error) {
-    logError("Failed to create bid request", error as Error);
+    logError("Failed to create bid request", undefined, error as Error);
     res.status(500).json({ error: "Failed to create bid request" });
   }
 });
@@ -296,7 +296,7 @@ router.patch("/requests/:id", requireAuth, async (req: AuthRequest, res: Respons
     logInfo("Bid request updated", { requestId: id, status: updated.status });
     res.json(updated);
   } catch (error) {
-    logError("Failed to update bid request", error as Error);
+    logError("Failed to update bid request", undefined, error as Error);
     res.status(500).json({ error: "Failed to update bid request" });
   }
 });
@@ -325,7 +325,7 @@ router.delete("/requests/:id", requireAuth, async (req: AuthRequest, res: Respon
     logInfo("Bid request deleted", { requestId: id });
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to delete bid request", error as Error);
+    logError("Failed to delete bid request", undefined, error as Error);
     res.status(500).json({ error: "Failed to delete bid request" });
   }
 });
@@ -393,7 +393,7 @@ router.get("/match-subs", requireAuth, async (req: AuthRequest, res: Response) =
       certifications: s.settings?.certifications || []
     })));
   } catch (error) {
-    logError("Failed to find matching subs", error as Error);
+    logError("Failed to find matching subs", undefined, error as Error);
     res.status(500).json({ error: "Failed to find matching subcontractors" });
   }
 });
@@ -497,7 +497,7 @@ router.post("/invitations/send", requireAuth, async (req: AuthRequest, res: Resp
     
     res.status(201).json(createdInvitations);
   } catch (error) {
-    logError("Failed to send invitations", error as Error);
+    logError("Failed to send invitations", undefined, error as Error);
     res.status(500).json({ error: "Failed to send invitations" });
   }
 });
@@ -547,7 +547,7 @@ router.get("/inbox", requireAuth, async (req: AuthRequest, res: Response) => {
       }
     })));
   } catch (error) {
-    logError("Failed to list inbox", error as Error);
+    logError("Failed to list inbox", undefined, error as Error);
     res.status(500).json({ error: "Failed to list bid invitations" });
   }
 });
@@ -630,7 +630,7 @@ router.get("/inbox/:invitationId", requireAuth, async (req: AuthRequest, res: Re
       clarifications
     });
   } catch (error) {
-    logError("Failed to get invitation", error as Error);
+    logError("Failed to get invitation", undefined, error as Error);
     res.status(500).json({ error: "Failed to get invitation details" });
   }
 });
@@ -661,10 +661,10 @@ router.post("/inbox/:invitationId/decline", requireAuth, async (req: AuthRequest
       })
       .where(eq(subcontractorBidInvitations.id, invitationId));
     
-    logInfo("Bid invitation declined", { invitationId, organizationId: user.organizationId });
+    logInfo("Bid invitation declined", { invitationId, organizationId: user.organizationId || undefined });
     res.json({ success: true });
   } catch (error) {
-    logError("Failed to decline invitation", error as Error);
+    logError("Failed to decline invitation", undefined, error as Error);
     res.status(500).json({ error: "Failed to decline invitation" });
   }
 });
@@ -776,11 +776,11 @@ router.post("/responses", requireAuth, async (req: AuthRequest, res: Response) =
             },
             {
               id: created.id,
-              totalBidAmount: created.totalBidAmount,
+              totalBidAmount: parseFloat(created.totalBidAmount || "0"),
               subOrganizationName: subOrg?.name || "Unknown Sub",
               submittedAt: new Date(),
             }
-          ).catch(err => logError("Response notification failed", err));
+          ).catch(err => logError("Response notification failed", undefined, err as Error));
         }
       }
       
@@ -788,7 +788,7 @@ router.post("/responses", requireAuth, async (req: AuthRequest, res: Response) =
       return res.status(201).json(created);
     }
   } catch (error) {
-    logError("Failed to save response", error as Error);
+    logError("Failed to save response", undefined, error as Error);
     res.status(500).json({ error: "Failed to save response" });
   }
 });
@@ -834,7 +834,7 @@ router.get("/responses/:id", requireAuth, async (req: AuthRequest, res: Response
     
     res.json(result);
   } catch (error) {
-    logError("Failed to get response", error as Error);
+    logError("Failed to get response", undefined, error as Error);
     res.status(500).json({ error: "Failed to get response" });
   }
 });
@@ -894,7 +894,7 @@ router.patch("/responses/:id/status", requireAuth, async (req: AuthRequest, res:
     logInfo("Bid response status updated", { responseId: id, status });
     res.json(updated);
   } catch (error) {
-    logError("Failed to update response status", error as Error);
+    logError("Failed to update response status", undefined, error as Error);
     res.status(500).json({ error: "Failed to update response status" });
   }
 });
@@ -936,7 +936,7 @@ router.post("/clarifications", requireAuth, async (req: AuthRequest, res: Respon
     logInfo("Clarification question asked", { clarificationId: clarification.id });
     res.status(201).json(clarification);
   } catch (error) {
-    logError("Failed to ask clarification", error as Error);
+    logError("Failed to ask clarification", undefined, error as Error);
     res.status(500).json({ error: "Failed to submit question" });
   }
 });
@@ -981,7 +981,7 @@ router.patch("/clarifications/:id/answer", requireAuth, async (req: AuthRequest,
     
     res.json(updated);
   } catch (error) {
-    logError("Failed to answer clarification", error as Error);
+    logError("Failed to answer clarification", undefined, error as Error);
     res.status(500).json({ error: "Failed to submit answer" });
   }
 });
@@ -1020,7 +1020,7 @@ router.get("/requests/:requestId/clarifications", requireAuth, async (req: AuthR
       } : null
     })));
   } catch (error) {
-    logError("Failed to get clarifications", error as Error);
+    logError("Failed to get clarifications", undefined, error as Error);
     res.status(500).json({ error: "Failed to get clarifications" });
   }
 });
@@ -1065,7 +1065,7 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
       }
     });
   } catch (error) {
-    logError("Failed to get bid network stats", error as Error);
+    logError("Failed to get bid network stats", undefined, error as Error);
     res.status(500).json({ error: "Failed to get stats" });
   }
 });

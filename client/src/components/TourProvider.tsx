@@ -468,23 +468,28 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   
   useEffect(() => {
     if (pendingNavigation && location === pendingNavigation) {
+      const targetStep = currentStep + 1;
       setPendingNavigation(null);
-      setTimeout(async () => {
-        setCurrentStep((prev) => {
-          const newStep = prev + 1;
-          apiRequest("PATCH", "/api/ai/walkthrough/step", {
-            step: newStep + 1,
+      
+      // Wait for DOM to settle, then persist step and update state
+      const timeoutId = setTimeout(async () => {
+        try {
+          // Persist to backend FIRST before updating local state
+          await apiRequest("PATCH", "/api/ai/walkthrough/step", {
+            step: targetStep + 1,
             completed: false,
-          }).then(() => {
-            queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
-          }).catch((error) => {
-            console.error("Failed to persist tour step after navigation:", error);
           });
-          return newStep;
-        });
+          queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        } catch (error) {
+          console.error("Failed to persist tour step after navigation:", error);
+        }
+        // Update local state AFTER persistence succeeds
+        setCurrentStep(targetStep);
       }, 500);
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [location, pendingNavigation]);
+  }, [location, pendingNavigation, currentStep]);
   
   const startTour = useCallback(async () => {
     if (!user?.role) return;

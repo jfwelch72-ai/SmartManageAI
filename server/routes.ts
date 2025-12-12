@@ -4834,11 +4834,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 for (const manager of managers) {
                   await db.insert(notifications).values({
                     userId: manager.id,
-                    type: "SYSTEM",
+                    type: "MATERIAL_OVERAGE",
                     title: "Material Budget Alert",
                     message: `${budget.description} on project ${project.name} (${project.code}) has reached ${variancePercent.toFixed(1)}% of budgeted quantity. Consider a change order.`,
-                    resourceType: "PROJECT",
-                    resourceId: req.params.projectId,
+                    relatedEntityType: "PROJECT",
+                    relatedEntityId: req.params.projectId,
                   });
                 }
               }
@@ -7289,6 +7289,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate enrollment code
       const enrollmentCode = `VE-${organizationId.slice(0, 4)}-${vendorCrmOrganisationId.slice(0, 4)}-${Date.now().toString(36)}`.toUpperCase();
 
+      // Get contractor organization name for the email
+      const [contractorOrg] = await db.select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+      const contractorName = contractorOrg?.name || "A contractor";
+
       // Create enrollment with PENDING status (awaiting vendor acceptance)
       const [enrollment] = await db.insert(vendorEnrollments).values({
         vendorCrmOrgId: vendorCrmOrganisationId,
@@ -7300,7 +7307,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         enrollmentCode,
       }).returning();
 
-      // TODO: Send invitation email to vendor
+      // Send invitation email to vendor
+      try {
+        const acceptLink = `${process.env.REPLIT_DEV_DOMAIN || 'https://smartmanage.app'}/vendor/accept?code=${enrollmentCode}`;
+        const emailSent = await sendEmail({
+          to: vendorEmail,
+          subject: `Vendor Portal Invitation from ${contractorName}`,
+          html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vendor Portal Invitation</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="background-color: #1a365d; padding: 24px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Vendor Portal Invitation</h1>
+    </div>
+    <div style="padding: 32px 24px;">
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        You have been invited by <strong>${contractorName}</strong> to join their vendor portal on SmartManageAI.
+      </p>
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        As a vendor, you'll be able to:
+      </p>
+      <ul style="color: #333333; font-size: 14px; line-height: 1.8; margin: 0 0 24px; padding-left: 20px;">
+        <li>Submit and update material pricing</li>
+        <li>View enrolled contractor clients</li>
+        <li>Manage your vendor profile</li>
+      </ul>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${acceptLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+          Accept Invitation
+        </a>
+      </div>
+      <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+        Your enrollment code: <strong>${enrollmentCode}</strong>
+      </p>
+      <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;">
+      <p style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0;">
+        If you didn't expect this invitation, you can safely ignore this email.
+      </p>
+    </div>
+    <div style="background-color: #f9fafb; padding: 16px 24px; text-align: center;">
+      <p style="color: #999999; font-size: 12px; margin: 0;">
+        SmartManageAI Construction Management Platform
+      </p>
+    </div>
+  </div>
+</body>
+</html>`,
+          text: `
+Vendor Portal Invitation
+
+You have been invited by ${contractorName} to join their vendor portal on SmartManageAI.
+
+As a vendor, you'll be able to:
+- Submit and update material pricing
+- View enrolled contractor clients  
+- Manage your vendor profile
+
+Accept the invitation here: ${acceptLink}
+
+Your enrollment code: ${enrollmentCode}
+
+If you didn't expect this invitation, you can safely ignore this email.
+
+---
+SmartManageAI Construction Management Platform
+`,
+        });
+        console.log(`Vendor invitation email ${emailSent ? 'sent' : 'logged'} to: ${vendorEmail}`);
+      } catch (emailError) {
+        // Log email failure but don't fail the request - enrollment was created successfully
+        console.error("Failed to send vendor invitation email:", emailError);
+      }
 
       await db.insert(auditLog).values({
         userId: req.user!.id,
@@ -11843,10 +11926,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create billing event
-  // NOTE: This endpoint is currently disabled due to schema mismatch.
-  // The billingEvents table expects: scopeItemId, quantity, unitPrice, totalAmount, billedDate
-  // But this endpoint was designed for: projectId, eventType, eventDate, amount, description
-  // TODO: Either redesign this endpoint to match the actual schema, or update the schema to support this use case
+  // This endpoint is aligned with the billingEvents table schema:
+  // - scopeItemId, quantity, unitPrice, totalAmount, billedDate, invoiceNumber, paymentStatus
   app.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // Validation schema aligned with actual billingEvents table
