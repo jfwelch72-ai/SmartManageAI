@@ -110,6 +110,14 @@ export const organizationDocumentTypeEnum = pgEnum("organization_document_type",
 ]);
 export const organizationDocumentVisibilityEnum = pgEnum("organization_document_visibility", ["PUBLIC", "INTERNAL", "CONFIDENTIAL"]);
 
+// Subscription & Billing Enums
+export const planTierEnum = pgEnum("plan_tier", ["free", "starter", "professional", "enterprise"]);
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled"]);
+export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual"]);
+export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
+export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision"]);
+export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs"]);
+
 // Organizations table (tenants/companies)
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -143,6 +151,62 @@ export const organizations = pgTable("organizations", {
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type Organization = typeof organizations.$inferSelect;
+
+// Organization Subscriptions table
+export const organizationSubscriptions = pgTable("organization_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
+  planTier: planTierEnum("plan_tier").notNull().default("free"),
+  status: subscriptionStatusEnum("status").notNull().default("active"),
+  billingProvider: billingProviderEnum("billing_provider").notNull().default("manual"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("org_subscriptions_org_id_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationSubscriptionSchema = createInsertSchema(organizationSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;
+export type OrganizationSubscription = typeof organizationSubscriptions.$inferSelect;
+
+// Organization Add-ons table
+export const organizationAddOns = pgTable("organization_addons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  addonKey: addonKeyEnum("addon_key").notNull(),
+  status: addonStatusEnum("status").notNull().default("inactive"),
+  stripePriceId: text("stripe_price_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("org_addons_org_id_idx").on(table.organizationId),
+  orgAddonUniqueIdx: unique("org_addon_unique").on(table.organizationId, table.addonKey),
+}));
+
+export const insertOrganizationAddOnSchema = createInsertSchema(organizationAddOns).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationAddOn = z.infer<typeof insertOrganizationAddOnSchema>;
+export type OrganizationAddOn = typeof organizationAddOns.$inferSelect;
+
+// Organization Usage table (for usage-based features like AI Vision)
+export const organizationUsage = pgTable("organization_usage", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  usageKey: usageKeyEnum("usage_key").notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  quantity: integer("quantity").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("org_usage_org_id_idx").on(table.organizationId),
+  periodIdx: index("org_usage_period_idx").on(table.periodStart, table.periodEnd),
+}));
+
+export const insertOrganizationUsageSchema = createInsertSchema(organizationUsage).omit({ id: true, createdAt: true });
+export type InsertOrganizationUsage = z.infer<typeof insertOrganizationUsageSchema>;
+export type OrganizationUsage = typeof organizationUsage.$inferSelect;
 
 // Users table
 export const users = pgTable("users", {

@@ -83,6 +83,7 @@ import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
+import billingRoutes from "./billingRoutes";
 import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import opsRoutes from "./opsRoutes";
@@ -182,6 +183,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Subcontractor Bid Network routes
   app.use("/api/bid-network", bidNetworkRoutes);
+
+  // Register Billing routes
+  app.use("/api/billing", billingRoutes);
 
   // ====================
   // Auth Routes

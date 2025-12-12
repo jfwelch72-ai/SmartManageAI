@@ -42,6 +42,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Subcontractor Bid Request Network**: Platform-wide bid solicitation network allowing GCs to request bids from platform-member subcontractors with trade matching, invitation system, response workflow, clarifications, and status tracking.
 *   **Unified Task Model**: Consolidates manual, email-originated, and AI-generated tasks, with email-specific fields for linking.
 *   **Operational Infrastructure**: Structured logging utility, monitoring hooks, health, and readiness probes.
+*   **Subscription & Billing System**: 4-tier membership model (FREE, STARTER, PROFESSIONAL, ENTERPRISE) with 6 add-ons (AI PM, AI CFO, AI Email, Website Builder, Bid Network, AI Vision). Backend feature gating via `requireFeature` middleware, frontend gating via `FeatureGate` component and `useEntitlements` hook. Plan matrix and pricing defined in `shared/billing/plans.ts`. Supports manual billing mode for development/testing.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

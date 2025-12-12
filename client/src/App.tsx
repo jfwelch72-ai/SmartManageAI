@@ -67,6 +67,7 @@ import HustlerOrgDetail from "@/pages/hustler-org-detail";
 import BidNetworkPage from "@/pages/bid-network";
 import BidNetworkDetailPage from "@/pages/bid-network-detail";
 import BidInboxPage from "@/pages/bid-inbox";
+import BillingPage from "@/pages/billing";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -194,6 +195,7 @@ function Router() {
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
+      <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />

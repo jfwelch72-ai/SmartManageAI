@@ -1,0 +1,341 @@
+✅ SINGLE REPLIT PROMPT: Membership Levels + Add-ons (Safe, No Regressions)
+
+ROLE
+You are a Senior Principal Full-Stack Engineer working inside an existing multi-tenant SaaS construction app (SmartManageAI). Your job is to implement subscription plans + add-ons + feature gating without breaking existing features.
+
+NON-NEGOTIABLE RULES
+
+DO NOT remove or disable any “Development Login” buttons or dev-auth shortcuts. They must remain usable so testers can jump in and navigate.
+
+Do not break any existing feature. If unsure, add backward-compatible logic.
+
+Feature gating must be enforced backend-first. Frontend gating is UX only.
+
+In DEV MODE, allow an override so the app remains testable even without Stripe/payment setup.
+
+Produce a final summary of all files changed + migrations + how to test.
+
+PHASE 0 — DISCOVERY (Read-only first)
+
+Locate and document:
+
+Current auth system + dev login implementation (where the “dev login buttons” are implemented, and how roles/orgs are set).
+
+Any existing billing/Stripe code (search for “stripe”, “billing”, “subscription”, “webhook”, “checkout”).
+
+Existing schema tables related to subscriptions, organizations, users.
+
+AI routes and which endpoints correspond to: AI PM, AI CFO, AI Email, AI Vision/Takeoff, Website Builder, Bid Network.
+
+Identify:
+
+Where req.user is set and what fields exist (orgId, role, etc.)
+
+Central org scoping utilities (orgFilter)
+
+Existing RBAC middleware patterns.
+
+Do not change anything yet.
+
+PHASE 1 — DATA MODEL (Minimal, clean, multi-tenant)
+
+Implement plan + add-on entitlements at the organization level.
+
+1A) Add schema tables (Drizzle) in shared/schema.ts + migration(s)
+
+Create (or extend if already exists):
+
+Table: organizationSubscriptions
+
+id (pk)
+
+organizationId (fk)
+
+planTier (enum: starter|growth|scale|hustler)
+
+status (enum: trialing|active|past_due|canceled)
+
+billingProvider (enum: stripe|manual)
+
+stripeCustomerId (nullable)
+
+stripeSubscriptionId (nullable)
+
+currentPeriodEnd (nullable)
+
+createdAt / updatedAt
+
+Table: organizationAddOns
+
+id (pk)
+
+organizationId (fk)
+
+addonKey (enum: ai_pm|ai_cfo|ai_email|website_seo|bid_network|ai_vision)
+
+status (enum: active|inactive)
+
+stripePriceId (nullable)
+
+createdAt / updatedAt
+
+Table: organizationUsage (for usage-based AI Vision)
+
+id (pk)
+
+organizationId (fk)
+
+usageKey (enum: ai_vision_docs)
+
+periodStart / periodEnd
+
+quantity (int)
+
+createdAt / updatedAt
+
+Add indexes on organizationId and key fields.
+
+1B) Backfill logic
+
+Write a safe migration/backfill script (or route-based backfill):
+
+For every existing org, create organizationSubscriptions row:
+
+planTier = growth
+
+status = active
+
+billingProvider = manual
+This keeps everything working immediately.
+
+PHASE 2 — SINGLE SOURCE OF TRUTH (Plan matrix + add-ons)
+
+Create a shared config file:
+
+shared/plans.ts (or shared/billing/plans.ts if you have that folder)
+Export:
+
+PlanTier type
+
+AddOnKey type
+
+PLAN_DEFAULT_FEATURES mapping
+
+ADDON_FEATURES mapping (add-ons always grant access)
+
+A helper to compute feature access.
+
+Features to gate (minimum):
+
+AI_PM
+
+AI_CFO
+
+AI_EMAIL
+
+WEBSITE_SEO
+
+BID_NETWORK
+
+AI_VISION
+
+Default availability:
+
+Starter: core only (no AI packs, no bid network, no website/seo)
+
+Growth: core + production rates/budget (no AI packs by default)
+
+Scale: includes Website basic + Bid Network by default (AI packs optional unless you choose otherwise)
+
+Hustler: includes multi-org + most features by default (AI CFO included)
+
+Add-ons can grant any gated feature on any plan.
+
+PHASE 3 — BACKEND ENFORCEMENT (Required)
+3A) Create a feature access service
+
+Add: server/services/featureAccess.ts
+Functions:
+
+getOrgEntitlements(orgId): { planTier, addons[] }
+
+hasFeature(orgId, featureKey): boolean
+Cache per-request only (no cross-tenant caching bugs).
+
+3B) Add middleware
+
+Add: server/middleware/requireFeature.ts
+
+requireFeature(featureKey)
+
+loads org entitlements and enforces 403 if not entitled
+
+keep SUPER_ADMIN behavior consistent with current platform rules (do not accidentally grant contractor features to SUPER_ADMIN if your nav system blocks them)
+
+3C) Apply middleware to routes (do not miss these)
+
+Add requireFeature() to:
+
+AI PM routes
+
+AI CFO routes
+
+AI Email routes
+
+Website Builder publish/SEO routes (or the entire website builder if you choose)
+
+Bid Network routes
+
+AI Vision / Takeoff endpoints (usage based + feature gate)
+
+If you’re unsure which endpoints map to which features, annotate your decisions and gate conservatively (only gate the premium endpoints, not core functionality).
+
+3D) Usage metering for AI Vision
+
+On successful AI Vision doc processing:
+
+increment organizationUsage for current period
+
+if no ai_vision entitlement, 403
+
+if usage-based and you implement limits: enforce a reasonable dev-safe default (e.g., 50 docs/month) and make it configurable.
+
+PHASE 4 — FRONTEND GATING + UPGRADE UX (No regressions)
+4A) Entitlements endpoint
+
+Create: GET /api/billing/entitlements
+Returns current org:
+
+planTier
+
+addons[]
+
+usage summary
+
+4B) Frontend hook
+
+Create: client/src/hooks/useEntitlements.ts
+
+fetch entitlements
+
+expose can(featureKey) helper
+
+4C) UI gating behavior
+
+For gated screens/components:
+
+If user lacks feature:
+
+show a friendly locked state
+
+show Upgrade CTA linking to Billing page
+
+Do not block navigation entirely; allow them to see the feature exists.
+
+Add locked states to:
+
+AI CFO dashboard components
+
+AI PM orchestration UI (if there’s a page)
+
+Email AI UI
+
+Website SEO module controls
+
+Bid Network access points
+
+AI Vision takeoff UI controls
+
+4D) Billing page (Admin only)
+
+Create: client/src/pages/Billing.tsx
+
+show current plan + addons
+
+show upgrade options
+
+show “enable add-on” toggles (in dev/manual mode)
+
+show usage metrics for AI Vision
+Restrict page with RBAC (ADMIN / OWNER equivalent).
+
+PHASE 5 — BILLING PROVIDER (Stripe if present, otherwise scaffold cleanly)
+5A) If Stripe already exists:
+
+Map products/prices to:
+
+base plans
+
+add-ons (subscription items)
+
+Implement webhook handler updates to sync:
+
+subscription status
+
+plan tier
+
+add-on items
+
+Ensure org subscription table updates are idempotent.
+
+5B) If Stripe does NOT exist yet:
+
+Implement “Manual Billing Mode” fully:
+
+Admin can set plan tier and toggle add-ons from Billing page
+
+All changes write to DB
+
+Keep clean interfaces so Stripe can be plugged in later
+
+In both cases, DEV MODE must allow testing without payment:
+
+Keep dev login buttons
+
+Add an env flag: BILLING_MODE=manual|stripe
+
+Default to manual in dev if missing.
+
+PHASE 6 — DEV LOGIN GUARANTEE (Do not break testing)
+
+Confirm:
+
+Dev login buttons still work exactly as before
+
+Dev logins should land in an org that has at least growth active
+
+In dev, if entitlement missing, allow toggling via Billing page without Stripe
+
+PHASE 7 — VERIFICATION (Must do)
+
+Run:
+
+TypeScript check
+
+Build
+
+Start dev server
+
+Smoke test:
+
+Dev login as ADMIN → open Billing page → change plan/add-ons → verify locks/unlocks live
+
+Confirm AI CFO route returns 403 when not entitled
+
+Confirm Website publish gated correctly
+
+Confirm Bid Network gated correctly
+
+Confirm non-admin can’t change billing
+
+REQUIRED FINAL OUTPUT
+
+List all migrations created
+
+List all files changed/added
+
+Explain feature gating map (which feature gates which routes/pages)
+
+Exact testing steps (click path + any sample accounts)
+
+Proceed now. Keep the app whole. Do not remove dev login buttons.
