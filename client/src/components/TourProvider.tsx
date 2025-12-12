@@ -469,8 +469,19 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pendingNavigation && location === pendingNavigation) {
       setPendingNavigation(null);
-      setTimeout(() => {
-        setCurrentStep((prev) => prev + 1);
+      setTimeout(async () => {
+        setCurrentStep((prev) => {
+          const newStep = prev + 1;
+          apiRequest("PATCH", "/api/ai/walkthrough/step", {
+            step: newStep + 1,
+            completed: false,
+          }).then(() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+          }).catch((error) => {
+            console.error("Failed to persist tour step after navigation:", error);
+          });
+          return newStep;
+        });
       }, 500);
     }
   }, [location, pendingNavigation]);
@@ -543,6 +554,16 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         }
         
         setCurrentStep(index + 1);
+        
+        try {
+          await apiRequest("PATCH", "/api/ai/walkthrough/step", {
+            step: index + 2,
+            completed: false,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        } catch (error) {
+          console.error("Failed to persist tour step:", error);
+        }
       }
       
       if (type === EVENTS.STEP_AFTER && action === ACTIONS.PREV) {

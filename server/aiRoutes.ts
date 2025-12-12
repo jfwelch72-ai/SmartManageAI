@@ -1821,6 +1821,53 @@ router.post("/ai/walkthrough/reset", async (req: AuthRequest, res) => {
   }
 });
 
+// Update walkthrough step progress (for tour system persistence)
+router.patch("/ai/walkthrough/step", async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!req.user.organizationId) {
+      return res.status(400).json({ error: "Please complete organization setup first" });
+    }
+
+    const { step, completed } = req.body;
+
+    if (typeof step !== 'number' || step < 0) {
+      return res.status(400).json({ error: "Valid step number is required" });
+    }
+
+    const updateData: Record<string, any> = {
+      walkthroughStep: step,
+    };
+
+    if (typeof completed === 'boolean') {
+      updateData.walkthroughCompleted = completed;
+    }
+
+    if (step === 1 && !completed) {
+      updateData.walkthroughStartedAt = new Date();
+    }
+
+    await db.update(users)
+      .set(updateData)
+      .where(and(
+        eq(users.id, req.user.id),
+        eq(users.organizationId, req.user.organizationId)
+      ));
+
+    res.json({
+      success: true,
+      step,
+      completed: updateData.walkthroughCompleted ?? false,
+    });
+  } catch (error: any) {
+    console.error("Walkthrough step update error:", error.message);
+    res.status(500).json({ error: "Failed to update walkthrough step" });
+  }
+});
+
 // AI Assistant Chat endpoint - with walkthrough mode support
 router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
   try {
