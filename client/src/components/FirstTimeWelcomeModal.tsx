@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTour } from "@/components/TourProvider";
 
 interface WalkthroughStatus {
   walkthroughCompleted: boolean;
@@ -116,6 +117,7 @@ export function FirstTimeWelcomeModal() {
   const [showModal, setShowModal] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const tour = useTour();
 
   // Only show the modal on the dashboard, not on onboarding or other pages
   const isOnDashboard = location === '/' || location === '/dashboard';
@@ -147,28 +149,7 @@ export function FirstTimeWelcomeModal() {
     }
   }, [hasNotStarted, user, isOnDashboard]);
 
-  const startWalkthroughMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/ai/walkthrough/start");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
-      // Only dismiss after successful start
-      sessionStorage.setItem(DISMISSED_KEY, "true");
-      handleClose();
-      // Dispatch event to open the AI assistant widget
-      window.dispatchEvent(new CustomEvent("open-ai-assistant"));
-    },
-    onError: () => {
-      setHasError(true);
-      toast({
-        title: "Couldn't start the tour",
-        description: "Please try again or use the Start Tutorial button in the sidebar.",
-        variant: "destructive",
-      });
-    },
-  });
+  const [isStarting, setIsStarting] = useState(false);
 
   const skipWalkthroughMutation = useMutation({
     mutationFn: async () => {
@@ -206,10 +187,24 @@ export function FirstTimeWelcomeModal() {
     skipWalkthroughMutation.mutate();
   };
 
-  const handleStartTour = () => {
+  const handleStartTour = async () => {
     setHasError(false);
-    startWalkthroughMutation.mutate();
-    // Don't set DISMISSED_KEY here - only set it on success
+    setIsStarting(true);
+    try {
+      sessionStorage.setItem(DISMISSED_KEY, "true");
+      handleCloseWithoutDismiss();
+      // Small delay to let modal close smoothly before tour starts
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      tour.startTour();
+    } catch (error) {
+      setHasError(true);
+      setIsStarting(false);
+      toast({
+        title: "Couldn't start the tour",
+        description: "Please try again or use the Start Tutorial button in the sidebar.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (!showModal || !user || isLoading) return null;
@@ -292,10 +287,10 @@ export function FirstTimeWelcomeModal() {
               size="lg"
               className="w-full h-14 text-lg font-semibold bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 shadow-lg"
               onClick={handleStartTour}
-              disabled={startWalkthroughMutation.isPending}
+              disabled={isStarting}
               data-testid="button-start-tour-modal"
             >
-              {startWalkthroughMutation.isPending ? (
+              {isStarting ? (
                 <>
                   <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3" />
                   Starting...

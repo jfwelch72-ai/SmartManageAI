@@ -51,6 +51,7 @@ import MobileSyncPage from "@/pages/mobile-sync";
 import CompanySettingsPage from "@/pages/company-settings";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
+import { TourProvider } from "@/components/TourProvider";
 import VendorDashboard from "@/pages/vendor/index";
 import VendorPortalPricing from "@/pages/vendor/pricing";
 import VendorClients from "@/pages/vendor/clients";
@@ -269,14 +270,16 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <DashboardCustomizationProvider>
-          <TooltipProvider>
-            <Toaster />
-            <AppContent />
-            <FirstTimeWelcomeModal />
-            <AIAssistantWidget />
-          </TooltipProvider>
-        </DashboardCustomizationProvider>
+        <TourProvider>
+          <DashboardCustomizationProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AppContent />
+              <FirstTimeWelcomeModal />
+              <AIAssistantWidget />
+            </TooltipProvider>
+          </DashboardCustomizationProvider>
+        </TourProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

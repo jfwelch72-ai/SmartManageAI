@@ -1,9 +1,9 @@
 import { Link, useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler } from "@/lib/rbac";
-import { apiRequest } from "@/lib/queryClient";
+import { useTour } from "@/components/TourProvider";
 import {
   Sidebar,
   SidebarContent,
@@ -75,7 +75,7 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { data: messageCountData = { unreadCount: 0 } } = useUnreadMessageCount();
   const { state } = useSidebar();
-  const queryClient = useQueryClient();
+  const tour = useTour();
   
   const [timeClockOpen, setTimeClockOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
@@ -88,28 +88,9 @@ export function AppSidebar() {
     refetchOnWindowFocus: false,
   });
 
-  const resetAndStartWalkthroughMutation = useMutation({
-    mutationFn: async () => {
-      // First reset the walkthrough, then start it to ensure step goes to 1
-      await apiRequest("POST", "/api/ai/walkthrough/reset");
-      const response = await apiRequest("POST", "/api/ai/walkthrough/start");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
-      sessionStorage.removeItem("smartmanage-welcome-dismissed");
-      // Dispatch event to open the AI assistant widget
-      window.dispatchEvent(new CustomEvent("open-ai-assistant"));
-    },
-    onError: () => {
-      // Silent fail - button re-enables automatically since mutation completes
-      // User can try again by clicking the button
-    },
-  });
-
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
-  const isInWalkthrough = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep > 0;
+  const isInWalkthrough = tour.isTourActive;
 
   if (!user) return null;
 
@@ -494,17 +475,16 @@ export function AppSidebar() {
       
       <SidebarFooter className="border-t">
         <SidebarMenu>
-          {showTutorialButton && (
+          {showTutorialButton && !isInWalkthrough && (
             <SidebarMenuItem>
               <SidebarMenuButton 
-                onClick={() => resetAndStartWalkthroughMutation.mutate()}
-                disabled={resetAndStartWalkthroughMutation.isPending}
+                onClick={() => tour.startTour()}
                 className="text-primary hover:text-primary"
-                tooltip="Start Tutorial"
+                tooltip="Start Tour"
                 data-testid="sidebar-start-tutorial"
               >
                 <GraduationCap className="w-4 h-4" />
-                <span>Start Tutorial</span>
+                <span>Start Tour</span>
                 {!walkthroughStatus?.walkthroughCompleted && walkthroughStatus?.walkthroughStep === 0 && (
                   <Badge variant="secondary" className="ml-auto text-xs px-1.5 py-0">
                     <Sparkles className="w-3 h-3 mr-0.5" />
@@ -517,15 +497,14 @@ export function AppSidebar() {
           {isInWalkthrough && (
             <SidebarMenuItem>
               <SidebarMenuButton 
-                onClick={() => window.dispatchEvent(new CustomEvent("open-ai-assistant"))}
                 className="text-primary hover:text-primary"
-                tooltip="Continue Tutorial"
-                data-testid="sidebar-continue-tutorial"
+                tooltip="Tour in Progress"
+                data-testid="sidebar-tour-progress"
               >
                 <GraduationCap className="w-4 h-4" />
-                <span>Continue Tutorial</span>
+                <span>Tour Active</span>
                 <Badge variant="secondary" className="ml-auto text-xs px-1.5 py-0">
-                  {walkthroughStatus.walkthroughStep}/{walkthroughStatus.totalSteps}
+                  Step {tour.currentStep + 1}
                 </Badge>
               </SidebarMenuButton>
             </SidebarMenuItem>
