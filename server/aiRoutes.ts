@@ -827,47 +827,92 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
     // Check if user is a HUSTLER - they can create multiple organizations
     const isHustler = req.user.role === 'HUSTLER';
     
-    // Prevent non-Hustler users who already have an organization from creating another
-    if (req.user.organizationId && !isHustler) {
-      logWarn(`[Onboarding] Non-Hustler user ${req.user.id} already has org ${req.user.organizationId}`);
-      return res.status(400).json({ error: "You already belong to an organization" });
-    }
-
     // Detect if this is a custom trade (OTHER)
     const isCustomTrade = tradeType === 'OTHER';
 
     // Ensure companyName is defined (should be guaranteed by Zod schema)
     const orgName = companyName || 'My Company';
 
-    // Generate a unique slug from sanitized company name
-    const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    const slug = `${baseSlug}-${Date.now().toString(36)}`;
-
     // Materials are already sanitized by Zod schema
     const sanitizedMaterials = materials || [];
     const sanitizedWorkTypes = (workTypes || []).filter((wt): wt is string => typeof wt === 'string' && wt.length > 0);
 
-    // Create the organization with website URL for theme extraction
-    const [newOrg] = await db.insert(organizations).values({
-      name: orgName,
-      slug,
-      tradeType: tradeType as any,
-      tradeName: tradeName || null,
-      typicalCrewSize: crewSize || null,
-      region: region || null,
-      websiteUrl: websiteUrl || null,
-      onboardingStatus: 'COMPLETED',
-      onboardingData: JSON.stringify({ 
-        materials: sanitizedMaterials, 
-        workTypes: sanitizedWorkTypes,
-        suggestedCalculators: suggestedCalculators || [],
-        customSowItems: customSowItems || [],
-        customWorkTypes: customWorkTypes || [],
-        customCalculators: customCalculators || [],
-        isCustomTrade,
-        completedAt: new Date() 
-      }),
-    }).returning();
+    let newOrg: typeof organizations.$inferSelect;
+    
+    // Check if user already has an organization (e.g., from Fresh Admin dev login)
+    if (req.user.organizationId && !isHustler) {
+      // Check if their existing org is in NOT_STARTED status (needs completion)
+      const existingOrg = await db.query.organizations.findFirst({
+        where: eq(organizations.id, req.user.organizationId),
+      });
+      
+      if (existingOrg && existingOrg.onboardingStatus === 'NOT_STARTED') {
+        // Update the existing organization instead of creating a new one
+        logInfo(`[Onboarding] Updating existing org ${existingOrg.id} for user ${req.user.id}`);
+        
+        const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+        const slug = `${baseSlug}-${Date.now().toString(36)}`;
+        
+        const [updatedOrg] = await db.update(organizations)
+          .set({
+            name: orgName,
+            slug,
+            tradeType: tradeType as any,
+            tradeName: tradeName || null,
+            typicalCrewSize: crewSize || null,
+            region: region || null,
+            websiteUrl: websiteUrl || null,
+            onboardingStatus: 'COMPLETED',
+            onboardingData: JSON.stringify({ 
+              materials: sanitizedMaterials, 
+              workTypes: sanitizedWorkTypes,
+              suggestedCalculators: suggestedCalculators || [],
+              customSowItems: customSowItems || [],
+              customWorkTypes: customWorkTypes || [],
+              customCalculators: customCalculators || [],
+              isCustomTrade,
+              completedAt: new Date() 
+            }),
+          })
+          .where(eq(organizations.id, existingOrg.id))
+          .returning();
+        
+        newOrg = updatedOrg;
+      } else {
+        // Organization already has completed onboarding or other status - reject
+        logWarn(`[Onboarding] Non-Hustler user ${req.user.id} already has completed org ${req.user.organizationId}`);
+        return res.status(400).json({ error: "You already belong to an organization" });
+      }
+    } else {
+      // Create a new organization
+      // Generate a unique slug from sanitized company name
+      const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+      // Create the organization with website URL for theme extraction
+      const [createdOrg] = await db.insert(organizations).values({
+        name: orgName,
+        slug,
+        tradeType: tradeType as any,
+        tradeName: tradeName || null,
+        typicalCrewSize: crewSize || null,
+        region: region || null,
+        websiteUrl: websiteUrl || null,
+        onboardingStatus: 'COMPLETED',
+        onboardingData: JSON.stringify({ 
+          materials: sanitizedMaterials, 
+          workTypes: sanitizedWorkTypes,
+          suggestedCalculators: suggestedCalculators || [],
+          customSowItems: customSowItems || [],
+          customWorkTypes: customWorkTypes || [],
+          customCalculators: customCalculators || [],
+          isCustomTrade,
+          completedAt: new Date() 
+        }),
+      }).returning();
+      
+      newOrg = createdOrg;
+    }
 
     // Update the user to belong to this organization
     // For Hustlers creating additional orgs, we don't change their primary organizationId
