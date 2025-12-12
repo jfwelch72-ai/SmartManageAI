@@ -9,19 +9,21 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<SelectUser | null>;
   logout: () => Promise<void>;
   organizationName: string | null;
+  organizationOnboardingStatus: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch current user
-  const { data: userData, isLoading } = useQuery<{ user: SelectUser; organizationName: string | null }>({
+  const { data: userData, isLoading } = useQuery<{ user: SelectUser; organizationName: string | null; organizationOnboardingStatus: string | null }>({
     queryKey: ["/api/auth/me"],
     retry: false,
   });
 
   const user = userData?.user || null;
   const organizationName = userData?.organizationName || null;
+  const organizationOnboardingStatus = userData?.organizationOnboardingStatus || null;
 
   // Login mutation
   const loginMutation = useMutation({
@@ -54,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, organizationName }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, organizationName, organizationOnboardingStatus }}>
       {children}
     </AuthContext.Provider>
   );

@@ -77,7 +77,7 @@ function ProtectedRoute({
   permission?: (role?: string) => boolean;
   skipOnboardingCheck?: boolean;
 }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, organizationOnboardingStatus } = useAuth();
   const [location] = useLocation();
 
   if (isLoading) {
@@ -92,10 +92,19 @@ function ProtectedRoute({
     return <Redirect to={`/login?redirect=${encodeURIComponent(location)}`} />;
   }
 
-  // Check if user needs onboarding (no organization assigned)
+  // Check if user needs onboarding:
+  // 1. No organization assigned, OR
+  // 2. Organization exists but AI wizard onboarding not completed
   // Skip this check for the onboarding page itself
-  if (!skipOnboardingCheck && !user.organizationId && location !== '/onboarding') {
-    return <Redirect to="/onboarding" />;
+  if (!skipOnboardingCheck && location !== '/onboarding') {
+    // No org - needs onboarding
+    if (!user.organizationId) {
+      return <Redirect to="/onboarding" />;
+    }
+    // Has org but AI wizard not completed - needs to finish onboarding first
+    if (organizationOnboardingStatus && organizationOnboardingStatus !== 'COMPLETED') {
+      return <Redirect to="/onboarding" />;
+    }
   }
 
   // Check role-based permission if provided

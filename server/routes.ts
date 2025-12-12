@@ -343,7 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             email: "dev@sandbox.test",
             tradeType: "GENERAL_CONTRACTOR",
             isActive: true,
-            onboardingComplete: true,
+            onboardingStatus: "COMPLETED",
           }).returning();
           console.log("[DEV] Created sandbox organization:", devOrg.id);
         }
@@ -409,7 +409,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: `org-${timestamp}@dev.test`,
         tradeType: "GENERAL_CONTRACTOR",
         isActive: true,
-        onboardingComplete: false, // Force onboarding
+        onboardingStatus: "NOT_STARTED", // Force AI wizard onboarding
       }).returning();
       console.log("[DEV] Created fresh organization for onboarding:", newOrg.id);
 
@@ -447,22 +447,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current user (with organization name if available)
+  // Get current user (with organization name and onboarding status)
   app.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
     try {
       let organizationName = null;
+      let organizationOnboardingStatus = null;
       if (req.user?.organizationId) {
         const [org] = await db
-          .select({ name: organizations.name })
+          .select({ name: organizations.name, onboardingStatus: organizations.onboardingStatus })
           .from(organizations)
           .where(eq(organizations.id, req.user.organizationId))
           .limit(1);
         organizationName = org?.name || null;
+        organizationOnboardingStatus = org?.onboardingStatus || null;
       }
-      res.json({ user: req.user, organizationName });
+      res.json({ user: req.user, organizationName, organizationOnboardingStatus });
     } catch (error) {
       console.error("Error fetching user org:", error);
-      res.json({ user: req.user, organizationName: null });
+      res.json({ user: req.user, organizationName: null, organizationOnboardingStatus: null });
     }
   });
 
