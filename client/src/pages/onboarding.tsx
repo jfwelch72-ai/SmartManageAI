@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2, FlaskConical } from "lucide-react";
+import { Send, Bot, User, Loader2, CheckCircle2, Building2, Wrench, Users, MapPin, Package, ClipboardList, Globe, Calculator, ArrowLeft, Eye, Edit2, FlaskConical, ArrowRight } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { isOrganizationAdmin } from "@/lib/rbac";
+import { PlanSelectionStep, getRecommendedPlan } from "@/components/PlanSelectionStep";
+import type { PlanTier, AddOnKey } from "@shared/billing/plans";
 
 interface Message {
   role: 'user' | 'assistant';
@@ -82,6 +84,9 @@ export default function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tradeResearch, setTradeResearch] = useState<TradeResearchResult | null>(null);
   const [isResearching, setIsResearching] = useState(false);
+  const [showPlanSelection, setShowPlanSelection] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PlanTier>("free");
+  const [selectedAddons, setSelectedAddons] = useState<AddOnKey[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -254,18 +259,29 @@ export default function OnboardingPage() {
     }
   };
 
-  const completeOnboarding = async () => {
+  const proceedToPlanSelection = () => {
     if (!companyName.trim()) {
       toast({
         title: "Company name required",
-        description: "Please enter your company name to complete setup.",
+        description: "Please enter your company name to continue.",
         variant: "destructive",
       });
       return;
     }
+    setShowPlanSelection(true);
+    setShowReviewStep(false);
+  };
 
+  const handlePlanSelected = (planTier: PlanTier, addons: AddOnKey[]) => {
+    setSelectedPlan(planTier);
+    setSelectedAddons(addons);
+    completeOnboarding(planTier, addons);
+  };
+
+  const completeOnboarding = async (planTier: PlanTier, addons: AddOnKey[]) => {
     setIsSubmitting(true);
     try {
+      // First complete the organization onboarding
       const res = await apiRequest("POST", "/api/ai/onboarding/complete", {
         companyName: companyName.trim(),
         tradeType: extractedData.tradeType || 'GENERAL_CONTRACTOR',
@@ -281,6 +297,24 @@ export default function OnboardingPage() {
       const data = await res.json();
       
       if (data.success) {
+        // Now set the subscription plan if not free (free is default)
+        if (planTier !== "free") {
+          try {
+            await apiRequest("POST", "/api/billing/subscription", { planTier });
+          } catch (e) {
+            console.warn("Could not set subscription plan, defaulting to free:", e);
+          }
+        }
+
+        // Enable any selected add-ons
+        for (const addon of addons) {
+          try {
+            await apiRequest("POST", `/api/billing/addons/${addon}/toggle`, { enabled: true });
+          } catch (e) {
+            console.warn(`Could not enable addon ${addon}:`, e);
+          }
+        }
+
         toast({
           title: "Setup Complete!",
           description: "Your platform has been configured. Redirecting to dashboard...",
@@ -290,11 +324,10 @@ export default function OnboardingPage() {
         sessionStorage.removeItem("smartmanage-welcome-dismissed");
         
         // CRITICAL: Invalidate cache to ensure fresh data on next mount
-        // This ensures ProtectedRoute sees the updated onboardingStatus = 'COMPLETED'
-        // Use invalidateQueries (not removeQueries + refetch) because queries aren't mounted on onboarding page
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }),
           queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/billing/entitlements"] }),
         ]);
         
         // Navigate after a brief delay for toast visibility
@@ -338,6 +371,23 @@ export default function OnboardingPage() {
             </Badge>
           </div>
         )}
+        
+        {/* Plan Selection Step - Full Width */}
+        {showPlanSelection ? (
+          <div className="w-full max-w-5xl mx-auto">
+            <PlanSelectionStep
+              onComplete={handlePlanSelected}
+              onBack={() => {
+                setShowPlanSelection(false);
+                setShowCompanyInput(true);
+              }}
+              isSubmitting={isSubmitting}
+              recommendedPlan={getRecommendedPlan(extractedData.crewSize)}
+              crewSize={extractedData.crewSize}
+            />
+          </div>
+        ) : (
+          <>
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold" data-testid="text-onboarding-title">Set Up Your Platform</h1>
           <p className="text-muted-foreground mt-2">
@@ -520,17 +570,13 @@ export default function OnboardingPage() {
                       Back
                     </Button>
                     <Button 
-                      onClick={completeOnboarding} 
+                      onClick={proceedToPlanSelection} 
                       className="flex-1"
                       disabled={isSubmitting || !companyName.trim()}
-                      data-testid="button-complete-setup"
+                      data-testid="button-continue-to-plan"
                     >
-                      {isSubmitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4 mr-2" />
-                      )}
-                      Complete Setup
+                      <ArrowRight className="h-4 w-4 mr-2" />
+                      Continue to Plan Selection
                     </Button>
                   </div>
                 </div>
@@ -707,6 +753,8 @@ export default function OnboardingPage() {
             </CardContent>
           </Card>
         </div>
+          </>
+        )}
       </div>
     </div>
   );
