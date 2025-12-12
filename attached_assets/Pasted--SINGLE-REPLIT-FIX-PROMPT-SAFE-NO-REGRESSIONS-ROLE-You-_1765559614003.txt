@@ -1,0 +1,250 @@
+✅ SINGLE REPLIT FIX PROMPT (SAFE, NO REGRESSIONS)
+
+ROLE
+You are a Senior Principal Full-Stack Engineer working in an existing multi-tenant SaaS codebase. You must be extremely careful to not break any working features.
+
+GOAL
+Fix all issues that “make sense to fix” right now (correctness + obvious TODO completions + safe typing fixes), while keeping the app whole and fully functional.
+
+HARD RULES (NON-NEGOTIABLE)
+
+Do not remove features. Do not simplify by deleting code.
+
+No breaking schema changes unless absolutely required; if needed, use safe migrations.
+
+Keep behavior backward compatible unless a bug requires a change.
+
+For each change: implement + verify + only then move to next.
+
+After all changes: produce a clear summary of files changed + why.
+
+PHASE 0 — SAFETY BASELINE (DO FIRST)
+
+Create a working branch: fix/audit-cleanup
+
+Run: TypeScript check, lint (if present), and app build.
+
+Start dev server and confirm it boots with no fatal errors.
+
+Create a short “baseline smoke checklist” and ensure current app still runs:
+
+Login works
+
+Navigate core pages
+
+Load a project list
+
+Open estimating screen
+
+Open time clock screen
+
+Do not proceed until baseline is confirmed.
+
+PHASE 1 — FIX MERGE-BLOCKERS (CORRECTNESS)
+1A) Fix schema/endpoint mismatch TODO (server/routes.ts around :11849)
+
+Objective: Remove the mismatch by making the endpoint and schema consistent.
+
+Steps:
+
+Locate the endpoint at/near server/routes.ts:11849 with the TODO.
+
+Determine the correct source of truth:
+
+Prefer aligning endpoint to the actual DB schema in shared/schema.ts if schema is already used elsewhere.
+
+If schema is wrong but endpoint is correct and widely used, adjust schema + add migration.
+
+Implement the alignment:
+
+Update request/response types
+
+Update Drizzle query fields
+
+Add Zod validation that matches the schema
+
+Ensure tenant/org scoping remains enforced
+
+Add a minimal test or at least a verifiable dev check:
+
+Hit the endpoint via the UI or a curl
+
+Confirm expected DB reads/writes succeed
+
+Remove the TODO comment and replace with a short explanatory comment if needed.
+
+Must not break existing callers. If multiple call patterns exist, support both temporarily with backward-compatible parsing.
+
+1B) Implement vendor invitation email TODO (server/routes.ts around :7303)
+
+Objective: When a vendor is invited, an email is actually sent.
+
+Steps:
+
+Find the vendor invitation route with // TODO: Send invitation email to vendor near server/routes.ts:7303.
+
+Identify the existing email service/util in the codebase (likely used elsewhere).
+
+Implement sending:
+
+Send email after DB invitation record is created successfully
+
+Include essential fields (inviter org name, accept link/token)
+
+Ensure token/accept link is generated securely and scoped
+
+Add robust behavior:
+
+Wrap in try/catch
+
+Log success/failure via existing logger
+
+If email fails: do NOT fail the request unless business logic requires it; instead return success with a warning field (or log only)
+
+Add a “dev mode” safe fallback:
+
+In dev, allow email to be logged / previewed if provider not configured
+
+Remove the TODO.
+
+Verification:
+
+Trigger an invite in UI (or direct request)
+
+Confirm log shows email send attempt
+
+Confirm invitation is still created even if email provider missing in dev
+
+1C) Fix tour step persistence race (client/src/components/TourProvider.tsx)
+
+Objective: Make tour progress persistence deterministic during navigation steps.
+
+Steps:
+
+In TourProvider.tsx, locate where step changes + pendingNavigation triggers navigation.
+
+Change logic to guarantee ordering:
+
+Persist step to backend before navigating, OR
+
+Queue the step update and flush it reliably on route change completion
+
+Ensure the API call to /api/ai/walkthrough/step:
+
+Is awaited (or reliably retried)
+
+Uses the latest step value (no stale closure)
+
+Add a small “debounce/lock” to prevent double-saves.
+
+Keep UX smooth (no noticeable lag).
+
+Verification:
+
+Start tour
+
+Trigger a step that navigates pages 5 times
+
+Refresh mid-tour
+
+Confirm it resumes at the correct step consistently
+
+PHASE 2 — SAFE TYPE & DIAGNOSTIC FIXES (NO BEHAVIOR CHANGES)
+2A) Fix notification insert schema mismatch (server/routes.ts diagnostic around :4835)
+
+Objective: Make the insert payload match the schema type.
+
+Steps:
+
+Find the notification insert using userId that conflicts with schema.
+
+Check shared/schema.ts notifications table field naming (e.g., userId vs recipientUserId etc.).
+
+Update the insert to match schema field names and types.
+
+Confirm notifications still appear where expected.
+
+2B) Fix bidNetworkRoutes TypeScript diagnostics (server/bidNetworkRoutes.ts)
+
+Objective: Resolve the 22 TS diagnostics without runtime behavior changes.
+
+Fixes to implement:
+
+logError(msg, error) signature mismatches:
+
+Update calls to match the logger’s expected LogContext
+
+Wrap error into the expected shape (e.g., { error } or { err: serializeError(error) }) consistent with existing logger patterns
+
+null vs undefined:
+
+Normalize optional fields to undefined (or update types safely)
+
+string/number coercion:
+
+Parse numbers explicitly with safe guards (e.g., Number() + isNaN checks), but preserve existing behavior
+
+Verification:
+
+Run TS check and confirm diagnostics are eliminated (or reduced to only truly non-actionable ones)
+
+Run dev server; exercise bid network pages minimally
+
+PHASE 3 — “WORTH FIXING” TECH DEBT (ONLY IF LOW RISK)
+3A) N+1 query hot spots (ONLY obvious ones)
+
+Do not refactor broadly. Only fix if:
+
+A route loops and queries per record in a clear way
+
+It can be replaced with a single join/IN query without changing response shape
+
+Add a short comment noting the optimization.
+
+PHASE 4 — REGRESSION PROTECTION (MANDATORY)
+
+After all changes:
+
+Run:
+
+TypeScript check
+
+Build
+
+Start server/client
+
+Run a focused smoke test:
+
+Auth login/logout
+
+Org filtering: open list pages and confirm only current org data shows
+
+HUSTLER org switching (if available)
+
+Create/update a project
+
+Create/edit an estimate line item
+
+Start/end a time clock entry (GPS if supported)
+
+Vendor invite flow (ensure invite is created and email attempt logged)
+
+Start tour and confirm step persistence across navigation
+
+Confirm no new console errors introduced.
+
+OUTPUT REQUIREMENTS
+
+When done, output:
+
+Files changed list
+
+Exact changes made per issue
+
+How each was verified
+
+Any remaining TODOs/issues you chose NOT to fix (and why)
+
+Any migrations added (with names)
+
+Start now. Work carefully. Do not break features.
