@@ -286,16 +286,21 @@ export default function OnboardingPage() {
           description: "Your platform has been configured. Redirecting to dashboard...",
         });
         
-        // Invalidate auth AND walkthrough queries to ensure fresh data on dashboard
-        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-        await queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
-        
         // Clear any session storage dismissal so modal shows
         sessionStorage.removeItem("smartmanage-welcome-dismissed");
         
+        // CRITICAL: Invalidate cache to ensure fresh data on next mount
+        // This ensures ProtectedRoute sees the updated onboardingStatus = 'COMPLETED'
+        // Use invalidateQueries (not removeQueries + refetch) because queries aren't mounted on onboarding page
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] }),
+        ]);
+        
+        // Navigate after a brief delay for toast visibility
         setTimeout(() => {
           setLocation('/dashboard');
-        }, 1500);
+        }, 1000);
       }
     } catch (error: any) {
       console.error("Onboarding complete error:", error);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { 
   ChevronRight, 
   SkipForward, 
@@ -111,14 +112,21 @@ export function FirstTimeWelcomeModal() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [location] = useLocation();
   const [showModal, setShowModal] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [hasError, setHasError] = useState(false);
 
+  // Only show the modal on the dashboard, not on onboarding or other pages
+  const isOnDashboard = location === '/' || location === '/dashboard';
+
   const { data: walkthroughStatus, isLoading } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
-    enabled: !!user,
+    enabled: !!user && isOnDashboard, // Only fetch when on dashboard
     refetchOnWindowFocus: false,
+    refetchOnMount: "always", // Always fetch fresh data when modal mounts
+    staleTime: 0, // Consider data always stale to ensure fresh fetch
+    gcTime: 0, // Don't cache - always fetch fresh
   });
 
   const hasNotStarted = walkthroughStatus && 
@@ -126,14 +134,18 @@ export function FirstTimeWelcomeModal() {
     walkthroughStatus.walkthroughStep === 0;
 
   useEffect(() => {
-    if (hasNotStarted && user) {
+    // Only show modal on dashboard page
+    if (hasNotStarted && user && isOnDashboard) {
       const dismissed = sessionStorage.getItem(DISMISSED_KEY);
       if (!dismissed) {
-        const timer = setTimeout(() => setShowModal(true), 500);
-        return () => clearTimeout(timer);
+        // Show immediately - no delay needed, faster UX
+        setShowModal(true);
       }
+    } else {
+      // Hide modal if conditions are no longer met (navigating away from dashboard)
+      setShowModal(false);
     }
-  }, [hasNotStarted, user]);
+  }, [hasNotStarted, user, isOnDashboard]);
 
   const startWalkthroughMutation = useMutation({
     mutationFn: async () => {

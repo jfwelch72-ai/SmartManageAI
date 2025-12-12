@@ -78,6 +78,10 @@ export function AIAssistantWidget() {
 
   const isInWalkthrough = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep > 0;
   const hasNotStarted = walkthroughStatus && !walkthroughStatus.walkthroughCompleted && walkthroughStatus.walkthroughStep === 0;
+  
+  // On dashboard, let FirstTimeWelcomeModal handle the "not started" state
+  const isOnDashboard = location === '/' || location === '/dashboard';
+  const shouldShowWelcomeInWidget = hasNotStarted && !isOnDashboard;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -472,7 +476,7 @@ export function AIAssistantWidget() {
               )}
 
               <ScrollArea className="h-80 p-3" ref={scrollRef}>
-                {hasNotStarted && walkthroughStatus?.walkthrough ? (
+                {shouldShowWelcomeInWidget && walkthroughStatus?.walkthrough ? (
                   <div className="flex flex-col items-center justify-center h-full text-center px-4">
                     <div className="p-4 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 mb-4">
                       <Lightbulb className="h-10 w-10 text-primary" />
