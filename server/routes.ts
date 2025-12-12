@@ -389,6 +389,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DEV ONLY: Create fresh admin for full onboarding experience
+  app.post("/api/dev/fresh-admin-login", async (req: AuthRequest, res) => {
+    // SECURITY: Only available in development mode
+    if (process.env.NODE_ENV === 'production') {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    try {
+      const timestamp = Date.now();
+      const uniqueSlug = `fresh-org-${timestamp}`;
+      const uniqueEmail = `fresh-admin-${timestamp}@dev.test`;
+
+      // Create a brand new organization with onboarding NOT complete
+      const [newOrg] = await db.insert(organizations).values({
+        name: `Fresh Test Org ${timestamp}`,
+        slug: uniqueSlug,
+        email: `org-${timestamp}@dev.test`,
+        tradeType: "GENERAL_CONTRACTOR",
+        isActive: true,
+        onboardingComplete: false, // Force onboarding
+      }).returning();
+      console.log("[DEV] Created fresh organization for onboarding:", newOrg.id);
+
+      // Create fresh admin user with walkthrough NOT complete
+      const passwordHash = await hashPassword("test123");
+      const [freshAdmin] = await db.insert(users).values({
+        firstName: "Fresh",
+        lastName: "Admin",
+        email: uniqueEmail,
+        role: "ADMIN",
+        isActive: true,
+        passwordHash,
+        organizationId: newOrg.id,
+        walkthroughCompleted: false,
+        walkthroughStep: 0,
+        walkthroughStartedAt: null,
+      }).returning();
+      console.log(`[DEV] Created fresh admin: ${uniqueEmail}`);
+
+      // Generate token and set cookie
+      const token = generateToken(freshAdmin.id, freshAdmin.tokenVersion);
+      setAuthCookie(res, token);
+
+      const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = freshAdmin;
+      res.json({ 
+        user: userWithoutPassword,
+        organization: newOrg,
+        message: "Fresh admin created - ready for full onboarding experience",
+        isDevAccount: true,
+        redirectTo: "/onboarding"
+      });
+    } catch (error) {
+      console.error("[DEV] Fresh admin login error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get current user (with organization name if available)
   app.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
     try {

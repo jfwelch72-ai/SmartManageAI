@@ -6,7 +6,7 @@ import { isSuperAdmin } from "@/lib/rbac";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Wrench, Truck, Zap } from "lucide-react";
+import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Wrench, Truck, Zap, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -28,6 +28,7 @@ export default function LoginPage() {
   const { user, login } = useAuth();
   const { toast } = useToast();
   const [loadingRole, setLoadingRole] = useState<string | null>(null);
+  const [loadingFreshAdmin, setLoadingFreshAdmin] = useState(false);
   const isDev = import.meta.env.DEV;
 
   // Helper to determine where to redirect user after login
@@ -102,6 +103,35 @@ export default function LoginPage() {
     }
   };
 
+  const handleFreshAdminLogin = async () => {
+    setLoadingFreshAdmin(true);
+    try {
+      const res = await apiRequest("POST", "/api/dev/fresh-admin-login", {});
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create fresh admin account");
+      }
+      
+      if (data.user) {
+        toast({
+          title: "Fresh Admin Created",
+          description: "Starting full onboarding experience...",
+        });
+        // Redirect to onboarding for full setup wizard experience
+        window.location.href = data.redirectTo || "/onboarding";
+      }
+    } catch (error: any) {
+      toast({
+        title: "Fresh Admin Creation Failed",
+        description: error.message || "Could not create fresh admin account",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingFreshAdmin(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 gap-6">
       <LoginForm onLogin={handleLogin} />
@@ -129,7 +159,7 @@ export default function LoginPage() {
                   size="sm"
                   className="h-auto py-2 px-3 flex flex-col items-start gap-0.5"
                   onClick={() => handleDevLogin(role)}
-                  disabled={loadingRole !== null}
+                  disabled={loadingRole !== null || loadingFreshAdmin}
                   data-testid={`button-dev-login-${role.toLowerCase()}`}
                 >
                   <div className="flex items-center gap-2 w-full">
@@ -143,6 +173,28 @@ export default function LoginPage() {
                   <span className="text-xs text-muted-foreground pl-6">{description}</span>
                 </Button>
               ))}
+            </div>
+            
+            <div className="mt-4 pt-4 border-t">
+              <Button
+                variant="default"
+                className="w-full h-auto py-3 flex flex-col items-center gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
+                onClick={handleFreshAdminLogin}
+                disabled={loadingRole !== null || loadingFreshAdmin}
+                data-testid="button-dev-fresh-admin"
+              >
+                <div className="flex items-center gap-2">
+                  {loadingFreshAdmin ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-5 w-5" />
+                  )}
+                  <span className="font-semibold">Fresh Admin (Full Onboarding)</span>
+                </div>
+                <span className="text-xs opacity-90">
+                  New org + Setup Wizard + Feature Tour + Walkthrough
+                </span>
+              </Button>
             </div>
           </CardContent>
         </Card>
