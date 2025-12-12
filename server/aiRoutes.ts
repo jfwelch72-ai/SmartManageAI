@@ -1500,34 +1500,36 @@ router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Verify user has an organization (defense-in-depth for multi-tenant isolation)
-    if (!req.user.organizationId) {
-      // Users without organizations should complete org onboarding first
-      return res.json({
-        walkthroughCompleted: true,
-        walkthroughStep: 0,
-        walkthroughStartedAt: null,
-        totalSteps: 0,
-        role: req.user.role,
-        walkthrough: null,
-      });
-    }
-
-    const [user] = await db.select({
+    // Query fresh user data directly from database to handle session timing issues
+    // This ensures we get the latest organizationId even if it was just updated
+    const [freshUser] = await db.select({
       walkthroughCompleted: users.walkthroughCompleted,
       walkthroughStep: users.walkthroughStep,
       walkthroughStartedAt: users.walkthroughStartedAt,
       role: users.role,
       organizationId: users.organizationId,
       firstName: users.firstName,
-    }).from(users).where(and(
-      eq(users.id, req.user.id),
-      eq(users.organizationId, req.user.organizationId)
-    ));
+    }).from(users).where(eq(users.id, req.user.id));
 
-    if (!user) {
+    if (!freshUser) {
       return res.status(404).json({ error: "User not found" });
     }
+
+    // Check if user has an organization (using fresh data)
+    if (!freshUser.organizationId) {
+      // Users without organizations should complete org onboarding first
+      return res.json({
+        walkthroughCompleted: true,
+        walkthroughStep: 0,
+        walkthroughStartedAt: null,
+        totalSteps: 0,
+        role: freshUser.role,
+        walkthrough: null,
+      });
+    }
+
+    // Use fresh user data for the rest of the logic
+    const user = freshUser;
 
     // Get personalized walkthrough content with user's first name
     const firstName = user.firstName || 'there';

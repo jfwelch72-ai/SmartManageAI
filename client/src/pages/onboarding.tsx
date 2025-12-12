@@ -286,7 +286,12 @@ export default function OnboardingPage() {
           description: "Your platform has been configured. Redirecting to dashboard...",
         });
         
+        // Invalidate auth AND walkthrough queries to ensure fresh data on dashboard
         await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        
+        // Clear any session storage dismissal so modal shows
+        sessionStorage.removeItem("smartmanage-welcome-dismissed");
         
         setTimeout(() => {
           setLocation('/dashboard');
