@@ -1,6 +1,12 @@
 /**
  * Plan Selection Step for Onboarding
  * Allows users to choose their subscription tier during the onboarding process
+ * 
+ * Updated Pricing (December 2025):
+ * - Starter ($89): Under $500k revenue
+ * - Growth ($229): $500k-$2M revenue  
+ * - Scale ($579): $2M-$10M revenue
+ * - Hustler ($1199): Multi-company owners (separate option)
  */
 
 import { useState } from "react";
@@ -12,21 +18,23 @@ import {
   Check, 
   Crown,
   Sparkles,
-  Package,
+  Rocket,
   TrendingUp,
   BarChart3,
-  Zap,
+  Building2,
   ArrowLeft,
   ArrowRight,
-  Loader2
+  Loader2,
+  Bot,
+  Mail,
+  Globe,
+  Network
 } from "lucide-react";
 import { 
   PlanTier, 
   AddOnKey, 
   PLAN_INFO, 
-  PLAN_DEFAULT_FEATURES, 
   ADDON_INFO,
-  FEATURE_INFO
 } from "@shared/billing/plans";
 
 interface PlanSelectionStepProps {
@@ -38,14 +46,28 @@ interface PlanSelectionStepProps {
 }
 
 const PLAN_ICONS: Record<PlanTier, React.ElementType> = {
-  free: Package,
+  free: Rocket,
   starter: TrendingUp,
   professional: BarChart3,
-  enterprise: Zap,
+  enterprise: Building2,
 };
 
-const PLANS_ORDER: PlanTier[] = ["free", "starter", "professional", "enterprise"];
-const ADDONS_ORDER: AddOnKey[] = ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision"];
+// Only show paid plans in the selection (no free trial in main flow)
+const PLANS_ORDER: PlanTier[] = ["starter", "professional", "enterprise"];
+
+// Group add-ons by category
+const AI_ADDONS: AddOnKey[] = ["ai_pm", "ai_cfo", "ai_email"];
+const GROWTH_ADDONS: AddOnKey[] = ["website_seo", "bid_network"];
+
+// Icon mapping for add-ons
+const ADDON_ICONS: Record<AddOnKey, React.ElementType> = {
+  ai_pm: Bot,
+  ai_cfo: BarChart3,
+  ai_email: Mail,
+  website_seo: Globe,
+  bid_network: Network,
+  ai_vision: Sparkles,
+};
 
 export function PlanSelectionStep({ 
   onComplete, 
@@ -54,7 +76,7 @@ export function PlanSelectionStep({
   recommendedPlan,
   crewSize
 }: PlanSelectionStepProps) {
-  const [selectedPlan, setSelectedPlan] = useState<PlanTier>(recommendedPlan || "free");
+  const [selectedPlan, setSelectedPlan] = useState<PlanTier>(recommendedPlan || "starter");
   const [selectedAddons, setSelectedAddons] = useState<AddOnKey[]>([]);
 
   const toggleAddon = (addon: AddOnKey) => {
@@ -75,6 +97,10 @@ export function PlanSelectionStep({
     onComplete(selectedPlan, selectedAddons);
   };
 
+  const handleContinueFree = () => {
+    onComplete("free", []);
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
@@ -85,19 +111,17 @@ export function PlanSelectionStep({
         </div>
         <h2 className="text-2xl font-bold">Choose Your Plan</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          Start free and upgrade anytime as your business grows. 
-          All plans include core project management features.
+          No per-user fees. Select the plan that matches your business size.
         </p>
       </div>
 
       {/* Plan Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         {PLANS_ORDER.map((tier) => {
           const plan = PLAN_INFO[tier];
           const Icon = PLAN_ICONS[tier];
           const isSelected = selectedPlan === tier;
           const isRecommended = tier === recommendedPlan;
-          const features = PLAN_DEFAULT_FEATURES[tier];
 
           return (
             <Card 
@@ -120,32 +144,28 @@ export function PlanSelectionStep({
               <CardHeader className="pb-3 pt-6">
                 <div className="flex items-center gap-2">
                   <Icon className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-lg">{plan.name}</CardTitle>
+                  <CardTitle className="text-lg">{plan.displayName}</CardTitle>
                 </div>
-                <CardDescription className="text-xs">{plan.description}</CardDescription>
+                <Badge variant="outline" className="w-fit text-xs">
+                  {plan.revenueRange}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-3xl font-bold">
                   ${plan.price}
                   <span className="text-sm font-normal text-muted-foreground">/mo</span>
                 </div>
-                <ul className="space-y-1 text-sm min-h-[80px]">
-                  {features.length > 0 ? (
-                    features.slice(0, 3).map((feature) => (
-                      <li key={feature} className="flex items-center gap-2">
-                        <Check className="h-3 w-3 text-green-500 shrink-0" />
-                        <span className="text-xs">{FEATURE_INFO[feature]?.name || feature}</span>
-                      </li>
-                    ))
-                  ) : (
-                    <li className="flex items-center gap-2">
-                      <Check className="h-3 w-3 text-green-500 shrink-0" />
-                      <span className="text-xs">Core features included</span>
+                <p className="text-xs text-muted-foreground">{plan.bestFor}</p>
+                <ul className="space-y-1.5 text-sm">
+                  {plan.features.slice(0, 5).map((feature, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <Check className="h-3.5 w-3.5 text-green-500 shrink-0 mt-0.5" />
+                      <span className="text-xs">{feature}</span>
                     </li>
-                  )}
-                  {features.length > 3 && (
-                    <li className="text-xs text-muted-foreground">
-                      +{features.length - 3} more features
+                  ))}
+                  {plan.features.length > 5 && (
+                    <li className="text-xs text-muted-foreground pl-5">
+                      +{plan.features.length - 5} more
                     </li>
                   )}
                 </ul>
@@ -167,43 +187,98 @@ export function PlanSelectionStep({
       {/* Add-ons Section */}
       <div className="space-y-4">
         <div className="text-center">
-          <h3 className="text-lg font-semibold">Enhance with Add-ons</h3>
+          <h3 className="text-lg font-semibold">Add-On Feature Packs</h3>
           <p className="text-sm text-muted-foreground">
-            Power up your platform with AI and specialized tools
+            Available on any plan - power up with AI and growth tools
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {ADDONS_ORDER.map((addonKey) => {
-            const addon = ADDON_INFO[addonKey];
-            const isActive = selectedAddons.includes(addonKey);
+        {/* AI & Automation Add-ons */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <Bot className="h-4 w-4" />
+            AI & Automation
+          </h4>
+          <div className="grid gap-3 md:grid-cols-3">
+            {AI_ADDONS.map((addonKey) => {
+              const addon = ADDON_INFO[addonKey];
+              const isActive = selectedAddons.includes(addonKey);
+              const AddonIcon = ADDON_ICONS[addonKey];
 
-            return (
-              <Card 
-                key={addonKey}
-                className={`cursor-pointer transition-all ${
-                  isActive ? "border-primary bg-primary/5" : ""
-                }`}
-                onClick={() => toggleAddon(addonKey)}
-                data-testid={`card-addon-toggle-${addonKey}`}
-              >
-                <CardContent className="p-4 flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{addon.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{addon.description}</p>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-semibold text-sm">+${addon.price}</span>
-                    <Switch 
-                      checked={isActive}
-                      onCheckedChange={() => toggleAddon(addonKey)}
-                      data-testid={`switch-addon-${addonKey}`}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+              return (
+                <Card 
+                  key={addonKey}
+                  className={`cursor-pointer transition-all ${
+                    isActive ? "border-primary bg-primary/5" : ""
+                  }`}
+                  onClick={() => toggleAddon(addonKey)}
+                  data-testid={`card-addon-toggle-${addonKey}`}
+                >
+                  <CardContent className="p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <AddonIcon className="h-4 w-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">{addon.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{addon.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-semibold text-sm">${addon.price}</span>
+                      <Switch 
+                        checked={isActive}
+                        onCheckedChange={() => toggleAddon(addonKey)}
+                        data-testid={`switch-addon-${addonKey}`}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Business Growth Add-ons */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Business Growth
+          </h4>
+          <div className="grid gap-3 md:grid-cols-2">
+            {GROWTH_ADDONS.map((addonKey) => {
+              const addon = ADDON_INFO[addonKey];
+              const isActive = selectedAddons.includes(addonKey);
+              const AddonIcon = ADDON_ICONS[addonKey];
+
+              return (
+                <Card 
+                  key={addonKey}
+                  className={`cursor-pointer transition-all ${
+                    isActive ? "border-primary bg-primary/5" : ""
+                  }`}
+                  onClick={() => toggleAddon(addonKey)}
+                  data-testid={`card-addon-toggle-${addonKey}`}
+                >
+                  <CardContent className="p-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <AddonIcon className="h-4 w-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">{addon.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{addon.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-semibold text-sm">${addon.price}</span>
+                      <Switch 
+                        checked={isActive}
+                        onCheckedChange={() => toggleAddon(addonKey)}
+                        data-testid={`switch-addon-${addonKey}`}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -219,11 +294,11 @@ export function PlanSelectionStep({
               </p>
               {selectedAddons.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {PLAN_INFO[selectedPlan].name} plan + {selectedAddons.length} add-on{selectedAddons.length > 1 ? 's' : ''}
+                  {PLAN_INFO[selectedPlan].displayName} + {selectedAddons.length} add-on{selectedAddons.length > 1 ? 's' : ''}
                 </p>
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <Button 
                 variant="outline" 
                 onClick={onBack}
@@ -232,6 +307,14 @@ export function PlanSelectionStep({
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
+              </Button>
+              <Button 
+                variant="ghost"
+                onClick={handleContinueFree}
+                disabled={isSubmitting}
+                data-testid="button-continue-free"
+              >
+                Continue Free Trial
               </Button>
               <Button 
                 onClick={handleContinue}
@@ -243,7 +326,7 @@ export function PlanSelectionStep({
                 ) : (
                   <ArrowRight className="h-4 w-4 mr-2" />
                 )}
-                {selectedPlan === "free" ? "Continue with Free" : "Continue"}
+                Continue with {PLAN_INFO[selectedPlan].displayName}
               </Button>
             </div>
           </div>
@@ -251,7 +334,7 @@ export function PlanSelectionStep({
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        You can change your plan anytime from Settings. No credit card required for Free plan.
+        Start with a free trial, no credit card required. You can upgrade anytime from Settings.
       </p>
     </div>
   );
@@ -261,10 +344,9 @@ export function PlanSelectionStep({
  * Get recommended plan based on organization profile
  */
 export function getRecommendedPlan(crewSize?: number | null): PlanTier {
-  if (!crewSize) return "free";
+  if (!crewSize) return "starter";
   
-  if (crewSize >= 25) return "enterprise";
-  if (crewSize >= 10) return "professional";
-  if (crewSize >= 5) return "starter";
-  return "free";
+  if (crewSize >= 25) return "enterprise"; // Scale
+  if (crewSize >= 10) return "professional"; // Growth
+  return "starter";
 }

@@ -1,10 +1,29 @@
 /**
  * Subscription Plans & Feature Gating Configuration
  * Single source of truth for plan tiers, add-ons, and feature access
+ * 
+ * New Pricing Model (December 2025):
+ * - Starter ($89): Under $500k revenue - core features
+ * - Growth ($229): $500k-$2M revenue - production tracking, advanced reports
+ * - Scale ($579): $2M-$10M revenue - portfolio dashboards, bid network, website
+ * - Hustler ($1199): Multi-company owners - cross-org analytics, COO mode
  */
 
-// Plan tier definitions matching the spec: FREE, STARTER, PROFESSIONAL, ENTERPRISE
+// Plan tier definitions - using database enum values
+// Note: "free" maps to trial/demo, "starter" stays, "professional" → "growth", "enterprise" → "scale"
+// The "hustler" tier uses "enterprise" in the database but is displayed as "Hustler"
 export type PlanTier = "free" | "starter" | "professional" | "enterprise";
+
+// Display tier names for UI (maps to database values)
+export const PLAN_DISPLAY_NAMES: Record<PlanTier, string> = {
+  free: "Trial",
+  starter: "Starter",
+  professional: "Growth",
+  enterprise: "Scale",
+};
+
+// Special Hustler tier flag - stored as enterprise with a flag
+export const HUSTLER_TIER = "enterprise" as PlanTier;
 
 // Add-on keys matching the database enum
 export type AddOnKey = "ai_pm" | "ai_cfo" | "ai_email" | "website_seo" | "bid_network" | "ai_vision";
@@ -19,31 +38,39 @@ export type FeatureKey =
   | "AI_VISION"
   | "PRODUCTION_RATES"
   | "MATERIAL_BUDGET"
-  | "MULTI_ORG";
+  | "MULTI_ORG"
+  | "VENDOR_INVITES"
+  | "ADVANCED_REPORTS"
+  | "PORTFOLIO_DASHBOARDS"
+  | "PRIORITY_SUPPORT";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
   free: [
-    // Basic features only - very limited, encourages upgrade
+    // Trial/demo mode - limited access for evaluation
   ],
   starter: [
-    // Core business features
-    "PRODUCTION_RATES",
+    // Starter ($89): Core business features
+    // Project management, Time clock + GPS, Core estimating, CRM, Documents & messaging
   ],
   professional: [
-    // Starter features + advanced analytics and budget tracking
+    // Growth ($229): Everything in Starter, plus:
     "PRODUCTION_RATES",
     "MATERIAL_BUDGET",
-    "WEBSITE_SEO",
+    "VENDOR_INVITES",
+    "ADVANCED_REPORTS",
   ],
   enterprise: [
-    // Professional features + all premium features
+    // Scale ($579) or Hustler ($1199): Everything in Growth, plus:
     "PRODUCTION_RATES",
     "MATERIAL_BUDGET",
-    "WEBSITE_SEO",
+    "VENDOR_INVITES",
+    "ADVANCED_REPORTS",
+    "PORTFOLIO_DASHBOARDS",
     "BID_NETWORK",
-    "AI_CFO",
-    "MULTI_ORG",
+    "WEBSITE_SEO",
+    "PRIORITY_SUPPORT",
+    "MULTI_ORG", // Full multi-org for Hustler
   ],
 };
 
@@ -57,61 +84,139 @@ export const ADDON_FEATURES: Record<AddOnKey, FeatureKey> = {
   ai_vision: "AI_VISION",
 };
 
-// Plan display information for UI
-export const PLAN_INFO: Record<PlanTier, { name: string; description: string; price: number }> = {
+// Plan display information for UI - New pricing structure
+export const PLAN_INFO: Record<PlanTier, { 
+  name: string; 
+  displayName: string;
+  description: string; 
+  price: number;
+  revenueRange: string;
+  bestFor: string;
+  features: string[];
+}> = {
   free: {
-    name: "Free",
-    description: "Get started with essential construction management tools",
+    name: "Trial",
+    displayName: "Trial",
+    description: "Explore the platform with limited access",
     price: 0,
+    revenueRange: "Demo",
+    bestFor: "Evaluating the platform",
+    features: [
+      "Limited project access",
+      "Basic dashboard",
+      "14-day evaluation period",
+    ],
   },
   starter: {
     name: "Starter",
-    description: "Core features for small teams with production tracking",
-    price: 49,
+    displayName: "Starter",
+    description: "Get started with essential construction management tools",
+    price: 89,
+    revenueRange: "Under $500k Revenue",
+    bestFor: "Owner-operators and small crews",
+    features: [
+      "Project management",
+      "Time clock + GPS",
+      "Core estimating",
+      "CRM",
+      "Documents & messaging",
+      "Standard dashboard",
+      "Email support",
+    ],
   },
   professional: {
-    name: "Professional",
-    description: "Advanced analytics, budget tracking, and website builder",
-    price: 99,
+    name: "Growth",
+    displayName: "Growth",
+    description: "Advanced features for growing contractors replacing multiple tools",
+    price: 229,
+    revenueRange: "$500k–$2M Revenue",
+    bestFor: "Growing contractors replacing multiple tools",
+    features: [
+      "Everything in Starter",
+      "Production rate tracking",
+      "Budget vs actuals",
+      "Vendor invites",
+      "Advanced reports",
+      "Chat support",
+    ],
   },
   enterprise: {
-    name: "Enterprise",
-    description: "Full platform with bid network and multi-organization support",
-    price: 249,
+    name: "Scale",
+    displayName: "Scale",
+    description: "Full platform for multi-project, multi-crew operations",
+    price: 579,
+    revenueRange: "$2M–$10M Revenue",
+    bestFor: "Multi-project, multi-crew operations",
+    features: [
+      "Everything in Growth",
+      "Portfolio dashboards",
+      "Bid Network access",
+      "Website builder (basic)",
+      "Priority support",
+      "Quarterly success review",
+    ],
   },
 };
 
-// Add-on pricing and display info
-export const ADDON_INFO: Record<AddOnKey, { name: string; description: string; price: number }> = {
+// Hustler plan info (special tier for multi-company owners)
+export const HUSTLER_PLAN_INFO = {
+  name: "Hustler",
+  displayName: "Hustler",
+  description: "For business owners running multiple companies",
+  price: 1199,
+  revenueRange: "Multi-Company",
+  bestFor: "Owners running multiple businesses",
+  features: [
+    "Multiple companies under one account",
+    "Cross-org analytics",
+    "COO / delegation mode",
+    "White-glove onboarding",
+    "Priority roadmap input",
+  ],
+};
+
+// Add-on pricing and display info - Updated pricing
+export const ADDON_INFO: Record<AddOnKey, { 
+  name: string; 
+  description: string; 
+  price: number;
+  category: "ai" | "growth";
+}> = {
   ai_pm: {
-    name: "AI Project Manager",
-    description: "Automated project scheduling and task generation",
-    price: 49,
+    name: "AI PM Pack",
+    description: "Task generation, risk alerts, daily summaries",
+    price: 39,
+    category: "ai",
   },
   ai_cfo: {
-    name: "AI CFO",
-    description: "Financial insights and profitability analysis",
-    price: 79,
+    name: "AI CFO Pack",
+    description: "Margin tracking, cashflow forecasting, financial alerts",
+    price: 59,
+    category: "ai",
   },
   ai_email: {
-    name: "AI Email Assistant",
-    description: "Email classification and task extraction",
-    price: 39,
+    name: "AI Email & Admin Pack",
+    description: "Email categorization, task extraction, follow-ups",
+    price: 29,
+    category: "ai",
   },
   website_seo: {
-    name: "Website Builder + SEO",
-    description: "White-label website with SEO optimization",
-    price: 59,
+    name: "Website + SEO Pack",
+    description: "Website builder, SEO optimization, blog & gallery",
+    price: 39,
+    category: "growth",
   },
   bid_network: {
-    name: "Bid Network",
-    description: "Platform-wide subcontractor bid solicitation",
-    price: 69,
+    name: "Bid Network Pack",
+    description: "Competitive vendor bidding, pricing pressure reduction",
+    price: 49,
+    category: "growth",
   },
   ai_vision: {
-    name: "AI Vision Takeoff",
+    name: "AI Vision Pack",
     description: "AI-powered plan takeoff and material estimation",
-    price: 99,
+    price: 79,
+    category: "ai",
   },
 };
 
@@ -153,6 +258,22 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
     name: "Multi-Organization",
     description: "Portfolio management across multiple organizations",
   },
+  VENDOR_INVITES: {
+    name: "Vendor Invites",
+    description: "Invite vendors to submit pricing",
+  },
+  ADVANCED_REPORTS: {
+    name: "Advanced Reports",
+    description: "Detailed project and financial reporting",
+  },
+  PORTFOLIO_DASHBOARDS: {
+    name: "Portfolio Dashboards",
+    description: "Cross-project performance insights",
+  },
+  PRIORITY_SUPPORT: {
+    name: "Priority Support",
+    description: "Faster response times and dedicated support",
+  },
 };
 
 // Usage limits by plan tier
@@ -163,28 +284,28 @@ export const PLAN_LIMITS: Record<PlanTier, {
   aiVisionDocs: number;
 }> = {
   free: {
-    projects: 3,
-    users: 2,
-    storageGb: 1,
-    aiVisionDocs: 5,
+    projects: 2,
+    users: 1,
+    storageGb: 0.5,
+    aiVisionDocs: 3,
   },
   starter: {
     projects: 10,
     users: 5,
     storageGb: 10,
-    aiVisionDocs: 25,
+    aiVisionDocs: 10,
   },
   professional: {
     projects: 50,
     users: 25,
     storageGb: 50,
-    aiVisionDocs: 100,
+    aiVisionDocs: 50,
   },
   enterprise: {
     projects: -1, // Unlimited
     users: -1, // Unlimited
     storageGb: 500,
-    aiVisionDocs: 500,
+    aiVisionDocs: 200,
   },
 };
 
@@ -265,4 +386,48 @@ export function getMinimumPlanForFeature(featureKey: FeatureKey): PlanTier | nul
  */
 export function getPlanLimits(planTier: PlanTier) {
   return PLAN_LIMITS[planTier] || PLAN_LIMITS.free;
+}
+
+/**
+ * Get display name for a plan tier
+ */
+export function getPlanDisplayName(planTier: PlanTier): string {
+  return PLAN_DISPLAY_NAMES[planTier] || planTier;
+}
+
+/**
+ * Calculate monthly cost for a plan with selected add-ons
+ */
+export function calculateMonthlyCost(planTier: PlanTier, addons: AddOnKey[]): number {
+  const planPrice = PLAN_INFO[planTier]?.price || 0;
+  const addonTotal = addons.reduce((sum, addon) => {
+    return sum + (ADDON_INFO[addon]?.price || 0);
+  }, 0);
+  return planPrice + addonTotal;
+}
+
+/**
+ * Get recommended plan based on company size/revenue
+ */
+export function getRecommendedPlanByRevenue(annualRevenue: number): PlanTier {
+  if (annualRevenue >= 2000000) {
+    return "enterprise"; // Scale
+  } else if (annualRevenue >= 500000) {
+    return "professional"; // Growth
+  } else {
+    return "starter";
+  }
+}
+
+/**
+ * Get recommended plan based on crew size
+ */
+export function getRecommendedPlanByCrewSize(crewSize: number): PlanTier {
+  if (crewSize >= 25) {
+    return "enterprise"; // Scale
+  } else if (crewSize >= 10) {
+    return "professional"; // Growth
+  } else {
+    return "starter";
+  }
 }
