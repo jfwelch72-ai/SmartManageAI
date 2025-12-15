@@ -95,7 +95,7 @@ export default function VendorScoresPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/marketplace/vendor-scores/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/vendor-scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/vendor-scores"], exact: false });
       toast({ title: "Score deleted" });
       setSelectedScore(null);
     },
@@ -456,7 +456,7 @@ function CreateScoreDialog({
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/marketplace/vendor-scores", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/vendor-scores"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/vendor-scores"], exact: false });
       toast({ title: "Score created" });
       onOpenChange(false);
       resetForm();

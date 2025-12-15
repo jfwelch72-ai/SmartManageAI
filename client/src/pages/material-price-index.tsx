@@ -76,7 +76,7 @@ export default function MaterialPriceIndexPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/marketplace/material-prices/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/material-prices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/material-prices"], exact: false });
       toast({ title: "Price entry deleted" });
     },
     onError: () => {
@@ -400,7 +400,7 @@ function CreatePriceDialog({
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/marketplace/material-prices", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/material-prices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/material-prices"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["/api/marketplace/material-prices/categories/list"] });
       toast({ title: "Price entry created" });
       onOpenChange(false);

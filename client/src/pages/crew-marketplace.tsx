@@ -92,7 +92,7 @@ export default function CrewMarketplacePage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/marketplace/crew-listings/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crew-listings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crew-listings"], exact: false });
       toast({ title: "Listing deleted" });
       setSelectedListing(null);
     },
@@ -557,7 +557,7 @@ function CreateListingDialog({
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/marketplace/crew-listings", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crew-listings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crew-listings"], exact: false });
       toast({ title: "Crew listing created" });
       onOpenChange(false);
       resetForm();

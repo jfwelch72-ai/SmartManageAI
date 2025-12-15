@@ -78,6 +78,7 @@ import OfflineSyncPage from "@/pages/offline-sync";
 import VendorScoresPage from "@/pages/vendor-scores";
 import MaterialPriceIndexPage from "@/pages/material-price-index";
 import CrewMarketplacePage from "@/pages/crew-marketplace";
+import PricebookImportPage from "@/pages/pricebook-import";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -208,6 +209,7 @@ function Router() {
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={CrewMarketplacePage} permission={RoutePermissions.CRM} />} />
+      <Route path="/pricebook-import" component={() => <ProtectedRoute component={PricebookImportPage} permission={RoutePermissions.CRM} />} />
       
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
