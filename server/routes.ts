@@ -89,6 +89,8 @@ import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import opsRoutes from "./opsRoutes";
 import hustlerRoutes from "./hustlerRoutes";
 import bidNetworkRoutes from "./bidNetworkRoutes";
+import weatherRoutes from "./weatherRoutes";
+import vendorPricebookRoutes from "./vendorPricebookRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -186,6 +188,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Billing routes
   app.use("/api/billing", billingRoutes);
+
+  // Register Weather routes (forecast and history for delay documentation)
+  app.use("/api/weather", weatherRoutes);
+
+  // Register Vendor Pricebook routes (PDF upload and AI extraction)
+  app.use("/api/vendor", vendorPricebookRoutes);
 
   // ====================
   // Auth Routes

@@ -1,6 +1,7 @@
 import KPICard from "@/components/KPICard";
 import ProjectCard from "@/components/ProjectCard";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
+import { WeatherForecastWidget } from "@/components/WeatherForecastWidget";
 import { DashboardEditMode, EditModeIndicator } from "@/components/DashboardEditMode";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
@@ -439,6 +440,9 @@ export default function DashboardPage() {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Weather Forecast */}
+                <WeatherForecastWidget compact />
 
                 {/* Pending Tasks / Action Items */}
                 {pendingTasks.length > 0 && (

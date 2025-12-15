@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { hustlerOrganizations, organizations, users, hustlerLinkRequests, hustlerDelegates, projects, bids, changeOrders, tasks, estimates } from "@shared/schema";
+import { hustlerOrganizations, organizations, users, hustlerLinkRequests, hustlerDelegates, projects, bids, changeOrders, tasks, estimates, notifications } from "@shared/schema";
 import { eq, and, or, desc, isNull, inArray, sql, count, sum } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logInfo, logError } from "./utils/logger";
@@ -1281,6 +1281,310 @@ router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("H
   } catch (error: any) {
     logError(`[Hustler] Failed to revoke delegate: ${error.message}`);
     res.status(500).json({ error: "Failed to revoke delegate" });
+  }
+});
+
+// ============================================================================
+// UNIFIED INBOX - Aggregate tasks and notifications across all linked orgs
+// ============================================================================
+
+router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all linked organization IDs
+    const linkedOrgs = await db
+      .select({ 
+        organizationId: hustlerOrganizations.organizationId,
+        orgName: organizations.name 
+      })
+      .from(hustlerOrganizations)
+      .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+    const orgNameMap = new Map(linkedOrgs.map(o => [o.organizationId, o.orgName]));
+
+    if (orgIds.length === 0) {
+      return res.json({
+        items: [],
+        counts: { tasks: 0, notifications: 0, total: 0 },
+        organizations: [],
+      });
+    }
+
+    // Parse query params for filtering
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const typeFilter = req.query.type as string; // 'task', 'notification', or undefined for all
+    const statusFilter = req.query.status as string; // 'unread', 'pending', etc.
+
+    // Fetch enough items to satisfy pagination (offset + limit from each source)
+    const fetchLimit = offset + limit;
+
+    // Fetch tasks across all linked organizations using INNER JOIN to properly scope by org
+    const taskItems = typeFilter === 'notification' ? [] : await db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        priority: tasks.priority,
+        dueDate: tasks.dueDate,
+        projectId: tasks.projectId,
+        createdAt: tasks.createdAt,
+        projectName: projects.name,
+        projectOrgId: projects.gcOrganizationId,
+      })
+      .from(tasks)
+      .innerJoin(projects, eq(tasks.projectId, projects.id))
+      .where(
+        and(
+          inArray(projects.gcOrganizationId, orgIds),
+          statusFilter === 'pending' ? eq(tasks.status, 'PENDING') : undefined
+        )
+      )
+      .orderBy(desc(tasks.createdAt))
+      .limit(fetchLimit);
+
+    // Fetch notifications across all linked organizations
+    const notificationItems = typeFilter === 'task' ? [] : await db
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        message: notifications.message,
+        isRead: notifications.isRead,
+        entityType: notifications.entityType,
+        entityId: notifications.entityId,
+        createdAt: notifications.createdAt,
+        organizationId: notifications.organizationId,
+      })
+      .from(notifications)
+      .where(
+        and(
+          inArray(notifications.organizationId, orgIds),
+          statusFilter === 'unread' ? eq(notifications.isRead, false) : undefined
+        )
+      )
+      .orderBy(desc(notifications.createdAt))
+      .limit(fetchLimit);
+
+    // Transform and merge items into unified format
+    const unifiedItems: Array<{
+      id: string;
+      type: 'task' | 'notification';
+      title: string;
+      description: string | null;
+      status: string;
+      priority: string | null;
+      organizationId: string | null;
+      organizationName: string | null;
+      projectId: string | null;
+      projectName: string | null;
+      entityType: string | null;
+      entityId: string | null;
+      createdAt: Date | null;
+      dueDate: Date | null;
+      isRead: boolean | null;
+    }> = [];
+
+    // Add tasks
+    for (const task of taskItems) {
+      unifiedItems.push({
+        id: task.id,
+        type: 'task',
+        title: task.title || 'Untitled Task',
+        description: task.description,
+        status: task.status || 'PENDING',
+        priority: task.priority,
+        organizationId: task.projectOrgId,
+        organizationName: task.projectOrgId ? orgNameMap.get(task.projectOrgId) || null : null,
+        projectId: task.projectId,
+        projectName: task.projectName,
+        entityType: 'task',
+        entityId: task.id,
+        createdAt: task.createdAt,
+        dueDate: task.dueDate,
+        isRead: null,
+      });
+    }
+
+    // Add notifications
+    for (const notif of notificationItems) {
+      unifiedItems.push({
+        id: notif.id,
+        type: 'notification',
+        title: notif.type || 'Notification',
+        description: notif.message,
+        status: notif.isRead ? 'READ' : 'UNREAD',
+        priority: null,
+        organizationId: notif.organizationId,
+        organizationName: notif.organizationId ? orgNameMap.get(notif.organizationId) || null : null,
+        projectId: null,
+        projectName: null,
+        entityType: notif.entityType,
+        entityId: notif.entityId,
+        createdAt: notif.createdAt,
+        dueDate: null,
+        isRead: notif.isRead,
+      });
+    }
+
+    // Sort by createdAt descending and apply pagination
+    unifiedItems.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    const paginatedItems = unifiedItems.slice(offset, offset + limit);
+
+    // Get counts
+    const [taskCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .leftJoin(projects, eq(tasks.projectId, projects.id))
+      .where(inArray(projects.gcOrganizationId, orgIds));
+
+    const [notifCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(inArray(notifications.organizationId, orgIds));
+
+    const [unreadNotifCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(
+        and(
+          inArray(notifications.organizationId, orgIds),
+          eq(notifications.isRead, false)
+        )
+      );
+
+    res.json({
+      items: paginatedItems,
+      counts: {
+        tasks: taskCount?.count || 0,
+        notifications: notifCount?.count || 0,
+        unreadNotifications: unreadNotifCount?.count || 0,
+        total: (taskCount?.count || 0) + (notifCount?.count || 0),
+      },
+      organizations: linkedOrgs.map(o => ({
+        id: o.organizationId,
+        name: o.orgName,
+      })),
+      pagination: {
+        limit,
+        offset,
+        hasMore: unifiedItems.length > offset + limit,
+      },
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to fetch unified inbox: ${error.message}`);
+    res.status(500).json({ error: "Failed to fetch unified inbox" });
+  }
+});
+
+// Mark notification as read (for unified inbox)
+router.post("/hustler/notifications/:notificationId/read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { notificationId } = req.params;
+
+    // Get all linked organization IDs for security check
+    const linkedOrgs = await db
+      .select({ organizationId: hustlerOrganizations.organizationId })
+      .from(hustlerOrganizations)
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    if (orgIds.length === 0) {
+      return res.status(403).json({ error: "No linked organizations" });
+    }
+
+    // Verify notification belongs to a linked org
+    const [notif] = await db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          inArray(notifications.organizationId, orgIds)
+        )
+      );
+
+    if (!notif) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, notificationId));
+
+    res.json({ success: true });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to mark notification read: ${error.message}`);
+    res.status(500).json({ error: "Failed to mark notification as read" });
+  }
+});
+
+// Mark all notifications as read for a HUSTLER user across all orgs
+router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all linked organization IDs
+    const linkedOrgs = await db
+      .select({ organizationId: hustlerOrganizations.organizationId })
+      .from(hustlerOrganizations)
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    if (orgIds.length === 0) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const result = await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(
+        and(
+          inArray(notifications.organizationId, orgIds),
+          eq(notifications.isRead, false)
+        )
+      );
+
+    logInfo(`[Hustler] Marked all notifications read for user=${req.user.id}`);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to mark all notifications read: ${error.message}`);
+    res.status(500).json({ error: "Failed to mark notifications as read" });
   }
 });
 

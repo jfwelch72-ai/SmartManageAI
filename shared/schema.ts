@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -117,6 +117,9 @@ export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual
 export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
 export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision"]);
 export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs"]);
+
+// Pricebook Import Job Status Enum
+export const pricebookImportJobStatusEnum = pgEnum("pricebook_import_job_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
 
 // Organizations table (tenants/companies)
 export const organizations = pgTable("organizations", {
@@ -1019,6 +1022,22 @@ export const projectDelays = pgTable("project_delays", {
   resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // Weather evidence for WEATHER type delays
+  weatherEvidenceJson: json("weather_evidence_json").$type<{
+    fetchedAt: string;
+    location: { lat: number; lng: number };
+    dailyData: Array<{
+      date: string;
+      tempHigh: number;
+      tempLow: number;
+      precipitation: number;
+      windSpeed: number;
+      conditions: string;
+      alerts?: string[];
+    }>;
+  }>(),
+  locationLat: decimal("location_lat", { precision: 10, scale: 6 }),
+  locationLng: decimal("location_lng", { precision: 10, scale: 6 }),
 }, (table) => ({
   projectIdIdx: index("project_delays_project_id_idx").on(table.projectId),
   statusIdx: index("project_delays_status_idx").on(table.status),
@@ -5682,6 +5701,33 @@ export const bidRequestClarifications = pgTable("bid_request_clarifications", {
 export const insertBidRequestClarificationSchema = createInsertSchema(bidRequestClarifications).omit({ id: true, createdAt: true, updatedAt: true, answeredAt: true });
 export type InsertBidRequestClarification = z.infer<typeof insertBidRequestClarificationSchema>;
 export type BidRequestClarification = typeof bidRequestClarifications.$inferSelect;
+
+// Pricebook Import Jobs table - tracks AI extraction jobs for vendor price lists
+export const pricebookImportJobs = pgTable("pricebook_import_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  fileRef: text("file_ref").notNull(),
+  fileName: text("file_name").notNull(),
+  status: pricebookImportJobStatusEnum("status").notNull().default("PENDING"),
+  itemsExtracted: integer("items_extracted").default(0),
+  itemsApproved: integer("items_approved").default(0),
+  errorMessage: text("error_message"),
+  effectiveQuarter: text("effective_quarter"),
+  effectiveDate: timestamp("effective_date"),
+  processedAt: timestamp("processed_at"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("pricebook_import_jobs_org_idx").on(table.organizationId),
+  vendorIdx: index("pricebook_import_jobs_vendor_idx").on(table.crmOrganisationId),
+  statusIdx: index("pricebook_import_jobs_status_idx").on(table.status),
+}));
+
+export const insertPricebookImportJobSchema = createInsertSchema(pricebookImportJobs).omit({ id: true, createdAt: true, updatedAt: true, processedAt: true });
+export type InsertPricebookImportJob = z.infer<typeof insertPricebookImportJobSchema>;
+export type PricebookImportJob = typeof pricebookImportJobs.$inferSelect;
 
 // Dashboard Widget Configuration Type (for layout JSON)
 export interface DashboardWidgetConfig {

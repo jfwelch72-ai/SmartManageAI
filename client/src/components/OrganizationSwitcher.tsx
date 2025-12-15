@@ -10,10 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Check, ChevronDown, Loader2, Wrench } from "lucide-react";
+import { Building2, Check, ChevronDown, Loader2, Wrench, Inbox } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 
 interface Organization {
   id: string;
@@ -39,15 +39,28 @@ interface HustlerOrganizationsResponse {
   count: number;
 }
 
+interface UnifiedInboxCounts {
+  tasks: number;
+  notifications: number;
+  unreadNotifications: number;
+  total: number;
+}
+
 export function OrganizationSwitcher() {
   const { toast } = useToast();
-  const { refetch } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery<HustlerOrganizationsResponse>({
     queryKey: ["/api/hustler/organizations"],
     retry: false,
     staleTime: 30000,
+  });
+
+  const { data: inboxData } = useQuery<{ counts: UnifiedInboxCounts }>({
+    queryKey: ["/api/hustler/unified-inbox"],
+    retry: false,
+    staleTime: 60000,
+    enabled: !!data && data.count > 0,
   });
 
   const switchMutation = useMutation({
@@ -58,13 +71,8 @@ export function OrganizationSwitcher() {
       return response.json();
     },
     onSuccess: async (result) => {
-      // Invalidate all queries to refresh data for new organization
       queryClient.invalidateQueries();
-      
-      // Refresh auth context to get updated user info with new organizationId
-      if (refetch) {
-        await refetch();
-      }
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
       
       toast({
         title: "Organization Switched",
@@ -118,6 +126,18 @@ export function OrganizationSwitcher() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[250px]">
+        <Link href="/hustler/inbox">
+          <DropdownMenuItem className="gap-2 cursor-pointer" data-testid="menu-item-unified-inbox">
+            <Inbox className="h-4 w-4" />
+            <span className="flex-1">Unified Inbox</span>
+            {(inboxData?.counts?.unreadNotifications || 0) > 0 && (
+              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">
+                {inboxData?.counts?.unreadNotifications}
+              </Badge>
+            )}
+          </DropdownMenuItem>
+        </Link>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {data.organizations.map((org) => (

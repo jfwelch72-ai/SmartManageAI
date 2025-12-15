@@ -14,6 +14,70 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
+interface WeatherEvidence {
+  fetchedAt: string;
+  location: { lat: number; lng: number };
+  dailyData: Array<{
+    date: string;
+    tempHigh: number;
+    tempLow: number;
+    precipitation: number;
+    windSpeed: number;
+    conditions: string;
+    alerts?: string[];
+  }>;
+}
+
+async function fetchWeatherEvidence(lat: number, lng: number, startDate: Date, endDate?: Date | null): Promise<WeatherEvidence | null> {
+  try {
+    const formatDate = (d: Date) => d.toISOString().split("T")[0];
+    const end = endDate || new Date();
+    
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${formatDate(startDate)}&end_date=${formatDate(end)}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      console.error("Weather API error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.daily || !data.daily.time) return null;
+
+    const WEATHER_CODES: Record<number, string> = {
+      0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+      45: "Foggy", 48: "Depositing rime fog", 51: "Light drizzle", 53: "Moderate drizzle",
+      55: "Dense drizzle", 61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+      66: "Light freezing rain", 67: "Heavy freezing rain", 71: "Slight snow",
+      73: "Moderate snow", 75: "Heavy snow", 80: "Slight rain showers",
+      81: "Moderate rain showers", 82: "Violent rain showers", 95: "Thunderstorm",
+      96: "Thunderstorm with hail", 99: "Thunderstorm with heavy hail",
+    };
+
+    const dailyData = data.daily.time.map((date: string, i: number) => ({
+      date,
+      tempHigh: data.daily.temperature_2m_max[i],
+      tempLow: data.daily.temperature_2m_min[i],
+      precipitation: data.daily.precipitation_sum[i] || 0,
+      windSpeed: data.daily.wind_speed_10m_max[i] || 0,
+      conditions: WEATHER_CODES[data.daily.weather_code[i]] || "Unknown",
+    }));
+
+    return {
+      fetchedAt: new Date().toISOString(),
+      location: { lat, lng },
+      dailyData,
+    };
+  } catch (error) {
+    console.error("Failed to fetch weather evidence:", error);
+    return null;
+  }
+}
+
 const DELAY_REASON_LABELS: Record<string, string> = {
   WEATHER: "Weather",
   GC_SCHEDULING: "GC Scheduling",
@@ -1076,6 +1140,69 @@ router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, req
   } catch (error) {
     console.error("Error deleting notification:", error);
     res.status(500).json({ error: "Failed to delete notification" });
+  }
+});
+
+router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { lat, lng } = req.body;
+
+    if (!lat || !lng) {
+      res.status(400).json({ error: "Latitude and longitude are required" });
+      return;
+    }
+
+    const delay = await getDelayById(id);
+    if (!delay) {
+      res.status(404).json({ error: "Delay not found" });
+      return;
+    }
+
+    if (delay.reason !== "WEATHER") {
+      res.status(400).json({ error: "Weather evidence can only be fetched for WEATHER type delays" });
+      return;
+    }
+
+    const weatherEvidence = await fetchWeatherEvidence(
+      parseFloat(lat),
+      parseFloat(lng),
+      new Date(delay.startDateTime),
+      delay.endDateTime ? new Date(delay.endDateTime) : null
+    );
+
+    if (!weatherEvidence) {
+      res.status(502).json({ error: "Failed to fetch weather data from external service" });
+      return;
+    }
+
+    const [updatedDelay] = await db
+      .update(projectDelays)
+      .set({
+        weatherEvidenceJson: weatherEvidence,
+        locationLat: String(lat),
+        locationLng: String(lng),
+        updatedAt: new Date(),
+      })
+      .where(eq(projectDelays.id, id))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "projectDelay",
+      entityId: id,
+      newValue: JSON.stringify({ action: "fetch_weather_evidence", location: { lat, lng } }),
+    }, req);
+
+    res.json({
+      ...updatedDelay,
+      reasonLabel: DELAY_REASON_LABELS[updatedDelay.reason] || updatedDelay.reason,
+      responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible,
+    });
+  } catch (error) {
+    console.error("Error fetching weather evidence:", error);
+    res.status(500).json({ error: "Failed to fetch weather evidence" });
   }
 });
 
