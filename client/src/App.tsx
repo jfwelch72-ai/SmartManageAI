@@ -75,6 +75,9 @@ import PhotoCustodyPage from "@/pages/photo-custody";
 import VoiceLogsPage from "@/pages/voice-logs";
 import IssueCapturesPage from "@/pages/issue-captures";
 import OfflineSyncPage from "@/pages/offline-sync";
+import VendorScoresPage from "@/pages/vendor-scores";
+import MaterialPriceIndexPage from "@/pages/material-price-index";
+import CrewMarketplacePage from "@/pages/crew-marketplace";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -200,6 +203,11 @@ function Router() {
       <Route path="/voice-logs" component={() => <ProtectedRoute component={VoiceLogsPage} />} />
       <Route path="/issue-captures" component={() => <ProtectedRoute component={IssueCapturesPage} />} />
       <Route path="/offline-sync" component={() => <ProtectedRoute component={OfflineSyncPage} />} />
+      
+      {/* Marketplace routes */}
+      <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
+      <Route path="/crew-marketplace" component={() => <ProtectedRoute component={CrewMarketplacePage} permission={RoutePermissions.CRM} />} />
       
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
