@@ -1,0 +1,42 @@
+You are in the TEAM Replit copy of SmartManageAI (this is the source of truth and more advanced).
+Your job is to generate a comparison + merge plan against the PERSONAL repl’s extracted docs that I will paste below.
+
+STRICT RULES:
+- Do NOT refactor or “improve” anything.
+- Do NOT apply code changes yet.
+- Only READ + REPORT. Create docs only.
+
+STEP A — Create TEAM inventory docs (write into /docs/merge/):
+1) /docs/merge/team_inventory.md
+   - Repo tree (top 4 levels) with file counts per folder
+   - package.json scripts + dependency versions
+   - process.env.* usage grouped by feature
+   - drizzle migrations list + schema summary (new tables/enums)
+   - backend route modules + prefixes
+   - frontend pages/routes
+   - feature gating / entitlements / subscription/billing enforcement locations
+
+2) /docs/merge/team_risk_check.md
+   - Confirm multi-tenant patterns are consistently enforced in routes and key services (orgId filters, mustDenyAccess, getRequiredOrgIdFromReq or equivalent).
+   - List any modules that query by “projectCode only” or without org scoping.
+   - List any routes missing requireAuth / role checks.
+
+STEP B — I will paste PERSONAL docs below.
+After I paste them, produce:
+3) /docs/merge/gap_matrix.md
+   - Table: Feature/Change | Present in Team? | Present in Personal? | Recommended action (PORT / IGNORE / MANUAL MERGE) | Files involved | Risk
+   - Focus on: AI org isolation, billing enforcement, notifications, onboarding/website module, marketplace, email AI, takeoff, multi-org “hustler” model.
+
+4) /docs/merge/merge_plan.md
+   - A step-by-step plan to port only safe improvements from Personal into Team.
+   - Include exact file-level actions (copy file, port specific functions, cherry-pick snippets) and validation steps.
+   - Identify conflicts where Team has a better version and Personal should be ignored.
+
+PRINT OUT:
+- Top 15 “recommended ports”
+- Top 10 “do NOT port” items
+- A short “Next Prompt” stub that will APPLY the approved ports (but do not apply yet)
+
+NOW WAIT FOR MY PASTE of PERSONAL docs.
+
+=== PERSONAL DOCS WILL BE PASTED BELOW THIS LINE ===
