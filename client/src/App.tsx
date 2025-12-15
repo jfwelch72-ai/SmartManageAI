@@ -72,6 +72,9 @@ import BillingPage from "@/pages/billing";
 import DelayClaimsPage from "@/pages/delay-claims";
 import DailyReportLocksPage from "@/pages/daily-report-locks";
 import PhotoCustodyPage from "@/pages/photo-custody";
+import VoiceLogsPage from "@/pages/voice-logs";
+import IssueCapturesPage from "@/pages/issue-captures";
+import OfflineSyncPage from "@/pages/offline-sync";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -192,6 +195,11 @@ function Router() {
       <Route path="/delay-claims" component={() => <ProtectedRoute component={DelayClaimsPage} permission={RoutePermissions.DELAY_CLAIMS} />} />
       <Route path="/daily-report-locks" component={() => <ProtectedRoute component={DailyReportLocksPage} permission={RoutePermissions.DAILY_REPORT_LOCKS} />} />
       <Route path="/photo-custody" component={() => <ProtectedRoute component={PhotoCustodyPage} permission={RoutePermissions.PHOTO_CUSTODY} />} />
+      
+      {/* Field Productivity routes */}
+      <Route path="/voice-logs" component={() => <ProtectedRoute component={VoiceLogsPage} />} />
+      <Route path="/issue-captures" component={() => <ProtectedRoute component={IssueCapturesPage} />} />
+      <Route path="/offline-sync" component={() => <ProtectedRoute component={OfflineSyncPage} />} />
       
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
