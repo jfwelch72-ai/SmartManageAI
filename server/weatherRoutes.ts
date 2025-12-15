@@ -3,6 +3,46 @@ import { requireAuth, type AuthRequest } from "./auth";
 
 const router = Router();
 
+// In-memory cache for weather data (30 minute TTL)
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const weatherCache = new Map<string, CacheEntry<any>>();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function getCacheKey(type: string, lat: number, lng: number, extra?: string): string {
+  // Round coords to 2 decimal places for cache key
+  const roundedLat = Math.round(lat * 100) / 100;
+  const roundedLng = Math.round(lng * 100) / 100;
+  return `${type}:${roundedLat}:${roundedLng}${extra ? `:${extra}` : ''}`;
+}
+
+function getFromCache<T>(key: string): T | null {
+  const entry = weatherCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    weatherCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function setCache<T>(key: string, data: T): void {
+  weatherCache.set(key, {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+  // Clean up old entries periodically
+  if (weatherCache.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of weatherCache.entries()) {
+      if (now > v.expiresAt) weatherCache.delete(k);
+    }
+  }
+}
+
 interface WeatherDay {
   date: string;
   tempHigh: number;
@@ -72,6 +112,14 @@ router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => 
       return;
     }
 
+    // Check cache first
+    const cacheKey = getCacheKey('forecast', latitude, longitude, String(numDays));
+    const cached = getFromCache<WeatherResponse>(cacheKey);
+    if (cached) {
+      res.json({ ...cached, fromCache: true });
+      return;
+    }
+
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=${numDays}`;
 
     const response = await fetch(url);
@@ -98,6 +146,9 @@ router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => 
       fetchedAt: new Date().toISOString(),
       dailyData,
     };
+
+    // Cache the result
+    setCache(cacheKey, result);
 
     res.json(result);
   } catch (error) {
@@ -141,6 +192,15 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     const formatDate = (d: Date) => d.toISOString().split("T")[0];
+    
+    // Check cache first
+    const cacheKey = getCacheKey('history', latitude, longitude, `${formatDate(start)}:${formatDate(end)}`);
+    const cached = getFromCache<WeatherResponse>(cacheKey);
+    if (cached) {
+      res.json({ ...cached, fromCache: true });
+      return;
+    }
+    
     const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${latitude}&longitude=${longitude}&start_date=${formatDate(start)}&end_date=${formatDate(end)}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto`;
 
     const response = await fetch(url);
@@ -176,6 +236,9 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
       fetchedAt: new Date().toISOString(),
       dailyData,
     };
+
+    // Cache the result
+    setCache(cacheKey, result);
 
     res.json(result);
   } catch (error) {

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import type { ProjectDelay, ChangeOrder } from "@shared/schema";
+import { WeatherEvidenceCard } from "./WeatherEvidenceCard";
 
 interface DelaySectionProps {
   projectId: string;
@@ -623,6 +624,9 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
                         {delay.proceedToWorkNotes && <span className="text-muted-foreground"> - {delay.proceedToWorkNotes}</span>}
                       </p>
                     </div>
+                  )}
+                  {delay.reason === "WEATHER" && delay.weatherEvidenceJson && (
+                    <WeatherEvidenceCard evidence={delay.weatherEvidenceJson} compact />
                   )}
                 </CardContent>
               </Card>

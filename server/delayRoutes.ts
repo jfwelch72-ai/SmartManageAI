@@ -295,10 +295,49 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       return;
     }
 
+    // Prepare insert data with potential weather evidence
+    let insertData = { ...validationResult.data };
+    let weatherLat: number | null = null;
+    let weatherLng: number | null = null;
+    
+    // Auto-fetch weather evidence for WEATHER delays if lat/lng provided
+    if (validationResult.data.reason === "WEATHER") {
+      const lat = req.body.locationLat ? parseFloat(req.body.locationLat) : null;
+      const lng = req.body.locationLng ? parseFloat(req.body.locationLng) : null;
+      
+      if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+        weatherLat = lat;
+        weatherLng = lng;
+        // Store location for later evidence fetching
+        insertData = { 
+          ...insertData, 
+          locationLat: String(lat), 
+          locationLng: String(lng) 
+        };
+      }
+    }
+
     const [newDelay] = await db
       .insert(projectDelays)
-      .values(validationResult.data)
+      .values(insertData)
       .returning();
+    
+    // Fetch weather evidence async after creation for WEATHER delays
+    if (validationResult.data.reason === "WEATHER" && weatherLat && weatherLng) {
+      const startDate = new Date(validationResult.data.startDateTime);
+      const endDate = validationResult.data.endDateTime ? new Date(validationResult.data.endDateTime) : new Date();
+      const delayId = newDelay.id;
+      const lat = weatherLat;
+      const lng = weatherLng;
+      
+      fetchWeatherEvidence(lat, lng, startDate, endDate).then(async (evidence) => {
+        if (evidence) {
+          await db.update(projectDelays)
+            .set({ weatherEvidenceJson: evidence })
+            .where(eq(projectDelays.id, delayId));
+        }
+      }).catch(err => console.error("Failed to fetch weather evidence:", err));
+    }
 
     await logAudit({
       userId,

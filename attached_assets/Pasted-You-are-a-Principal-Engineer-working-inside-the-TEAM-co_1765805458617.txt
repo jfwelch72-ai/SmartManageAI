@@ -1,0 +1,221 @@
+You are a Principal Engineer working inside the TEAM copy of SmartManageAI.
+This is a production-grade, multi-tenant, billed SaaS platform.
+
+OBJECTIVE:
+Fully integrate all missing feature modules identified from the PERSONAL audit into the TEAM codebase, ensuring:
+- Full functional parity where required
+- Clean integration with existing TEAM systems
+- No regressions to security, billing, RBAC, or tenant isolation
+- All AI systems are updated to understand and use the new data
+
+ABSOLUTE RULES (NON-NEGOTIABLE):
+1. DO NOT remove, rename, or weaken any existing TEAM structures.
+2. DO NOT overwrite TEAM RBAC, billing, entitlements, orgFilter, or audit logging.
+3. ALL new data must be organization-scoped using TEAM’s orgFilter pattern.
+4. ALL new AI features must use the existing OpenAI client + orchestrator.
+5. ALL new pages must be wired into existing navigation, routing, and permissions.
+6. Schema changes must be additive only and compatible with db:push.
+
+============================================================
+PHASE 1 — WEATHER SYSTEM (FULL OPERATIONAL UPGRADE)
+============================================================
+
+BACKEND:
+- Enhance server/weatherRoutes.ts:
+  - GET /api/weather/forecast-10day
+  - GET /api/weather/history
+- Use WEATHER_API_KEY (WeatherAPI.com free tier).
+- Normalize output for dashboard + delay usage.
+- Cache per (orgId + lat/lng + dateRange) for 30 minutes.
+
+DELAY INTEGRATION:
+- When creating or updating a delay or delay claim with cause = WEATHER:
+  - Automatically fetch historical weather for project location + date range.
+  - Persist a snapshot as immutable evidence (JSON) linked to the delay.
+  - This evidence must render on delay detail and delay claim pages.
+
+FRONTEND:
+- Add a “10-Day Forecast” dashboard widget.
+- Tie forecast to active project or org default location.
+- Weather evidence must display inline inside delay views.
+
+============================================================
+PHASE 2 — DELAY CLAIMS + RISK & EVIDENCE SYSTEM
+============================================================
+
+SCHEMA (ADDITIVE):
+- delayClaims
+- dailyReportLocks
+- photoCustodyRecords (or custodyEvents tied to media)
+- delayWeatherEvidence (if not embedding JSON)
+
+BACKEND:
+- Fully implement riskClaimsRoutes.ts:
+  - Delay claims lifecycle (draft → submitted → resolved)
+  - Daily report locking enforcement
+  - Photo custody immutability
+- Enforce org isolation + audit logging on every mutation.
+
+FRONTEND:
+- Pages:
+  - /delay-claims
+  - /daily-report-locks
+  - /photo-custody
+- Evidence (weather + photos + reports) must render read-only once locked.
+
+============================================================
+PHASE 3 — FIELD PRODUCTIVITY (VOICE, ISSUES, OFFLINE)
+============================================================
+
+SCHEMA:
+- voiceLogs
+- issueCaptures
+- offlineSyncQueue (already exists — wire fully)
+
+BACKEND:
+- Implement services:
+  - voiceLogService (upload → transcribe → attach to project)
+  - issueCaptureService (photos + severity + status)
+  - offlineSyncService (queue + replay + conflict resolution)
+
+FRONTEND:
+- Pages:
+  - /voice-logs
+  - /issue-captures
+  - /offline-sync
+- All entries must link to projects and appear in AI context.
+
+============================================================
+PHASE 4 — MARKETPLACE EXPANSION
+============================================================
+
+SCHEMA:
+- vendorScores
+- vendorScoreTransactions
+- materialPriceIndex
+- crewMarketplaceListings + inquiries
+
+BACKEND:
+- marketplaceRoutes.ts:
+  - Vendor scoring (with disputes)
+  - Material price index (historical + trends)
+  - Crew marketplace (cross-org, HUSTLER only)
+
+SECURITY:
+- Crew marketplace and cross-org visibility ONLY for authorized hustler orgs.
+- No free-form orgId input — derive from memberships only.
+
+FRONTEND:
+- Pages:
+  - /vendor-scores
+  - /material-price-index
+  - /crew-marketplace
+
+============================================================
+PHASE 5 — VENDOR PDF → AI PRICEBOOK INGESTION (CRITICAL)
+============================================================
+
+BACKEND:
+- Add vendor pricebook PDF upload:
+  - Validate PDF only
+  - Store via objectStorage
+  - Create pricebookImportJobs entry
+
+AI PIPELINE:
+- Use server/ai/vendorPriceListExtractor.ts
+- Parse PDF → structured SKUs
+- Insert into vendorPricebooks + vendorPricebookItems
+- Flag low-confidence rows as AI_SUGGESTED
+- Support approval workflow
+
+FRONTEND:
+- Vendor pricing UI:
+  - Upload PDF
+  - View import status
+  - Review extracted pricing
+  - Approve / reject items
+
+ENTITLEMENTS:
+- Gate behind existing TEAM feature system (PRO / Vendor Integrations add-on).
+
+============================================================
+PHASE 6 — EXECUTIVE INTELLIGENCE UI
+============================================================
+
+AI:
+- HealthScoreEngine
+- ExecutiveDigestService
+- WhatIfSimulatorEngine already exist — DO NOT REWRITE
+
+FRONTEND:
+- Pages:
+  - /company-health
+  - /executive-digest
+  - /what-if-simulator
+- Display persisted AI outputs (not just regenerated data).
+
+============================================================
+PHASE 7 — HUSTLER UX COMPLETION
+============================================================
+
+BACKEND:
+- Finalize hustlerRoutes:
+  - my-orgs
+  - org switching
+  - unified inbox aggregation
+  - benchmarking data (anonymized)
+
+FRONTEND:
+- Pages:
+  - /unified-inbox
+  - /benchmarking
+- Strict org membership enforcement.
+
+============================================================
+PHASE 8 — AI CONTEXT & PROMPT UPDATES (MANDATORY)
+============================================================
+
+UPDATE AI SNAPSHOT BUILDER:
+- Include:
+  - Weather forecasts + delay evidence
+  - Vendor scores + price trends
+  - Issue captures + voice logs
+  - Delay claims + risk data
+  - Crew marketplace availability
+
+UPDATE SYSTEM PROMPTS:
+- AI PM must reason about:
+  - Weather-driven delays
+  - Vendor reliability
+  - Field issues and evidence
+- AI CFO must reason about:
+  - Material price trends
+  - Vendor price volatility
+  - Delay cost exposure
+
+NO NEW AI CLIENTS — use existing orchestrator only.
+
+============================================================
+PHASE 9 — NAVIGATION, ROUTING, VALIDATION
+============================================================
+
+- Wire all new pages into App.tsx and AppSidebar.tsx.
+- Apply FeatureGate where required.
+- Maintain role-based visibility.
+- Run db:push and fix all type errors.
+
+============================================================
+DELIVERABLES (PRINT AT END)
+============================================================
+1. Files changed (grouped by Backend / Frontend / Shared)
+2. Schema additions summary
+3. New routes list
+4. New pages list
+5. Security notes (cross-org safeguards)
+6. Manual test checklist
+
+IMPLEMENT IN ORDER:
+Schema → Backend → Frontend → AI context → Validation
+
+DO NOT STOP EARLY.
+DO NOT PARTIALLY IMPLEMENT.
