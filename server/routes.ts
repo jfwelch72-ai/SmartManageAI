@@ -92,6 +92,7 @@ import bidNetworkRoutes from "./bidNetworkRoutes";
 import weatherRoutes from "./weatherRoutes";
 import vendorPricebookRoutes from "./vendorPricebookRoutes";
 import delayClaimsRoutes from "./delayClaimsRoutes";
+import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -117,6 +118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register delay claims routes
   app.use("/api/delay-claims", delayClaimsRoutes);
+  app.use("/api/field-productivity", fieldProductivityRoutes);
 
   // Register inspection scheduling routes
   app.use("/api", inspectionRoutes);

@@ -5936,3 +5936,144 @@ export interface PaletteValidationResult {
   results: ColorContrastResult[];
   failedPairs: string[];
 }
+
+// ==========================================
+// FIELD PRODUCTIVITY SYSTEM
+// ==========================================
+
+// Field Productivity Enums
+export const voiceLogStatusEnum = pgEnum("voice_log_status", ["PENDING", "TRANSCRIBED", "FAILED"]);
+export const issueSeverityEnum = pgEnum("issue_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const issueStatusEnum = pgEnum("issue_status", ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]);
+export const offlineSyncStatusEnum = pgEnum("offline_sync_status", ["PENDING", "SYNCED", "FAILED"]);
+export const offlineOperationTypeEnum = pgEnum("offline_operation_type", ["CREATE", "UPDATE", "DELETE"]);
+export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO"]);
+
+// Voice Logs table - Voice memo transcriptions from field workers
+export const voiceLogs = pgTable("voice_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Audio details
+  audioUrl: text("audio_url").notNull(),
+  audioObjectKey: text("audio_object_key"),
+  duration: integer("duration"),  // in seconds
+  
+  // Transcription
+  transcription: text("transcription"),
+  status: voiceLogStatusEnum("status").notNull().default("PENDING"),
+  transcribedAt: timestamp("transcribed_at"),
+  errorMessage: text("error_message"),
+  
+  // AI-extracted metadata
+  aiSummary: text("ai_summary"),
+  aiTags: text("ai_tags").array(),
+  aiSentiment: text("ai_sentiment"),  // POSITIVE, NEUTRAL, NEGATIVE, URGENT
+  
+  // Location
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("voice_logs_org_idx").on(table.organizationId),
+  projectIdx: index("voice_logs_project_idx").on(table.projectId),
+  userIdx: index("voice_logs_user_idx").on(table.userId),
+  statusIdx: index("voice_logs_status_idx").on(table.status),
+}));
+
+export const insertVoiceLogSchema = createInsertSchema(voiceLogs).omit({ id: true, createdAt: true, updatedAt: true, transcribedAt: true });
+export type InsertVoiceLog = z.infer<typeof insertVoiceLogSchema>;
+export type VoiceLog = typeof voiceLogs.$inferSelect;
+
+// Issue Captures table - Field issue/problem documentation
+export const issueCaptures = pgTable("issue_captures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  assignedToId: varchar("assigned_to_id").references(() => users.id, { onDelete: "set null" }),
+  
+  // Issue details
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: issueSeverityEnum("severity").notNull().default("MEDIUM"),
+  status: issueStatusEnum("status").notNull().default("OPEN"),
+  
+  // Photos/evidence
+  photoUrls: text("photo_urls").array(),
+  photoObjectKeys: text("photo_object_keys").array(),
+  
+  // Location
+  location: text("location"),  // Text description of location
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  
+  // Trade/category
+  tradeAffected: text("trade_affected"),
+  category: text("category"),  // SAFETY, QUALITY, DELAY, DESIGN, OTHER
+  
+  // Resolution
+  resolutionNotes: text("resolution_notes"),
+  resolvedById: varchar("resolved_by_id").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  
+  // AI analysis
+  aiAnalysis: text("ai_analysis"),
+  aiRecommendations: text("ai_recommendations"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("issue_captures_org_idx").on(table.organizationId),
+  projectIdx: index("issue_captures_project_idx").on(table.projectId),
+  createdByIdx: index("issue_captures_created_by_idx").on(table.createdById),
+  severityIdx: index("issue_captures_severity_idx").on(table.severity),
+  statusIdx: index("issue_captures_status_idx").on(table.status),
+}));
+
+export const insertIssueCaptureSchema = createInsertSchema(issueCaptures).omit({ id: true, createdAt: true, updatedAt: true, resolvedAt: true });
+export type InsertIssueCapture = z.infer<typeof insertIssueCaptureSchema>;
+export type IssueCapture = typeof issueCaptures.$inferSelect;
+
+// Offline Sync Queue table - Queue for offline operations
+export const offlineSyncQueue = pgTable("offline_sync_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Operation details
+  operationType: offlineOperationTypeEnum("operation_type").notNull(),
+  entityType: offlineEntityTypeEnum("entity_type").notNull(),
+  entityId: varchar("entity_id"),  // Local ID before sync
+  payload: json("payload").notNull(),  // The data to sync
+  
+  // Sync status
+  status: offlineSyncStatusEnum("status").notNull().default("PENDING"),
+  syncedAt: timestamp("synced_at"),
+  syncedEntityId: varchar("synced_entity_id"),  // Server ID after sync
+  
+  // Error handling
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").notNull().default(0),
+  lastRetryAt: timestamp("last_retry_at"),
+  
+  // Metadata
+  deviceId: text("device_id"),
+  clientTimestamp: timestamp("client_timestamp"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("offline_sync_org_idx").on(table.organizationId),
+  userIdx: index("offline_sync_user_idx").on(table.userId),
+  statusIdx: index("offline_sync_status_idx").on(table.status),
+  entityIdx: index("offline_sync_entity_idx").on(table.entityType, table.entityId),
+}));
+
+export const insertOfflineSyncQueueSchema = createInsertSchema(offlineSyncQueue).omit({ id: true, createdAt: true, updatedAt: true, syncedAt: true });
+export type InsertOfflineSyncQueue = z.infer<typeof insertOfflineSyncQueueSchema>;
+export type OfflineSyncQueue = typeof offlineSyncQueue.$inferSelect;
