@@ -18,11 +18,11 @@ import { format, parseISO } from "date-fns";
 
 interface WeatherDayEvidence {
   date: string;
-  tempHigh: number;
-  tempLow: number;
-  precipitation: number;
-  windSpeed: number;
-  conditions: string;
+  tempHigh?: number | null;
+  tempLow?: number | null;
+  precipitation?: number | null;
+  windSpeed?: number | null;
+  conditions?: string | null;
   alerts?: string[];
 }
 
@@ -33,8 +33,31 @@ interface WeatherEvidence {
 }
 
 interface WeatherEvidenceCardProps {
-  evidence: WeatherEvidence;
+  evidence: unknown;
   compact?: boolean;
+}
+
+function isValidWeatherEvidence(data: unknown): data is WeatherEvidence {
+  if (!data || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.fetchedAt !== 'string') return false;
+  if (!obj.dailyData || !Array.isArray(obj.dailyData)) return false;
+  if (obj.dailyData.length === 0) return false;
+  return obj.dailyData.every((day: unknown) => {
+    if (!day || typeof day !== 'object') return false;
+    const d = day as Record<string, unknown>;
+    return typeof d.date === 'string';
+  });
+}
+
+function safeNumber(val: unknown, fallback: number = 0): number {
+  if (typeof val === 'number' && !isNaN(val)) return val;
+  return fallback;
+}
+
+function safeString(val: unknown, fallback: string = ''): string {
+  if (typeof val === 'string') return val;
+  return fallback;
 }
 
 function getWeatherIcon(conditions: string) {
@@ -49,20 +72,41 @@ function getWeatherIcon(conditions: string) {
 }
 
 function isSevereWeather(day: WeatherDayEvidence): boolean {
+  const precip = safeNumber(day.precipitation);
+  const wind = safeNumber(day.windSpeed);
+  const tempLow = safeNumber(day.tempLow, 50);
+  const tempHigh = safeNumber(day.tempHigh, 70);
+  const conditions = safeString(day.conditions).toLowerCase();
+  
   return (
-    day.precipitation > 0.5 ||
-    day.windSpeed > 25 ||
-    day.conditions.toLowerCase().includes("thunder") ||
-    day.conditions.toLowerCase().includes("heavy") ||
-    day.conditions.toLowerCase().includes("violent") ||
-    day.tempLow < 32 ||
-    day.tempHigh > 100
+    precip > 0.5 ||
+    wind > 25 ||
+    conditions.includes("thunder") ||
+    conditions.includes("heavy") ||
+    conditions.includes("violent") ||
+    tempLow < 32 ||
+    tempHigh > 100
   );
 }
 
 function DayEvidence({ day }: { day: WeatherDayEvidence }) {
-  const Icon = getWeatherIcon(day.conditions);
+  const conditions = safeString(day.conditions, 'Unknown');
+  const tempHigh = safeNumber(day.tempHigh, 70);
+  const tempLow = safeNumber(day.tempLow, 50);
+  const precip = safeNumber(day.precipitation);
+  const wind = safeNumber(day.windSpeed);
+  
+  const Icon = getWeatherIcon(conditions);
   const severe = isSevereWeather(day);
+
+  let formattedDay = "N/A";
+  let formattedDate = "N/A";
+  try {
+    formattedDay = format(parseISO(day.date), "EEE");
+    formattedDate = format(parseISO(day.date), "MMM d");
+  } catch {
+    formattedDay = day.date?.slice(0, 3) || "N/A";
+  }
 
   return (
     <div 
@@ -70,24 +114,24 @@ function DayEvidence({ day }: { day: WeatherDayEvidence }) {
       data-testid={`weather-evidence-${day.date}`}
     >
       <div className="text-center">
-        <p className="text-xs font-medium">{format(parseISO(day.date), "EEE")}</p>
-        <p className="text-xs text-muted-foreground">{format(parseISO(day.date), "MMM d")}</p>
+        <p className="text-xs font-medium">{formattedDay}</p>
+        <p className="text-xs text-muted-foreground">{formattedDate}</p>
         <Icon className={`w-6 h-6 mx-auto my-2 ${severe ? "text-orange-600" : "text-muted-foreground"}`} />
-        <p className="text-xs truncate" title={day.conditions}>{day.conditions}</p>
+        <p className="text-xs truncate" title={conditions}>{conditions}</p>
         <div className="flex justify-center items-center gap-1 text-xs mt-1">
           <Thermometer className="w-3 h-3 text-muted-foreground" />
-          <span>{Math.round(day.tempHigh)}° / {Math.round(day.tempLow)}°</span>
+          <span>{Math.round(tempHigh)}° / {Math.round(tempLow)}°</span>
         </div>
-        {day.precipitation > 0 && (
+        {precip > 0 && (
           <div className="flex items-center justify-center gap-1 mt-1 text-xs text-blue-600 dark:text-blue-400">
             <Droplets className="w-3 h-3" />
-            <span>{day.precipitation.toFixed(2)}"</span>
+            <span>{precip.toFixed(2)}"</span>
           </div>
         )}
-        {day.windSpeed > 15 && (
+        {wind > 15 && (
           <div className="flex items-center justify-center gap-1 mt-1 text-xs text-gray-600 dark:text-gray-400">
             <Wind className="w-3 h-3" />
-            <span>{Math.round(day.windSpeed)} mph</span>
+            <span>{Math.round(wind)} mph</span>
           </div>
         )}
       </div>
@@ -96,13 +140,22 @@ function DayEvidence({ day }: { day: WeatherDayEvidence }) {
 }
 
 export function WeatherEvidenceCard({ evidence, compact = false }: WeatherEvidenceCardProps) {
-  if (!evidence?.dailyData?.length) return null;
+  if (!isValidWeatherEvidence(evidence)) {
+    return null;
+  }
 
-  const severeDays = evidence.dailyData.filter(isSevereWeather);
-  const totalPrecipitation = evidence.dailyData.reduce((acc, d) => acc + (d.precipitation || 0), 0);
-  const maxWind = Math.max(...evidence.dailyData.map(d => d.windSpeed || 0));
-  const minTemp = Math.min(...evidence.dailyData.map(d => d.tempLow));
-  const maxTemp = Math.max(...evidence.dailyData.map(d => d.tempHigh));
+  const validDays = evidence.dailyData.filter(d => d && typeof d.date === 'string');
+  if (validDays.length === 0) return null;
+
+  const severeDays = validDays.filter(isSevereWeather);
+  const totalPrecipitation = validDays.reduce((acc, d) => acc + safeNumber(d.precipitation), 0);
+  
+  const windSpeeds = validDays.map(d => safeNumber(d.windSpeed));
+  const maxWind = windSpeeds.length > 0 ? Math.max(...windSpeeds) : 0;
+  
+  const temps = validDays.flatMap(d => [safeNumber(d.tempLow, 50), safeNumber(d.tempHigh, 70)]);
+  const minTemp = temps.length > 0 ? Math.min(...temps) : 50;
+  const maxTemp = temps.length > 0 ? Math.max(...temps) : 70;
 
   if (compact) {
     return (
@@ -130,11 +183,18 @@ export function WeatherEvidenceCard({ evidence, compact = false }: WeatherEviden
             <span>{Math.round(minTemp)}° - {Math.round(maxTemp)}°</span>
           </div>
           <div className="text-right">
-            <span>{evidence.dailyData.length} days tracked</span>
+            <span>{validDays.length} days tracked</span>
           </div>
         </div>
       </div>
     );
+  }
+
+  let fetchedAtFormatted = "Unknown";
+  try {
+    fetchedAtFormatted = format(new Date(evidence.fetchedAt), "MMM d, yyyy 'at' h:mm a");
+  } catch {
+    fetchedAtFormatted = evidence.fetchedAt;
   }
 
   return (
@@ -177,21 +237,21 @@ export function WeatherEvidenceCard({ evidence, compact = false }: WeatherEviden
           </div>
           <div className="p-2 rounded bg-purple-50 dark:bg-purple-950 text-center">
             <Cloud className="w-4 h-4 mx-auto text-purple-500 mb-1" />
-            <p className="text-lg font-semibold text-purple-700 dark:text-purple-300">{evidence.dailyData.length}</p>
+            <p className="text-lg font-semibold text-purple-700 dark:text-purple-300">{validDays.length}</p>
             <p className="text-xs text-muted-foreground">Days Tracked</p>
           </div>
         </div>
 
         <ScrollArea className="w-full">
           <div className="flex gap-2 pb-2">
-            {evidence.dailyData.map((day) => (
+            {validDays.map((day) => (
               <DayEvidence key={day.date} day={day} />
             ))}
           </div>
         </ScrollArea>
 
         <p className="text-xs text-muted-foreground mt-2 text-right">
-          Data fetched {format(new Date(evidence.fetchedAt), "MMM d, yyyy 'at' h:mm a")}
+          Data fetched {fetchedAtFormatted}
         </p>
       </CardContent>
     </Card>

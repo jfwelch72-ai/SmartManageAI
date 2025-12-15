@@ -625,7 +625,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
                       </p>
                     </div>
                   )}
-                  {delay.reason === "WEATHER" && delay.weatherEvidenceJson && (
+                  {delay.reason === "WEATHER" && delay.weatherEvidenceJson && typeof delay.weatherEvidenceJson === 'object' && (
                     <WeatherEvidenceCard evidence={delay.weatherEvidenceJson} compact />
                   )}
                 </CardContent>
