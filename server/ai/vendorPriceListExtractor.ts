@@ -1,7 +1,5 @@
-import OpenAI from "openai";
+import { openai } from "./openaiClient";
 import { logInfo, logError } from "../utils/logger";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export interface ExtractedPricingItem {
   itemName: string;

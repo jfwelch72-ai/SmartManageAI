@@ -6,12 +6,9 @@ import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import OpenAI from "openai";
+import { openai } from "./ai/openaiClient";
 
 const router = Router();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const AI_MODEL_GPT4O = "gpt-4o";
 

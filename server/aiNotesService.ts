@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { openai } from "./ai/openaiClient";
 import { db } from "./db";
 import { 
   projectNotes, 
@@ -9,10 +9,6 @@ import {
   projects 
 } from "@shared/schema";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 interface NoteForAnalysis {
   id: string;

@@ -37,7 +37,7 @@ import {
 import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
-import OpenAI from "openai";
+import { openai } from "./ai/openaiClient";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
 
 const router = express.Router();
@@ -58,9 +58,6 @@ const upload = multer({
 
 // Initialize object storage service
 const objectStorage = new ObjectStorageService();
-
-// Initialize OpenAI
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Helper: Validate organization access
 function validateOrgAccess(req: AuthRequest, res: Response): string | null {

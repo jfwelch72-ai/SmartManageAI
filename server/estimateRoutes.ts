@@ -16,7 +16,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
-import OpenAI from "openai";
+import { openai } from "./ai/openaiClient";
 import { 
   calculateMaterials, 
   generateMaterialRequirementsJson, 
@@ -32,8 +32,6 @@ import {
   type ProductionRateStats,
   type LaborEstimate 
 } from "./productionRateService";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Helper to check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
 function hasEstimateAccess(role: string): boolean {
