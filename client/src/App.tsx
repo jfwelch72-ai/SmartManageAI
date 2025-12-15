@@ -69,6 +69,9 @@ import BidNetworkPage from "@/pages/bid-network";
 import BidNetworkDetailPage from "@/pages/bid-network-detail";
 import BidInboxPage from "@/pages/bid-inbox";
 import BillingPage from "@/pages/billing";
+import DelayClaimsPage from "@/pages/delay-claims";
+import DailyReportLocksPage from "@/pages/daily-report-locks";
+import PhotoCustodyPage from "@/pages/photo-custody";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -184,6 +187,11 @@ function Router() {
       {/* AI Analysis routes */}
       <Route path="/ai-bid-analysis" component={() => <ProtectedRoute component={AIBidAnalysisPage} permission={RoutePermissions.AI_BID_ANALYSIS} />} />
       <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={AIContractAnalysisPage} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} />} />
+      
+      {/* Delay Claims routes */}
+      <Route path="/delay-claims" component={() => <ProtectedRoute component={DelayClaimsPage} permission={RoutePermissions.DELAY_CLAIMS} />} />
+      <Route path="/daily-report-locks" component={() => <ProtectedRoute component={DailyReportLocksPage} permission={RoutePermissions.DAILY_REPORT_LOCKS} />} />
+      <Route path="/photo-custody" component={() => <ProtectedRoute component={PhotoCustodyPage} permission={RoutePermissions.PHOTO_CUSTODY} />} />
       
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />

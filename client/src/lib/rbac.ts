@@ -145,6 +145,11 @@ export const RoutePermissions = {
   CALENDAR: (role?: string) => hasContractorAccess(role),
   TIME_CLOCK: (role?: string) => hasContractorAccess(role),
   MESSAGES: (role?: string) => hasContractorAccess(role),
+  
+  // Delay Claims routes (management access)
+  DELAY_CLAIMS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  DAILY_REPORT_LOCKS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  PHOTO_CUSTODY: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
 };
 
 /**
@@ -398,6 +403,24 @@ export const NavigationConfig = {
       href: "/subcontracts",
       label: "Subcontracts",
       testId: "nav-subcontracts",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/delay-claims",
+      label: "Delay Claims",
+      testId: "nav-delay-claims",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/daily-report-locks",
+      label: "Report Locks",
+      testId: "nav-report-locks",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/photo-custody",
+      label: "Photo Custody",
+      testId: "nav-photo-custody",
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
   ],

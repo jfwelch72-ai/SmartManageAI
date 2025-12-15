@@ -707,6 +707,60 @@ router.post("/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MAN
   }
 });
 
+// POST /api/delay-claims/locks/:id/unlock - Unlock a locked report
+router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const userId = req.user!.id;
+    const { id } = req.params;
+    const { unlockReason } = req.body;
+    
+    const [existing] = await db
+      .select()
+      .from(dailyReportLocks)
+      .where(and(eq(dailyReportLocks.id, id), eq(dailyReportLocks.organizationId, orgId!)))
+      .limit(1);
+    
+    if (!existing) {
+      return res.status(404).json({ error: "Lock record not found" });
+    }
+    
+    if (existing.status === "SUPERVISOR_LOCKED") {
+      return res.status(400).json({ error: "Supervisor locked reports cannot be unlocked" });
+    }
+    
+    if (existing.status === "UNLOCKED") {
+      return res.status(400).json({ error: "Report is already unlocked" });
+    }
+    
+    const [updated] = await db
+      .update(dailyReportLocks)
+      .set({
+        status: "UNLOCKED",
+        updatedAt: new Date(),
+      })
+      .where(eq(dailyReportLocks.id, id))
+      .returning();
+    
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      entityType: "daily_report_lock",
+      entityId: id,
+      oldValue: JSON.stringify({ status: existing.status }),
+      newValue: JSON.stringify({ status: "UNLOCKED", unlockReason }),
+    }, req);
+    
+    res.json(updated);
+  } catch (error) {
+    console.error("Error unlocking daily report:", error);
+    res.status(500).json({ error: "Failed to unlock daily report" });
+  }
+});
+
 // ============================================================================
 // PHOTO CUSTODY RECORDS ROUTES
 // ============================================================================
