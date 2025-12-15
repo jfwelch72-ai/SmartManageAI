@@ -6077,3 +6077,146 @@ export const offlineSyncQueue = pgTable("offline_sync_queue", {
 export const insertOfflineSyncQueueSchema = createInsertSchema(offlineSyncQueue).omit({ id: true, createdAt: true, updatedAt: true, syncedAt: true });
 export type InsertOfflineSyncQueue = z.infer<typeof insertOfflineSyncQueueSchema>;
 export type OfflineSyncQueue = typeof offlineSyncQueue.$inferSelect;
+
+// ==========================================
+// MARKETPLACE SYSTEM
+// ==========================================
+
+// Marketplace Enums
+export const vendorScoreCategoryEnum = pgEnum("vendor_score_category", ["QUALITY", "TIMELINESS", "COMMUNICATION", "PRICING", "RELIABILITY"]);
+export const crewAvailabilityStatusEnum = pgEnum("crew_availability_status", ["AVAILABLE", "PARTIALLY_AVAILABLE", "BOOKED", "UNAVAILABLE"]);
+
+// Vendor Scores table - Vendor performance scoring by project
+export const vendorScores = pgTable("vendor_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  crmEntityId: varchar("crm_entity_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  
+  // Scoring date
+  scoreDate: date("score_date").notNull(),
+  
+  // Individual category scores (1-5 scale)
+  onTimeDeliveryScore: decimal("on_time_delivery_score", { precision: 3, scale: 2 }),
+  qualityScore: decimal("quality_score", { precision: 3, scale: 2 }),
+  communicationScore: decimal("communication_score", { precision: 3, scale: 2 }),
+  priceCompetitivenessScore: decimal("price_competitiveness_score", { precision: 3, scale: 2 }),
+  reliabilityScore: decimal("reliability_score", { precision: 3, scale: 2 }),
+  
+  // Overall calculated score
+  overallScore: decimal("overall_score", { precision: 3, scale: 2 }),
+  
+  // Additional context
+  notes: text("notes"),
+  scoredById: varchar("scored_by_id").notNull().references(() => users.id),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("vendor_scores_org_idx").on(table.organizationId),
+  vendorIdx: index("vendor_scores_vendor_idx").on(table.crmEntityId),
+  projectIdx: index("vendor_scores_project_idx").on(table.projectId),
+  scoreDateIdx: index("vendor_scores_date_idx").on(table.scoreDate),
+}));
+
+export const insertVendorScoreSchema = createInsertSchema(vendorScores).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorScore = z.infer<typeof insertVendorScoreSchema>;
+export type VendorScore = typeof vendorScores.$inferSelect;
+
+// Material Price Index table - Track material pricing over time
+export const materialPriceIndex = pgTable("material_price_index", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  
+  // Material identification
+  materialName: text("material_name").notNull(),
+  materialCategory: text("material_category"),  // CONCRETE, LUMBER, STEEL, etc.
+  materialSku: text("material_sku"),  // Vendor-specific SKU
+  
+  // Unit and pricing
+  unitOfMeasure: text("unit_of_measure").notNull(),  // CY, LF, SF, EA, etc.
+  pricePerUnit: decimal("price_per_unit", { precision: 12, scale: 4 }).notNull(),
+  
+  // Validity period
+  effectiveDate: date("effective_date").notNull(),
+  expirationDate: date("expiration_date"),
+  
+  // Source information
+  sourceVendorId: varchar("source_vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  region: text("region"),  // Geographic region for pricing
+  
+  // Metadata
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("material_price_org_idx").on(table.organizationId),
+  materialIdx: index("material_price_material_idx").on(table.materialName),
+  categoryIdx: index("material_price_category_idx").on(table.materialCategory),
+  effectiveDateIdx: index("material_price_effective_idx").on(table.effectiveDate),
+  vendorIdx: index("material_price_vendor_idx").on(table.sourceVendorId),
+}));
+
+export const insertMaterialPriceIndexSchema = createInsertSchema(materialPriceIndex).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMaterialPriceIndex = z.infer<typeof insertMaterialPriceIndexSchema>;
+export type MaterialPriceIndex = typeof materialPriceIndex.$inferSelect;
+
+// Crew Marketplace table - Labor/crew availability listings
+export const crewMarketplace = pgTable("crew_marketplace", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  crewId: varchar("crew_id").references(() => crews.id, { onDelete: "set null" }),
+  
+  // Crew identification
+  crewName: text("crew_name").notNull(),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  crewSize: integer("crew_size"),
+  
+  // Availability
+  availabilityStatus: crewAvailabilityStatusEnum("availability_status").notNull().default("AVAILABLE"),
+  availableFrom: date("available_from"),
+  availableTo: date("available_to"),
+  
+  // Rates
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  
+  // Location and coverage
+  baseLocation: text("base_location"),  // City, State
+  travelRadius: integer("travel_radius"),  // Miles willing to travel
+  
+  // Skills and certifications
+  skills: text("skills").array(),
+  certifications: text("certifications").array(),
+  equipmentOwned: text("equipment_owned").array(),
+  
+  // Performance
+  rating: decimal("rating", { precision: 3, scale: 2 }),  // 1-5 average rating
+  completedProjects: integer("completed_projects").default(0),
+  
+  // Contact preference
+  contactName: text("contact_name"),
+  contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
+  
+  // Description
+  description: text("description"),
+  
+  // Visibility
+  isPublic: boolean("is_public").notNull().default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crew_marketplace_org_idx").on(table.organizationId),
+  crewIdx: index("crew_marketplace_crew_idx").on(table.crewId),
+  tradeIdx: index("crew_marketplace_trade_idx").on(table.tradeType),
+  availabilityIdx: index("crew_marketplace_availability_idx").on(table.availabilityStatus),
+  locationIdx: index("crew_marketplace_location_idx").on(table.baseLocation),
+}));
+
+export const insertCrewMarketplaceSchema = createInsertSchema(crewMarketplace).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrewMarketplace = z.infer<typeof insertCrewMarketplaceSchema>;
+export type CrewMarketplace = typeof crewMarketplace.$inferSelect;
