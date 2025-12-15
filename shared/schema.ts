@@ -58,6 +58,12 @@ export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", 
 export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
 export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
+// Delay Claims Enums
+export const delayClaimStatusEnum = pgEnum("delay_claim_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CLOSED"]);
+export const delayClaimTypeEnum = pgEnum("delay_claim_type", ["TIME_EXTENSION", "COST_IMPACT", "BOTH"]);
+export const dailyReportLockStatusEnum = pgEnum("daily_report_lock_status", ["UNLOCKED", "LOCKED", "SUPERVISOR_LOCKED"]);
+export const photoCustodyActionEnum = pgEnum("photo_custody_action", ["CAPTURED", "UPLOADED", "VIEWED", "DOWNLOADED", "ATTACHED_TO_CLAIM", "EXPORTED"]);
+
 // Inspection Scheduling Enums
 export const inspectionTypeEnum = pgEnum("inspection_type", ["CITY_OFFICIAL", "GC_REPRESENTATIVE", "OWNER_REPRESENTATIVE"]);
 export const inspectionStatusEnum = pgEnum("inspection_status", ["REQUESTED", "SCHEDULED", "PASSED", "FAILED", "CANCELLED"]);
@@ -2166,6 +2172,173 @@ export const insertDelayNotificationSchema = createInsertSchema(delayNotificatio
 });
 export type InsertDelayNotification = z.infer<typeof insertDelayNotificationSchema>;
 export type DelayNotification = typeof delayNotifications.$inferSelect;
+
+// Delay Claims table - formal claims for time extensions or cost impacts from delays
+export const delayClaims = pgTable("delay_claims", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  claimNumber: text("claim_number").notNull(), // e.g., CLM-260009-001
+  title: text("title").notNull(),
+  description: text("description"),
+  claimType: delayClaimTypeEnum("claim_type").notNull(),
+  status: delayClaimStatusEnum("status").notNull().default("DRAFT"),
+  
+  // Linked delays - can include multiple delay records
+  linkedDelayIds: text("linked_delay_ids").array(), // Array of projectDelay IDs
+  
+  // Time extension request
+  daysRequested: integer("days_requested"),
+  daysApproved: integer("days_approved"),
+  originalCompletionDate: timestamp("original_completion_date"),
+  requestedCompletionDate: timestamp("requested_completion_date"),
+  
+  // Cost impact request
+  costRequested: decimal("cost_requested", { precision: 12, scale: 2 }),
+  costApproved: decimal("cost_approved", { precision: 12, scale: 2 }),
+  costBreakdownJson: json("cost_breakdown_json").$type<{
+    laborCost?: number;
+    equipmentCost?: number;
+    materialCost?: number;
+    overheadCost?: number;
+    otherCosts?: Array<{ description: string; amount: number }>;
+  }>(),
+  
+  // Supporting documentation
+  supportingDocUrls: text("supporting_doc_urls").array(),
+  weatherEvidenceSummary: text("weather_evidence_summary"),
+  
+  // Workflow tracking
+  submittedAt: timestamp("submitted_at"),
+  submittedById: varchar("submitted_by_id").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedById: varchar("reviewed_by_id").references(() => users.id),
+  reviewNotes: text("review_notes"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectedById: varchar("rejected_by_id").references(() => users.id),
+  rejectionReason: text("rejection_reason"),
+  
+  // Linked change order for approved claims
+  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
+  
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("delay_claims_org_idx").on(table.organizationId),
+  projectIdx: index("delay_claims_project_idx").on(table.projectId),
+  statusIdx: index("delay_claims_status_idx").on(table.status),
+  claimNumberIdx: index("delay_claims_number_idx").on(table.claimNumber),
+}));
+
+export const insertDelayClaimSchema = createInsertSchema(delayClaims).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+  reviewedAt: true,
+  approvedAt: true,
+  rejectedAt: true,
+});
+export type InsertDelayClaim = z.infer<typeof insertDelayClaimSchema>;
+export type DelayClaim = typeof delayClaims.$inferSelect;
+
+// Daily Report Locks table - prevents tampering with daily reports for legal evidence
+export const dailyReportLocks = pgTable("daily_report_locks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reportDate: date("report_date").notNull(),
+  status: dailyReportLockStatusEnum("status").notNull().default("UNLOCKED"),
+  
+  // Lock metadata
+  lockedAt: timestamp("locked_at"),
+  lockedById: varchar("locked_by_id").references(() => users.id),
+  lockReason: text("lock_reason"),
+  
+  // Supervisor override
+  supervisorLockedAt: timestamp("supervisor_locked_at"),
+  supervisorLockedById: varchar("supervisor_locked_by_id").references(() => users.id),
+  supervisorLockNotes: text("supervisor_lock_notes"),
+  
+  // Hash for data integrity verification
+  contentHash: text("content_hash"), // SHA-256 hash of report content at lock time
+  
+  // Linked claim if locked for evidence
+  linkedClaimId: varchar("linked_claim_id").references(() => delayClaims.id, { onDelete: "set null" }),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("daily_report_locks_org_idx").on(table.organizationId),
+  projectIdx: index("daily_report_locks_project_idx").on(table.projectId),
+  dateIdx: index("daily_report_locks_date_idx").on(table.reportDate),
+  statusIdx: index("daily_report_locks_status_idx").on(table.status),
+  projectDateUnique: unique("daily_report_locks_project_date_unique").on(table.projectId, table.reportDate),
+}));
+
+export const insertDailyReportLockSchema = createInsertSchema(dailyReportLocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lockedAt: true,
+  supervisorLockedAt: true,
+});
+export type InsertDailyReportLock = z.infer<typeof insertDailyReportLockSchema>;
+export type DailyReportLock = typeof dailyReportLocks.$inferSelect;
+
+// Photo Custody Records table - chain of custody tracking for photos used as evidence
+export const photoCustodyRecords = pgTable("photo_custody_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  
+  // Photo reference
+  photoUrl: text("photo_url").notNull(),
+  photoFileName: text("photo_file_name").notNull(),
+  photoObjectKey: text("photo_object_key"),
+  
+  // Original metadata (preserved at capture time)
+  originalMetadataJson: json("original_metadata_json").$type<{
+    captureTimestamp: string;
+    deviceId?: string;
+    deviceModel?: string;
+    gpsLat?: number;
+    gpsLng?: number;
+    gpsAccuracy?: number;
+    fileHash?: string;
+  }>(),
+  
+  // Custody action tracking
+  action: photoCustodyActionEnum("action").notNull(),
+  actionById: varchar("action_by_id").notNull().references(() => users.id),
+  actionAt: timestamp("action_at").notNull().defaultNow(),
+  actionNotes: text("action_notes"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  
+  // Linked entities
+  linkedClaimId: varchar("linked_claim_id").references(() => delayClaims.id, { onDelete: "set null" }),
+  linkedDelayId: varchar("linked_delay_id").references(() => projectDelays.id, { onDelete: "set null" }),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("photo_custody_org_idx").on(table.organizationId),
+  projectIdx: index("photo_custody_project_idx").on(table.projectId),
+  photoUrlIdx: index("photo_custody_photo_url_idx").on(table.photoUrl),
+  actionIdx: index("photo_custody_action_idx").on(table.action),
+  claimIdx: index("photo_custody_claim_idx").on(table.linkedClaimId),
+}));
+
+export const insertPhotoCustodyRecordSchema = createInsertSchema(photoCustodyRecords).omit({
+  id: true,
+  createdAt: true,
+  actionAt: true,
+});
+export type InsertPhotoCustodyRecord = z.infer<typeof insertPhotoCustodyRecordSchema>;
+export type PhotoCustodyRecord = typeof photoCustodyRecords.$inferSelect;
 
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
