@@ -1,0 +1,213 @@
+You are a Principal Engineer working in the TEAM copy of SmartManageAI.
+
+CRITICAL CONTEXT:
+- The TEAM system currently supports ~23 trade types.
+- This is insufficient compared to the intended full construction + civil + environmental scope.
+- The system has NO access to the Personal version.
+- You must explicitly ADD all missing trades, SOW items, modifiers, and AI logic.
+- This is a CANONICAL SEED + AI ENABLEMENT task.
+
+ABSOLUTE RULES:
+1. ADDITIVE ONLY — do not remove or rename existing trades, SOW, or modifiers.
+2. Extend enums and master tables safely.
+3. Use existing AI orchestrator, snapshotBuilder, TradeDiscoveryService, and ScopePredictionEngine.
+4. AI may SUGGEST but NEVER auto-create master records without approval.
+5. Everything must work with db:push and existing billing/RBAC/multi-tenant rules.
+
+============================================================
+PHASE 1 — EXPANDED TRADE TAXONOMY (AUTHORITATIVE)
+============================================================
+
+Extend tradeTypeEnum and trade master data to include ALL of the following
+(in addition to existing TEAM trades):
+
+CIVIL / SITE / ENVIRONMENTAL:
+- SITE_DEMOLITION
+- MASS_EXCAVATION
+- TRENCHING
+- SHORING
+- DEWATERING
+- SOIL_STABILIZATION
+- ENVIRONMENTAL_REMEDIATION
+- WELL_PLUGGING
+- STORMWATER_SYSTEMS
+- SANITARY_SEWER
+- WATERLINE
+- FORCE_MAIN
+- ROADWAY_CONSTRUCTION
+- CURB_AND_GUTTER
+- SIDEWALK
+- CONCRETE_PAVING
+- ASPHALT_PAVING
+- TRAFFIC_CONTROL
+- STRIPING_AND_SIGNAGE
+- EROSION_CONTROL
+- FENCING_AND_GATES
+- LANDSCAPING
+
+STRUCTURAL / BUILDING:
+- CAST_IN_PLACE_CONCRETE
+- PRECAST_CONCRETE
+- REBAR_AND_POST_TENSION
+- STRUCTURAL_STEEL
+- METAL_BUILDINGS
+- CARPENTRY_FRAMING
+- DRYWALL_SYSTEMS
+- ACOUSTICAL_CEILINGS
+- PAINTING_AND_COATINGS
+- FLOORING_SYSTEMS
+- ROOFING_SYSTEMS
+- WATERPROOFING_SYSTEMS
+- INSULATION_SYSTEMS
+- MASONRY_SYSTEMS
+- GLAZING_SYSTEMS
+
+MEP / SPECIALTY:
+- ELECTRICAL_UNDERGROUND
+- ELECTRICAL_OVERHEAD
+- MECHANICAL_PIPING
+- HVAC_SYSTEMS
+- PLUMBING_SYSTEMS
+- FIRE_PROTECTION_SYSTEMS
+- LOW_VOLTAGE_SYSTEMS
+- SECURITY_AND_ACCESS
+- COMMUNICATIONS_IT
+- SOLAR_INSTALLATION
+- TEMPORARY_POWER
+
+SUPPORT / SERVICES:
+- SURVEY_AND_LAYOUT
+- TESTING_AND_INSPECTIONS
+- COMMISSIONING
+- TEMPORARY_FACILITIES
+- GENERAL_CONDITIONS
+
+============================================================
+PHASE 2 — MASTER SCOPE OF WORK (SOW) SEEDING
+============================================================
+
+Populate masterSowItems so EVERY trade above has a usable baseline.
+
+Each SOW item MUST include:
+- tradeType
+- canonicalName
+- workTypeCategory
+- workTypeName
+- unitOfMeasure
+- laborDriver (QUANTITY | DURATION | MANUAL)
+- defaultCrewSize (nullable)
+- isEstimatable = true
+
+EXAMPLES (APPLY THIS PATTERN TO ALL TRADES):
+
+EARTHWORK:
+- Mobilization (LS)
+- Strip topsoil (CY)
+- Mass excavation (CY)
+- Trench excavation (LF)
+- Backfill & compaction (CY)
+- Fine grading (SY)
+
+CONCRETE_FLATWORK:
+- Formwork installation (SF)
+- Reinforcing placement (LB)
+- Place & finish concrete (CY)
+- Sawcut joints (LF)
+- Cure & protect (LS)
+
+WELL_PLUGGING:
+- Site setup & permitting (LS)
+- Bore cleanout (FT)
+- Cement plug placement (FT)
+- Surface restoration (LS)
+- Regulatory documentation (LS)
+
+Repeat this for ALL new trades so:
+- Estimates work immediately
+- Material calculators can attach
+- AI has canonical scope language
+
+============================================================
+PHASE 3 — MODIFIER CATEGORIES & MODIFIERS
+============================================================
+
+Seed masterModifierCategories:
+- Soil Conditions
+- Access Constraints
+- Weather Impacts
+- Schedule Constraints
+- Labor Conditions
+- Safety Requirements
+- Regulatory Burden
+- Material Volatility
+- Site Congestion
+- Working Hours
+
+Seed masterModifiers (examples — apply broadly):
+
+- Rock excavation (labor ×1.6)
+- Wet conditions (labor ×1.25)
+- Winter conditions (labor ×1.35)
+- Limited access (labor ×1.3)
+- Night work (labor ×1.4)
+- Overtime required (labor ×1.5)
+- Prevailing wage (rate override)
+- Union labor (rate override)
+- Accelerated schedule (labor ×1.25, schedule −days)
+
+Each modifier must define:
+- compatibleTrades[]
+- laborMultiplier
+- materialMultiplier
+- scheduleImpactDays (optional)
+
+============================================================
+PHASE 4 — AI TRADE DISCOVERY & UNKNOWN HANDLING
+============================================================
+
+Ensure TradeDiscoveryService and ScopePredictionEngine are fully wired.
+
+AI BEHAVIOR:
+When encountering unknown or mixed trade descriptions:
+1. Infer likely trade(s)
+2. Propose SOW from master library
+3. Propose applicable modifiers
+4. Assign confidence score
+5. Store as AI_PROPOSED (not active)
+
+NO AUTO-CREATION.
+Admin/Estimator approval required.
+
+============================================================
+PHASE 5 — ONBOARDING & BID WIZARD INTEGRATION
+============================================================
+
+- Onboarding wizard MUST call TradeDiscoveryService.
+- Bid wizard MUST dynamically suggest:
+  - trades
+  - SOW
+  - modifiers
+- User can accept, reject, or override.
+- All decisions logged for AI learning.
+
+============================================================
+PHASE 6 — AI CONTEXT & PROMPT UPDATE
+============================================================
+
+Update snapshotBuilder and system prompts to include:
+- Expanded trade taxonomy
+- Expanded SOW library
+- Modifier impacts
+- Historical acceptance/rejection feedback
+
+============================================================
+DELIVERABLES (PRINT)
+============================================================
+1. Total trades after expansion
+2. SOW count per trade
+3. Modifier categories & counts
+4. AI discovery decision flow summary
+5. Onboarding validation checklist
+
+IMPLEMENT IN ORDER:
+Trades → SOW → Modifiers → AI Discovery → Onboarding wiring

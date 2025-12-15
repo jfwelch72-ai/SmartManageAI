@@ -69,8 +69,9 @@ export const inspectionTypeEnum = pgEnum("inspection_type", ["CITY_OFFICIAL", "G
 export const inspectionStatusEnum = pgEnum("inspection_status", ["REQUESTED", "SCHEDULED", "PASSED", "FAILED", "CANCELLED"]);
 export const inspectionRequestMethodEnum = pgEnum("inspection_request_method", ["CALL", "EMAIL", "PORTAL", "OTHER"]);
 
-// White-Label / Multi-Tenant Enums - All 19 CSI Trade Divisions
+// White-Label / Multi-Tenant Enums - Comprehensive CSI Trade Divisions
 export const tradeTypeEnum = pgEnum("trade_type", [
+  // === EXISTING TRADES (23) - DO NOT REMOVE ===
   "GENERAL_CONTRACTOR",    // CSI 00/01 - Full GC/CM
   "CONCRETE",              // CSI 03 - Concrete/Foundations  
   "EARTHWORK",             // CSI 31 - Excavation/Grading
@@ -93,7 +94,64 @@ export const tradeTypeEnum = pgEnum("trade_type", [
   "LOW_VOLTAGE",           // CSI 27/28 - Technology/Security/AV
   "SOLAR",                 // Renewable Energy/Solar Installation
   "WATERPROOFING",         // CSI 07 - Below Grade/Above Grade
-  "OTHER"
+  "OTHER",
+  
+  // === CIVIL / SITE / ENVIRONMENTAL (20 new) ===
+  "SITE_DEMOLITION",           // CSI 02 41 - Site Clearing/Demo
+  "MASS_EXCAVATION",           // CSI 31 23 - Bulk Earth Moving
+  "TRENCHING",                 // CSI 31 23 - Utility Trenching
+  "SHORING",                   // CSI 31 50 - Excavation Support
+  "DEWATERING",                // CSI 31 23 - Groundwater Control
+  "SOIL_STABILIZATION",        // CSI 31 32 - Ground Improvement
+  "ENVIRONMENTAL_REMEDIATION", // CSI 02 80 - Hazmat/Contamination
+  "WELL_PLUGGING",             // Well Abandonment/Plugging
+  "STORMWATER_SYSTEMS",        // CSI 33 40 - Storm Drainage
+  "SANITARY_SEWER",            // CSI 33 30 - Sanitary Systems
+  "WATERLINE",                 // CSI 33 10 - Water Distribution
+  "FORCE_MAIN",                // CSI 33 30 - Pressurized Sewer
+  "ROADWAY_CONSTRUCTION",      // CSI 32 10 - Road Building
+  "CURB_AND_GUTTER",           // CSI 32 16 - Curbs & Gutters
+  "SIDEWALK",                  // CSI 32 13 - Pedestrian Paving
+  "CONCRETE_PAVING",           // CSI 32 13 - Concrete Flatwork
+  "TRAFFIC_CONTROL",           // CSI 32 17 - Traffic Systems
+  "STRIPING_AND_SIGNAGE",      // CSI 32 17 - Pavement Markings
+  "EROSION_CONTROL",           // CSI 31 25 - Erosion/Sediment
+  "FENCING_AND_GATES",         // CSI 32 31 - Fencing/Gates
+  
+  // === STRUCTURAL / BUILDING (13 new) ===
+  "CAST_IN_PLACE_CONCRETE",    // CSI 03 30 - CIP Concrete
+  "PRECAST_CONCRETE",          // CSI 03 40 - Precast Elements
+  "REBAR_AND_POST_TENSION",    // CSI 03 20 - Reinforcement
+  "STRUCTURAL_STEEL",          // CSI 05 12 - Structural Framing
+  "METAL_BUILDINGS",           // CSI 13 34 - Pre-Engineered Metal
+  "CARPENTRY_FRAMING",         // CSI 06 10 - Rough Carpentry
+  "DRYWALL_SYSTEMS",           // CSI 09 29 - Gypsum Board
+  "ACOUSTICAL_CEILINGS",       // CSI 09 51 - Acoustical Ceilings
+  "PAINTING_AND_COATINGS",     // CSI 09 90 - Industrial Coatings
+  "FLOORING_SYSTEMS",          // CSI 09 60 - Flooring Assembly
+  "ROOFING_SYSTEMS",           // CSI 07 50 - Roofing Systems
+  "MASONRY_SYSTEMS",           // CSI 04 20 - Unit Masonry
+  "GLAZING_SYSTEMS",           // CSI 08 80 - Curtain Wall/Storefronts
+  
+  // === MEP / SPECIALTY (11 new) ===
+  "ELECTRICAL_UNDERGROUND",    // CSI 26 05 - Underground Electric
+  "ELECTRICAL_OVERHEAD",       // CSI 26 05 - Overhead Power Lines
+  "MECHANICAL_PIPING",         // CSI 23 20 - Process Piping
+  "HVAC_SYSTEMS",              // CSI 23 - Complete HVAC
+  "PLUMBING_SYSTEMS",          // CSI 22 - Complete Plumbing
+  "FIRE_PROTECTION_SYSTEMS",   // CSI 21 - Complete Fire Systems
+  "LOW_VOLTAGE_SYSTEMS",       // CSI 27/28 - Low Voltage
+  "SECURITY_AND_ACCESS",       // CSI 28 - Security Systems
+  "COMMUNICATIONS_IT",         // CSI 27 - Communications
+  "SOLAR_INSTALLATION",        // Photovoltaic Systems
+  "TEMPORARY_POWER",           // Temporary Electrical
+  
+  // === SUPPORT / SERVICES (5 new) ===
+  "SURVEY_AND_LAYOUT",         // CSI 01 71 - Survey/Layout
+  "TESTING_AND_INSPECTIONS",   // CSI 01 45 - QC/Testing
+  "COMMISSIONING",             // CSI 01 91 - Cx Services
+  "TEMPORARY_FACILITIES",      // CSI 01 50 - Temp Structures
+  "GENERAL_CONDITIONS"         // CSI 01 - Gen Conditions/Overhead
 ]);
 export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
 
