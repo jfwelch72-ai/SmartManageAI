@@ -1,0 +1,145 @@
+You are a Principal Engineer working in the TEAM Replit (source of truth).
+
+GOAL:
+Implement (A) Unified Inbox + Hustler multi-org features, (B) Weather upgrade (free API, 10-day forecast widget + delay tie-in), and (C) Vendor catalogue PDF upload that uses OpenAI to parse vendor PDFs into the existing vendor pricing catalog tables.
+
+NON-NEGOTIABLE RULES:
+- Do NOT remove or regress existing TEAM features.
+- Use TEAM’s org scoping pattern: getRequiredOrgIdFromReq() / orgFilter.ts on every org-owned query.
+- Any cross-org endpoints MUST be gated by HUSTLER role and must only return orgs the user is explicitly associated with.
+- Do NOT overwrite TEAM billing/entitlements system; integrate new pages/routes into it.
+- Validate all inputs with zod and enforce file validation on uploads.
+
+====================================================================
+A) UNIFIED INBOX + MULTI-ORG (IMPLEMENT FULLY)
+====================================================================
+
+1) DATA MODEL
+- If not already present, add/confirm tables that support multi-org membership:
+  - userOrganizations (userId, organizationId, roleWithinOrg?, createdAt)
+  - hustlerUserProfile or equivalent mapping for HUSTLER users
+- Ensure indexes on (userId, organizationId).
+- Ensure all “org switcher” and “unified inbox” queries only use orgs from this membership table.
+
+2) BACKEND (server/hustlerRoutes.ts + services)
+- Implement/finish:
+  - GET /api/hustler/my-orgs
+  - POST /api/hustler/switch-org (sets activeOrgId in session/jwt claims if your auth supports it; otherwise returns an orgId the client stores)
+  - GET /api/hustler/unified-inbox (aggregates messages/alerts across all authorized orgs)
+- Every endpoint:
+  - requireAuth
+  - requireRole("HUSTLER") where cross-org
+  - MUST NOT allow arbitrary orgId input; always derive authorized orgIds from membership table
+
+3) FRONTEND
+- Ensure OrganizationSwitcher exists and is wired to:
+  - fetch my orgs
+  - switch active org
+- Implement/finish unified-inbox page:
+  - Show per-org grouping + filters
+  - NEVER display anything outside authorized orgs
+
+4) SECURITY TESTS (must pass)
+- User with 1 org cannot see any other org
+- HUSTLER user only sees orgs they are mapped to
+- Direct API calls with random orgId do not leak anything (403/empty)
+
+====================================================================
+B) WEATHER UPGRADE (FREE API) + 10-DAY FORECAST + DELAY TIE-IN
+====================================================================
+
+CONTEXT:
+- Personal version referenced WEATHER_API_KEY and /api/weather routes (WeatherAPI.com style), but TEAM’s current weather experience is incomplete.
+- Implement a robust weather module using a FREE weather API key env var: WEATHER_API_KEY.
+
+1) BACKEND: server/weatherRoutes.ts (or enhance existing)
+Implement endpoints:
+- GET /api/weather/forecast10?lat=..&lng=..
+  - Returns a normalized 10-day forecast object (daily highs/lows, precip chance, wind, conditions)
+  - Uses WEATHER_API_KEY
+  - Add caching (in-memory or DB) for ~30 minutes per (orgId, lat,lng) to reduce calls
+  - requireAuth + org scoping where relevant
+
+- GET /api/weather/history?lat=..&lng=..&start=YYYY-MM-DD&end=YYYY-MM-DD
+  - Used for delay claim documentation (historical weather evidence)
+  - Cache results by date range
+
+2) DASHBOARD WIDGET
+- Add a dashboard widget “10-Day Forecast”
+- Data source: /api/weather/forecast10
+- Allow project selection or default to company location (if stored) or last used project.
+- Add FeatureGate if needed, but keep it enabled at least for PRO+.
+
+3) DELAY TRACKER TIE-IN (server/delayRoutes.ts)
+When creating/updating a delay:
+- If delay.causeType === "WEATHER" (or similar):
+  - Automatically fetch weather history for the project location + delay date range
+  - Store a snapshot in the delay record (json column) OR in a related table delay_weather_evidence
+  - Render weather evidence in delay detail UI (conditions + precip + wind + any alerts)
+- Ensure delayRoutes continues to use orgFilter pattern (TEAM standard).
+
+4) DATA MODEL
+- If delays table doesn’t already support it, add:
+  - delays.weatherEvidenceJson (json) OR delayWeatherEvidence table keyed to delayId
+  - delays.locationLat/locationLng if not derivable from project
+
+====================================================================
+C) VENDOR CATALOGUE PDF UPLOAD + OPENAI EXTRACTION INTO PRICING CATALOG
+====================================================================
+
+CONTEXT:
+- TEAM already has AI infrastructure including a vendor price list extractor module (vendorPriceListExtractor.ts).
+- Schema already supports vendor pricing catalogs with source types including PRICEBOOK_IMPORT / AI_SUGGESTED.
+
+1) UPLOAD ENDPOINTS
+Create endpoints (or extend existing vendor/pricing routes):
+- POST /api/vendors/:crmOrganisationId/pricebook/upload
+  - requireAuth + requireRole("ADMIN","MANAGER") (or appropriate)
+  - org-scope via getRequiredOrgIdFromReq()
+  - validate vendor belongs to org (via CRM org record filtered by orgId)
+  - accept PDF only; enforce max size; virus scan is out-of-scope but keep strict fileValidation
+  - store file via object storage (use existing server/objectStorage.ts)
+  - create a pricebookImportJobs record (jobId, orgId, vendorId, fileRef, status)
+
+- GET /api/vendors/:crmOrganisationId/pricebook/imports
+  - list import jobs for the org+vendor
+
+2) AI EXTRACTION WORKFLOW
+Implement job processing:
+- server/ai/vendorPriceListExtractor.ts
+  - Takes (organizationId, vendorCrmOrgId, fileRef, quarter/effectiveDate defaults)
+  - Extracts a structured list:
+    [{ itemName, itemCode?, category, description?, unit, unitPrice, minimumOrder?, deliveryFee?, effectiveQuarter, effectiveDate, expirationDate? }]
+  - Insert into vendorPricingCatalogs table with:
+    - organizationId
+    - crmOrganisationId
+    - sourceType = "PRICEBOOK_IMPORT" (or "AI_SUGGESTED" for uncertain rows)
+    - approvalStatus based on org setting (autoApproveNewPricing from vendorEnrollments if exists)
+- Add robust guardrails:
+  - Never write rows without orgId + vendorId
+  - Deduplicate by (vendorId, itemCode/itemName, effectiveQuarter)
+  - Log an audit event per import batch
+
+3) UI
+Add/finish vendor UI page(s):
+- “Upload Pricebook PDF”
+- Show import job status + errors
+- Preview extracted items before final approval IF auto-approve is off
+- Allow approving/rejecting extracted items
+
+4) ENTITLEMENTS
+- Gate PDF import behind a plan/add-on (PRO or “Vendor Integrations” add-on) using TEAM’s requireFeature + FeatureGate.
+
+====================================================================
+DELIVERABLES (PRINT)
+- Files changed (grouped Backend/Frontend/Shared)
+- New/updated API routes list
+- Schema changes summary
+- Security notes (especially cross-org inbox and vendor import)
+- Manual test checklist (weather widget, delay weather evidence, vendor PDF import end-to-end, hustler org switching, unified inbox scoping)
+
+IMPLEMENT IN THIS ORDER:
+1) Schema changes + db:push
+2) Backend routes/services
+3) Frontend pages + sidebar + gating
+4) Manual smoke tests
