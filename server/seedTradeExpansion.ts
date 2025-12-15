@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { masterSowItems } from "@shared/schema";
+import { masterSowItems, masterModifierCategories, masterModifiers } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
 const civilSiteSowItems = [
@@ -522,10 +522,755 @@ async function seedAllNewTradeSowItems() {
   return total;
 }
 
+// ============================================================
+// MASTER MODIFIER CATEGORIES AND MODIFIERS FOR NEW TRADES
+// ============================================================
+
+type ModifierCategoryDef = {
+  tradeType: string;
+  name: string;
+  description: string;
+  displayOrder: number;
+  modifiers: Array<{
+    name: string;
+    code: string;
+    description: string;
+    displayOrder: number;
+  }>;
+};
+
+const newTradeModifierCategories: ModifierCategoryDef[] = [
+  // === CIVIL / SITE TRADES ===
+  // SITE_DEMOLITION
+  { tradeType: "SITE_DEMOLITION", name: "Structure Type", description: "Type of structure being demolished", displayOrder: 1, modifiers: [
+    { name: "Wood Frame", code: "demo_wood", description: "Wood frame structures", displayOrder: 1 },
+    { name: "Masonry", code: "demo_masonry", description: "Brick/block masonry", displayOrder: 2 },
+    { name: "Concrete", code: "demo_concrete", description: "Reinforced concrete", displayOrder: 3 },
+    { name: "Steel", code: "demo_steel", description: "Steel frame structures", displayOrder: 4 },
+  ]},
+  { tradeType: "SITE_DEMOLITION", name: "Hazmat Presence", description: "Hazardous materials on site", displayOrder: 2, modifiers: [
+    { name: "No Hazmat", code: "hazmat_none", description: "No hazardous materials", displayOrder: 1 },
+    { name: "Asbestos", code: "hazmat_asbestos", description: "Asbestos present", displayOrder: 2 },
+    { name: "Lead Paint", code: "hazmat_lead", description: "Lead paint present", displayOrder: 3 },
+    { name: "Multiple Hazards", code: "hazmat_multi", description: "Multiple hazards", displayOrder: 4 },
+  ]},
+  { tradeType: "SITE_DEMOLITION", name: "Access Conditions", description: "Site access restrictions", displayOrder: 3, modifiers: [
+    { name: "Open Access", code: "access_open", description: "Full site access", displayOrder: 1 },
+    { name: "Limited Access", code: "access_limited", description: "Restricted vehicle access", displayOrder: 2 },
+    { name: "Urban/Confined", code: "access_urban", description: "Tight urban conditions", displayOrder: 3 },
+  ]},
+
+  // MASS_EXCAVATION
+  { tradeType: "MASS_EXCAVATION", name: "Soil Type", description: "Type of soil being excavated", displayOrder: 1, modifiers: [
+    { name: "Common Earth", code: "soil_common", description: "Standard soil excavation", displayOrder: 1 },
+    { name: "Clay", code: "soil_clay", description: "Heavy clay soils", displayOrder: 2 },
+    { name: "Rock (Rippable)", code: "soil_rock_rip", description: "Rippable rock", displayOrder: 3 },
+    { name: "Rock (Blasting)", code: "soil_rock_blast", description: "Requires blasting", displayOrder: 4 },
+    { name: "Wet/Saturated", code: "soil_wet", description: "High water table", displayOrder: 5 },
+  ]},
+  { tradeType: "MASS_EXCAVATION", name: "Haul Distance", description: "Distance to disposal/borrow site", displayOrder: 2, modifiers: [
+    { name: "On-Site", code: "haul_onsite", description: "On-site stockpile", displayOrder: 1 },
+    { name: "Short Haul (<5 mi)", code: "haul_short", description: "Under 5 miles", displayOrder: 2 },
+    { name: "Medium Haul (5-15 mi)", code: "haul_medium", description: "5-15 miles", displayOrder: 3 },
+    { name: "Long Haul (>15 mi)", code: "haul_long", description: "Over 15 miles", displayOrder: 4 },
+  ]},
+  { tradeType: "MASS_EXCAVATION", name: "Slope Stability", description: "Excavation slope requirements", displayOrder: 3, modifiers: [
+    { name: "1:1 Slope", code: "slope_1_1", description: "45 degree slope", displayOrder: 1 },
+    { name: "1.5:1 Slope", code: "slope_1_5", description: "Standard slope", displayOrder: 2 },
+    { name: "2:1 Slope", code: "slope_2_1", description: "Shallow slope", displayOrder: 3 },
+    { name: "Vertical (Shored)", code: "slope_vertical", description: "Requires shoring", displayOrder: 4 },
+  ]},
+
+  // TRENCHING
+  { tradeType: "TRENCHING", name: "Trench Depth", description: "Depth of utility trench", displayOrder: 1, modifiers: [
+    { name: "Shallow (<4')", code: "depth_shallow", description: "Under 4 feet", displayOrder: 1 },
+    { name: "Standard (4-8')", code: "depth_standard", description: "4 to 8 feet", displayOrder: 2 },
+    { name: "Deep (8-15')", code: "depth_deep", description: "8 to 15 feet", displayOrder: 3 },
+    { name: "Very Deep (>15')", code: "depth_very_deep", description: "Over 15 feet", displayOrder: 4 },
+  ]},
+  { tradeType: "TRENCHING", name: "Soil Classification", description: "OSHA soil classification", displayOrder: 2, modifiers: [
+    { name: "Type A", code: "osha_type_a", description: "Stable rock, clay", displayOrder: 1 },
+    { name: "Type B", code: "osha_type_b", description: "Angular gravel, silt", displayOrder: 2 },
+    { name: "Type C", code: "osha_type_c", description: "Gravel, sand, wet soil", displayOrder: 3 },
+  ]},
+  { tradeType: "TRENCHING", name: "Protection Method", description: "Cave-in protection", displayOrder: 3, modifiers: [
+    { name: "Sloped/Benched", code: "protect_slope", description: "Open cut sloping", displayOrder: 1 },
+    { name: "Trench Box", code: "protect_box", description: "Trench shield/box", displayOrder: 2 },
+    { name: "Sheet Piling", code: "protect_sheet", description: "Steel sheet piling", displayOrder: 3 },
+  ]},
+
+  // SHORING
+  { tradeType: "SHORING", name: "Shoring Type", description: "Type of excavation support", displayOrder: 1, modifiers: [
+    { name: "Steel Sheet Pile", code: "shore_sheet", description: "Steel sheet piling", displayOrder: 1 },
+    { name: "Soldier Pile", code: "shore_soldier", description: "H-pile and lagging", displayOrder: 2 },
+    { name: "Secant Pile", code: "shore_secant", description: "Interlocking piles", displayOrder: 3 },
+    { name: "Soil Nailing", code: "shore_nail", description: "Soil nail wall", displayOrder: 4 },
+  ]},
+  { tradeType: "SHORING", name: "Retention Height", description: "Height of retained earth", displayOrder: 2, modifiers: [
+    { name: "Low (<10')", code: "retain_low", description: "Under 10 feet", displayOrder: 1 },
+    { name: "Medium (10-20')", code: "retain_med", description: "10-20 feet", displayOrder: 2 },
+    { name: "High (20-40')", code: "retain_high", description: "20-40 feet", displayOrder: 3 },
+    { name: "Very High (>40')", code: "retain_vhigh", description: "Over 40 feet", displayOrder: 4 },
+  ]},
+
+  // DEWATERING
+  { tradeType: "DEWATERING", name: "Water Source", description: "Source of groundwater", displayOrder: 1, modifiers: [
+    { name: "Perched Water", code: "water_perched", description: "Shallow perched water", displayOrder: 1 },
+    { name: "Groundwater", code: "water_ground", description: "Continuous aquifer", displayOrder: 2 },
+    { name: "Tidal Influence", code: "water_tidal", description: "Coastal/tidal areas", displayOrder: 3 },
+  ]},
+  { tradeType: "DEWATERING", name: "Flow Rate", description: "Estimated pumping rate", displayOrder: 2, modifiers: [
+    { name: "Light (<100 GPM)", code: "flow_light", description: "Under 100 GPM", displayOrder: 1 },
+    { name: "Moderate (100-500 GPM)", code: "flow_mod", description: "100-500 GPM", displayOrder: 2 },
+    { name: "Heavy (>500 GPM)", code: "flow_heavy", description: "Over 500 GPM", displayOrder: 3 },
+  ]},
+
+  // SOIL_STABILIZATION
+  { tradeType: "SOIL_STABILIZATION", name: "Treatment Method", description: "Soil stabilization technique", displayOrder: 1, modifiers: [
+    { name: "Lime Treatment", code: "stab_lime", description: "Quicklime stabilization", displayOrder: 1 },
+    { name: "Cement Treatment", code: "stab_cement", description: "Portland cement", displayOrder: 2 },
+    { name: "Chemical Injection", code: "stab_chem", description: "Chemical grouting", displayOrder: 3 },
+    { name: "Mechanical", code: "stab_mech", description: "Compaction/densification", displayOrder: 4 },
+  ]},
+  { tradeType: "SOIL_STABILIZATION", name: "Treatment Depth", description: "Depth of treatment", displayOrder: 2, modifiers: [
+    { name: "Shallow (<12\")", code: "treat_shallow", description: "Surface treatment", displayOrder: 1 },
+    { name: "Medium (12-24\")", code: "treat_medium", description: "Standard depth", displayOrder: 2 },
+    { name: "Deep (>24\")", code: "treat_deep", description: "Deep stabilization", displayOrder: 3 },
+  ]},
+
+  // ENVIRONMENTAL_REMEDIATION
+  { tradeType: "ENVIRONMENTAL_REMEDIATION", name: "Contaminant Type", description: "Type of contamination", displayOrder: 1, modifiers: [
+    { name: "Petroleum", code: "contam_petro", description: "Fuel/oil contamination", displayOrder: 1 },
+    { name: "Solvents", code: "contam_solvent", description: "Chemical solvents", displayOrder: 2 },
+    { name: "Heavy Metals", code: "contam_metal", description: "Lead, arsenic, etc.", displayOrder: 3 },
+    { name: "Asbestos", code: "contam_asbestos", description: "ACM materials", displayOrder: 4 },
+  ]},
+  { tradeType: "ENVIRONMENTAL_REMEDIATION", name: "Remediation Method", description: "Cleanup approach", displayOrder: 2, modifiers: [
+    { name: "Excavation/Disposal", code: "remed_excav", description: "Dig and haul", displayOrder: 1 },
+    { name: "In-Situ Treatment", code: "remed_insitu", description: "Treat in place", displayOrder: 2 },
+    { name: "Encapsulation", code: "remed_encap", description: "Cap and contain", displayOrder: 3 },
+  ]},
+
+  // WELL_PLUGGING
+  { tradeType: "WELL_PLUGGING", name: "Well Type", description: "Type of well being plugged", displayOrder: 1, modifiers: [
+    { name: "Water Well", code: "well_water", description: "Domestic/irrigation well", displayOrder: 1 },
+    { name: "Monitor Well", code: "well_monitor", description: "Environmental monitoring", displayOrder: 2 },
+    { name: "Oil/Gas Well", code: "well_oil_gas", description: "Production well", displayOrder: 3 },
+  ]},
+  { tradeType: "WELL_PLUGGING", name: "Well Depth", description: "Depth of well", displayOrder: 2, modifiers: [
+    { name: "Shallow (<100')", code: "welldepth_shallow", description: "Under 100 feet", displayOrder: 1 },
+    { name: "Medium (100-500')", code: "welldepth_med", description: "100-500 feet", displayOrder: 2 },
+    { name: "Deep (>500')", code: "welldepth_deep", description: "Over 500 feet", displayOrder: 3 },
+  ]},
+
+  // STORMWATER_SYSTEMS
+  { tradeType: "STORMWATER_SYSTEMS", name: "Pipe Material", description: "Storm pipe material", displayOrder: 1, modifiers: [
+    { name: "RCP", code: "storm_rcp", description: "Reinforced concrete pipe", displayOrder: 1 },
+    { name: "HDPE", code: "storm_hdpe", description: "High density polyethylene", displayOrder: 2 },
+    { name: "CMP", code: "storm_cmp", description: "Corrugated metal pipe", displayOrder: 3 },
+    { name: "PVC", code: "storm_pvc", description: "PVC storm pipe", displayOrder: 4 },
+  ]},
+  { tradeType: "STORMWATER_SYSTEMS", name: "Pipe Size", description: "Storm pipe diameter", displayOrder: 2, modifiers: [
+    { name: "Small (12-18\")", code: "stormsize_sm", description: "12-18 inch", displayOrder: 1 },
+    { name: "Medium (24-36\")", code: "stormsize_med", description: "24-36 inch", displayOrder: 2 },
+    { name: "Large (42-60\")", code: "stormsize_lg", description: "42-60 inch", displayOrder: 3 },
+    { name: "Very Large (>60\")", code: "stormsize_xl", description: "Over 60 inch", displayOrder: 4 },
+  ]},
+
+  // SANITARY_SEWER
+  { tradeType: "SANITARY_SEWER", name: "Pipe Material", description: "Sewer pipe material", displayOrder: 1, modifiers: [
+    { name: "PVC SDR-35", code: "sewer_pvc35", description: "Standard PVC sewer", displayOrder: 1 },
+    { name: "PVC SDR-26", code: "sewer_pvc26", description: "Heavy wall PVC", displayOrder: 2 },
+    { name: "Ductile Iron", code: "sewer_di", description: "Ductile iron pipe", displayOrder: 3 },
+    { name: "VCP", code: "sewer_vcp", description: "Vitrified clay pipe", displayOrder: 4 },
+  ]},
+  { tradeType: "SANITARY_SEWER", name: "Installation Method", description: "Pipe installation technique", displayOrder: 2, modifiers: [
+    { name: "Open Cut", code: "install_open", description: "Conventional trenching", displayOrder: 1 },
+    { name: "Pipe Bursting", code: "install_burst", description: "Trenchless replacement", displayOrder: 2 },
+    { name: "CIPP Lining", code: "install_cipp", description: "Cured-in-place lining", displayOrder: 3 },
+    { name: "Directional Drill", code: "install_hdd", description: "HDD installation", displayOrder: 4 },
+  ]},
+
+  // WATERLINE
+  { tradeType: "WATERLINE", name: "Pipe Material", description: "Water main material", displayOrder: 1, modifiers: [
+    { name: "Ductile Iron", code: "water_di", description: "DI pipe", displayOrder: 1 },
+    { name: "PVC C900", code: "water_pvc", description: "AWWA C900 PVC", displayOrder: 2 },
+    { name: "HDPE", code: "water_hdpe", description: "High density PE", displayOrder: 3 },
+    { name: "Copper", code: "water_copper", description: "Copper service", displayOrder: 4 },
+  ]},
+  { tradeType: "WATERLINE", name: "Pressure Class", description: "Pipe pressure rating", displayOrder: 2, modifiers: [
+    { name: "Class 150", code: "press_150", description: "150 PSI", displayOrder: 1 },
+    { name: "Class 200", code: "press_200", description: "200 PSI", displayOrder: 2 },
+    { name: "Class 250", code: "press_250", description: "250 PSI", displayOrder: 3 },
+  ]},
+
+  // FORCE_MAIN
+  { tradeType: "FORCE_MAIN", name: "Pipe Material", description: "Force main pipe material", displayOrder: 1, modifiers: [
+    { name: "Ductile Iron", code: "fm_di", description: "DI force main", displayOrder: 1 },
+    { name: "PVC C905", code: "fm_pvc", description: "AWWA C905 PVC", displayOrder: 2 },
+    { name: "HDPE", code: "fm_hdpe", description: "Fused HDPE", displayOrder: 3 },
+  ]},
+  { tradeType: "FORCE_MAIN", name: "Pump Station Type", description: "Lift station configuration", displayOrder: 2, modifiers: [
+    { name: "Submersible", code: "pump_sub", description: "Submersible pumps", displayOrder: 1 },
+    { name: "Dry Pit", code: "pump_dry", description: "Dry pit station", displayOrder: 2 },
+    { name: "Package Station", code: "pump_pkg", description: "Pre-fabricated", displayOrder: 3 },
+  ]},
+
+  // ROADWAY_CONSTRUCTION
+  { tradeType: "ROADWAY_CONSTRUCTION", name: "Road Classification", description: "Roadway functional class", displayOrder: 1, modifiers: [
+    { name: "Local Street", code: "road_local", description: "Residential street", displayOrder: 1 },
+    { name: "Collector", code: "road_collector", description: "Collector road", displayOrder: 2 },
+    { name: "Arterial", code: "road_arterial", description: "Major arterial", displayOrder: 3 },
+    { name: "Highway", code: "road_highway", description: "State highway", displayOrder: 4 },
+  ]},
+  { tradeType: "ROADWAY_CONSTRUCTION", name: "Pavement Type", description: "Surface pavement type", displayOrder: 2, modifiers: [
+    { name: "Asphalt", code: "pave_asphalt", description: "HMA pavement", displayOrder: 1 },
+    { name: "Concrete", code: "pave_concrete", description: "PCCP pavement", displayOrder: 2 },
+    { name: "Chip Seal", code: "pave_chip", description: "Surface treatment", displayOrder: 3 },
+  ]},
+
+  // CURB_AND_GUTTER
+  { tradeType: "CURB_AND_GUTTER", name: "Curb Type", description: "Curb and gutter profile", displayOrder: 1, modifiers: [
+    { name: "Type A (Vertical)", code: "curb_a", description: "Standard vertical face", displayOrder: 1 },
+    { name: "Type B (Mountable)", code: "curb_b", description: "Rollover/mountable", displayOrder: 2 },
+    { name: "Type C (Barrier)", code: "curb_c", description: "High barrier curb", displayOrder: 3 },
+  ]},
+  { tradeType: "CURB_AND_GUTTER", name: "Concrete Strength", description: "Concrete mix design", displayOrder: 2, modifiers: [
+    { name: "3000 PSI", code: "cg_3000", description: "Standard strength", displayOrder: 1 },
+    { name: "4000 PSI", code: "cg_4000", description: "High strength", displayOrder: 2 },
+  ]},
+
+  // SIDEWALK
+  { tradeType: "SIDEWALK", name: "Width", description: "Sidewalk width", displayOrder: 1, modifiers: [
+    { name: "4 Foot", code: "sw_4ft", description: "Residential width", displayOrder: 1 },
+    { name: "5 Foot", code: "sw_5ft", description: "Standard ADA width", displayOrder: 2 },
+    { name: "6+ Foot", code: "sw_6ft", description: "Commercial width", displayOrder: 3 },
+  ]},
+  { tradeType: "SIDEWALK", name: "Thickness", description: "Concrete thickness", displayOrder: 2, modifiers: [
+    { name: "4 Inch", code: "sw_4in", description: "Standard pedestrian", displayOrder: 1 },
+    { name: "6 Inch", code: "sw_6in", description: "Driveway crossing", displayOrder: 2 },
+  ]},
+
+  // CONCRETE_PAVING
+  { tradeType: "CONCRETE_PAVING", name: "Thickness", description: "Pavement thickness", displayOrder: 1, modifiers: [
+    { name: "4 Inch", code: "cp_4in", description: "Light duty", displayOrder: 1 },
+    { name: "6 Inch", code: "cp_6in", description: "Standard duty", displayOrder: 2 },
+    { name: "8 Inch", code: "cp_8in", description: "Heavy duty", displayOrder: 3 },
+  ]},
+  { tradeType: "CONCRETE_PAVING", name: "Finish", description: "Surface finish type", displayOrder: 2, modifiers: [
+    { name: "Broom", code: "cpfin_broom", description: "Standard broom", displayOrder: 1 },
+    { name: "Steel Trowel", code: "cpfin_trowel", description: "Smooth finish", displayOrder: 2 },
+    { name: "Stamped", code: "cpfin_stamp", description: "Decorative stamp", displayOrder: 3 },
+  ]},
+
+  // TRAFFIC_CONTROL
+  { tradeType: "TRAFFIC_CONTROL", name: "Signal Type", description: "Traffic signal configuration", displayOrder: 1, modifiers: [
+    { name: "Standard Intersection", code: "sig_std", description: "4-way signalized", displayOrder: 1 },
+    { name: "Protected Turn", code: "sig_protect", description: "With turn arrows", displayOrder: 2 },
+    { name: "Pedestrian Hybrid", code: "sig_hawk", description: "HAWK signal", displayOrder: 3 },
+  ]},
+  { tradeType: "TRAFFIC_CONTROL", name: "Detection Type", description: "Vehicle detection method", displayOrder: 2, modifiers: [
+    { name: "In-Ground Loops", code: "detect_loop", description: "Inductive loops", displayOrder: 1 },
+    { name: "Video Detection", code: "detect_video", description: "Camera detection", displayOrder: 2 },
+    { name: "Radar", code: "detect_radar", description: "Radar detection", displayOrder: 3 },
+  ]},
+
+  // STRIPING_AND_SIGNAGE
+  { tradeType: "STRIPING_AND_SIGNAGE", name: "Striping Material", description: "Pavement marking type", displayOrder: 1, modifiers: [
+    { name: "Latex Paint", code: "stripe_latex", description: "Water-based paint", displayOrder: 1 },
+    { name: "Thermoplastic", code: "stripe_thermo", description: "Hot-applied plastic", displayOrder: 2 },
+    { name: "Epoxy", code: "stripe_epoxy", description: "Epoxy markings", displayOrder: 3 },
+  ]},
+  { tradeType: "STRIPING_AND_SIGNAGE", name: "Sign Mounting", description: "Sign support type", displayOrder: 2, modifiers: [
+    { name: "U-Channel Post", code: "sign_uchan", description: "Standard post", displayOrder: 1 },
+    { name: "Square Tube", code: "sign_square", description: "Square steel post", displayOrder: 2 },
+    { name: "Overhead Structure", code: "sign_overhead", description: "Span wire or truss", displayOrder: 3 },
+  ]},
+
+  // EROSION_CONTROL
+  { tradeType: "EROSION_CONTROL", name: "BMP Type", description: "Best management practice", displayOrder: 1, modifiers: [
+    { name: "Silt Fence", code: "bmp_silt", description: "Standard silt fence", displayOrder: 1 },
+    { name: "Wattle/Fiber Roll", code: "bmp_wattle", description: "Straw/coir wattle", displayOrder: 2 },
+    { name: "Sediment Basin", code: "bmp_basin", description: "Temporary basin", displayOrder: 3 },
+  ]},
+  { tradeType: "EROSION_CONTROL", name: "Slope Stabilization", description: "Slope protection method", displayOrder: 2, modifiers: [
+    { name: "Seed & Mulch", code: "slope_seed", description: "Hydroseeding", displayOrder: 1 },
+    { name: "Erosion Blanket", code: "slope_blanket", description: "ECB/TRM", displayOrder: 2 },
+    { name: "Rip Rap", code: "slope_riprap", description: "Rock armoring", displayOrder: 3 },
+  ]},
+
+  // FENCING_AND_GATES
+  { tradeType: "FENCING_AND_GATES", name: "Fence Type", description: "Fence material/style", displayOrder: 1, modifiers: [
+    { name: "Chain Link", code: "fence_cl", description: "Standard chain link", displayOrder: 1 },
+    { name: "Ornamental Iron", code: "fence_iron", description: "Decorative metal", displayOrder: 2 },
+    { name: "Wood Privacy", code: "fence_wood", description: "Board fence", displayOrder: 3 },
+    { name: "Vinyl", code: "fence_vinyl", description: "PVC fencing", displayOrder: 4 },
+  ]},
+  { tradeType: "FENCING_AND_GATES", name: "Height", description: "Fence height", displayOrder: 2, modifiers: [
+    { name: "4 Foot", code: "fence_4ft", description: "Low fence", displayOrder: 1 },
+    { name: "6 Foot", code: "fence_6ft", description: "Standard height", displayOrder: 2 },
+    { name: "8+ Foot", code: "fence_8ft", description: "Security height", displayOrder: 3 },
+  ]},
+
+  // === STRUCTURAL / BUILDING TRADES ===
+  // CAST_IN_PLACE_CONCRETE
+  { tradeType: "CAST_IN_PLACE_CONCRETE", name: "Concrete Strength", description: "Mix design strength", displayOrder: 1, modifiers: [
+    { name: "3000 PSI", code: "cip_3000", description: "Standard strength", displayOrder: 1 },
+    { name: "4000 PSI", code: "cip_4000", description: "Structural strength", displayOrder: 2 },
+    { name: "5000 PSI", code: "cip_5000", description: "High strength", displayOrder: 3 },
+    { name: "6000+ PSI", code: "cip_6000", description: "High performance", displayOrder: 4 },
+  ]},
+  { tradeType: "CAST_IN_PLACE_CONCRETE", name: "Placement Method", description: "Concrete placement", displayOrder: 2, modifiers: [
+    { name: "Direct Chute", code: "cip_chute", description: "Truck chute", displayOrder: 1 },
+    { name: "Pump", code: "cip_pump", description: "Concrete pump", displayOrder: 2 },
+    { name: "Crane & Bucket", code: "cip_crane", description: "Crane placement", displayOrder: 3 },
+  ]},
+  { tradeType: "CAST_IN_PLACE_CONCRETE", name: "Form Type", description: "Formwork system", displayOrder: 3, modifiers: [
+    { name: "Job-Built", code: "form_job", description: "Site-built forms", displayOrder: 1 },
+    { name: "Modular Panel", code: "form_panel", description: "Gang forms", displayOrder: 2 },
+    { name: "Slip Form", code: "form_slip", description: "Slip form system", displayOrder: 3 },
+  ]},
+
+  // PRECAST_CONCRETE
+  { tradeType: "PRECAST_CONCRETE", name: "Element Type", description: "Precast element category", displayOrder: 1, modifiers: [
+    { name: "Double Tees", code: "pc_dt", description: "Floor/roof elements", displayOrder: 1 },
+    { name: "Hollow Core", code: "pc_hc", description: "Hollow core plank", displayOrder: 2 },
+    { name: "Beams/Girders", code: "pc_beam", description: "Structural beams", displayOrder: 3 },
+    { name: "Wall Panels", code: "pc_wall", description: "Architectural panels", displayOrder: 4 },
+  ]},
+  { tradeType: "PRECAST_CONCRETE", name: "Finish", description: "Surface finish", displayOrder: 2, modifiers: [
+    { name: "Gray (As-Cast)", code: "pcfin_gray", description: "Standard gray", displayOrder: 1 },
+    { name: "Sandblast", code: "pcfin_sand", description: "Light exposure", displayOrder: 2 },
+    { name: "Acid Etch", code: "pcfin_acid", description: "Acid wash finish", displayOrder: 3 },
+    { name: "Form Liner", code: "pcfin_liner", description: "Textured liner", displayOrder: 4 },
+  ]},
+
+  // REBAR_AND_POST_TENSION
+  { tradeType: "REBAR_AND_POST_TENSION", name: "Rebar Grade", description: "Steel reinforcement grade", displayOrder: 1, modifiers: [
+    { name: "Grade 40", code: "rebar_40", description: "40 ksi yield", displayOrder: 1 },
+    { name: "Grade 60", code: "rebar_60", description: "60 ksi yield", displayOrder: 2 },
+    { name: "Grade 75", code: "rebar_75", description: "75 ksi yield", displayOrder: 3 },
+  ]},
+  { tradeType: "REBAR_AND_POST_TENSION", name: "Coating", description: "Corrosion protection", displayOrder: 2, modifiers: [
+    { name: "Uncoated (Black)", code: "coat_black", description: "Standard black", displayOrder: 1 },
+    { name: "Epoxy Coated", code: "coat_epoxy", description: "Fusion bonded epoxy", displayOrder: 2 },
+    { name: "Galvanized", code: "coat_galv", description: "Hot-dip galvanized", displayOrder: 3 },
+  ]},
+  { tradeType: "REBAR_AND_POST_TENSION", name: "PT System", description: "Post-tension type", displayOrder: 3, modifiers: [
+    { name: "Unbonded Monostrand", code: "pt_mono", description: "Unbonded tendons", displayOrder: 1 },
+    { name: "Bonded Multistrand", code: "pt_multi", description: "Grouted tendons", displayOrder: 2 },
+  ]},
+
+  // STRUCTURAL_STEEL
+  { tradeType: "STRUCTURAL_STEEL", name: "Steel Grade", description: "Structural steel grade", displayOrder: 1, modifiers: [
+    { name: "A36", code: "steel_a36", description: "Carbon steel", displayOrder: 1 },
+    { name: "A572 Gr 50", code: "steel_a572", description: "HSLA steel", displayOrder: 2 },
+    { name: "A992", code: "steel_a992", description: "Wide flange steel", displayOrder: 3 },
+  ]},
+  { tradeType: "STRUCTURAL_STEEL", name: "Connection Type", description: "Steel connection method", displayOrder: 2, modifiers: [
+    { name: "Bolted", code: "conn_bolt", description: "High-strength bolts", displayOrder: 1 },
+    { name: "Welded", code: "conn_weld", description: "Field welded", displayOrder: 2 },
+    { name: "Moment Frame", code: "conn_moment", description: "Moment connections", displayOrder: 3 },
+  ]},
+  { tradeType: "STRUCTURAL_STEEL", name: "Finish", description: "Steel surface treatment", displayOrder: 3, modifiers: [
+    { name: "Primer Only", code: "stfin_primer", description: "Shop primer", displayOrder: 1 },
+    { name: "Painted", code: "stfin_paint", description: "Full paint system", displayOrder: 2 },
+    { name: "Galvanized", code: "stfin_galv", description: "Hot-dip galvanized", displayOrder: 3 },
+    { name: "Fireproofed", code: "stfin_fire", description: "Spray fireproofing", displayOrder: 4 },
+  ]},
+
+  // METAL_BUILDINGS
+  { tradeType: "METAL_BUILDINGS", name: "Building Type", description: "Metal building classification", displayOrder: 1, modifiers: [
+    { name: "Clear Span", code: "mb_clear", description: "No interior columns", displayOrder: 1 },
+    { name: "Multi-Span", code: "mb_multi", description: "Interior columns", displayOrder: 2 },
+    { name: "Lean-To", code: "mb_leanto", description: "Attached addition", displayOrder: 3 },
+  ]},
+  { tradeType: "METAL_BUILDINGS", name: "Roof System", description: "Roof panel type", displayOrder: 2, modifiers: [
+    { name: "Standing Seam", code: "mbroof_ss", description: "Standing seam metal", displayOrder: 1 },
+    { name: "Through-Fastened", code: "mbroof_tf", description: "Exposed fastener", displayOrder: 2 },
+    { name: "Insulated Panel", code: "mbroof_ins", description: "Foam core panel", displayOrder: 3 },
+  ]},
+
+  // CARPENTRY_FRAMING
+  { tradeType: "CARPENTRY_FRAMING", name: "Lumber Grade", description: "Framing lumber grade", displayOrder: 1, modifiers: [
+    { name: "Standard & Better", code: "lum_std", description: "#2 or better", displayOrder: 1 },
+    { name: "Select Structural", code: "lum_select", description: "High grade", displayOrder: 2 },
+    { name: "Engineered (LVL/TJI)", code: "lum_eng", description: "Engineered lumber", displayOrder: 3 },
+  ]},
+  { tradeType: "CARPENTRY_FRAMING", name: "Wall Type", description: "Wall framing type", displayOrder: 2, modifiers: [
+    { name: "2x4 @ 16\" OC", code: "wall_2x4_16", description: "Standard interior", displayOrder: 1 },
+    { name: "2x4 @ 24\" OC", code: "wall_2x4_24", description: "Economic spacing", displayOrder: 2 },
+    { name: "2x6 @ 16\" OC", code: "wall_2x6_16", description: "Exterior/load bearing", displayOrder: 3 },
+    { name: "2x6 @ 24\" OC", code: "wall_2x6_24", description: "Advanced framing", displayOrder: 4 },
+  ]},
+
+  // DRYWALL_SYSTEMS
+  { tradeType: "DRYWALL_SYSTEMS", name: "Board Type", description: "Gypsum board type", displayOrder: 1, modifiers: [
+    { name: "Regular 1/2\"", code: "dw_reg_12", description: "Standard board", displayOrder: 1 },
+    { name: "Regular 5/8\"", code: "dw_reg_58", description: "Thicker board", displayOrder: 2 },
+    { name: "Type X 5/8\"", code: "dw_x_58", description: "Fire-rated", displayOrder: 3 },
+    { name: "Moisture Resistant", code: "dw_mr", description: "Green board", displayOrder: 4 },
+  ]},
+  { tradeType: "DRYWALL_SYSTEMS", name: "Finish Level", description: "Drywall finish quality", displayOrder: 2, modifiers: [
+    { name: "Level 3", code: "dwfin_3", description: "Texture ready", displayOrder: 1 },
+    { name: "Level 4", code: "dwfin_4", description: "Flat paint ready", displayOrder: 2 },
+    { name: "Level 5", code: "dwfin_5", description: "High-end smooth", displayOrder: 3 },
+  ]},
+
+  // ACOUSTICAL_CEILINGS
+  { tradeType: "ACOUSTICAL_CEILINGS", name: "Panel Size", description: "Ceiling panel dimensions", displayOrder: 1, modifiers: [
+    { name: "2'x2'", code: "ac_2x2", description: "Standard 2x2", displayOrder: 1 },
+    { name: "2'x4'", code: "ac_2x4", description: "Standard 2x4", displayOrder: 2 },
+  ]},
+  { tradeType: "ACOUSTICAL_CEILINGS", name: "Grid Type", description: "Suspension grid", displayOrder: 2, modifiers: [
+    { name: "Exposed Grid", code: "acgrid_exp", description: "Standard exposed", displayOrder: 1 },
+    { name: "Concealed Grid", code: "acgrid_con", description: "Hidden grid", displayOrder: 2 },
+    { name: "Direct Mount", code: "acgrid_direct", description: "Glue-up tiles", displayOrder: 3 },
+  ]},
+
+  // PAINTING_AND_COATINGS
+  { tradeType: "PAINTING_AND_COATINGS", name: "Paint System", description: "Coating system type", displayOrder: 1, modifiers: [
+    { name: "Latex (1 Coat)", code: "paint_1lat", description: "Single coat", displayOrder: 1 },
+    { name: "Latex (2 Coat)", code: "paint_2lat", description: "Two coat system", displayOrder: 2 },
+    { name: "Epoxy", code: "paint_epoxy", description: "Epoxy coating", displayOrder: 3 },
+    { name: "Urethane", code: "paint_ureth", description: "Urethane finish", displayOrder: 4 },
+  ]},
+  { tradeType: "PAINTING_AND_COATINGS", name: "Surface Prep", description: "Surface preparation", displayOrder: 2, modifiers: [
+    { name: "Light Sand", code: "prep_light", description: "Light sanding", displayOrder: 1 },
+    { name: "Prime & Patch", code: "prep_prime", description: "Full prime coat", displayOrder: 2 },
+    { name: "Sandblast", code: "prep_blast", description: "Abrasive blast", displayOrder: 3 },
+  ]},
+
+  // FLOORING_SYSTEMS
+  { tradeType: "FLOORING_SYSTEMS", name: "Flooring Type", description: "Floor covering material", displayOrder: 1, modifiers: [
+    { name: "Carpet Tile", code: "floor_carpet", description: "Modular carpet", displayOrder: 1 },
+    { name: "VCT", code: "floor_vct", description: "Vinyl composition tile", displayOrder: 2 },
+    { name: "LVT/LVP", code: "floor_lvt", description: "Luxury vinyl", displayOrder: 3 },
+    { name: "Ceramic Tile", code: "floor_ceramic", description: "Ceramic/porcelain", displayOrder: 4 },
+    { name: "Epoxy Flooring", code: "floor_epoxy", description: "Resinous coating", displayOrder: 5 },
+  ]},
+  { tradeType: "FLOORING_SYSTEMS", name: "Substrate", description: "Subfloor condition", displayOrder: 2, modifiers: [
+    { name: "Concrete (New)", code: "sub_conc_new", description: "New concrete slab", displayOrder: 1 },
+    { name: "Concrete (Existing)", code: "sub_conc_exist", description: "Existing concrete", displayOrder: 2 },
+    { name: "Wood Subfloor", code: "sub_wood", description: "Plywood/OSB", displayOrder: 3 },
+  ]},
+
+  // ROOFING_SYSTEMS
+  { tradeType: "ROOFING_SYSTEMS", name: "Roof Type", description: "Roofing system", displayOrder: 1, modifiers: [
+    { name: "TPO", code: "roof_tpo", description: "TPO membrane", displayOrder: 1 },
+    { name: "EPDM", code: "roof_epdm", description: "EPDM rubber", displayOrder: 2 },
+    { name: "Built-Up", code: "roof_bur", description: "BUR system", displayOrder: 3 },
+    { name: "Modified Bitumen", code: "roof_mod", description: "Mod-bit", displayOrder: 4 },
+    { name: "Standing Seam", code: "roof_ss", description: "Metal roofing", displayOrder: 5 },
+  ]},
+  { tradeType: "ROOFING_SYSTEMS", name: "Insulation R-Value", description: "Roof insulation", displayOrder: 2, modifiers: [
+    { name: "R-20", code: "rins_20", description: "Standard insulation", displayOrder: 1 },
+    { name: "R-30", code: "rins_30", description: "High insulation", displayOrder: 2 },
+    { name: "R-40+", code: "rins_40", description: "Maximum insulation", displayOrder: 3 },
+  ]},
+
+  // MASONRY_SYSTEMS
+  { tradeType: "MASONRY_SYSTEMS", name: "Unit Type", description: "Masonry unit", displayOrder: 1, modifiers: [
+    { name: "CMU Standard", code: "mas_cmu", description: "Concrete block", displayOrder: 1 },
+    { name: "CMU Split Face", code: "mas_split", description: "Decorative block", displayOrder: 2 },
+    { name: "Clay Brick", code: "mas_brick", description: "Face brick", displayOrder: 3 },
+    { name: "Stone Veneer", code: "mas_stone", description: "Natural/cultured", displayOrder: 4 },
+  ]},
+  { tradeType: "MASONRY_SYSTEMS", name: "Reinforcement", description: "Masonry reinforcing", displayOrder: 2, modifiers: [
+    { name: "Unreinforced", code: "masrein_none", description: "No reinforcement", displayOrder: 1 },
+    { name: "Partially Grouted", code: "masrein_part", description: "Partial grout", displayOrder: 2 },
+    { name: "Fully Grouted", code: "masrein_full", description: "Solid grout", displayOrder: 3 },
+  ]},
+
+  // GLAZING_SYSTEMS
+  { tradeType: "GLAZING_SYSTEMS", name: "System Type", description: "Glazing system", displayOrder: 1, modifiers: [
+    { name: "Storefront", code: "glaz_store", description: "Standard storefront", displayOrder: 1 },
+    { name: "Curtain Wall", code: "glaz_cw", description: "Curtain wall", displayOrder: 2 },
+    { name: "Window Wall", code: "glaz_ww", description: "Window wall system", displayOrder: 3 },
+  ]},
+  { tradeType: "GLAZING_SYSTEMS", name: "Glass Type", description: "Glazing specification", displayOrder: 2, modifiers: [
+    { name: "Clear Insulated", code: "glass_clear", description: "Standard IGU", displayOrder: 1 },
+    { name: "Low-E", code: "glass_lowe", description: "Low emissivity", displayOrder: 2 },
+    { name: "Tinted", code: "glass_tint", description: "Solar tinted", displayOrder: 3 },
+    { name: "Spandrel", code: "glass_span", description: "Opaque spandrel", displayOrder: 4 },
+  ]},
+
+  // === MEP / SPECIALTY TRADES ===
+  // ELECTRICAL_UNDERGROUND
+  { tradeType: "ELECTRICAL_UNDERGROUND", name: "Conduit Type", description: "Underground conduit", displayOrder: 1, modifiers: [
+    { name: "PVC Schedule 40", code: "eug_pvc40", description: "Standard PVC", displayOrder: 1 },
+    { name: "PVC Schedule 80", code: "eug_pvc80", description: "Heavy wall PVC", displayOrder: 2 },
+    { name: "HDPE", code: "eug_hdpe", description: "Directional bore", displayOrder: 3 },
+    { name: "Direct Buried", code: "eug_direct", description: "Direct burial cable", displayOrder: 4 },
+  ]},
+  { tradeType: "ELECTRICAL_UNDERGROUND", name: "Voltage Class", description: "System voltage", displayOrder: 2, modifiers: [
+    { name: "Low Voltage (<600V)", code: "eugv_low", description: "Secondary", displayOrder: 1 },
+    { name: "Medium Voltage (5-35kV)", code: "eugv_med", description: "Primary", displayOrder: 2 },
+    { name: "High Voltage (>35kV)", code: "eugv_high", description: "Transmission", displayOrder: 3 },
+  ]},
+
+  // ELECTRICAL_OVERHEAD
+  { tradeType: "ELECTRICAL_OVERHEAD", name: "Pole Type", description: "Utility pole material", displayOrder: 1, modifiers: [
+    { name: "Wood", code: "eoh_wood", description: "Treated wood pole", displayOrder: 1 },
+    { name: "Steel", code: "eoh_steel", description: "Steel pole", displayOrder: 2 },
+    { name: "Concrete", code: "eoh_conc", description: "Concrete pole", displayOrder: 3 },
+  ]},
+  { tradeType: "ELECTRICAL_OVERHEAD", name: "Line Type", description: "Conductor configuration", displayOrder: 2, modifiers: [
+    { name: "Single Phase", code: "eohline_1ph", description: "Single phase service", displayOrder: 1 },
+    { name: "Three Phase", code: "eohline_3ph", description: "Three phase primary", displayOrder: 2 },
+  ]},
+
+  // MECHANICAL_PIPING
+  { tradeType: "MECHANICAL_PIPING", name: "Pipe Material", description: "Piping material", displayOrder: 1, modifiers: [
+    { name: "Carbon Steel", code: "mp_cs", description: "Standard steel", displayOrder: 1 },
+    { name: "Copper", code: "mp_cu", description: "Copper piping", displayOrder: 2 },
+    { name: "Stainless Steel", code: "mp_ss", description: "SS piping", displayOrder: 3 },
+    { name: "PVC/CPVC", code: "mp_pvc", description: "Plastic piping", displayOrder: 4 },
+  ]},
+  { tradeType: "MECHANICAL_PIPING", name: "Service Type", description: "Piping service", displayOrder: 2, modifiers: [
+    { name: "Chilled Water", code: "mpsvc_chw", description: "CHW system", displayOrder: 1 },
+    { name: "Hot Water", code: "mpsvc_hw", description: "HW heating", displayOrder: 2 },
+    { name: "Steam", code: "mpsvc_steam", description: "Steam system", displayOrder: 3 },
+    { name: "Compressed Air", code: "mpsvc_air", description: "Compressed air", displayOrder: 4 },
+  ]},
+
+  // HVAC_SYSTEMS
+  { tradeType: "HVAC_SYSTEMS", name: "System Type", description: "HVAC system configuration", displayOrder: 1, modifiers: [
+    { name: "Packaged RTU", code: "hvac_rtu", description: "Rooftop unit", displayOrder: 1 },
+    { name: "Split System", code: "hvac_split", description: "Split DX", displayOrder: 2 },
+    { name: "VAV", code: "hvac_vav", description: "Variable air volume", displayOrder: 3 },
+    { name: "VRF", code: "hvac_vrf", description: "Variable refrigerant", displayOrder: 4 },
+  ]},
+  { tradeType: "HVAC_SYSTEMS", name: "Ductwork", description: "Duct construction", displayOrder: 2, modifiers: [
+    { name: "Sheet Metal", code: "duct_metal", description: "Galvanized duct", displayOrder: 1 },
+    { name: "Flex Duct", code: "duct_flex", description: "Flexible duct", displayOrder: 2 },
+    { name: "Fiberglass Duct", code: "duct_fiber", description: "Duct board", displayOrder: 3 },
+  ]},
+
+  // PLUMBING_SYSTEMS
+  { tradeType: "PLUMBING_SYSTEMS", name: "Pipe Material", description: "Supply/waste piping", displayOrder: 1, modifiers: [
+    { name: "Copper", code: "plumb_cu", description: "Copper supply", displayOrder: 1 },
+    { name: "PEX", code: "plumb_pex", description: "PEX tubing", displayOrder: 2 },
+    { name: "CPVC", code: "plumb_cpvc", description: "CPVC supply", displayOrder: 3 },
+    { name: "Cast Iron DWV", code: "plumb_ci", description: "Cast iron drain", displayOrder: 4 },
+    { name: "PVC DWV", code: "plumb_pvcdwv", description: "PVC drain", displayOrder: 5 },
+  ]},
+  { tradeType: "PLUMBING_SYSTEMS", name: "Fixture Grade", description: "Fixture quality level", displayOrder: 2, modifiers: [
+    { name: "Commercial Standard", code: "fix_comm", description: "Standard commercial", displayOrder: 1 },
+    { name: "Institutional", code: "fix_inst", description: "Heavy duty", displayOrder: 2 },
+    { name: "Designer/High-End", code: "fix_high", description: "Premium fixtures", displayOrder: 3 },
+  ]},
+
+  // FIRE_PROTECTION_SYSTEMS
+  { tradeType: "FIRE_PROTECTION_SYSTEMS", name: "System Type", description: "Sprinkler system type", displayOrder: 1, modifiers: [
+    { name: "Wet Pipe", code: "fp_wet", description: "Standard wet system", displayOrder: 1 },
+    { name: "Dry Pipe", code: "fp_dry", description: "Freeze protection", displayOrder: 2 },
+    { name: "Pre-Action", code: "fp_preact", description: "Double interlock", displayOrder: 3 },
+    { name: "Deluge", code: "fp_deluge", description: "Open head system", displayOrder: 4 },
+  ]},
+  { tradeType: "FIRE_PROTECTION_SYSTEMS", name: "Hazard Class", description: "Occupancy hazard", displayOrder: 2, modifiers: [
+    { name: "Light Hazard", code: "fphaz_light", description: "Office/residential", displayOrder: 1 },
+    { name: "Ordinary Hazard", code: "fphaz_ord", description: "Retail/manufacturing", displayOrder: 2 },
+    { name: "Extra Hazard", code: "fphaz_extra", description: "High hazard storage", displayOrder: 3 },
+  ]},
+
+  // LOW_VOLTAGE_SYSTEMS
+  { tradeType: "LOW_VOLTAGE_SYSTEMS", name: "Cable Type", description: "Low voltage cabling", displayOrder: 1, modifiers: [
+    { name: "Cat 5e", code: "lv_cat5e", description: "Category 5e", displayOrder: 1 },
+    { name: "Cat 6", code: "lv_cat6", description: "Category 6", displayOrder: 2 },
+    { name: "Cat 6A", code: "lv_cat6a", description: "Category 6A", displayOrder: 3 },
+    { name: "Fiber Optic", code: "lv_fiber", description: "Fiber cabling", displayOrder: 4 },
+  ]},
+  { tradeType: "LOW_VOLTAGE_SYSTEMS", name: "Pathway", description: "Cable pathway", displayOrder: 2, modifiers: [
+    { name: "Above Ceiling", code: "lvpath_ceil", description: "Ceiling plenum", displayOrder: 1 },
+    { name: "Cable Tray", code: "lvpath_tray", description: "Open cable tray", displayOrder: 2 },
+    { name: "Conduit", code: "lvpath_cond", description: "EMT/rigid conduit", displayOrder: 3 },
+  ]},
+
+  // SECURITY_AND_ACCESS
+  { tradeType: "SECURITY_AND_ACCESS", name: "Access Control", description: "Access system type", displayOrder: 1, modifiers: [
+    { name: "Card Reader", code: "sec_card", description: "Proximity cards", displayOrder: 1 },
+    { name: "Biometric", code: "sec_bio", description: "Fingerprint/facial", displayOrder: 2 },
+    { name: "Keypad", code: "sec_keypad", description: "PIN entry", displayOrder: 3 },
+  ]},
+  { tradeType: "SECURITY_AND_ACCESS", name: "Surveillance", description: "Camera system", displayOrder: 2, modifiers: [
+    { name: "IP Cameras", code: "surv_ip", description: "Network cameras", displayOrder: 1 },
+    { name: "Analog Cameras", code: "surv_analog", description: "Traditional CCTV", displayOrder: 2 },
+  ]},
+
+  // COMMUNICATIONS_IT
+  { tradeType: "COMMUNICATIONS_IT", name: "Infrastructure", description: "IT infrastructure", displayOrder: 1, modifiers: [
+    { name: "MDF/IDF Rooms", code: "it_mdf", description: "Telecom rooms", displayOrder: 1 },
+    { name: "Data Center", code: "it_dc", description: "Server room", displayOrder: 2 },
+    { name: "Distributed", code: "it_dist", description: "Edge computing", displayOrder: 3 },
+  ]},
+  { tradeType: "COMMUNICATIONS_IT", name: "Wireless", description: "Wireless systems", displayOrder: 2, modifiers: [
+    { name: "WiFi 5 (802.11ac)", code: "wifi_5", description: "Standard wireless", displayOrder: 1 },
+    { name: "WiFi 6 (802.11ax)", code: "wifi_6", description: "High performance", displayOrder: 2 },
+    { name: "DAS", code: "wifi_das", description: "Distributed antenna", displayOrder: 3 },
+  ]},
+
+  // SOLAR_INSTALLATION
+  { tradeType: "SOLAR_INSTALLATION", name: "Panel Type", description: "Solar panel technology", displayOrder: 1, modifiers: [
+    { name: "Monocrystalline", code: "solar_mono", description: "High efficiency", displayOrder: 1 },
+    { name: "Polycrystalline", code: "solar_poly", description: "Standard panels", displayOrder: 2 },
+    { name: "Thin Film", code: "solar_thin", description: "Flexible panels", displayOrder: 3 },
+  ]},
+  { tradeType: "SOLAR_INSTALLATION", name: "Mounting", description: "Panel mounting system", displayOrder: 2, modifiers: [
+    { name: "Roof Mount", code: "solmnt_roof", description: "Building rooftop", displayOrder: 1 },
+    { name: "Ground Mount", code: "solmnt_ground", description: "Ground racking", displayOrder: 2 },
+    { name: "Carport", code: "solmnt_carport", description: "Parking structure", displayOrder: 3 },
+    { name: "Tracking", code: "solmnt_track", description: "Single/dual axis", displayOrder: 4 },
+  ]},
+
+  // TEMPORARY_POWER
+  { tradeType: "TEMPORARY_POWER", name: "Power Source", description: "Temporary power source", displayOrder: 1, modifiers: [
+    { name: "Utility Pedestal", code: "temp_ped", description: "Utility service", displayOrder: 1 },
+    { name: "Generator", code: "temp_gen", description: "Diesel generator", displayOrder: 2 },
+    { name: "Transformer", code: "temp_xfmr", description: "Temp transformer", displayOrder: 3 },
+  ]},
+  { tradeType: "TEMPORARY_POWER", name: "Distribution", description: "Power distribution", displayOrder: 2, modifiers: [
+    { name: "Spider Boxes", code: "tempdist_spider", description: "Portable panels", displayOrder: 1 },
+    { name: "Temp Panels", code: "tempdist_panel", description: "Temporary loadcenters", displayOrder: 2 },
+  ]},
+
+  // === SUPPORT / SERVICES TRADES ===
+  // SURVEY_AND_LAYOUT
+  { tradeType: "SURVEY_AND_LAYOUT", name: "Survey Type", description: "Survey service type", displayOrder: 1, modifiers: [
+    { name: "Boundary Survey", code: "surv_bound", description: "Property lines", displayOrder: 1 },
+    { name: "Topographic", code: "surv_topo", description: "Site contours", displayOrder: 2 },
+    { name: "Construction Staking", code: "surv_stake", description: "Layout/staking", displayOrder: 3 },
+    { name: "As-Built", code: "surv_asbuilt", description: "Record survey", displayOrder: 4 },
+  ]},
+  { tradeType: "SURVEY_AND_LAYOUT", name: "Equipment", description: "Survey equipment", displayOrder: 2, modifiers: [
+    { name: "Total Station", code: "surveq_ts", description: "Optical survey", displayOrder: 1 },
+    { name: "GPS/GNSS", code: "surveq_gps", description: "Satellite positioning", displayOrder: 2 },
+    { name: "3D Scanning", code: "surveq_scan", description: "LiDAR scanning", displayOrder: 3 },
+  ]},
+
+  // TESTING_AND_INSPECTIONS
+  { tradeType: "TESTING_AND_INSPECTIONS", name: "Test Type", description: "Testing category", displayOrder: 1, modifiers: [
+    { name: "Concrete Testing", code: "test_conc", description: "Strength/slump", displayOrder: 1 },
+    { name: "Soil Testing", code: "test_soil", description: "Compaction/proctor", displayOrder: 2 },
+    { name: "Welding Inspection", code: "test_weld", description: "NDT/UT/MT", displayOrder: 3 },
+    { name: "MEP Testing", code: "test_mep", description: "Commissioning tests", displayOrder: 4 },
+  ]},
+  { tradeType: "TESTING_AND_INSPECTIONS", name: "Frequency", description: "Testing frequency", displayOrder: 2, modifiers: [
+    { name: "Periodic", code: "testfreq_per", description: "Scheduled intervals", displayOrder: 1 },
+    { name: "Continuous", code: "testfreq_cont", description: "Full-time inspector", displayOrder: 2 },
+    { name: "As-Needed", code: "testfreq_asn", description: "On-call basis", displayOrder: 3 },
+  ]},
+
+  // COMMISSIONING
+  { tradeType: "COMMISSIONING", name: "Cx Level", description: "Commissioning scope", displayOrder: 1, modifiers: [
+    { name: "Fundamental Cx", code: "cx_fund", description: "Basic commissioning", displayOrder: 1 },
+    { name: "Enhanced Cx", code: "cx_enhanced", description: "LEED enhanced", displayOrder: 2 },
+    { name: "Monitoring-Based Cx", code: "cx_mbcx", description: "Ongoing monitoring", displayOrder: 3 },
+  ]},
+  { tradeType: "COMMISSIONING", name: "Systems", description: "Systems commissioned", displayOrder: 2, modifiers: [
+    { name: "HVAC Only", code: "cxsys_hvac", description: "Mechanical systems", displayOrder: 1 },
+    { name: "MEP", code: "cxsys_mep", description: "All MEP systems", displayOrder: 2 },
+    { name: "Building Envelope", code: "cxsys_env", description: "Enclosure systems", displayOrder: 3 },
+  ]},
+
+  // TEMPORARY_FACILITIES
+  { tradeType: "TEMPORARY_FACILITIES", name: "Office Type", description: "Temporary office", displayOrder: 1, modifiers: [
+    { name: "Single Trailer", code: "tempoff_single", description: "Single-wide trailer", displayOrder: 1 },
+    { name: "Double Trailer", code: "tempoff_double", description: "Double-wide trailer", displayOrder: 2 },
+    { name: "Modular Complex", code: "tempoff_mod", description: "Multi-unit complex", displayOrder: 3 },
+  ]},
+  { tradeType: "TEMPORARY_FACILITIES", name: "Duration", description: "Rental duration", displayOrder: 2, modifiers: [
+    { name: "Short Term (<6 mo)", code: "tempdur_short", description: "Under 6 months", displayOrder: 1 },
+    { name: "Medium Term (6-18 mo)", code: "tempdur_med", description: "6-18 months", displayOrder: 2 },
+    { name: "Long Term (>18 mo)", code: "tempdur_long", description: "Over 18 months", displayOrder: 3 },
+  ]},
+
+  // GENERAL_CONDITIONS
+  { tradeType: "GENERAL_CONDITIONS", name: "Project Size", description: "Project scale", displayOrder: 1, modifiers: [
+    { name: "Small (<$1M)", code: "gc_small", description: "Under $1 million", displayOrder: 1 },
+    { name: "Medium ($1-10M)", code: "gc_med", description: "$1-10 million", displayOrder: 2 },
+    { name: "Large ($10-50M)", code: "gc_large", description: "$10-50 million", displayOrder: 3 },
+    { name: "Major (>$50M)", code: "gc_major", description: "Over $50 million", displayOrder: 4 },
+  ]},
+  { tradeType: "GENERAL_CONDITIONS", name: "Duration", description: "Project duration", displayOrder: 2, modifiers: [
+    { name: "Short (<6 mo)", code: "gcdur_short", description: "Under 6 months", displayOrder: 1 },
+    { name: "Medium (6-18 mo)", code: "gcdur_med", description: "6-18 months", displayOrder: 2 },
+    { name: "Long (>18 mo)", code: "gcdur_long", description: "Over 18 months", displayOrder: 3 },
+  ]},
+];
+
+async function seedNewTradeModifiers() {
+  console.log("🏷️ Seeding Master Modifier Categories and Modifiers for new trades...\n");
+  
+  let categoriesInserted = 0;
+  let categoriesSkipped = 0;
+  let modifiersInserted = 0;
+  let modifiersSkipped = 0;
+  
+  for (const categoryDef of newTradeModifierCategories) {
+    const existingCategory = await db.select()
+      .from(masterModifierCategories)
+      .where(and(
+        eq(masterModifierCategories.tradeType, categoryDef.tradeType as any),
+        eq(masterModifierCategories.name, categoryDef.name)
+      ))
+      .limit(1);
+    
+    let categoryId: string;
+    
+    if (existingCategory.length > 0) {
+      categoryId = existingCategory[0].id;
+      categoriesSkipped++;
+    } else {
+      const [newCategory] = await db.insert(masterModifierCategories).values({
+        tradeType: categoryDef.tradeType as any,
+        name: categoryDef.name,
+        description: categoryDef.description,
+        displayOrder: categoryDef.displayOrder,
+        isActive: true,
+      }).returning({ id: masterModifierCategories.id });
+      categoryId = newCategory.id;
+      categoriesInserted++;
+    }
+    
+    for (const modifierDef of categoryDef.modifiers) {
+      const existingModifier = await db.select()
+        .from(masterModifiers)
+        .where(and(
+          eq(masterModifiers.tradeType, categoryDef.tradeType as any),
+          eq(masterModifiers.code, modifierDef.code)
+        ))
+        .limit(1);
+      
+      if (existingModifier.length > 0) {
+        modifiersSkipped++;
+        continue;
+      }
+      
+      await db.insert(masterModifiers).values({
+        tradeType: categoryDef.tradeType as any,
+        categoryId: categoryId,
+        name: modifierDef.name,
+        code: modifierDef.code,
+        description: modifierDef.description,
+        displayOrder: modifierDef.displayOrder,
+        isActive: true,
+      });
+      modifiersInserted++;
+    }
+  }
+  
+  console.log(`✅ Modifier Categories: ${categoriesInserted} inserted, ${categoriesSkipped} skipped`);
+  console.log(`✅ Modifiers: ${modifiersInserted} inserted, ${modifiersSkipped} skipped`);
+  
+  return { categoriesInserted, categoriesSkipped, modifiersInserted, modifiersSkipped };
+}
+
 export { 
   seedCivilSiteSowItems, civilSiteSowItems, 
   seedStructuralBuildingSowItems, structuralBuildingSowItems,
   seedMepSpecialtySowItems, mepSpecialtySowItems,
   seedSupportServicesSowItems, supportServicesSowItems,
-  seedAllNewTradeSowItems
+  seedAllNewTradeSowItems,
+  seedNewTradeModifiers, newTradeModifierCategories
 };

@@ -106,6 +106,30 @@ The system tracks:
 - **Profitability**: Revenue per unit vs cost per unit, profit margin
 - **Confidence level**: Based on amount of historical data
 
+## Trade Taxonomy (73 Trades)
+The platform supports a comprehensive taxonomy of 73 construction trades organized into categories:
+
+### Civil/Site/Environmental (20 trades)
+Site Demolition, Mass Excavation, Trenching, Shoring, Dewatering, Soil Stabilization, Environmental Remediation, Well Plugging, Stormwater Systems, Sanitary Sewer, Waterline, Force Main, Roadway Construction, Curb and Gutter, Sidewalk, Concrete Paving, Traffic Control, Striping and Signage, Erosion Control, Fencing and Gates
+
+### Structural/Building (13 trades)
+Cast-in-Place Concrete, Precast Concrete, Rebar and Post-Tension, Structural Steel, Metal Buildings, Carpentry/Framing, Drywall Systems, Acoustical Ceilings, Painting and Coatings, Flooring Systems, Roofing Systems, Masonry Systems, Glazing Systems
+
+### MEP/Specialty (11 trades)
+Electrical Underground, Electrical Overhead, Mechanical Piping, HVAC Systems, Plumbing Systems, Fire Protection Systems, Low Voltage Systems, Security and Access, Communications/IT, Solar Installation, Temporary Power
+
+### Support Services (5 trades)
+Survey and Layout, Testing and Inspections, Commissioning, Temporary Facilities, General Conditions
+
+### General Trades (24 original trades)
+General Contractor, Concrete, Earthwork, Asphalt Paving, Roofing, Electrical, Plumbing, HVAC, Carpentry, Masonry, Drywall, Painting, Flooring, Landscaping, Demolition, Steel Erection, Glazing, Insulation, Fire Protection, Low Voltage, Solar, Waterproofing, and Other (custom trades)
+
+## AI Trade Discovery & Scope Prediction
+The platform includes AI-powered features for:
+- **Trade Discovery**: Automatically identify relevant trades from project descriptions or bid documents
+- **Scope Prediction**: AI suggests scope of work items based on project type and trade
+- **Modifier Selection**: Suggest relevant modifiers (material types, labor conditions) for scope items
+
 ## User Roles (RBAC)
 1. **ADMIN**: Full access to all features, user management, system settings
 2. **MANAGER**: Project management, bid oversight, reports, team management

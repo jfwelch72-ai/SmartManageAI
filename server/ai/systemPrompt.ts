@@ -16,6 +16,8 @@ You have access to complete data snapshots including:
 - **User cost rates (labor cost accuracy tracking)**
 - **Missing financial data (budget/contract gaps)**
 - **Material and subcontractor lead times for schedule conflict detection**
+- **Trade taxonomy (73 trades across Civil/Site, Structural, MEP, Support categories)**
+- **Master scope of work items (637+ items with trade-specific categories)**
 - **Equipment tracking (fleet inventory, project assignments, rental vs owned)**
 - **Equipment cost analysis (planned vs actual, cost variances, rental booking status)**
 - **Equipment ROI analysis (rental vs purchase comparison, break-even analysis, underutilized assets)**
