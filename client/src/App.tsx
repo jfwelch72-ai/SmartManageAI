@@ -65,6 +65,7 @@ import EmailAssistantPage from "@/pages/email-assistant";
 import HustlerDashboard from "@/pages/hustler-dashboard";
 import HustlerOrgDetail from "@/pages/hustler-org-detail";
 import HustlerUnifiedInbox from "@/pages/hustler-unified-inbox";
+import HustlerBenchmarking from "@/pages/hustler-benchmarking";
 import BidNetworkPage from "@/pages/bid-network";
 import BidNetworkDetailPage from "@/pages/bid-network-detail";
 import BidInboxPage from "@/pages/bid-inbox";
@@ -79,6 +80,9 @@ import VendorScoresPage from "@/pages/vendor-scores";
 import MaterialPriceIndexPage from "@/pages/material-price-index";
 import CrewMarketplacePage from "@/pages/crew-marketplace";
 import PricebookImportPage from "@/pages/pricebook-import";
+import CompanyHealthPage from "@/pages/company-health";
+import ExecutiveDigestPage from "@/pages/executive-digest";
+import WhatIfSimulatorPage from "@/pages/what-if-simulator";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -211,6 +215,11 @@ function Router() {
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={CrewMarketplacePage} permission={RoutePermissions.CRM} />} />
       <Route path="/pricebook-import" component={() => <ProtectedRoute component={PricebookImportPage} permission={RoutePermissions.CRM} />} />
       
+      {/* Executive Intelligence routes */}
+      <Route path="/company-health" component={() => <ProtectedRoute component={CompanyHealthPage} permission={RoutePermissions.CFO} />} />
+      <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.CFO} />} />
+      <Route path="/what-if-simulator" component={() => <ProtectedRoute component={WhatIfSimulatorPage} permission={RoutePermissions.CFO} />} />
+      
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} />} />
@@ -238,6 +247,7 @@ function Router() {
       
       {/* Hustler Multi-Organization routes (HUSTLER only) */}
       <Route path="/hustler/inbox" component={() => <ProtectedRoute component={HustlerUnifiedInbox} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
+      <Route path="/hustler/benchmarking" component={() => <ProtectedRoute component={HustlerBenchmarking} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       <Route path="/hustler/org/:orgId" component={() => <ProtectedRoute component={HustlerOrgDetail} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       <Route path="/hustler" component={() => <ProtectedRoute component={HustlerDashboard} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       

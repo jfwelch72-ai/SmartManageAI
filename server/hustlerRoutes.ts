@@ -1588,4 +1588,135 @@ router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HU
   }
 });
 
+// ========================================
+// BENCHMARKING - Cross-Organization Comparison
+// ========================================
+
+router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get all linked organization IDs
+    const linkedOrgs = await db
+      .select({
+        organizationId: hustlerOrganizations.organizationId,
+        orgName: organizations.name,
+        tradeType: organizations.tradeType,
+        logoUrl: organizations.logoUrl,
+      })
+      .from(hustlerOrganizations)
+      .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    if (orgIds.length === 0) {
+      return res.json({
+        organizations: [],
+        metrics: {},
+        rankings: {},
+      });
+    }
+
+    // Gather metrics per organization for benchmarking
+    const orgMetrics = await Promise.all(orgIds.map(async (orgId) => {
+      const orgInfo = linkedOrgs.find(o => o.organizationId === orgId);
+
+      // Active projects
+      const [projectStats] = await db
+        .select({
+          active: sql<number>`count(*) filter (where status = 'ACTIVE')::int`,
+          completed: sql<number>`count(*) filter (where status = 'COMPLETE')::int`,
+          totalValue: sql<string>`coalesce(sum(contract_amount)::text, '0')`,
+        })
+        .from(projects)
+        .where(eq(projects.gcOrganizationId, orgId));
+
+      // Bids
+      const [bidStats] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`,
+        })
+        .from(bids)
+        .where(eq(bids.gcOrganizationId, orgId));
+
+      // Employees
+      const [employeeStats] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.organizationId, orgId), eq(users.isActive, true)));
+
+      // Change orders pending
+      const [coStats] = await db
+        .select({ pending: sql<number>`count(*)::int` })
+        .from(changeOrders)
+        .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+        .where(
+          and(
+            eq(projects.gcOrganizationId, orgId),
+            eq(changeOrders.status, "SUBMITTED")
+          )
+        );
+
+      const activeProjects = projectStats?.active || 0;
+      const employees = employeeStats?.count || 0;
+      const projectsPerEmployee = employees > 0 ? (activeProjects / employees).toFixed(2) : "0";
+      const bidWinRate = 0; // Placeholder - would need won bids tracking
+
+      return {
+        organizationId: orgId,
+        name: orgInfo?.orgName || "Unknown",
+        tradeType: orgInfo?.tradeType || "OTHER",
+        logoUrl: orgInfo?.logoUrl,
+        metrics: {
+          activeProjects,
+          completedProjects: projectStats?.completed || 0,
+          totalProjectValue: parseFloat(projectStats?.totalValue || "0"),
+          totalBids: bidStats?.total || 0,
+          bidPipeline: parseFloat(bidStats?.totalValue || "0"),
+          employees,
+          pendingChangeOrders: coStats?.pending || 0,
+          projectsPerEmployee: parseFloat(projectsPerEmployee),
+          bidWinRate,
+        },
+      };
+    }));
+
+    // Calculate rankings
+    const rankings = {
+      byActiveProjects: [...orgMetrics].sort((a, b) => b.metrics.activeProjects - a.metrics.activeProjects).map(o => o.organizationId),
+      byBidPipeline: [...orgMetrics].sort((a, b) => b.metrics.bidPipeline - a.metrics.bidPipeline).map(o => o.organizationId),
+      byEmployees: [...orgMetrics].sort((a, b) => b.metrics.employees - a.metrics.employees).map(o => o.organizationId),
+      byEfficiency: [...orgMetrics].sort((a, b) => b.metrics.projectsPerEmployee - a.metrics.projectsPerEmployee).map(o => o.organizationId),
+    };
+
+    // Calculate portfolio totals
+    const portfolioTotals = {
+      totalActiveProjects: orgMetrics.reduce((sum, o) => sum + o.metrics.activeProjects, 0),
+      totalCompletedProjects: orgMetrics.reduce((sum, o) => sum + o.metrics.completedProjects, 0),
+      totalProjectValue: orgMetrics.reduce((sum, o) => sum + o.metrics.totalProjectValue, 0),
+      totalBidPipeline: orgMetrics.reduce((sum, o) => sum + o.metrics.bidPipeline, 0),
+      totalEmployees: orgMetrics.reduce((sum, o) => sum + o.metrics.employees, 0),
+      totalPendingCOs: orgMetrics.reduce((sum, o) => sum + o.metrics.pendingChangeOrders, 0),
+    };
+
+    res.json({
+      organizations: orgMetrics,
+      rankings,
+      portfolioTotals,
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to fetch benchmarking data: ${error.message}`);
+    res.status(500).json({ error: "Failed to fetch benchmarking data" });
+  }
+});
+
 export default router;

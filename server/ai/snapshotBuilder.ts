@@ -22,6 +22,17 @@ import {
   rentalEquipmentCatalog,
   rentalEquipmentUsages,
   projectMaterialBudgets,
+  delayClaims,
+  dailyReportLocks,
+  photoCustodyRecords,
+  voiceLogs,
+  issueCaptures,
+  offlineSyncQueue,
+  vendorScores,
+  materialPriceIndex,
+  crewMarketplace,
+  vendorPricebooks,
+  pricebookImportJobs,
 } from "@shared/schema";
 import { sql, desc, eq } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
@@ -248,6 +259,56 @@ export interface DataSnapshot {
       usage_percent: number;
       recommendation: string;
     }[];
+  };
+  delay_claims: {
+    total_claims: number;
+    claims_by_status: {
+      draft: number;
+      pending_review: number;
+      approved: number;
+      rejected: number;
+      submitted: number;
+    };
+    total_claimed_days: number;
+    total_claimed_amount: number;
+    recent_claims: {
+      project_id: string;
+      delay_type: string;
+      claimed_days: number;
+      claimed_amount: number;
+      status: string;
+    }[];
+  };
+  daily_report_locks: {
+    total_locked_reports: number;
+    locked_by_project: {
+      project_id: string;
+      locked_count: number;
+    }[];
+  };
+  field_productivity: {
+    voice_logs_count: number;
+    issue_captures_count: number;
+    pending_sync_items: number;
+    recent_issues: {
+      project_id: string;
+      category: string;
+      severity: string;
+      status: string;
+    }[];
+  };
+  marketplace: {
+    vendor_scores_count: number;
+    avg_vendor_score: number;
+    material_price_entries: number;
+    crew_marketplace_listings: number;
+    active_listings: number;
+  };
+  pricebook_status: {
+    total_pricebooks: number;
+    active_pricebooks: number;
+    pending_import_jobs: number;
+    processing_import_jobs: number;
   };
 }
 
@@ -1021,6 +1082,110 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       };
     });
 
+  // Delay Claims data
+  const allDelayClaims = await db
+    .select()
+    .from(delayClaims)
+    .limit(500);
+
+  const delayClaimsByStatus = {
+    draft: allDelayClaims.filter(c => c.status === 'DRAFT').length,
+    pending_review: allDelayClaims.filter(c => c.status === 'PENDING_REVIEW').length,
+    approved: allDelayClaims.filter(c => c.status === 'APPROVED').length,
+    rejected: allDelayClaims.filter(c => c.status === 'REJECTED').length,
+    submitted: allDelayClaims.filter(c => c.status === 'SUBMITTED').length,
+  };
+
+  const totalClaimedDays = allDelayClaims.reduce((sum, c) => sum + Number(c.claimedDays || 0), 0);
+  const totalClaimedAmount = allDelayClaims.reduce((sum, c) => sum + Number(c.claimedAmount || 0), 0);
+
+  const recentDelayClaims = allDelayClaims
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 10)
+    .map(c => ({
+      project_id: c.projectId,
+      delay_type: c.delayType,
+      claimed_days: Number(c.claimedDays || 0),
+      claimed_amount: Number(c.claimedAmount || 0),
+      status: c.status,
+    }));
+
+  // Daily Report Locks data
+  const allDailyReportLocks = await db
+    .select()
+    .from(dailyReportLocks)
+    .limit(1000);
+
+  const lockedByProject = new Map<string, number>();
+  for (const lock of allDailyReportLocks) {
+    const count = lockedByProject.get(lock.projectId) || 0;
+    lockedByProject.set(lock.projectId, count + 1);
+  }
+
+  const lockedByProjectArray = Array.from(lockedByProject.entries()).map(([projectId, count]) => ({
+    project_id: projectId,
+    locked_count: count,
+  }));
+
+  // Field Productivity data
+  const [voiceLogsCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(voiceLogs);
+
+  const [issueCapturesCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(issueCaptures);
+
+  const [pendingSyncCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(offlineSyncQueue)
+    .where(eq(offlineSyncQueue.syncStatus, 'PENDING'));
+
+  const recentIssues = await db
+    .select({
+      projectId: issueCaptures.projectId,
+      category: issueCaptures.category,
+      severity: issueCaptures.severity,
+      status: issueCaptures.status,
+    })
+    .from(issueCaptures)
+    .orderBy(desc(issueCaptures.createdAt))
+    .limit(10);
+
+  // Marketplace data
+  const [vendorScoresCount] = await db
+    .select({ 
+      count: sql<number>`count(*)::int`,
+      avgScore: sql<number>`coalesce(avg(overall_score)::int, 0)`,
+    })
+    .from(vendorScores);
+
+  const [materialPriceCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(materialPriceIndex);
+
+  const allCrewListings = await db
+    .select()
+    .from(crewMarketplace)
+    .limit(500);
+
+  const activeListings = allCrewListings.filter(l => l.status === 'ACTIVE').length;
+
+  // Pricebook status
+  const [pricebooksCount] = await db
+    .select({ 
+      total: sql<number>`count(*)::int`,
+      active: sql<number>`count(*) filter (where status = 'ACTIVE')::int`,
+    })
+    .from(vendorPricebooks);
+
+  const [importJobsCount] = await db
+    .select({
+      pending: sql<number>`count(*) filter (where status = 'PENDING')::int`,
+      processing: sql<number>`count(*) filter (where status = 'PROCESSING')::int`,
+    })
+    .from(pricebookImportJobs);
+
   return {
     generated_at: now.toISOString(),
     projects: {
@@ -1142,6 +1307,41 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       alerts_triggered: materialAlertCount,
       projects_at_risk: projectsAtRisk,
       material_alerts: materialAlerts,
+    },
+    delay_claims: {
+      total_claims: allDelayClaims.length,
+      claims_by_status: delayClaimsByStatus,
+      total_claimed_days: totalClaimedDays,
+      total_claimed_amount: Math.round(totalClaimedAmount * 100) / 100,
+      recent_claims: recentDelayClaims,
+    },
+    daily_report_locks: {
+      total_locked_reports: allDailyReportLocks.length,
+      locked_by_project: lockedByProjectArray,
+    },
+    field_productivity: {
+      voice_logs_count: voiceLogsCount?.count || 0,
+      issue_captures_count: issueCapturesCount?.count || 0,
+      pending_sync_items: pendingSyncCount?.count || 0,
+      recent_issues: recentIssues.map(i => ({
+        project_id: i.projectId,
+        category: i.category,
+        severity: i.severity,
+        status: i.status,
+      })),
+    },
+    marketplace: {
+      vendor_scores_count: vendorScoresCount?.count || 0,
+      avg_vendor_score: vendorScoresCount?.avgScore || 0,
+      material_price_entries: materialPriceCount?.count || 0,
+      crew_marketplace_listings: allCrewListings.length,
+      active_listings: activeListings,
+    },
+    pricebook_status: {
+      total_pricebooks: pricebooksCount?.total || 0,
+      active_pricebooks: pricebooksCount?.active || 0,
+      pending_import_jobs: importJobsCount?.pending || 0,
+      processing_import_jobs: importJobsCount?.processing || 0,
     },
   };
 }
