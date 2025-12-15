@@ -1,0 +1,186 @@
+You are a Principal Engineer performing a FINAL PARITY AUDIT.
+
+CONTEXT:
+- This PERSONAL Replit was just pulled from GitHub.
+- The GitHub source previously represented the TEAM Replit (source of truth).
+- The goal is to confirm this PERSONAL copy is functionally, architecturally, and operationally equivalent or superior.
+- If parity is confirmed, the TEAM Replit will be deleted to reduce cost.
+
+ABSOLUTE RULES:
+- DO NOT modify code.
+- DO NOT refactor.
+- DO NOT change schema.
+- READ, TRACE, TEST, and REPORT ONLY.
+- If ANY regression or gap exists, flag it explicitly.
+
+============================================================
+SECTION 1 — REPO & ARCHITECTURE PARITY
+============================================================
+
+Verify:
+- Repo structure matches TEAM version
+- All expected route files exist
+- All expected frontend pages exist
+- No missing services, utils, or middleware
+- No accidental deletions during GitHub round-trip
+
+Output:
+- Missing files (if any)
+- Extra files (if any)
+- Structural differences
+
+============================================================
+SECTION 2 — DATABASE SCHEMA PARITY
+============================================================
+
+Verify:
+- Table count
+- Enum count
+- Trade taxonomy (should be 73 trades)
+- masterSowItems count (~637+)
+- masterModifiers count (~376+)
+- Modifier categories count (~109+)
+
+Confirm:
+- No schema regressions
+- No missing columns added during Team upgrades
+- db:push runs cleanly
+
+============================================================
+SECTION 3 — CORE FEATURE PARITY
+============================================================
+
+Verify end-to-end functionality for:
+- Projects
+- Estimates
+- Bids
+- Trades / SOW / Modifiers
+- Material calculators
+- Time tracking
+- Daily reports
+- Schedules
+- Subcontracts
+- Change orders
+
+Flag:
+- Any feature behaving differently than expected
+- Any broken workflows
+
+============================================================
+SECTION 4 — FIELD, RISK & WEATHER SYSTEMS
+============================================================
+
+Verify:
+- Delay tracking
+- Delay claims
+- Weather integration
+- Weather → delay evidence
+- Daily report locking
+- Photo custody
+- Issue capture
+- Voice logs
+- Offline sync
+
+Confirm:
+- Evidence immutability
+- Org scoping
+- No runtime errors
+
+============================================================
+SECTION 5 — MARKETPLACE & VENDOR SYSTEMS
+============================================================
+
+Verify:
+- Vendor records
+- Vendor pricing catalogs
+- PDF → AI pricebook ingestion
+- Vendor scoring
+- Material price index
+- Crew marketplace
+
+Confirm:
+- Approval workflows function
+- No AI auto-mutation
+- No cross-org leakage
+
+============================================================
+SECTION 6 — AI SYSTEM PARITY (CRITICAL)
+============================================================
+
+Audit:
+- AI orchestrator
+- snapshotBuilder
+- AI PM
+- AI CFO
+- AI Estimator
+- AI onboarding wizard
+- Trade discovery
+- Scope prediction
+- What-if simulator
+- Data quality scoring
+
+Verify:
+- snapshotBuilder has NO unresolved LSP/type errors
+- AI sees:
+  - 73-trade taxonomy
+  - SOW + modifiers
+  - Delays + weather
+  - Vendor pricing
+  - Crew marketplace
+- AI outputs match Team expectations
+
+============================================================
+SECTION 7 — AUTH, RBAC & MULTI-TENANCY
+============================================================
+
+Verify:
+- Login/logout/token refresh
+- All roles intact
+- Hustler multi-org model intact
+- Org isolation enforced everywhere
+- File access scoped correctly
+
+============================================================
+SECTION 8 — BILLING & ENTITLEMENTS
+============================================================
+
+Verify:
+- Stripe integration
+- Subscription tiers
+- Add-ons
+- Feature gating
+- No missing billing hooks after migration
+
+============================================================
+SECTION 9 — UI, NAVIGATION & UX
+============================================================
+
+Verify:
+- All pages accessible
+- Sidebar matches Team version
+- No dead links
+- Onboarding UX intact
+- Executive dashboards intact
+
+============================================================
+SECTION 10 — FINAL VERDICT
+============================================================
+
+Produce:
+
+1. PARITY STATUS:
+   - FULL PARITY (SAFE TO DELETE TEAM)
+   - PARITY WITH FIXES REQUIRED
+   - NOT SAFE
+
+2. List of:
+   - Regressions (if any)
+   - Missing features (if any)
+   - Critical blockers (if any)
+
+3. Explicit recommendation:
+   - "TEAM REPL CAN BE DECOMMISSIONED"
+   - or "DO NOT DELETE TEAM YET"
+
+DO NOT FIX ANYTHING.
+ONLY REPORT.
