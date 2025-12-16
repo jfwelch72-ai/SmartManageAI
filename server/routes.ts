@@ -9899,6 +9899,7 @@ SmartManageAI Construction Management Platform
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
+          organizationId: req.user!.organizationId!,
           visibility: "private",
         }
       );
@@ -10955,6 +10956,7 @@ SmartManageAI Construction Management Platform
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
+          organizationId: req.user!.organizationId!,
           visibility: "private",
         }
       );
@@ -11037,6 +11039,7 @@ SmartManageAI Construction Management Platform
         validationResult.data.fileUrl,
         {
           owner: req.user!.id,
+          organizationId: req.user!.organizationId!,
           visibility: "private",
         }
       );
@@ -12052,8 +12055,13 @@ SmartManageAI Construction Management Platform
   // Get upload URL for object
   app.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        res.status(400).json({ error: "User must belong to an organization to upload files" });
+        return;
+      }
       const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL(organizationId);
       res.json({ uploadURL });
     } catch (error: any) {
       console.error("Get upload URL error:", error);
@@ -12084,6 +12092,7 @@ SmartManageAI Construction Management Platform
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
         userId: req.user!.id,
+        userOrganizationId: req.user!.organizationId ?? undefined,
         userRole: req.user!.role,
         requestedPermission: ObjectPermission.READ,
         fileId: resolvedFile.fileId,

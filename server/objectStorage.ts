@@ -119,7 +119,11 @@ export class ObjectStorageService {
     }
   }
 
-  async getObjectEntityUploadURL(): Promise<string> {
+  async getObjectEntityUploadURL(organizationId: string): Promise<string> {
+    if (!organizationId) {
+      throw new Error("organizationId is required for file uploads");
+    }
+    
     const privateObjectDir = this.getPrivateObjectDir();
     if (!privateObjectDir) {
       throw new Error(
@@ -129,7 +133,8 @@ export class ObjectStorageService {
     }
 
     const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
+    // Include organizationId in path for organization-level isolation
+    const fullPath = `${privateObjectDir}/${organizationId}/uploads/${objectId}`;
 
     const { bucketName, objectName } = parseObjectPath(fullPath);
 
@@ -192,6 +197,11 @@ export class ObjectStorageService {
     rawPath: string,
     aclPolicy: ObjectAclPolicy
   ): Promise<string> {
+    // SECURITY: Reject ACL policies without organizationId to ensure all new files are org-isolated
+    if (!aclPolicy.organizationId) {
+      throw new Error("organizationId is required in ACL policy for organization-level file isolation");
+    }
+    
     const normalizedPath = this.normalizeObjectEntityPath(rawPath);
     if (!normalizedPath.startsWith("/")) {
       return normalizedPath;
@@ -204,6 +214,7 @@ export class ObjectStorageService {
 
   async canAccessObjectEntity({
     userId,
+    userOrganizationId,
     objectFile,
     requestedPermission,
     userRole,
@@ -211,6 +222,7 @@ export class ObjectStorageService {
     fileType,
   }: {
     userId?: string;
+    userOrganizationId?: string;
     objectFile: File;
     requestedPermission?: ObjectPermission;
     userRole?: string;
@@ -219,6 +231,7 @@ export class ObjectStorageService {
   }): Promise<boolean> {
     return canAccessObject({
       userId,
+      userOrganizationId,
       objectFile,
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
       userRole,

@@ -577,6 +577,7 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
       fileUrl,
       {
         owner: req.user!.id,
+        organizationId: req.user!.organizationId!,
         visibility: "private", // Change order files are private
       }
     );

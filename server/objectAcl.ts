@@ -12,6 +12,7 @@ export enum ObjectPermission {
 
 export interface ObjectAclPolicy {
   owner: string;
+  organizationId: string;
   visibility: "public" | "private";
 }
 
@@ -55,6 +56,7 @@ export async function getObjectAclPolicy(
 
 export async function canAccessObject({
   userId,
+  userOrganizationId,
   objectFile,
   requestedPermission,
   userRole,
@@ -62,6 +64,7 @@ export async function canAccessObject({
   fileType,
 }: {
   userId?: string;
+  userOrganizationId?: string;
   objectFile: File;
   requestedPermission: ObjectPermission;
   userRole?: string;
@@ -70,6 +73,24 @@ export async function canAccessObject({
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);
   if (!aclPolicy) {
+    return false;
+  }
+
+  // SUPER_ADMIN can access all files across all organizations for support/oversight
+  if (userRole === "SUPER_ADMIN") {
+    return true;
+  }
+
+  // CRITICAL: Verify organization membership
+  // Files are isolated per organization - users can only access files from their own organization
+  // Legacy files without organizationId are denied unless user is SUPER_ADMIN (handled above)
+  if (aclPolicy.organizationId) {
+    if (!userOrganizationId || userOrganizationId !== aclPolicy.organizationId) {
+      return false;
+    }
+  } else {
+    // Legacy files without organizationId - deny access for security
+    // Only SUPER_ADMIN can access legacy files (handled above)
     return false;
   }
 
