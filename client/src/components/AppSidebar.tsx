@@ -55,6 +55,7 @@ import {
   Zap,
   Network,
   Inbox,
+  ClipboardList,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -293,6 +294,15 @@ export function AppSidebar() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/tasks")} tooltip="Tasks">
+                  <Link href="/tasks" data-testid="sidebar-tasks">
+                    <ClipboardList className="w-4 h-4" />
+                    <span>Tasks</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              
+              <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isActive("/email-assistant")} tooltip="Email Assistant">
                   <Link href="/email-assistant" data-testid="sidebar-email-assistant">
                     <Mail className="w-4 h-4" />
@@ -365,7 +375,7 @@ export function AppSidebar() {
               <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen} className="group/collapsible">
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Time Clock">
+                    <SidebarMenuButton tooltip="Time Clock" data-testid="sidebar-time-clock">
                       <Clock className="w-4 h-4" />
                       <span>Time Clock</span>
                       <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
