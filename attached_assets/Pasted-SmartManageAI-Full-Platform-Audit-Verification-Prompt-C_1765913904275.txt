@@ -1,0 +1,395 @@
+SmartManageAI Full Platform Audit + Verification Prompt (Copy/Paste)
+
+You are a senior staff full-stack engineer + security engineer. Perform a complete platform audit of this SmartManageAI codebase to verify that every feature, system, integration, relationship, communication, and permission model works correctly after migration to a new owner account.
+
+0) Hard Requirements (DO NOT VIOLATE)
+
+Do NOT remove or weaken any existing features.
+
+Do NOT change existing business logic unless it is clearly broken and you can prove it with a failing test.
+
+Do NOT delete seed data, demo login buttons, or dev/test routes currently required for test users.
+
+Prefer additive changes: add tests, add audit scripts, add logs, add guards, add dashboards.
+
+Every check must be multi-organization aware (org A must never see org B data).
+
+Every check must be reproducible via:
+
+npm run audit (new)
+
+npm run test (existing or enhanced)
+
+a simple “Audit Dashboard” page (new) showing pass/fail.
+
+1) Build an “Audit Harness” (Required)
+
+Create an audit harness that can run locally and in CI.
+
+1.1 Add new commands
+
+Add these scripts to root package.json (or workspace equivalent):
+
+audit: runs ALL audit checks end-to-end
+
+audit:quick: fast subset (smoke + permissions + tenant isolation)
+
+audit:db: schema + migrations + tenant constraints verification
+
+audit:api: route discovery + authz checks + contract validation
+
+audit:ui: UI route smoke checks + RBAC gating verification (headless)
+
+audit:integrations: external integrations mocks + webhook/cron checks
+
+audit:ai: AI isolation + prompt safety + org scoping verification
+
+audit:report: generates a markdown + json report in /audit-reports/
+
+1.2 Output artifacts (Required)
+
+Generate:
+
+/audit-reports/audit-report.json
+
+/audit-reports/audit-report.md
+
+/audit-reports/audit-report.html (optional but preferred)
+Include:
+
+timestamp, git commit hash
+
+environment
+
+pass/fail by category
+
+list of failing assertions with exact file + line + reproduction steps
+
+2) Multi-Org + RBAC + Super Admin (Most Critical)
+2.1 Tenant isolation verification (server-side)
+
+Create automated tests that prove:
+
+Org A user cannot read/write/update/delete any Org B records.
+
+Cross-org access is blocked across:
+
+projects, estimates, takeoffs, tasks, timecards, invoices, bids, vendors, contacts, messages, files, notes, AI outputs, dashboards, settings, audit logs, webhooks
+
+Every query path is scoped by orgId/tenantId at the data layer (not only UI).
+
+Implement a “Tenant Guard Coverage Report”:
+
+Enumerate all API routes
+
+For each route, assert it is protected by:
+
+authentication middleware
+
+org scoping middleware/guard
+
+role permission check (where applicable)
+
+Fail the audit if any route:
+
+is public unintentionally
+
+lacks org scoping
+
+accepts orgId from client without verification
+
+uses raw queries without org filters
+
+2.2 Role model verification (multi-user)
+
+Create fixtures for:
+
+Super Admin (platform-level)
+
+Org Owner
+
+Org Admin
+
+PM / Estimator
+
+Foreman / Field User
+
+Accounting / CFO view
+
+Vendor/Sub (if supported)
+
+Read-only
+
+For each role, verify:
+
+Allowed pages load successfully
+
+Disallowed pages are blocked (server denies + UI hides)
+
+API returns 403 for forbidden actions (not 200 with filtered data)
+
+Any “export” endpoints obey tenant scoping and role permissions
+
+2.3 Super Admin controls audit
+
+Verify super admin can:
+
+view org list
+
+impersonate (if supported) securely (logged + time-limited)
+
+manage subscription tiers + feature flags per org
+
+control branding / white-label settings per org
+
+view global audit logs
+
+disable orgs/users
+
+view platform health dashboards
+But super admin actions must:
+
+write an immutable audit event
+
+require re-auth / elevated confirmation (if implemented)
+
+be blocked for non-super-admin always
+
+3) Database & Data Integrity Audit
+3.1 Schema checks
+
+Automate checks that:
+
+every multi-tenant table includes orgId/tenantId (or equivalent)
+
+foreign keys are consistent
+
+cascade behavior is safe
+
+uniqueness constraints do not leak cross-org (unique indexes must include orgId where appropriate)
+
+3.2 Migration sanity
+
+Verify:
+
+migrations run clean on empty DB
+
+migrations run clean on existing DB
+
+rollback strategy documented (even if not automated)
+
+seed script does not violate constraints
+
+3.3 Relation + orphan checks
+
+Write a DB audit that detects:
+
+orphaned rows
+
+inconsistent statuses
+
+missing required relations
+
+cross-tenant foreign key references (should be zero)
+
+4) API Audit: Routes, Contracts, Security
+4.1 Route discovery
+
+Generate a route manifest:
+
+method, path, auth required, tenant guard applied, roles allowed
+Write it to /audit-reports/routes.json.
+
+4.2 Auth/session security
+
+Verify:
+
+session cookies: secure flags appropriate for env
+
+CSRF protection if applicable
+
+rate limiting for auth + sensitive actions
+
+input validation (zod/yup) on payloads
+
+consistent error handling (no stack traces leaking in prod)
+
+4.3 File upload + downloads
+
+Verify:
+
+org scoping on file metadata and storage paths
+
+signed URLs are time-limited
+
+no path traversal
+
+MIME/type validation
+
+5) Frontend Audit: UI Gating + Navigation + Feature Completeness
+
+Create a headless UI audit (Playwright preferred) that:
+
+logs in as each role
+
+navigates main sidebar + key flows
+
+confirms restricted items are hidden/disabled
+
+confirms protected pages redirect appropriately
+
+confirms multi-org switching works without stale state or cached leakage
+
+checks “dev/test login” buttons still exist as required
+
+Also create a “Feature Coverage Checklist” page in-app:
+
+/admin/audit (super-admin only)
+
+shows category pass/fail and links to failing checks
+
+6) Integrations Audit (Mocks + Live Configuration Checks)
+
+For each integration present, add:
+
+config presence checks (env vars)
+
+health checks
+
+mocked end-to-end tests
+
+Typical integrations to cover if present:
+
+Stripe subscriptions/webhooks
+
+Email provider (SendGrid/Mailgun/SMTP)
+
+SMS (Twilio)
+
+Storage (S3/R2/GCS)
+
+Maps (Google)
+
+QuickBooks (if present)
+
+Webhook consumers/producers
+
+Scheduler/cron/queues (Redis/pg-boss/bull)
+
+Audit requirements:
+
+webhooks verify signature
+
+webhooks are tenant-scoped
+
+retry logic exists and is idempotent
+
+failures are logged and surfaced in admin health
+
+7) AI Systems Audit (Safety + Tenant Isolation + Determinism)
+
+Verify all AI features:
+
+never include cross-org data in prompts
+
+have a strict “org context injection” guard
+
+log prompts/responses safely (PII redaction if implemented)
+
+respect role permissions (AI can’t reveal what user can’t access)
+
+Add tests that:
+
+try to prompt-inject cross-org access and confirm denial
+
+confirm AI onboarding wizard uses new trades/SOW and handles unknown trades without breaking calculators
+
+confirm AI outputs are saved with orgId + userId + traceId
+
+8) Communications & Notifications Audit
+
+Audit:
+
+email templates, triggers, tenant branding
+
+in-app notifications
+
+event bus / audit log events
+
+escalation rules and scheduling if present
+
+Confirm:
+
+notifications are tenant-scoped
+
+a user only receives notifications for orgs they belong to
+
+super admin notifications do not leak tenant private data unnecessarily
+
+9) Observability, Logging, Monitoring
+
+Add/verify:
+
+request IDs / trace IDs
+
+structured logs (no secrets)
+
+error boundaries (frontend)
+
+health endpoint /healthz and /readyz
+
+performance smoke: route response times baseline
+
+Create /audit-reports/health.json with:
+
+db connectivity
+
+migrations status
+
+queue status
+
+external integration status (mock or live)
+
+10) Final Deliverables Required
+
+At the end, produce:
+
+Audit Report (MD + JSON) with:
+
+✅ Passed checks
+
+❌ Failed checks
+
+exact file paths and fixes applied
+
+Routes Manifest
+
+Tenant Guard Coverage Report
+
+RBAC Matrix Export (role → allowed routes/pages)
+
+Integration Health Matrix
+
+AI Isolation Verification Summary
+
+“Remaining Risks / TODOs before production” (prioritized)
+
+11) Acceptance Criteria (Must Meet)
+
+This audit is only “PASS” when:
+
+Zero cross-tenant leakage tests fail
+
+All protected routes have auth + tenant guard
+
+RBAC tests pass for all roles
+
+Super admin controls are verified and logged
+
+Integrations either pass health checks or are explicitly marked “Not Configured” with clear instructions
+
+AI features cannot access or reveal cross-org data
+
+Audit dashboard shows green across categories
+
+Proceed to implement this audit harness now. If anything is missing in the current codebase to support these checks (e.g., seed users, test orgs, role fixtures), add them in a safe, non-production way under /test-fixtures/ and ensure they do not run in production.
