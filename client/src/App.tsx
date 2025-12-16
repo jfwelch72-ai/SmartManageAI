@@ -46,6 +46,7 @@ import PlatformOrganizations from "@/pages/PlatformOrganizations";
 import PlatformOrganizationDetail from "@/pages/PlatformOrganizationDetail";
 import PlatformAnalytics from "@/pages/PlatformAnalytics";
 import PlatformSupportTools from "@/pages/PlatformSupportTools";
+import PlatformAuditDashboard from "@/pages/PlatformAuditDashboard";
 import VendorPricingPage from "@/pages/vendor-pricing";
 import MobileSyncPage from "@/pages/mobile-sync";
 import CompanySettingsPage from "@/pages/company-settings";
@@ -244,6 +245,7 @@ function Router() {
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/audit" component={() => <ProtectedRoute component={PlatformAuditDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       
       {/* Hustler Multi-Organization routes (HUSTLER only) */}
       <Route path="/hustler/inbox" component={() => <ProtectedRoute component={HustlerUnifiedInbox} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />

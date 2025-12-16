@@ -406,4 +406,62 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
   }
 });
 
+router.get("/platform/audit-report", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const fs = await import("fs");
+    const path = await import("path");
+    
+    const reportPath = path.join(process.cwd(), "audit/reports/audit-report.json");
+    
+    if (!fs.existsSync(reportPath)) {
+      return res.status(404).json({ error: "No audit report found. Run the audit first." });
+    }
+    
+    const reportContent = fs.readFileSync(reportPath, "utf-8");
+    const report = JSON.parse(reportContent);
+    
+    res.json(report);
+  } catch (error: any) {
+    console.error("Audit report fetch error:", error.message);
+    res.status(500).json({ error: "Failed to fetch audit report" });
+  }
+});
+
+let lastAuditRun = 0;
+const AUDIT_COOLDOWN_MS = 60000;
+
+router.post("/platform/run-audit", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const now = Date.now();
+    if (now - lastAuditRun < AUDIT_COOLDOWN_MS) {
+      const waitTime = Math.ceil((AUDIT_COOLDOWN_MS - (now - lastAuditRun)) / 1000);
+      return res.status(429).json({ error: `Rate limited. Please wait ${waitTime} seconds before running another audit.` });
+    }
+    
+    lastAuditRun = now;
+    
+    const { exec } = await import("child_process");
+    const { promisify } = await import("util");
+    const execAsync = promisify(exec);
+    
+    await logAudit({
+      action: "CREATE",
+      entityType: "system_audit",
+      entityId: "platform-audit",
+      userId: req.user!.id,
+      newValue: JSON.stringify({ actionType: "run_audit", triggeredAt: new Date().toISOString() }),
+    }, req);
+    
+    res.json({ message: "Audit started. Refresh the page in a few seconds to see results." });
+    
+    execAsync("npm run audit", { timeout: 120000 }).catch((error) => {
+      console.error("Audit execution error:", error.message);
+    });
+    
+  } catch (error: any) {
+    console.error("Audit run error:", error.message);
+    res.status(500).json({ error: "Failed to run audit" });
+  }
+});
+
 export default router;

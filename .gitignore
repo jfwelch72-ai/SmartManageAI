@@ -4,3 +4,7 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+# Audit reports
+audit/reports/*.json
+audit/reports/*.html
+audit/reports/*.md
