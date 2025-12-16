@@ -122,9 +122,9 @@ export function WeatherForecastWidget({
   const [isSearching, setIsSearching] = useState(false);
 
   const { data: weather, isLoading, refetch, isFetching } = useQuery<WeatherResponse>({
-    queryKey: ['/api/weather/forecast', location.lat, location.lng, 10],
+    queryKey: ['/api/weather/forecast', location.lat, location.lng, 7],
     queryFn: async () => {
-      const res = await fetch(`/api/weather/forecast?lat=${location.lat}&lng=${location.lng}&days=10`, {
+      const res = await fetch(`/api/weather/forecast?lat=${location.lat}&lng=${location.lng}&days=7`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error('Failed to fetch weather');

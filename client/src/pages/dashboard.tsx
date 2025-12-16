@@ -260,17 +260,17 @@ export default function DashboardPage() {
               </Card>
             </div>
 
+            {/* Weather Forecast - Full Width */}
+            <div className="mt-6">
+              <WeatherForecastWidget />
+            </div>
+
             {/* AI Insights Section - Visible to management roles */}
             {hasManagementAccess(user?.role) && (
               <div className="mt-6">
                 <AIInsightsWidget compact />
               </div>
             )}
-
-            {/* Weather Forecast - Full Width */}
-            <div className="mt-6">
-              <WeatherForecastWidget />
-            </div>
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
