@@ -38,6 +38,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
+      // Clear welcome modal dismissal keys so new users see the welcome modal
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key && key.startsWith("smartmanage-welcome-dismissed-")) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => sessionStorage.removeItem(key));
+      
       queryClient.clear();
       window.location.href = "/login";
     },

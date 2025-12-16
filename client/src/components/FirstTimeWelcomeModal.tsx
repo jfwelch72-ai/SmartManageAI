@@ -34,7 +34,12 @@ interface WalkthroughStatus {
   } | null;
 }
 
-const DISMISSED_KEY = "smartmanage-welcome-dismissed";
+const DISMISSED_KEY_PREFIX = "smartmanage-welcome-dismissed-";
+
+// Helper to get user-specific dismissal key
+function getDismissedKey(userId?: string): string {
+  return userId ? `${DISMISSED_KEY_PREFIX}${userId}` : DISMISSED_KEY_PREFIX;
+}
 
 const roleFeatures: Record<string, { icon: any; features: string[]; intro: string }> = {
   ADMIN: {
@@ -138,7 +143,8 @@ export function FirstTimeWelcomeModal() {
   useEffect(() => {
     // Only show modal on dashboard page
     if (hasNotStarted && user && isOnDashboard) {
-      const dismissed = sessionStorage.getItem(DISMISSED_KEY);
+      const dismissedKey = getDismissedKey(user.id);
+      const dismissed = sessionStorage.getItem(dismissedKey);
       if (!dismissed) {
         // Show immediately - no delay needed, faster UX
         setShowModal(true);
@@ -158,13 +164,17 @@ export function FirstTimeWelcomeModal() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
-      sessionStorage.setItem(DISMISSED_KEY, "true");
+      if (user?.id) {
+        sessionStorage.setItem(getDismissedKey(user.id), "true");
+      }
       handleCloseWithoutDismiss();
     },
     onError: () => {
       // If skip fails, just close the modal locally
       // User can restart from sidebar if needed
-      sessionStorage.setItem(DISMISSED_KEY, "true");
+      if (user?.id) {
+        sessionStorage.setItem(getDismissedKey(user.id), "true");
+      }
       handleCloseWithoutDismiss();
     },
   });
@@ -178,7 +188,9 @@ export function FirstTimeWelcomeModal() {
   };
 
   const handleClose = () => {
-    sessionStorage.setItem(DISMISSED_KEY, "true");
+    if (user?.id) {
+      sessionStorage.setItem(getDismissedKey(user.id), "true");
+    }
     handleCloseWithoutDismiss();
   };
 
@@ -191,7 +203,9 @@ export function FirstTimeWelcomeModal() {
     setHasError(false);
     setIsStarting(true);
     try {
-      sessionStorage.setItem(DISMISSED_KEY, "true");
+      if (user?.id) {
+        sessionStorage.setItem(getDismissedKey(user.id), "true");
+      }
       handleCloseWithoutDismiss();
       // Small delay to let modal close smoothly before tour starts
       await new Promise((resolve) => setTimeout(resolve, 300));
