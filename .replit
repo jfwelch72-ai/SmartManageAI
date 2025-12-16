@@ -48,5 +48,5 @@ defaultBucketID = "replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d"
 [userenv]
 
 [userenv.shared]
-PRIVATE_OBJECT_DIR = "/SmartManage-Files/private"
-PUBLIC_OBJECT_SEARCH_PATHS = "/SmartManage-Files/public"
+PRIVATE_OBJECT_DIR = "/replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d/private"
+PUBLIC_OBJECT_SEARCH_PATHS = "/replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d/public"
