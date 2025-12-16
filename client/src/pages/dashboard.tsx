@@ -267,6 +267,11 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Weather Forecast - Full Width */}
+            <div className="mt-6">
+              <WeatherForecastWidget />
+            </div>
+
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left Column - Messages & Notifications */}
@@ -440,9 +445,6 @@ export default function DashboardPage() {
                     )}
                   </CardContent>
                 </Card>
-
-                {/* Weather Forecast */}
-                <WeatherForecastWidget compact />
 
                 {/* Pending Tasks / Action Items */}
                 {pendingTasks.length > 0 && (
