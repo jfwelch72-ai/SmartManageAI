@@ -2,13 +2,22 @@ import OpenAI from 'openai';
 
 let openaiInstance: OpenAI | null = null;
 
+// This is using Replit's AI Integrations service, which provides OpenAI-compatible API access
+// without requiring your own OpenAI API key. Usage is billed to your Replit credits.
+// The newest OpenAI model is "gpt-5" which was released August 7, 2025.
 function getOpenAI(): OpenAI {
   if (!openaiInstance) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is missing. AI features require this key to be set.");
+    // Check for Replit AI Integrations first, fall back to direct OpenAI API key
+    const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+    const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error("OpenAI API key is missing. Set up Replit AI Integrations or provide OPENAI_API_KEY.");
     }
+    
     openaiInstance = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: baseURL || undefined,
+      apiKey: apiKey,
     });
   }
   return openaiInstance;
