@@ -122,12 +122,26 @@ export function WeatherForecastWidget({
   const [isSearching, setIsSearching] = useState(false);
 
   const { data: weather, isLoading, refetch, isFetching } = useQuery<WeatherResponse>({
-    queryKey: ['/api/weather/forecast', { lat: location.lat, lng: location.lng, days: 10 }],
+    queryKey: ['/api/weather/forecast', location.lat, location.lng, 10],
+    queryFn: async () => {
+      const res = await fetch(`/api/weather/forecast?lat=${location.lat}&lng=${location.lng}&days=10`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error('Failed to fetch weather');
+      return res.json();
+    },
     staleTime: 1000 * 60 * 30,
   });
 
   const { data: searchResults } = useQuery<{ results: GeocodeResult[] }>({
-    queryKey: ['/api/weather/geocode', { address: searchQuery }],
+    queryKey: ['/api/weather/geocode', searchQuery],
+    queryFn: async () => {
+      const res = await fetch(`/api/weather/geocode?address=${encodeURIComponent(searchQuery)}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error('Failed to geocode');
+      return res.json();
+    },
     enabled: searchQuery.length >= 3,
     staleTime: 1000 * 60 * 5,
   });
