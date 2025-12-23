@@ -1,15 +1,20 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
-import { ChevronDown, Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { ChevronDown, Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2, Sparkles, Loader2, Plus } from "lucide-react";
 import MaterialCalculator, { MaterialCalculatorData } from "@/components/MaterialCalculator";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 // Types for hierarchical data
 interface WorkType {
@@ -93,6 +98,34 @@ const COMMON_UNITS = [
   { value: "HR", label: "HR (Hours)" },
 ];
 
+// AI Suggestion response types
+interface AISuggestion {
+  categoryName: string;
+  name: string;
+  code: string;
+  description: string;
+  suggestedUom: string;
+  requiresDimensions: boolean;
+  dimensionLabel: string | null;
+  confidence: number;
+  reasoning: string;
+}
+
+interface SimilarItem {
+  id: string;
+  name: string;
+  code: string;
+  categoryName: string;
+  similarity: number;
+}
+
+interface AISuggestResponse {
+  success: boolean;
+  suggestion: AISuggestion;
+  similarItems: SimilarItem[];
+  existingCategories: string[];
+}
+
 export default function HierarchicalLineItemBuilder({
   onSelectionChange,
   quantity,
@@ -102,17 +135,104 @@ export default function HierarchicalLineItemBuilder({
   materialCalcData,
   onMaterialCalcChange,
 }: HierarchicalLineItemBuilderProps) {
+  const { toast } = useToast();
+  
   // Selection state
   const [selectedTrade, setSelectedTrade] = useState<string>("");
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
   const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<string>("");
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [expandedModifierCategories, setExpandedModifierCategories] = useState<string[]>([]);
+  
+  // AI Assist dialog state
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
+  const [aiSimilarItems, setAiSimilarItems] = useState<SimilarItem[]>([]);
+  const [aiExistingCategories, setAiExistingCategories] = useState<string[]>([]);
 
   // Fetch hierarchical scope data
   const { data: hierarchicalData, isLoading: loadingHierarchy } = useQuery<HierarchicalData>({
     queryKey: ["/api/scope/hierarchical"],
   });
+  
+  // AI suggest mutation
+  const aiSuggestMutation = useMutation({
+    mutationFn: async (userInput: string) => {
+      const response = await apiRequest("POST", "/api/ai-assistant/sow/suggest", {
+        userInput,
+        tradeType: hierarchicalData?.tradeType,
+      });
+      return response.json() as Promise<AISuggestResponse>;
+    },
+    onSuccess: (data) => {
+      setAiSuggestion(data.suggestion);
+      setAiSimilarItems(data.similarItems || []);
+      setAiExistingCategories(data.existingCategories || []);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "AI Suggestion Failed",
+        description: error.message || "Could not generate suggestion. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  // Add SOW item mutation
+  const addSowItemMutation = useMutation({
+    mutationFn: async (suggestion: AISuggestion) => {
+      const response = await apiRequest("POST", "/api/ai-assistant/sow/add", {
+        categoryName: suggestion.categoryName,
+        name: suggestion.name,
+        code: suggestion.code,
+        description: suggestion.description,
+        unit: suggestion.suggestedUom,
+        requiresDimensions: suggestion.requiresDimensions,
+        dimensionLabel: suggestion.dimensionLabel,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Scope Item Created",
+        description: `"${aiSuggestion?.name}" has been added to your scope items.`,
+      });
+      // Refresh hierarchical data to include new item
+      queryClient.invalidateQueries({ queryKey: ["/api/scope/hierarchical"] });
+      // Close dialog and reset state
+      setAiDialogOpen(false);
+      setAiInput("");
+      setAiSuggestion(null);
+      setAiSimilarItems([]);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Create Item",
+        description: error.message || "Could not create the scope item. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleAiSuggest = () => {
+    if (!aiInput.trim()) return;
+    setAiSuggestion(null);
+    setAiSimilarItems([]);
+    aiSuggestMutation.mutate(aiInput);
+  };
+  
+  const handleAddSowItem = () => {
+    if (!aiSuggestion) return;
+    addSowItemMutation.mutate(aiSuggestion);
+  };
+  
+  const resetAiDialog = () => {
+    setAiInput("");
+    setAiSuggestion(null);
+    setAiSimilarItems([]);
+    setAiExistingCategories([]);
+  };
 
   // Fetch modifiers
   const { data: modifierCategories = [], isLoading: loadingModifiers } = useQuery<ModifierCategory[]>({
@@ -253,10 +373,24 @@ export default function HierarchicalLineItemBuilder({
       {/* Step 1-3: Hierarchical Selection */}
       <Card>
         <CardHeader className="py-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Layers className="h-4 w-4 text-primary" />
-            Scope of Work Selection
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Layers className="h-4 w-4 text-primary" />
+              Scope of Work Selection
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetAiDialog();
+                setAiDialogOpen(true);
+              }}
+              data-testid="button-ai-create-scope-item"
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Create New Item
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Trade/Category Selection */}
@@ -461,6 +595,141 @@ export default function HierarchicalLineItemBuilder({
           </CardContent>
         </Card>
       )}
+      
+      {/* AI Create New Scope Item Dialog */}
+      <Dialog open={aiDialogOpen} onOpenChange={(open) => {
+        setAiDialogOpen(open);
+        if (!open) resetAiDialog();
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Create New Scope Item
+            </DialogTitle>
+            <DialogDescription>
+              Describe the work type you need and AI will help format it correctly.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Input Section */}
+            <div className="space-y-2">
+              <Label>Describe the scope item</Label>
+              <Textarea
+                placeholder="e.g., 'Pour 4 inch concrete slab with wire mesh reinforcement' or 'Install 6 inch curb and gutter'"
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                className="min-h-24"
+                data-testid="textarea-ai-scope-description"
+              />
+              <Button
+                onClick={handleAiSuggest}
+                disabled={!aiInput.trim() || aiSuggestMutation.isPending}
+                className="w-full"
+                data-testid="button-ai-suggest"
+              >
+                {aiSuggestMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate Suggestion
+                  </>
+                )}
+              </Button>
+            </div>
+            
+            {/* Similar Items Warning */}
+            {aiSimilarItems.length > 0 && (
+              <div className="rounded-md border border-yellow-500/50 bg-yellow-50 dark:bg-yellow-900/20 p-3">
+                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
+                  Similar items already exist:
+                </p>
+                <ul className="text-xs space-y-1">
+                  {aiSimilarItems.map((item) => (
+                    <li key={item.id} className="text-yellow-700 dark:text-yellow-300">
+                      {item.name} ({item.categoryName})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* AI Suggestion Display */}
+            {aiSuggestion && (
+              <div className="rounded-md border bg-muted/30 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-medium text-sm">AI Suggestion</h4>
+                  <Badge variant="secondary" className="text-xs">
+                    {aiSuggestion.confidence}% confidence
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Name</p>
+                    <p className="font-medium">{aiSuggestion.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Code</p>
+                    <p className="font-mono text-xs">{aiSuggestion.code}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Category</p>
+                    <p>{aiSuggestion.categoryName}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Unit</p>
+                    <Badge variant="outline">{aiSuggestion.suggestedUom}</Badge>
+                  </div>
+                </div>
+                
+                {aiSuggestion.description && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Description</p>
+                    <p className="text-sm">{aiSuggestion.description}</p>
+                  </div>
+                )}
+                
+                <div className="text-xs text-muted-foreground italic border-t pt-2">
+                  {aiSuggestion.reasoning}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAiDialogOpen(false)}
+              data-testid="button-cancel-ai-dialog"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddSowItem}
+              disabled={!aiSuggestion || addSowItemMutation.isPending}
+              data-testid="button-add-scope-item"
+            >
+              {addSowItemMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add to Scope Items
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
