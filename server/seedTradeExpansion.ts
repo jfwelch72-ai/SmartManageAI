@@ -181,6 +181,123 @@ async function seedCivilSiteSowItems() {
   return { inserted, skipped };
 }
 
+// === CONCRETE TRADE SOW ITEMS (Original 23 trades - CSI 03) ===
+// These are for organizations with trade_type = "CONCRETE"
+const concreteSowItems = [
+  // Flatwork - Slabs on Grade
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Flatwork", name: "Slab on Grade (SOG)", code: "CONC-SOG-001", defaultUomCode: "SF", sortOrder: 1 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Flatwork", name: "Slab on Grade - Reinforced", code: "CONC-SOG-002", defaultUomCode: "SF", sortOrder: 2 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Flatwork", name: "Slab on Grade - Post Tension", code: "CONC-SOG-003", defaultUomCode: "SF", sortOrder: 3 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Flatwork", name: "Warehouse Floor", code: "CONC-WH-001", defaultUomCode: "SF", sortOrder: 4 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Flatwork", name: "Topping Slab", code: "CONC-TOP-001", defaultUomCode: "SF", sortOrder: 5 },
+  
+  // Flatwork - Exterior Paving
+  { tradeType: "CONCRETE", csiCode: "32 13", categoryName: "Flatwork", name: "Parking Lot", code: "CONC-PARK-001", defaultUomCode: "SF", sortOrder: 10 },
+  { tradeType: "CONCRETE", csiCode: "32 13", categoryName: "Flatwork", name: "Driveway", code: "CONC-DRV-001", defaultUomCode: "SF", sortOrder: 11 },
+  { tradeType: "CONCRETE", csiCode: "32 13", categoryName: "Flatwork", name: "Apron", code: "CONC-APR-001", defaultUomCode: "SF", sortOrder: 12 },
+  { tradeType: "CONCRETE", csiCode: "32 13", categoryName: "Flatwork", name: "Sidewalk", code: "CONC-SIDE-001", defaultUomCode: "SF", sortOrder: 13 },
+  { tradeType: "CONCRETE", csiCode: "32 13", categoryName: "Flatwork", name: "Patio", code: "CONC-PAT-001", defaultUomCode: "SF", sortOrder: 14 },
+  
+  // Foundations - Footings
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Strip Footing", code: "CONC-FTG-001", defaultUomCode: "LF", sortOrder: 20 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Spread Footing", code: "CONC-FTG-002", defaultUomCode: "CY", sortOrder: 21 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Mat/Raft Foundation", code: "CONC-FTG-003", defaultUomCode: "SF", sortOrder: 22 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Pier Footing", code: "CONC-FTG-004", defaultUomCode: "EA", sortOrder: 23 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Grade Beam", code: "CONC-GB-001", defaultUomCode: "LF", sortOrder: 24 },
+  
+  // Foundations - Foundation Walls
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Foundation Wall - Cast", code: "CONC-FDW-001", defaultUomCode: "SF", sortOrder: 30 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Foundation Wall - Block", code: "CONC-FDW-002", defaultUomCode: "SF", sortOrder: 31 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Stem Wall", code: "CONC-STM-001", defaultUomCode: "LF", sortOrder: 32 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Foundations", name: "Frost Wall", code: "CONC-FRO-001", defaultUomCode: "LF", sortOrder: 33 },
+  
+  // Walls
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Walls", name: "Retaining Wall - Cast", code: "CONC-RET-001", defaultUomCode: "SF", sortOrder: 40 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Walls", name: "Retaining Wall - Block", code: "CONC-RET-002", defaultUomCode: "SF", sortOrder: 41 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Walls", name: "Tilt-Up Wall Panel", code: "CONC-TU-001", defaultUomCode: "SF", sortOrder: 42 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Walls", name: "Core Wall", code: "CONC-CORE-001", defaultUomCode: "SF", sortOrder: 43 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Walls", name: "Shear Wall", code: "CONC-SHR-001", defaultUomCode: "SF", sortOrder: 44 },
+  
+  // Structural Elements
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Structural", name: "Concrete Column - Round", code: "CONC-COL-001", defaultUomCode: "LF", sortOrder: 50 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Structural", name: "Concrete Column - Square", code: "CONC-COL-002", defaultUomCode: "LF", sortOrder: 51 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Structural", name: "Concrete Beam", code: "CONC-BM-001", defaultUomCode: "LF", sortOrder: 52 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Structural", name: "Elevated Deck/Slab", code: "CONC-DK-001", defaultUomCode: "SF", sortOrder: 53 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Structural", name: "Stairs", code: "CONC-STR-001", defaultUomCode: "LF", sortOrder: 54 },
+  
+  // Curbs & Gutters
+  { tradeType: "CONCRETE", csiCode: "32 16", categoryName: "Curbs & Gutters", name: "Standard Curb & Gutter", code: "CONC-CG-001", defaultUomCode: "LF", sortOrder: 60 },
+  { tradeType: "CONCRETE", csiCode: "32 16", categoryName: "Curbs & Gutters", name: "Mountable Curb", code: "CONC-CG-002", defaultUomCode: "LF", sortOrder: 61 },
+  { tradeType: "CONCRETE", csiCode: "32 16", categoryName: "Curbs & Gutters", name: "Barrier Curb", code: "CONC-CG-003", defaultUomCode: "LF", sortOrder: 62 },
+  { tradeType: "CONCRETE", csiCode: "32 16", categoryName: "Curbs & Gutters", name: "Gutter Only", code: "CONC-CG-004", defaultUomCode: "LF", sortOrder: 63 },
+  { tradeType: "CONCRETE", csiCode: "32 16", categoryName: "Curbs & Gutters", name: "Valley Gutter", code: "CONC-CG-005", defaultUomCode: "LF", sortOrder: 64 },
+  
+  // Site Accessories
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Site Accessories", name: "ADA Ramp", code: "CONC-ADA-001", defaultUomCode: "EA", sortOrder: 70 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Site Accessories", name: "Equipment Pad", code: "CONC-PAD-001", defaultUomCode: "SF", sortOrder: 71 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Site Accessories", name: "Trash Enclosure Pad", code: "CONC-PAD-002", defaultUomCode: "SF", sortOrder: 72 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Site Accessories", name: "Bollard Foundation", code: "CONC-BOL-001", defaultUomCode: "EA", sortOrder: 73 },
+  { tradeType: "CONCRETE", csiCode: "03 30", categoryName: "Site Accessories", name: "Light Pole Base", code: "CONC-LPB-001", defaultUomCode: "EA", sortOrder: 74 },
+  
+  // Concrete Finishing
+  { tradeType: "CONCRETE", csiCode: "03 35", categoryName: "Finishing", name: "Broom Finish", code: "CONC-FIN-001", defaultUomCode: "SF", sortOrder: 80 },
+  { tradeType: "CONCRETE", csiCode: "03 35", categoryName: "Finishing", name: "Exposed Aggregate", code: "CONC-FIN-002", defaultUomCode: "SF", sortOrder: 81 },
+  { tradeType: "CONCRETE", csiCode: "03 35", categoryName: "Finishing", name: "Stamped/Decorative", code: "CONC-FIN-003", defaultUomCode: "SF", sortOrder: 82 },
+  { tradeType: "CONCRETE", csiCode: "03 35", categoryName: "Finishing", name: "Polish/Burnish", code: "CONC-FIN-004", defaultUomCode: "SF", sortOrder: 83 },
+  { tradeType: "CONCRETE", csiCode: "03 35", categoryName: "Finishing", name: "Stain/Color", code: "CONC-FIN-005", defaultUomCode: "SF", sortOrder: 84 },
+  
+  // Concrete Repair
+  { tradeType: "CONCRETE", csiCode: "03 01", categoryName: "Repair", name: "Crack Repair", code: "CONC-REP-001", defaultUomCode: "LF", sortOrder: 90 },
+  { tradeType: "CONCRETE", csiCode: "03 01", categoryName: "Repair", name: "Spall Repair", code: "CONC-REP-002", defaultUomCode: "SF", sortOrder: 91 },
+  { tradeType: "CONCRETE", csiCode: "03 01", categoryName: "Repair", name: "Slab Replacement", code: "CONC-REP-003", defaultUomCode: "SF", sortOrder: 92 },
+  { tradeType: "CONCRETE", csiCode: "03 01", categoryName: "Repair", name: "Overlay/Resurfacing", code: "CONC-REP-004", defaultUomCode: "SF", sortOrder: 93 },
+  { tradeType: "CONCRETE", csiCode: "02 41", categoryName: "Repair", name: "Sawcutting", code: "CONC-SAW-001", defaultUomCode: "LF", sortOrder: 94 },
+  
+  // Joints & Sealing
+  { tradeType: "CONCRETE", csiCode: "03 15", categoryName: "Joints & Sealing", name: "Control Joint Sawcut", code: "CONC-JNT-001", defaultUomCode: "LF", sortOrder: 100 },
+  { tradeType: "CONCRETE", csiCode: "03 15", categoryName: "Joints & Sealing", name: "Expansion Joint", code: "CONC-JNT-002", defaultUomCode: "LF", sortOrder: 101 },
+  { tradeType: "CONCRETE", csiCode: "03 15", categoryName: "Joints & Sealing", name: "Joint Sealant", code: "CONC-JNT-003", defaultUomCode: "LF", sortOrder: 102 },
+  { tradeType: "CONCRETE", csiCode: "03 05", categoryName: "Joints & Sealing", name: "Cure & Seal", code: "CONC-SEAL-001", defaultUomCode: "SF", sortOrder: 103 },
+  { tradeType: "CONCRETE", csiCode: "03 05", categoryName: "Joints & Sealing", name: "Penetrating Sealer", code: "CONC-SEAL-002", defaultUomCode: "SF", sortOrder: 104 },
+] as const;
+
+async function seedConcreteSowItems() {
+  console.log("🏗️ Seeding CONCRETE Trade Master SOW Items...");
+  
+  let inserted = 0;
+  let skipped = 0;
+  
+  for (const item of concreteSowItems) {
+    const existing = await db.select()
+      .from(masterSowItems)
+      .where(and(
+        eq(masterSowItems.tradeType, item.tradeType as any),
+        eq(masterSowItems.code, item.code)
+      ))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      skipped++;
+      continue;
+    }
+    
+    await db.insert(masterSowItems).values({
+      tradeType: item.tradeType as any,
+      csiCode: item.csiCode,
+      categoryName: item.categoryName,
+      name: item.name,
+      code: item.code,
+      defaultUomCode: item.defaultUomCode,
+      sortOrder: item.sortOrder,
+      isActive: true,
+    });
+    inserted++;
+  }
+  
+  console.log(`✅ CONCRETE SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  return { inserted, skipped };
+}
+
 // === STRUCTURAL / BUILDING SOW ITEMS (13 trades x 5 items = 65 items) ===
 const structuralBuildingSowItems = [
   // CAST_IN_PLACE_CONCRETE
@@ -508,14 +625,15 @@ async function seedSupportServicesSowItems() {
 async function seedAllNewTradeSowItems() {
   console.log("🚀 Seeding ALL new trade SOW items...\n");
   
+  const concrete = await seedConcreteSowItems();
   const civil = await seedCivilSiteSowItems();
   const structural = await seedStructuralBuildingSowItems();
   const mep = await seedMepSpecialtySowItems();
   const support = await seedSupportServicesSowItems();
   
   const total = {
-    inserted: civil.inserted + structural.inserted + mep.inserted + support.inserted,
-    skipped: civil.skipped + structural.skipped + mep.skipped + support.skipped,
+    inserted: concrete.inserted + civil.inserted + structural.inserted + mep.inserted + support.inserted,
+    skipped: concrete.skipped + civil.skipped + structural.skipped + mep.skipped + support.skipped,
   };
   
   console.log(`\n📊 TOTAL: ${total.inserted} inserted, ${total.skipped} skipped`);
@@ -1267,6 +1385,7 @@ async function seedNewTradeModifiers() {
 }
 
 export { 
+  seedConcreteSowItems, concreteSowItems,
   seedCivilSiteSowItems, civilSiteSowItems, 
   seedStructuralBuildingSowItems, structuralBuildingSowItems,
   seedMepSpecialtySowItems, mepSpecialtySowItems,

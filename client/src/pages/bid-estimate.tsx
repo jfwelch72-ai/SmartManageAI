@@ -15,6 +15,7 @@ import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
+import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
 import { 
   Dialog, 
   DialogContent, 
@@ -1337,16 +1338,21 @@ export default function BidEstimate() {
                                 <FormLabel>Labor Hours</FormLabel>
                                 <FormControl>
                                   <Input 
-                                    type="number" 
-                                    step="0.1" 
+                                    type="text"
+                                    inputMode="decimal"
+                                    pattern="[0-9]*\.?[0-9]*"
                                     placeholder="0.0" 
                                     {...field}
+                                    value={field.value ?? ''}
                                     onChange={(e) => {
-                                      const hours = parseFloat(e.target.value) || 0;
-                                      field.onChange(hours);
-                                      const rate = form.watch("laborRateUsed") || 0;
-                                      if (rate > 0) {
-                                        form.setValue("laborCost", hours * rate);
+                                      const val = e.target.value;
+                                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                        const hours = parseFloat(val) || 0;
+                                        field.onChange(hours);
+                                        const rate = form.watch("laborRateUsed") || 0;
+                                        if (rate > 0) {
+                                          form.setValue("laborCost", hours * rate);
+                                        }
                                       }
                                     }}
                                     data-testid="input-labor-hours"
@@ -1398,19 +1404,49 @@ export default function BidEstimate() {
                         )}
                       </div>
 
-                      <FormField
-                        control={form.control}
-                        name="equipmentCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Equipment Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-equipment-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Equipment Costs Section */}
+                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
+                        <h5 className="font-medium text-sm">Equipment Costs</h5>
+                        
+                        <EquipmentRateSelector
+                          onSelect={(equipmentData) => {
+                            form.setValue("equipmentCost", equipmentData.totalCost);
+                          }}
+                        />
+                        
+                        <FormField
+                          control={form.control}
+                          name="equipmentCost"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Equipment Cost ($)
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  (or enter manually)
+                                </span>
+                              </FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="text"
+                                  inputMode="decimal"
+                                  pattern="[0-9]*\.?[0-9]*"
+                                  {...field} 
+                                  value={field.value ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      field.onChange(parseFloat(val) || 0);
+                                    }
+                                  }}
+                                  placeholder="0.00" 
+                                  data-testid="input-equipment-cost" 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
 
                       <FormField
                         control={form.control}
@@ -1419,7 +1455,21 @@ export default function BidEstimate() {
                           <FormItem>
                             <FormLabel>Subcontract Cost ($)</FormLabel>
                             <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-subcontract-cost" />
+                              <Input 
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*\.?[0-9]*"
+                                {...field} 
+                                value={field.value ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                    field.onChange(parseFloat(val) || 0);
+                                  }
+                                }}
+                                placeholder="0.00" 
+                                data-testid="input-subcontract-cost" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1886,16 +1936,21 @@ export default function BidEstimate() {
                                 <FormLabel>Labor Hours</FormLabel>
                                 <FormControl>
                                   <Input 
-                                    type="number" 
-                                    step="0.1" 
+                                    type="text"
+                                    inputMode="decimal"
+                                    pattern="[0-9]*\.?[0-9]*"
                                     placeholder="0.0" 
                                     {...field}
+                                    value={field.value ?? ''}
                                     onChange={(e) => {
-                                      const hours = parseFloat(e.target.value) || 0;
-                                      field.onChange(hours);
-                                      const rate = form.watch("laborRateUsed") || 0;
-                                      if (rate > 0) {
-                                        form.setValue("laborCost", hours * rate);
+                                      const val = e.target.value;
+                                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                        const hours = parseFloat(val) || 0;
+                                        field.onChange(hours);
+                                        const rate = form.watch("laborRateUsed") || 0;
+                                        if (rate > 0) {
+                                          form.setValue("laborCost", hours * rate);
+                                        }
                                       }
                                     }}
                                     data-testid="input-edit-labor-hours"
@@ -1947,19 +2002,49 @@ export default function BidEstimate() {
                         )}
                       </div>
 
-                      <FormField
-                        control={form.control}
-                        name="equipmentCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Equipment Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-equipment-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Equipment Costs Section (Edit Dialog) */}
+                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
+                        <h5 className="font-medium text-sm">Equipment Costs</h5>
+                        
+                        <EquipmentRateSelector
+                          onSelect={(equipmentData) => {
+                            form.setValue("equipmentCost", equipmentData.totalCost);
+                          }}
+                        />
+                        
+                        <FormField
+                          control={form.control}
+                          name="equipmentCost"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                Equipment Cost ($)
+                                <span className="text-xs text-muted-foreground ml-1">
+                                  (or enter manually)
+                                </span>
+                              </FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="text"
+                                  inputMode="decimal"
+                                  pattern="[0-9]*\.?[0-9]*"
+                                  {...field} 
+                                  value={field.value ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      field.onChange(parseFloat(val) || 0);
+                                    }
+                                  }}
+                                  placeholder="0.00" 
+                                  data-testid="input-edit-equipment-cost" 
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
 
                       <FormField
                         control={form.control}
@@ -1968,7 +2053,21 @@ export default function BidEstimate() {
                           <FormItem>
                             <FormLabel>Subcontract Cost ($)</FormLabel>
                             <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-subcontract-cost" />
+                              <Input 
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*\.?[0-9]*"
+                                {...field} 
+                                value={field.value ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                    field.onChange(parseFloat(val) || 0);
+                                  }
+                                }}
+                                placeholder="0.00" 
+                                data-testid="input-edit-subcontract-cost" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
