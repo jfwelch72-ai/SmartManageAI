@@ -15,7 +15,7 @@ import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
-import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
+import { EquipmentRateSelector, type EquipmentSelectionData } from "@/components/EquipmentRateSelector";
 import { 
   Dialog, 
   DialogContent, 
@@ -63,7 +63,11 @@ const lineItemSchema = z.object({
   laborHours: z.coerce.number().min(0).default(0),
   jobClassificationId: z.string().optional(),
   laborRateUsed: z.coerce.number().min(0).optional(),
+  equipmentHours: z.coerce.number().min(0).default(0),
   equipmentCost: z.coerce.number().min(0).default(0),
+  equipmentSource: z.enum(["OWNED", "RENTAL", "MANUAL"]).optional(),
+  selectedEquipmentId: z.string().optional(),
+  equipmentRateUsed: z.coerce.number().min(0).optional(),
   consumablesCost: z.coerce.number().min(0).default(0),
   subcontractCost: z.coerce.number().min(0).default(0),
   subcontractorQuoteId: z.string().optional(),
@@ -106,6 +110,7 @@ export default function BidEstimate() {
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
+  const [equipmentSelectorKey, setEquipmentSelectorKey] = useState(0);
   const [editingLineItem, setEditingLineItem] = useState<EstimateLineItem | null>(null);
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
@@ -184,6 +189,7 @@ export default function BidEstimate() {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
+      setEquipmentSelectorKey(prev => prev + 1);
       setSelectedScopeData(null);
       toast({ title: "Line item added successfully" });
     },
@@ -248,7 +254,11 @@ export default function BidEstimate() {
       laborHours: 0,
       jobClassificationId: undefined,
       laborRateUsed: undefined,
+      equipmentHours: 0,
       equipmentCost: 0,
+      equipmentSource: undefined,
+      selectedEquipmentId: undefined,
+      equipmentRateUsed: undefined,
       consumablesCost: 0,
       subcontractCost: 0,
       overheadAllocation: 0,
@@ -564,6 +574,7 @@ export default function BidEstimate() {
     setAddLineItemOpen(open);
     if (!open) {
       form.reset();
+      setEquipmentSelectorKey(prev => prev + 1);
       setSelectedScopeData(null);
       setHierarchicalSelection(null);
       setHierarchicalQuantity(0);
@@ -1409,9 +1420,17 @@ export default function BidEstimate() {
                         <h5 className="font-medium text-sm">Equipment Costs</h5>
                         
                         <EquipmentRateSelector
+                          key={`equipment-add-${equipmentSelectorKey}`}
                           onSelect={(equipmentData) => {
+                            form.setValue("equipmentHours", equipmentData.hours);
                             form.setValue("equipmentCost", equipmentData.totalCost);
+                            form.setValue("equipmentSource", equipmentData.source);
+                            form.setValue("selectedEquipmentId", equipmentData.equipmentId || undefined);
+                            form.setValue("equipmentRateUsed", equipmentData.hourlyRate);
                           }}
+                          initialHours={form.getValues("equipmentHours")}
+                          initialEquipmentId={form.getValues("selectedEquipmentId")}
+                          initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
                         />
                         
                         <FormField
@@ -1753,6 +1772,7 @@ export default function BidEstimate() {
               if (!open) {
                 setEditingLineItem(null);
                 form.reset();
+                setEquipmentSelectorKey(prev => prev + 1);
                 setMaterialCalcData(getDefaultMaterialCalculatorData());
                 setSelectedCatalogCategory("");
               }
@@ -2007,9 +2027,17 @@ export default function BidEstimate() {
                         <h5 className="font-medium text-sm">Equipment Costs</h5>
                         
                         <EquipmentRateSelector
+                          key={`equipment-edit-${editingLineItem?.id || 'new'}-${equipmentSelectorKey}`}
                           onSelect={(equipmentData) => {
+                            form.setValue("equipmentHours", equipmentData.hours);
                             form.setValue("equipmentCost", equipmentData.totalCost);
+                            form.setValue("equipmentSource", equipmentData.source);
+                            form.setValue("selectedEquipmentId", equipmentData.equipmentId || undefined);
+                            form.setValue("equipmentRateUsed", equipmentData.hourlyRate);
                           }}
+                          initialHours={form.getValues("equipmentHours")}
+                          initialEquipmentId={form.getValues("selectedEquipmentId")}
+                          initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
                         />
                         
                         <FormField
@@ -2337,6 +2365,7 @@ export default function BidEstimate() {
                         setEditLineItemOpen(false);
                         setEditingLineItem(null);
                         form.reset();
+                        setEquipmentSelectorKey(prev => prev + 1);
                         setMaterialCalcData(getDefaultMaterialCalculatorData());
                         setSelectedCatalogCategory("");
                         setCatalogPricedMaterials(new Set());
@@ -2441,6 +2470,7 @@ export default function BidEstimate() {
                                 variant="ghost"
                                 onClick={() => {
                                   setEditingLineItem(item);
+                                  const lineItemAny = item as any;
                                   form.reset({
                                     description: item.description,
                                     category: item.category,
@@ -2449,16 +2479,19 @@ export default function BidEstimate() {
                                     materialCost: Number(item.materialCost),
                                     laborCost: Number(item.laborCost),
                                     laborHours: Number(item.laborHours),
+                                    equipmentHours: Number(item.equipmentHours || 0),
                                     equipmentCost: Number(item.equipmentCost),
+                                    equipmentSource: lineItemAny.equipmentSource || undefined,
+                                    selectedEquipmentId: lineItemAny.selectedEquipmentId || undefined,
+                                    equipmentRateUsed: lineItemAny.equipmentRateUsed ? Number(lineItemAny.equipmentRateUsed) : undefined,
                                     consumablesCost: Number(item.consumablesCost || 0),
                                     subcontractCost: Number(item.subcontractCost || 0),
-                                    subcontractorQuoteId: (item as any).subcontractorQuoteId || undefined,
+                                    subcontractorQuoteId: lineItemAny.subcontractorQuoteId || undefined,
                                     overheadAllocation: 0,
                                     profitAllocation: 0,
-                                    notes: (item as any).metadata || "",
+                                    notes: lineItemAny.metadata || "",
                                   });
-                                  // Load material calc data from line item
-                                  const lineItemAny = item as any;
+                                  // Load material calc data from line item (lineItemAny already defined above)
                                   setMaterialCalcData({
                                     concreteDepthInches: lineItemAny.concreteDepthInches || "",
                                     dimensionWidthInches: lineItemAny.dimensionWidthInches || "",

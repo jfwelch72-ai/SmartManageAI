@@ -4,7 +4,7 @@ import { Loader2, Truck, Building } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface OwnedEquipment {
   id: string;
@@ -43,28 +43,41 @@ interface EquipmentForSelection {
 
 type RateType = "hourly" | "daily" | "weekly" | "monthly";
 
+export interface EquipmentSelectionData {
+  source: "OWNED" | "RENTAL" | "MANUAL";
+  equipmentId: string | null;
+  equipmentName: string;
+  hourlyRate: number;
+  totalCost: number;
+  hours: number;
+  rateType: RateType;
+  deliveryFee: number;
+}
+
 interface EquipmentRateSelectorProps {
-  onSelect: (equipmentData: {
-    source: "OWNED" | "RENTAL" | null;
-    equipmentId: string | null;
-    equipmentName: string;
-    hourlyRate: number;
-    totalCost: number;
-    hours: number;
-  }) => void;
+  onSelect: (equipmentData: EquipmentSelectionData) => void;
   disabled?: boolean;
   className?: string;
+  initialHours?: number;
+  initialEquipmentId?: string;
+  initialSource?: "OWNED" | "RENTAL" | "MANUAL";
 }
 
 export function EquipmentRateSelector({ 
   onSelect, 
   disabled = false,
-  className 
+  className,
+  initialHours = 0,
+  initialEquipmentId = "",
+  initialSource = "MANUAL"
 }: EquipmentRateSelectorProps) {
-  const [selectedSource, setSelectedSource] = useState<"owned" | "rental">("owned");
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>("");
+  // Initialize state from props - component will remount via key when parent resets
+  const [selectedSource, setSelectedSource] = useState<"owned" | "rental">(
+    initialSource === "RENTAL" ? "rental" : "owned"
+  );
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>(initialEquipmentId);
   const [rateType, setRateType] = useState<RateType>("hourly");
-  const [hours, setHours] = useState<number>(0);
+  const [hoursInput, setHoursInput] = useState<string>(initialHours > 0 ? String(initialHours) : "");
 
   const { data: equipmentData, isLoading } = useQuery<EquipmentForSelection>({
     queryKey: ["/api/equipment-for-selection"],
@@ -72,6 +85,40 @@ export function EquipmentRateSelector({
 
   const ownedEquipment = equipmentData?.owned || [];
   const rentalEquipment = equipmentData?.rental || [];
+  
+  // Emit initial selection when equipment data is loaded and we have an initial selection
+  useEffect(() => {
+    if (!equipmentData || !initialEquipmentId) return;
+    
+    const hrs = initialHours || 0;
+    let equipment: OwnedEquipment | RentalEquipment | undefined;
+    let source: "OWNED" | "RENTAL" = "OWNED";
+    
+    if (initialSource === "RENTAL") {
+      equipment = rentalEquipment.find(e => e.id === initialEquipmentId);
+      source = "RENTAL";
+    } else if (initialSource === "OWNED") {
+      equipment = ownedEquipment.find(e => e.id === initialEquipmentId);
+      source = "OWNED";
+    }
+    
+    if (equipment) {
+      const hourlyRate = getRate(equipment, "hourly");
+      const totalCost = calculateCost(equipment, hrs);
+      const deliveryFee = getDeliveryFee(equipment);
+      
+      onSelect({
+        source,
+        equipmentId: initialEquipmentId,
+        equipmentName: equipment.name,
+        hourlyRate,
+        totalCost,
+        hours: hrs,
+        rateType,
+        deliveryFee,
+      });
+    }
+  }, [equipmentData, initialEquipmentId, initialSource]);
 
   const getRate = (equipment: OwnedEquipment | RentalEquipment, type: RateType): number => {
     const rateField = `${type}Rate` as keyof typeof equipment;
@@ -79,34 +126,88 @@ export function EquipmentRateSelector({
     return rate ? parseFloat(rate as string) : 0;
   };
 
+  const getDeliveryFee = (equipment: OwnedEquipment | RentalEquipment): number => {
+    if ('deliveryFee' in equipment && equipment.deliveryFee) {
+      return parseFloat(equipment.deliveryFee);
+    }
+    return 0;
+  };
+
   const calculateCost = (equipment: OwnedEquipment | RentalEquipment | undefined, hrs: number): number => {
     if (!equipment || hrs <= 0) return 0;
     const rate = getRate(equipment, rateType);
+    const deliveryFee = getDeliveryFee(equipment);
     
+    let baseCost = 0;
     switch (rateType) {
       case "hourly":
-        return rate * hrs;
+        baseCost = rate * hrs;
+        break;
       case "daily":
-        return rate * Math.ceil(hrs / 8);
+        baseCost = rate * Math.ceil(hrs / 8);
+        break;
       case "weekly":
-        return rate * Math.ceil(hrs / 40);
+        baseCost = rate * Math.ceil(hrs / 40);
+        break;
       case "monthly":
-        return rate * Math.ceil(hrs / 160);
+        baseCost = rate * Math.ceil(hrs / 160);
+        break;
       default:
-        return rate * hrs;
+        baseCost = rate * hrs;
     }
+    
+    return baseCost + deliveryFee;
+  };
+
+  const notifyChange = (
+    equipment: OwnedEquipment | RentalEquipment | undefined,
+    source: "OWNED" | "RENTAL" | "MANUAL",
+    equipmentId: string,
+    hrs: number
+  ) => {
+    if (!equipment) {
+      onSelect({
+        source: "MANUAL",
+        equipmentId: null,
+        equipmentName: "",
+        hourlyRate: 0,
+        totalCost: 0,
+        hours: hrs,
+        rateType,
+        deliveryFee: 0,
+      });
+      return;
+    }
+
+    const hourlyRate = getRate(equipment, "hourly");
+    const totalCost = calculateCost(equipment, hrs);
+    const deliveryFee = getDeliveryFee(equipment);
+
+    onSelect({
+      source,
+      equipmentId,
+      equipmentName: equipment.name,
+      hourlyRate,
+      totalCost,
+      hours: hrs,
+      rateType,
+      deliveryFee,
+    });
   };
 
   const handleEquipmentSelect = (equipmentId: string) => {
     if (equipmentId === "none") {
       setSelectedEquipmentId("");
+      const hrs = parseFloat(hoursInput) || 0;
       onSelect({
-        source: null,
+        source: "MANUAL",
         equipmentId: null,
         equipmentName: "",
         hourlyRate: 0,
         totalCost: 0,
-        hours: 0,
+        hours: hrs,
+        rateType,
+        deliveryFee: 0,
       });
       return;
     }
@@ -124,44 +225,81 @@ export function EquipmentRateSelector({
       source = "RENTAL";
     }
 
-    if (equipment) {
-      const hourlyRate = getRate(equipment, "hourly");
-      const totalCost = calculateCost(equipment, hours);
-      onSelect({
-        source,
-        equipmentId,
-        equipmentName: equipment.name,
-        hourlyRate,
-        totalCost,
-        hours,
-      });
+    const hrs = parseFloat(hoursInput) || 0;
+    notifyChange(equipment, source, equipmentId, hrs);
+  };
+
+  const handleHoursChange = (value: string) => {
+    // Allow empty string, digits, and decimal point for user input
+    if (value === "" || /^\d*\.?\d*$/.test(value)) {
+      setHoursInput(value);
+      
+      const hrs = parseFloat(value) || 0;
+      
+      let equipment: OwnedEquipment | RentalEquipment | undefined;
+      let source: "OWNED" | "RENTAL" | "MANUAL" = "MANUAL";
+      
+      if (selectedEquipmentId) {
+        if (selectedSource === "owned") {
+          equipment = ownedEquipment.find(e => e.id === selectedEquipmentId);
+          source = "OWNED";
+        } else {
+          equipment = rentalEquipment.find(e => e.id === selectedEquipmentId);
+          source = "RENTAL";
+        }
+      }
+
+      notifyChange(equipment, source, selectedEquipmentId, hrs);
     }
   };
 
-  const handleHoursChange = (newHours: number) => {
-    setHours(newHours);
+  const handleRateTypeChange = (newRateType: RateType) => {
+    setRateType(newRateType);
     
+    // Recalculate with new rate type
+    const hrs = parseFloat(hoursInput) || 0;
     let equipment: OwnedEquipment | RentalEquipment | undefined;
-    let source: "OWNED" | "RENTAL";
+    let source: "OWNED" | "RENTAL" | "MANUAL" = "MANUAL";
     
-    if (selectedSource === "owned") {
-      equipment = ownedEquipment.find(e => e.id === selectedEquipmentId);
-      source = "OWNED";
-    } else {
-      equipment = rentalEquipment.find(e => e.id === selectedEquipmentId);
-      source = "RENTAL";
+    if (selectedEquipmentId) {
+      if (selectedSource === "owned") {
+        equipment = ownedEquipment.find(e => e.id === selectedEquipmentId);
+        source = "OWNED";
+      } else {
+        equipment = rentalEquipment.find(e => e.id === selectedEquipmentId);
+        source = "RENTAL";
+      }
     }
 
     if (equipment) {
-      const hourlyRate = getRate(equipment, "hourly");
-      const totalCost = calculateCost(equipment, newHours);
+      const rate = getRate(equipment, newRateType);
+      const deliveryFee = getDeliveryFee(equipment);
+      
+      let baseCost = 0;
+      switch (newRateType) {
+        case "hourly":
+          baseCost = rate * hrs;
+          break;
+        case "daily":
+          baseCost = rate * Math.ceil(hrs / 8);
+          break;
+        case "weekly":
+          baseCost = rate * Math.ceil(hrs / 40);
+          break;
+        case "monthly":
+          baseCost = rate * Math.ceil(hrs / 160);
+          break;
+      }
+
       onSelect({
         source,
         equipmentId: selectedEquipmentId,
         equipmentName: equipment.name,
-        hourlyRate,
-        totalCost,
-        hours: newHours,
+        hourlyRate: getRate(equipment, "hourly"),
+        totalCost: baseCost + deliveryFee,
+        hours: hrs,
+        rateType: newRateType,
+        deliveryFee,
       });
     }
   };
@@ -169,6 +307,8 @@ export function EquipmentRateSelector({
   const selectedEquipment = selectedSource === "owned" 
     ? ownedEquipment.find(e => e.id === selectedEquipmentId)
     : rentalEquipment.find(e => e.id === selectedEquipmentId);
+
+  const currentHours = parseFloat(hoursInput) || 0;
 
   if (isLoading) {
     return (
@@ -186,6 +326,17 @@ export function EquipmentRateSelector({
         onValueChange={(v) => {
           setSelectedSource(v as "owned" | "rental");
           setSelectedEquipmentId("");
+          const hrs = parseFloat(hoursInput) || 0;
+          onSelect({
+            source: "MANUAL",
+            equipmentId: null,
+            equipmentName: "",
+            hourlyRate: 0,
+            totalCost: 0,
+            hours: hrs,
+            rateType,
+            deliveryFee: 0,
+          });
         }}
       >
         <TabsList className="grid w-full grid-cols-2">
@@ -268,7 +419,7 @@ export function EquipmentRateSelector({
               <Label className="text-xs">Rate Type</Label>
               <Select 
                 value={rateType} 
-                onValueChange={(v) => setRateType(v as RateType)}
+                onValueChange={(v) => handleRateTypeChange(v as RateType)}
               >
                 <SelectTrigger data-testid="select-rate-type">
                   <SelectValue />
@@ -287,13 +438,8 @@ export function EquipmentRateSelector({
                 type="text"
                 inputMode="decimal"
                 pattern="[0-9]*\.?[0-9]*"
-                value={hours ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === "" || /^\d*\.?\d*$/.test(val)) {
-                    handleHoursChange(parseFloat(val) || 0);
-                  }
-                }}
+                value={hoursInput}
+                onChange={(e) => handleHoursChange(e.target.value)}
                 placeholder="0"
                 data-testid="input-equipment-hours"
               />
@@ -305,10 +451,16 @@ export function EquipmentRateSelector({
               <span>Rate ({rateType}):</span>
               <span>${getRate(selectedEquipment, rateType).toFixed(2)}</span>
             </div>
-            {hours > 0 && (
+            {getDeliveryFee(selectedEquipment) > 0 && (
+              <div className="flex justify-between">
+                <span>Delivery Fee:</span>
+                <span>${getDeliveryFee(selectedEquipment).toFixed(2)}</span>
+              </div>
+            )}
+            {currentHours > 0 && (
               <div className="flex justify-between font-medium mt-1 pt-1 border-t">
                 <span>Estimated Cost:</span>
-                <span>${calculateCost(selectedEquipment, hours).toFixed(2)}</span>
+                <span>${calculateCost(selectedEquipment, currentHours).toFixed(2)}</span>
               </div>
             )}
           </div>
