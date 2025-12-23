@@ -445,23 +445,41 @@ export default function HierarchicalLineItemBuilder({
                 <FileText className="h-3 w-3" />
                 Work Type
               </Label>
-              <Select 
-                value={selectedWorkTypeId} 
-                onValueChange={handleWorkTypeChange}
-                disabled={!selectedSubcategory}
-              >
-                <SelectTrigger data-testid="select-work-type">
-                  <SelectValue placeholder={selectedSubcategory ? "Select work type..." : "Select subcategory first"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableWorkTypes.map((wt) => (
-                    <SelectItem key={wt.id} value={wt.id}>
-                      {wt.name}
-                      {wt.unit && <span className="text-muted-foreground ml-1">({wt.unit})</span>}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {selectedSubcategory && availableWorkTypes.length === 0 ? (
+                <div className="border rounded-md p-3 bg-muted/30">
+                  <p className="text-sm text-muted-foreground mb-2">No work types found in this subcategory.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      resetAiDialog();
+                      setAiDialogOpen(true);
+                    }}
+                    data-testid="button-ai-create-empty-state"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                    Create with AI
+                  </Button>
+                </div>
+              ) : (
+                <Select 
+                  value={selectedWorkTypeId} 
+                  onValueChange={handleWorkTypeChange}
+                  disabled={!selectedSubcategory}
+                >
+                  <SelectTrigger data-testid="select-work-type">
+                    <SelectValue placeholder={selectedSubcategory ? "Select work type..." : "Select subcategory first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableWorkTypes.map((wt) => (
+                      <SelectItem key={wt.id} value={wt.id}>
+                        {wt.name}
+                        {wt.unit && <span className="text-muted-foreground ml-1">({wt.unit})</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 
