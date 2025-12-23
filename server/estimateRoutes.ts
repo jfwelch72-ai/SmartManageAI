@@ -43,6 +43,69 @@ function hasManagementAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
 }
 
+// Valid database enum values
+const VALID_CATEGORIES = ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"];
+const VALID_WIRE_MESH_TYPES = ["6X6_W1.4_W1.4", "6X6_W2.9_W2.9", "4X4_W1.4_W1.4", "4X4_W2.9_W2.9"];
+const VALID_SEALER_TYPES = ["CURE_AND_SEAL", "PENETRATING", "ACRYLIC", "EPOXY"];
+
+// Map frontend wire mesh type values to database enum values
+function normalizeWireMeshType(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  const upperValue = value.toUpperCase();
+  
+  // Direct match
+  if (VALID_WIRE_MESH_TYPES.includes(upperValue)) return upperValue;
+  
+  // Map shorthand values
+  const mappings: Record<string, string> = {
+    "6X6_W1.4": "6X6_W1.4_W1.4",
+    "6X6_W2.9": "6X6_W2.9_W2.9",
+    "4X4_W1.4": "4X4_W1.4_W1.4",
+    "4X4_W2.9": "4X4_W2.9_W2.9",
+  };
+  
+  return mappings[upperValue] || undefined;
+}
+
+// Map frontend sealer type values to database enum values
+function normalizeSealerType(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  const upperValue = value.toUpperCase();
+  
+  // Direct match
+  if (VALID_SEALER_TYPES.includes(upperValue)) return upperValue;
+  
+  // Map shorthand values
+  const mappings: Record<string, string> = {
+    "CURE_SEAL": "CURE_AND_SEAL",
+    "CURE": "CURE_AND_SEAL",
+  };
+  
+  return mappings[upperValue] || undefined;
+}
+
+// Normalize category - map invalid/new categories to GENERAL
+function normalizeCategory(value: string | undefined | null): string {
+  if (!value) return "GENERAL";
+  const upperValue = value.toUpperCase();
+  
+  if (VALID_CATEGORIES.includes(upperValue)) return upperValue;
+  
+  // Map common new trade categories to GENERAL
+  return "GENERAL";
+}
+
+// Transform line item data to match database schema
+function normalizeLineItemData(data: any): any {
+  return {
+    ...data,
+    category: normalizeCategory(data.category),
+    wireMeshType: normalizeWireMeshType(data.wireMeshType),
+    sealerType: normalizeSealerType(data.sealerType),
+    sealerCoats: data.sealerCoats !== undefined ? Number(data.sealerCoats) : undefined,
+  };
+}
+
 export function registerEstimateRoutes(app: Express) {
   
   // Get active estimate for a project
@@ -527,9 +590,12 @@ export function registerEstimateRoutes(app: Express) {
         Number(lineItem.profitAllocation || 0)
       ).toString();
 
+      // Normalize data to fix frontend/backend enum mismatches
+      const normalizedLineItem = normalizeLineItemData(lineItem);
+
       // Validate and create line item with calculated material quantities
       const validatedData = insertEstimateLineItemSchema.parse({
-        ...lineItem,
+        ...normalizedLineItem,
         estimateId,
         source: "MANUAL",
         totalCost,
@@ -621,10 +687,13 @@ export function registerEstimateRoutes(app: Express) {
         Number(updates.profitAllocation || 0)
       ).toString();
 
+      // Normalize data to fix frontend/backend enum mismatches
+      const normalizedUpdates = normalizeLineItemData(updates);
+
       // Update line item with recalculated total and material quantities
       const [updatedLineItem] = await db.update(estimateLineItems)
         .set({ 
-          ...updates, 
+          ...normalizedUpdates, 
           totalCost, 
           userAdjusted: true, 
           updatedAt: new Date(),
