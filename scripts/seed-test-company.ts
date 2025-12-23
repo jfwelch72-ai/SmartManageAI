@@ -76,15 +76,15 @@ async function cleanupExisting() {
 async function createOrganization(
   name: string,
   slug: string,
-  tradeType: "GENERAL_CONTRACTOR" | "CONCRETE" | "ELECTRICAL" | "PLUMBING" | "HVAC" | "ROOFING" | "PAINTING" | "FLOORING" | "LANDSCAPING" | "DEMOLITION" | "EXCAVATION" | "MASONRY" | "STEEL_ERECTION" | "CARPENTRY" | "DRYWALL" | "INSULATION" | "FIRE_PROTECTION" | "GLAZING" | "TILE_TERRAZZO" | "ACOUSTICAL" | "WATERPROOFING" | "PAVING" | "FENCING" | "CUSTOM",
+  tradeType: string,
   isSubcontractor: boolean = false
 ) {
   console.log(`Creating organization: ${name}...`);
   
-  const [org] = await db.insert(organizations).values({
+  const orgData = {
     name,
     slug,
-    tradeType,
+    tradeType: tradeType as any,
     tradeName: isSubcontractor ? "Specialty Subcontracting" : "General Construction",
     address: isSubcontractor ? "456 Sub Street" : "123 Main Street",
     city: "Construction City",
@@ -94,9 +94,11 @@ async function createOrganization(
     email: isSubcontractor ? "info@realtest-sub.com" : "info@realtest.com",
     typicalCrewSize: isSubcontractor ? 15 : 50,
     region: "Southwest",
-    onboardingStatus: "COMPLETED",
+    onboardingStatus: "COMPLETED" as const,
     isActive: true,
-  }).returning();
+  };
+  
+  const [org] = await db.insert(organizations).values(orgData).returning();
   
   console.log(`  Created org ID: ${org.id}`);
   return org;
