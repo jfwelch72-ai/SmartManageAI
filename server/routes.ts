@@ -1501,8 +1501,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return String(maxCode + 1);
   }
 
-  // Create bid (Admin/Manager only) - code is auto-generated with retry logic
-  app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Create bid (Admin/Manager/Estimator) - code is auto-generated with retry logic
+  app.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       console.log("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
 
@@ -1580,8 +1580,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ),
   }).partial();
 
-  // Update bid (Admin/Manager only)
-  app.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Update bid (Admin/Manager/Estimator)
+  app.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       // Get existing bid for audit logging
       const [existingBid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
