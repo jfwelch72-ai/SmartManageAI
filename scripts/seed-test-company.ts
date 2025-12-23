@@ -14,10 +14,13 @@ import {
   organizations, 
   users, 
   organizationSubscriptions,
-  organizationAddOns 
+  organizationAddOns,
+  masterSowItems,
+  organizationSowItems
 } from "../shared/schema";
 import bcrypt from "bcrypt";
-import { eq } from "drizzle-orm";
+import { eq, asc, and } from "drizzle-orm";
+import { seedAllNewTradeSowItems } from "../server/seedTradeExpansion";
 
 const SALT_ROUNDS = 10;
 const DEFAULT_PASSWORD = "TestPass123!";
@@ -61,14 +64,43 @@ const ALL_ADDONS: ("ai_pm" | "ai_cfo" | "ai_email" | "website_seo" | "bid_networ
 async function cleanupExisting() {
   console.log("Cleaning up any existing test data...");
   
+  // Get existing test organizations first
+  const [mainOrg] = await db.select().from(organizations).where(eq(organizations.slug, "realtest-construction"));
+  const [subOrg] = await db.select().from(organizations).where(eq(organizations.slug, "realtest-subcontractors"));
+  
+  // Clean up organization SOW items first (before deleting orgs)
+  if (mainOrg) {
+    await db.delete(organizationSowItems).where(eq(organizationSowItems.organizationId, mainOrg.id));
+    await db.delete(organizationSubscriptions).where(eq(organizationSubscriptions.organizationId, mainOrg.id));
+    await db.delete(organizationAddOns).where(eq(organizationAddOns.organizationId, mainOrg.id));
+  }
+  if (subOrg) {
+    await db.delete(organizationSowItems).where(eq(organizationSowItems.organizationId, subOrg.id));
+    await db.delete(organizationSubscriptions).where(eq(organizationSubscriptions.organizationId, subOrg.id));
+    await db.delete(organizationAddOns).where(eq(organizationAddOns.organizationId, subOrg.id));
+  }
+  
+  // Delete test users - but first we need to nullify their references in audit_log
+  // Instead of deleting users with constraints, just deactivate them and update orgs
   const testEmails = [...MAIN_ORG_USERS, ...SUB_ORG_USERS].map(u => u.email);
   
   for (const email of testEmails) {
-    await db.delete(users).where(eq(users.email, email));
+    // Just delete the user - if it fails due to FK, we'll handle it
+    try {
+      await db.delete(users).where(eq(users.email, email));
+    } catch (err: any) {
+      // User might have FK references - skip deletion, just update instead
+      console.log(`  Skipping user ${email} deletion due to references, will recreate with update`);
+    }
   }
   
-  await db.delete(organizations).where(eq(organizations.slug, "realtest-construction"));
-  await db.delete(organizations).where(eq(organizations.slug, "realtest-subcontractors"));
+  // Delete organizations (if they don't have FK constraints)
+  try {
+    if (mainOrg) await db.delete(organizations).where(eq(organizations.id, mainOrg.id));
+    if (subOrg) await db.delete(organizations).where(eq(organizations.id, subOrg.id));
+  } catch (err: any) {
+    console.log("  Organizations have references, will update instead of recreate");
+  }
   
   console.log("Cleanup complete.");
 }
@@ -154,6 +186,79 @@ async function createUsers(orgId: string, userList: TestUser[]) {
   }
 }
 
+async function seedMasterSowItems() {
+  console.log("\n--- Seeding Master SOW Items ---");
+  
+  // Check if master items already exist
+  const existingItems = await db.select().from(masterSowItems).limit(1);
+  if (existingItems.length > 0) {
+    console.log("  Master SOW items already exist, skipping...");
+    return;
+  }
+  
+  // Seed all master SOW items from trade expansion
+  await seedAllNewTradeSowItems();
+}
+
+async function copyMasterSowToOrganization(organizationId: string, tradeType: string) {
+  console.log("  Copying master SOW items to organization...");
+  
+  // Check if organization already has SOW items
+  const existingOrgItems = await db.select().from(organizationSowItems)
+    .where(eq(organizationSowItems.organizationId, organizationId))
+    .limit(1);
+  
+  if (existingOrgItems.length > 0) {
+    console.log("    Organization already has SOW items, skipping...");
+    return;
+  }
+  
+  // For General Contractor, get ALL master items; for specific trades, get only that trade
+  const isGC = tradeType === "GENERAL_CONTRACTOR";
+  
+  let items;
+  if (isGC) {
+    items = await db.select().from(masterSowItems)
+      .where(eq(masterSowItems.isActive, true))
+      .orderBy(asc(masterSowItems.tradeType), asc(masterSowItems.sortOrder));
+  } else {
+    items = await db.select().from(masterSowItems)
+      .where(and(
+        eq(masterSowItems.tradeType, tradeType as any),
+        eq(masterSowItems.isActive, true)
+      ))
+      .orderBy(asc(masterSowItems.sortOrder));
+  }
+  
+  console.log(`    Found ${items.length} master items to copy...`);
+  
+  for (const item of items) {
+    const categoryName = isGC 
+      ? `${item.tradeType} - ${item.categoryName || 'General'}`
+      : (item.categoryName || 'General');
+    
+    const itemCode = isGC
+      ? `${item.tradeType}_${item.code}`
+      : item.code;
+    
+    await db.insert(organizationSowItems).values({
+      organizationId,
+      categoryName,
+      name: item.name,
+      code: itemCode,
+      description: item.description,
+      unit: item.defaultUomCode || 'EA',
+      displayOrder: item.sortOrder || 0,
+      requiresDimensions: item.requiresDimensions || false,
+      dimensionLabel: item.dimensionLabel,
+      isFromTemplate: true,
+      isActive: true,
+    }).onConflictDoNothing();
+  }
+  
+  console.log(`    Copied ${items.length} SOW items to organization`);
+}
+
 async function main() {
   console.log("========================================");
   console.log("  SmartManageAI Test Company Seeder");
@@ -161,6 +266,9 @@ async function main() {
   
   try {
     await cleanupExisting();
+    
+    // First ensure master SOW items are seeded
+    await seedMasterSowItems();
     
     console.log("\n--- Creating Main Test Organization ---");
     const mainOrg = await createOrganization(
@@ -173,6 +281,7 @@ async function main() {
     await createSubscription(mainOrg.id, "enterprise");
     await enableAllAddons(mainOrg.id);
     await createUsers(mainOrg.id, MAIN_ORG_USERS);
+    await copyMasterSowToOrganization(mainOrg.id, "GENERAL_CONTRACTOR");
     
     console.log("\n--- Creating Subcontractor Organization ---");
     const subOrg = await createOrganization(
@@ -184,6 +293,7 @@ async function main() {
     
     await createSubscription(subOrg.id, "professional");
     await createUsers(subOrg.id, SUB_ORG_USERS);
+    await copyMasterSowToOrganization(subOrg.id, "CONCRETE");
     
     console.log("\n========================================");
     console.log("  SEED COMPLETE!");
