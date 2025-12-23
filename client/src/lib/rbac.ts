@@ -111,7 +111,7 @@ export const RoutePermissions = {
   // Organization Admin-only routes (not for SUPER_ADMIN)
   USERS: (role?: string) => isOrganizationAdmin(role),
   AI_SETTINGS: (role?: string) => isOrganizationAdmin(role),
-  COST_RATES: (role?: string) => isOrganizationAdmin(role),
+  COST_RATES: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR",
   CREWS: (role?: string) => isOrganizationAdmin(role),
   SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
   COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role),
@@ -126,7 +126,7 @@ export const RoutePermissions = {
   TM_DAILY: (role?: string) => hasManagementAccess(role),
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
   CRM: (role?: string) => hasManagementAccess(role),
-  SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role),
+  SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
   
   // New feature routes
@@ -161,11 +161,11 @@ export const FeaturePermissions = {
   VIEW_FINANCIAL_KPIs: (role?: string) => hasManagementAccess(role),
 
   // Project features
-  CREATE_PROJECT: (role?: string) => hasManagementAccess(role),
+  CREATE_PROJECT: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   EDIT_PROJECT: (role?: string) => hasManagementAccess(role),
   VIEW_PROJECT_BUDGET: (role?: string) => hasManagementAccess(role),
   VIEW_PROJECT_FINANCIALS: (role?: string) => hasManagementAccess(role),
-  CONVERT_BID_TO_PROJECT: (role?: string) => isAdminOrManager(role),
+  CONVERT_BID_TO_PROJECT: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
 
   // Project detail tabs - Financial tabs (restricted from hourly)
   VIEW_BUDGET_TAB: (role?: string) => hasManagementAccess(role),
@@ -346,7 +346,7 @@ export const NavigationConfig = {
       href: "/cost-rates",
       label: "Cost Rates",
       testId: "nav-cost-rates",
-      visible: (role?: string) => isOrganizationAdmin(role),
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR",
     },
     {
       href: "/subcontractor-payables",
@@ -364,7 +364,7 @@ export const NavigationConfig = {
       href: "/scope-settings",
       label: "Scope Settings",
       testId: "nav-scope-settings",
-      visible: (role?: string) => isAdminOrManager(role),
+      visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
     },
     {
       href: "/company-settings",

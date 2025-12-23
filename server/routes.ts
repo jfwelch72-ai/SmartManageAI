@@ -1840,8 +1840,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Convert bid to project (Admin/Manager only)
-  app.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Convert bid to project (Admin/Manager/Estimator)
+  app.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
       
@@ -3771,8 +3771,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create project schema without code - code is auto-generated
   const createProjectSchema = insertProjectSchema.omit({ code: true });
 
-  // Create project (Admin/Manager only) - code is auto-generated with retry logic
-  app.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Create project (Admin/Manager/Estimator) - code is auto-generated with retry logic
+  app.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -6017,8 +6017,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create organisation (ADMIN, MANAGER only)
-  app.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Create organisation (ADMIN, MANAGER, ESTIMATOR)
+  app.post("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -6058,8 +6058,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update organisation (ADMIN, MANAGER only)
-  app.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Update organisation (ADMIN, MANAGER, ESTIMATOR)
+  app.put("/api/crm/organisations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -6205,8 +6205,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create contact (ADMIN, MANAGER only)
-  app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Create contact (ADMIN, MANAGER, ESTIMATOR)
+  app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -6270,8 +6270,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update contact (ADMIN, MANAGER only)
-  app.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Update contact (ADMIN, MANAGER, ESTIMATOR)
+  app.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
