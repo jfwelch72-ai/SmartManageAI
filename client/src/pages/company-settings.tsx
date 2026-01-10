@@ -127,8 +127,9 @@ interface PayrollSettings {
   id: string;
   organizationId: string;
   workWeekStartDay: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
-  overtimeThresholdHours: number;
-  notifyOnWeekComplete: boolean;
+  overtimeThresholdHours: string;
+  workWeekEndNotificationEnabled: boolean;
+  autoGenerateWeeklyReports: boolean;
   createdAt: string;
   updatedAt: string | null;
 }
@@ -200,7 +201,7 @@ export default function CompanySettings() {
   });
 
   const { data: payrollSettings, isLoading: loadingPayroll } = useQuery<PayrollSettings>({
-    queryKey: ["/api/payroll-settings"],
+    queryKey: ["/api/payroll/settings"],
     enabled: !!user && ["SUPER_ADMIN", "ADMIN", "OFFICE_MANAGER"].includes(user.role)
   });
 
@@ -212,10 +213,15 @@ export default function CompanySettings() {
 
   const updatePayrollMutation = useMutation({
     mutationFn: async (data: typeof payrollForm) => {
-      return await apiRequest("PUT", "/api/payroll-settings", data);
+      return await apiRequest("PUT", "/api/payroll/settings", {
+        workWeekStartDay: data.workWeekStartDay,
+        overtimeThresholdHours: String(data.overtimeThresholdHours),
+        workWeekEndNotificationEnabled: data.notifyOnWeekComplete,
+        autoGenerateWeeklyReports: data.notifyOnWeekComplete,
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/settings"] });
       toast({ title: "Payroll settings updated" });
     },
     onError: (error: any) => {
@@ -396,8 +402,8 @@ export default function CompanySettings() {
     if (payrollSettings) {
       setPayrollForm({
         workWeekStartDay: payrollSettings.workWeekStartDay,
-        overtimeThresholdHours: payrollSettings.overtimeThresholdHours,
-        notifyOnWeekComplete: payrollSettings.notifyOnWeekComplete
+        overtimeThresholdHours: parseInt(payrollSettings.overtimeThresholdHours) || 40,
+        notifyOnWeekComplete: payrollSettings.workWeekEndNotificationEnabled
       });
     }
   }, [payrollSettings]);
