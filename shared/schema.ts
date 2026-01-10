@@ -275,6 +275,54 @@ export const insertOrganizationUsageSchema = createInsertSchema(organizationUsag
 export type InsertOrganizationUsage = z.infer<typeof insertOrganizationUsageSchema>;
 export type OrganizationUsage = typeof organizationUsage.$inferSelect;
 
+// Work Week Start Day Enum (0=Sunday, 1=Monday, etc.)
+export const workWeekStartDayEnum = pgEnum("work_week_start_day", ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]);
+
+// Organization Payroll Settings table
+export const organizationPayrollSettings = pgTable("organization_payroll_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
+  workWeekStartDay: workWeekStartDayEnum("work_week_start_day").notNull().default("MONDAY"),
+  workWeekEndNotificationEnabled: boolean("work_week_end_notification_enabled").notNull().default(true),
+  notificationRecipientEmails: text("notification_recipient_emails"),
+  overtimeThresholdHours: decimal("overtime_threshold_hours", { precision: 5, scale: 2 }).notNull().default("40"),
+  autoGenerateWeeklyReports: boolean("auto_generate_weekly_reports").notNull().default(true),
+  requireSuperintendentApproval: boolean("require_superintendent_approval").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("org_payroll_settings_org_id_idx").on(table.organizationId),
+}));
+
+export const insertOrganizationPayrollSettingsSchema = createInsertSchema(organizationPayrollSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrganizationPayrollSettings = z.infer<typeof insertOrganizationPayrollSettingsSchema>;
+export type OrganizationPayrollSettings = typeof organizationPayrollSettings.$inferSelect;
+
+// Weekly Payroll Reports table - stores generated end-of-week reports
+export const weeklyPayrollReports = pgTable("weekly_payroll_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  weekStartDate: date("week_start_date").notNull(),
+  weekEndDate: date("week_end_date").notNull(),
+  totalRegularHours: decimal("total_regular_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalOvertimeHours: decimal("total_overtime_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalEmployees: integer("total_employees").notNull().default(0),
+  reportData: text("report_data"),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  generatedByApprovalOf: varchar("generated_by_approval_of").references(() => users.id),
+  notificationSentAt: timestamp("notification_sent_at"),
+  notificationRecipients: text("notification_recipients"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("weekly_payroll_reports_org_id_idx").on(table.organizationId),
+  weekIdx: index("weekly_payroll_reports_week_idx").on(table.weekStartDate, table.weekEndDate),
+  orgWeekUnique: unique("weekly_payroll_reports_org_week_unique").on(table.organizationId, table.weekStartDate),
+}));
+
+export const insertWeeklyPayrollReportSchema = createInsertSchema(weeklyPayrollReports).omit({ id: true, createdAt: true });
+export type InsertWeeklyPayrollReport = z.infer<typeof insertWeeklyPayrollReportSchema>;
+export type WeeklyPayrollReport = typeof weeklyPayrollReports.$inferSelect;
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

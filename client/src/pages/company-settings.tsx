@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -123,6 +123,26 @@ interface HustlerLinkRequest {
   respondedAt: string | null;
 }
 
+interface PayrollSettings {
+  id: string;
+  organizationId: string;
+  workWeekStartDay: "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY";
+  overtimeThresholdHours: number;
+  notifyOnWeekComplete: boolean;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+const DAYS_OF_WEEK = [
+  { value: "SUNDAY", label: "Sunday" },
+  { value: "MONDAY", label: "Monday" },
+  { value: "TUESDAY", label: "Tuesday" },
+  { value: "WEDNESDAY", label: "Wednesday" },
+  { value: "THURSDAY", label: "Thursday" },
+  { value: "FRIDAY", label: "Friday" },
+  { value: "SATURDAY", label: "Saturday" },
+];
+
 export default function CompanySettings() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -177,6 +197,30 @@ export default function CompanySettings() {
   const { data: hustlerLinkRequests = { requests: [] }, isLoading: loadingHustlerRequests } = useQuery<{ requests: HustlerLinkRequest[] }>({
     queryKey: ["/api/hustler/link-requests/organization"],
     enabled: !!user && ["SUPER_ADMIN", "ADMIN"].includes(user.role)
+  });
+
+  const { data: payrollSettings, isLoading: loadingPayroll } = useQuery<PayrollSettings>({
+    queryKey: ["/api/payroll-settings"],
+    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "OFFICE_MANAGER"].includes(user.role)
+  });
+
+  const [payrollForm, setPayrollForm] = useState({
+    workWeekStartDay: "SUNDAY" as PayrollSettings["workWeekStartDay"],
+    overtimeThresholdHours: 40,
+    notifyOnWeekComplete: true
+  });
+
+  const updatePayrollMutation = useMutation({
+    mutationFn: async (data: typeof payrollForm) => {
+      return await apiRequest("PUT", "/api/payroll-settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-settings"] });
+      toast({ title: "Payroll settings updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update payroll settings", variant: "destructive" });
+    }
   });
 
   const inviteHustlerMutation = useMutation({
@@ -347,6 +391,16 @@ export default function CompanySettings() {
     });
     setShowUploadDialog(true);
   };
+
+  useEffect(() => {
+    if (payrollSettings) {
+      setPayrollForm({
+        workWeekStartDay: payrollSettings.workWeekStartDay,
+        overtimeThresholdHours: payrollSettings.overtimeThresholdHours,
+        notifyOnWeekComplete: payrollSettings.notifyOnWeekComplete
+      });
+    }
+  }, [payrollSettings]);
 
   const openHistoryDialog = (docType: string) => {
     setHistoryDocType(docType);
@@ -555,7 +609,7 @@ export default function CompanySettings() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5" data-testid="tabs-company-settings">
+        <TabsList className="grid w-full grid-cols-6" data-testid="tabs-company-settings">
           <TabsTrigger value="trade" data-testid="tab-trade">
             <Wrench className="h-4 w-4 mr-2" />
             Trade
@@ -571,6 +625,10 @@ export default function CompanySettings() {
           <TabsTrigger value="compliance" data-testid="tab-compliance">
             <FileText className="h-4 w-4 mr-2" />
             Compliance
+          </TabsTrigger>
+          <TabsTrigger value="payroll" data-testid="tab-payroll">
+            <Clock className="h-4 w-4 mr-2" />
+            Payroll
           </TabsTrigger>
           <TabsTrigger value="hustler" data-testid="tab-hustler">
             <Users className="h-4 w-4 mr-2" />
@@ -855,6 +913,156 @@ export default function CompanySettings() {
                 {typesData?.types
                   .filter(t => t.category === "COMPLIANCE")
                   .map(docType => renderDocumentCard(docType, getDocForType(docType.value)))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="payroll" className="mt-6">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Payroll & Work Week Settings</h2>
+                <p className="text-sm text-muted-foreground">
+                  Configure your work week schedule for time tracking and payroll reports
+                </p>
+              </div>
+            </div>
+
+            {loadingPayroll ? (
+              <Card>
+                <CardContent className="py-8">
+                  <Skeleton className="h-48" />
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      Work Week Configuration
+                    </CardTitle>
+                    <CardDescription>
+                      Define when your work week starts and overtime thresholds
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="work-week-start">Work Week Start Day</Label>
+                      <Select
+                        value={payrollForm.workWeekStartDay}
+                        onValueChange={(value: PayrollSettings["workWeekStartDay"]) => 
+                          setPayrollForm(prev => ({ ...prev, workWeekStartDay: value }))
+                        }
+                      >
+                        <SelectTrigger data-testid="select-work-week-start">
+                          <SelectValue placeholder="Select start day" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DAYS_OF_WEEK.map(day => (
+                            <SelectItem key={day.value} value={day.value}>
+                              {day.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Weekly reports will be generated for the 7-day period starting on this day
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="overtime-threshold">Weekly Overtime Threshold (hours)</Label>
+                      <Input
+                        id="overtime-threshold"
+                        type="number"
+                        min={1}
+                        max={168}
+                        value={payrollForm.overtimeThresholdHours}
+                        onChange={(e) => setPayrollForm(prev => ({ 
+                          ...prev, 
+                          overtimeThresholdHours: parseInt(e.target.value) || 40 
+                        }))}
+                        data-testid="input-overtime-threshold"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Hours worked beyond this threshold will be classified as overtime
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-2 pt-2">
+                      <input
+                        type="checkbox"
+                        id="notify-week-complete"
+                        checked={payrollForm.notifyOnWeekComplete}
+                        onChange={(e) => setPayrollForm(prev => ({ 
+                          ...prev, 
+                          notifyOnWeekComplete: e.target.checked 
+                        }))}
+                        className="h-4 w-4 rounded border-gray-300"
+                        data-testid="checkbox-notify-week-complete"
+                      />
+                      <div className="space-y-0.5">
+                        <Label htmlFor="notify-week-complete" className="cursor-pointer">
+                          Notify office administrators when weekly reports are ready
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Send notifications when all shifts for a week have been approved
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={() => updatePayrollMutation.mutate(payrollForm)}
+                      disabled={updatePayrollMutation.isPending}
+                      className="mt-4"
+                      data-testid="button-save-payroll"
+                    >
+                      {updatePayrollMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : null}
+                      Save Settings
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Weekly Reports
+                    </CardTitle>
+                    <CardDescription>
+                      Automated end-of-week hour summaries
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Alert>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <AlertDescription>
+                        Weekly payroll reports are automatically generated when all time clock shifts 
+                        for a work week have been approved by a superintendent or manager.
+                      </AlertDescription>
+                    </Alert>
+                    
+                    <div className="text-sm space-y-2">
+                      <h4 className="font-medium">Report includes:</h4>
+                      <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                        <li>Total hours worked per employee</li>
+                        <li>Regular hours and overtime breakdown</li>
+                        <li>Week start and end dates</li>
+                      </ul>
+                    </div>
+
+                    <div className="text-sm space-y-2">
+                      <h4 className="font-medium">Current work week:</h4>
+                      <p className="text-muted-foreground">
+                        Starts on {DAYS_OF_WEEK.find(d => d.value === payrollForm.workWeekStartDay)?.label || "Sunday"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </div>

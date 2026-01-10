@@ -3,7 +3,8 @@ import { db } from "./db";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
   payrollNotifications, organizations, notifications, dailyScopeProgress,
-  scopeItems, projectEmployeeRates, estimateLineItems, projectMaterialUsage
+  scopeItems, projectEmployeeRates, estimateLineItems, projectMaterialUsage,
+  organizationPayrollSettings, weeklyPayrollReports
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -204,6 +205,196 @@ async function captureProductionRateFromShift(
   } catch (error) {
     console.error("Error capturing production rate data:", error);
     // Don't throw - this is a non-critical enhancement
+  }
+}
+
+const WORK_WEEK_DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"] as const;
+
+function getDayNumber(day: typeof WORK_WEEK_DAYS[number]): number {
+  return WORK_WEEK_DAYS.indexOf(day);
+}
+
+function getWeekBounds(date: Date, startDay: typeof WORK_WEEK_DAYS[number]): { start: Date; end: Date } {
+  const targetDayNum = getDayNumber(startDay);
+  const currentDayNum = date.getDay();
+  
+  const daysToSubtract = (currentDayNum - targetDayNum + 7) % 7;
+  const weekStart = new Date(date);
+  weekStart.setDate(date.getDate() - daysToSubtract);
+  weekStart.setHours(0, 0, 0, 0);
+  
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+  
+  return { start: weekStart, end: weekEnd };
+}
+
+async function checkAndNotifyWeeklyReport(
+  organizationId: string,
+  approvedByUserId: string,
+  shiftClockIn: Date
+): Promise<void> {
+  try {
+    const [settings] = await db
+      .select()
+      .from(organizationPayrollSettings)
+      .where(eq(organizationPayrollSettings.organizationId, organizationId))
+      .limit(1);
+
+    if (!settings?.workWeekEndNotificationEnabled || !settings?.autoGenerateWeeklyReports) {
+      return;
+    }
+
+    const workWeekStartDay = settings.workWeekStartDay || "MONDAY";
+    const { start: weekStart, end: weekEnd } = getWeekBounds(shiftClockIn, workWeekStartDay);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+    const weekEndStr = weekEnd.toISOString().split('T')[0];
+
+    const [existingReport] = await db
+      .select()
+      .from(weeklyPayrollReports)
+      .where(and(
+        eq(weeklyPayrollReports.organizationId, organizationId),
+        eq(weeklyPayrollReports.weekStartDate, weekStartStr)
+      ))
+      .limit(1);
+
+    if (existingReport) {
+      return;
+    }
+
+    const now = new Date();
+    if (now < weekEnd) {
+      return;
+    }
+
+    const pendingShifts = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
+      .where(and(
+        eq(users.organizationId, organizationId),
+        eq(timeClockShifts.approvalStatus, "PENDING"),
+        gte(timeClockShifts.clockIn, weekStart),
+        lte(timeClockShifts.clockIn, weekEnd)
+      ));
+
+    const pendingCount = pendingShifts[0]?.count || 0;
+
+    if (pendingCount > 0) {
+      return;
+    }
+
+    const approvedShifts = await db
+      .select({
+        userId: timeClockShifts.userId,
+        totalHours: timeClockShifts.totalHours,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
+      .where(and(
+        eq(users.organizationId, organizationId),
+        eq(timeClockShifts.approvalStatus, "APPROVED"),
+        gte(timeClockShifts.clockIn, weekStart),
+        lte(timeClockShifts.clockIn, weekEnd)
+      ));
+
+    if (approvedShifts.length === 0) {
+      return;
+    }
+
+    const overtimeThreshold = settings.overtimeThresholdHours 
+      ? parseFloat(settings.overtimeThresholdHours) 
+      : 40;
+
+    const employeeHours: Record<string, {
+      name: string;
+      email: string;
+      totalHours: number;
+    }> = {};
+
+    for (const shift of approvedShifts) {
+      const hours = parseFloat(shift.totalHours || "0");
+      if (!employeeHours[shift.userId]) {
+        employeeHours[shift.userId] = {
+          name: `${shift.userFirstName} ${shift.userLastName}`,
+          email: shift.userEmail,
+          totalHours: 0,
+        };
+      }
+      employeeHours[shift.userId].totalHours += hours;
+    }
+
+    let totalRegularHours = 0;
+    let totalOvertimeHours = 0;
+
+    for (const emp of Object.values(employeeHours)) {
+      totalRegularHours += Math.min(emp.totalHours, overtimeThreshold);
+      totalOvertimeHours += Math.max(0, emp.totalHours - overtimeThreshold);
+    }
+
+    const totalEmployees = Object.keys(employeeHours).length;
+
+    const reportData = {
+      employees: Object.entries(employeeHours).map(([userId, data]) => ({
+        userId,
+        ...data,
+        regularHours: Math.min(data.totalHours, overtimeThreshold),
+        overtimeHours: Math.max(0, data.totalHours - overtimeThreshold),
+      })),
+      overtimeThreshold,
+      autoGenerated: true,
+    };
+
+    const [report] = await db.insert(weeklyPayrollReports).values({
+      organizationId,
+      weekStartDate: weekStartStr,
+      weekEndDate: weekEndStr,
+      totalRegularHours: totalRegularHours.toFixed(2),
+      totalOvertimeHours: totalOvertimeHours.toFixed(2),
+      totalEmployees,
+      reportData: JSON.stringify(reportData),
+      generatedByApprovalOf: approvedByUserId,
+    }).returning();
+
+    if (settings.notificationRecipientEmails) {
+      const recipientEmails = settings.notificationRecipientEmails.split(',').map(e => e.trim()).filter(Boolean);
+      
+      const adminUsers = await db
+        .select()
+        .from(users)
+        .where(and(
+          eq(users.organizationId, organizationId),
+          sql`${users.email} = ANY(ARRAY[${sql.join(recipientEmails.map(e => sql`${e}`), sql`, `)}])`
+        ));
+
+      for (const admin of adminUsers) {
+        await db.insert(notifications).values({
+          userId: admin.id,
+          type: "GENERAL",
+          title: "Weekly Payroll Report Ready",
+          message: `Weekly payroll report ready: ${weekStartStr} to ${weekEndStr}. Total: ${(totalRegularHours + totalOvertimeHours).toFixed(2)} hours (${totalOvertimeHours.toFixed(2)} OT) across ${totalEmployees} employees. All shifts approved.`,
+          relatedEntityId: report.id,
+          relatedEntityType: "weeklyPayrollReport",
+        });
+      }
+
+      await db
+        .update(weeklyPayrollReports)
+        .set({
+          notificationSentAt: new Date(),
+          notificationRecipients: settings.notificationRecipientEmails,
+        })
+        .where(eq(weeklyPayrollReports.id, report.id));
+    }
+
+    console.log(`Auto-generated weekly payroll report for org ${organizationId}: ${weekStartStr} to ${weekEndStr}`);
+  } catch (error) {
+    console.error("Error checking weekly report:", error);
   }
 }
 
@@ -775,8 +966,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Approve shift (managers only)
-  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Approve shift (managers, superintendents)
+  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const schema = z.object({
         createTimeEntry: z.boolean().optional(),
@@ -867,6 +1058,17 @@ export function registerTimeClockRoutes(app: Express): void {
           shift.clockIn,
           totalHours
         ).catch(err => console.error("Production rate capture failed:", err));
+      }
+
+      // Check if this approval completes the week's approvals and trigger weekly report
+      const [shiftUser] = await db.select().from(users).where(eq(users.id, shift.userId)).limit(1);
+      if (shiftUser?.organizationId && shift.clockIn) {
+        // Fire and forget - check and generate weekly report if all shifts are approved
+        checkAndNotifyWeeklyReport(
+          shiftUser.organizationId,
+          req.user!.id,
+          shift.clockIn
+        ).catch(err => console.error("Weekly report check failed:", err));
       }
 
       res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });

@@ -61,6 +61,7 @@ import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
+import { registerPayrollSettingsRoutes } from "./payrollSettingsRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
@@ -110,6 +111,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register time-clock routes (now protected by rate limiter)
   registerTimeClockRoutes(app);
+  
+  // Register payroll settings routes (work week config, weekly reports)
+  registerPayrollSettingsRoutes(app);
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);
