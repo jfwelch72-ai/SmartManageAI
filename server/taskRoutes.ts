@@ -164,16 +164,9 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
       conditions.push(eq(tasks.createdById, createdById as string));
     }
 
-    // Organization filter: filter tasks by project's organization
-    // Tasks without projects (company-wide) are filtered by creator's organization
+    // Organization filter: filter tasks by organization
     if (shouldFilter && orgId) {
-      const orgFilter = or(
-        eq(projects.gcOrganizationId, orgId),
-        and(isNull(tasks.projectId), eq(users.organizationId, orgId))
-      );
-      if (orgFilter) {
-        conditions.push(orgFilter);
-      }
+      conditions.push(eq(tasks.organizationId, orgId));
     }
 
     // RBAC: Non-admin users only see tasks assigned to them or created by them
