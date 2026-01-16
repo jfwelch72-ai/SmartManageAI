@@ -9,9 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ScopeItem } from "@shared/schema";
@@ -530,15 +533,32 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
                 <p className="text-sm font-medium">{selectedScopeItem.description}</p>
                 <p className="text-xs text-muted-foreground">Unit: {selectedScopeItem.unit}</p>
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="work-date">Work Date</Label>
-                <Input
-                  id="work-date"
-                  type="date"
-                  value={workDate}
-                  onChange={(e) => setWorkDate(e.target.value)}
-                  data-testid="input-work-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !workDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-work-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {workDate ? format(parseISO(workDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={workDate ? parseISO(workDate) : undefined}
+                      onSelect={(date) => setWorkDate(date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <Label htmlFor="quantity-completed">Quantity Completed *</Label>

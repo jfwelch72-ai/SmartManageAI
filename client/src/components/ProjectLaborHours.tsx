@@ -7,8 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Clock, DollarSign, User, Calendar, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { Clock, DollarSign, User, Calendar as CalendarIcon, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface ProjectLaborHoursProps {
   projectId: string;
@@ -248,30 +251,64 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
 
             <div className="space-y-2">
               <Label htmlFor="filter-start-date">Start Date</Label>
-              <Input
-                id="filter-start-date"
-                data-testid="input-filter-start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
-                  setTimePeriod("all"); // Reset period when manually changing dates
-                }}
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !startDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-filter-start-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {startDate ? format(parseISO(startDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={startDate ? parseISO(startDate) : undefined}
+                    onSelect={(date) => {
+                      setStartDate(date ? format(date, "yyyy-MM-dd") : "");
+                      setTimePeriod("all");
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="filter-end-date">End Date</Label>
-              <Input
-                id="filter-end-date"
-                data-testid="input-filter-end-date"
-                type="date"
-                value={endDate}
-                onChange={(e) => {
-                  setEndDate(e.target.value);
-                  setTimePeriod("all"); // Reset period when manually changing dates
-                }}
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !endDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-filter-end-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {endDate ? format(parseISO(endDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={endDate ? parseISO(endDate) : undefined}
+                    onSelect={(date) => {
+                      setEndDate(date ? format(date, "yyyy-MM-dd") : "");
+                      setTimePeriod("all");
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">

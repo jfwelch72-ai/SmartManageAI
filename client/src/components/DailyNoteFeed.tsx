@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { format } from "date-fns";
-import { Calendar, User, Filter, X, Edit2, Save, XCircle, Package, ChevronDown, ChevronUp, Plus, Loader2 } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarIcon, User, Filter, X, Edit2, Save, XCircle, Package, ChevronDown, ChevronUp, Plus, Loader2 } from "lucide-react";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -472,25 +475,57 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="start-date-filter">Start Date</Label>
-                  <input
-                    id="start-date-filter"
-                    type="date"
-                    value={startDateFilter}
-                    onChange={(e) => setStartDateFilter(e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors"
-                    data-testid="input-start-date-filter"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !startDateFilter && "text-muted-foreground"
+                        )}
+                        data-testid="input-start-date-filter"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {startDateFilter ? format(parseISO(startDateFilter), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={startDateFilter ? parseISO(startDateFilter) : undefined}
+                        onSelect={(date) => setStartDateFilter(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="end-date-filter">End Date</Label>
-                  <input
-                    id="end-date-filter"
-                    type="date"
-                    value={endDateFilter}
-                    onChange={(e) => setEndDateFilter(e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors"
-                    data-testid="input-end-date-filter"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !endDateFilter && "text-muted-foreground"
+                        )}
+                        data-testid="input-end-date-filter"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {endDateFilter ? format(parseISO(endDateFilter), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={endDateFilter ? parseISO(endDateFilter) : undefined}
+                        onSelect={(date) => setEndDateFilter(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </div>

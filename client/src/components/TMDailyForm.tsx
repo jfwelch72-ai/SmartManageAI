@@ -4,6 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 
 interface TMDailyFormProps {
   projectName: string;
@@ -61,14 +66,30 @@ const TMDailyForm = forwardRef<TMDailyFormRef, TMDailyFormProps>(({ projectName,
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="date">Date</Label>
-              <Input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                data-testid="input-tm-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !date && "text-muted-foreground"
+                    )}
+                    data-testid="input-tm-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date ? format(parseISO(date), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={date ? parseISO(date) : undefined}
+                    onSelect={(d) => setDate(d ? format(d, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-2">

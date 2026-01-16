@@ -17,7 +17,7 @@ import {
   Loader2, 
   CheckCircle2, 
   AlertCircle, 
-  Calendar,
+  Calendar as CalendarIcon,
   Clock,
   AlertTriangle,
   ChevronRight,
@@ -29,6 +29,8 @@ import {
   Zap,
   RefreshCw
 } from "lucide-react";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { format, addDays, differenceInDays, parseISO, isAfter, isBefore, isToday } from "date-fns";
@@ -235,7 +237,7 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-primary/10 rounded-lg">
-                    <Calendar className="w-5 h-5 text-primary" />
+                    <CalendarIcon className="w-5 h-5 text-primary" />
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Duration</p>
@@ -294,7 +296,7 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
+                <CalendarIcon className="w-5 h-5" />
                 Gantt Chart
               </CardTitle>
             </CardHeader>
@@ -435,7 +437,7 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
         <Card>
           <CardContent className="py-12">
             <div className="text-center">
-              <Calendar className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <CalendarIcon className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Schedule Yet</h3>
               <p className="text-muted-foreground mb-4 max-w-md mx-auto">
                 Generate an AI-powered schedule based on your {tradeType || "project"}'s typical workflow and production rates.
@@ -458,14 +460,32 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div>
+            <div className="space-y-2">
               <Label>Project Start Date</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                data-testid="input-start-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !startDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-start-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {startDate ? format(parseISO(startDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={startDate ? parseISO(startDate) : undefined}
+                    onSelect={(date) => setStartDate(date ? format(date, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div>
               <Label>Working Days</Label>

@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { Package, Plus, AlertTriangle, TrendingUp, DollarSign, Percent, Loader2, CheckCircle } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Package, Plus, AlertTriangle, TrendingUp, DollarSign, Percent, Loader2, CheckCircle, Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +59,7 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
   const [addUsageOpen, setAddUsageOpen] = useState(false);
   const [selectedBudgetId, setSelectedBudgetId] = useState<string | null>(null);
   const [selectedScopeItemId, setSelectedScopeItemId] = useState<string>("");
+  const [usageDate, setUsageDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   const { data: budgets = [], isLoading: budgetsLoading } = useQuery<{ budget: MaterialBudget; scopeItem: any }[]>({
     queryKey: ["/api/projects", projectId, "material-budgets"],
@@ -394,14 +398,31 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
 
             <div className="space-y-2">
               <Label htmlFor="usageDate">Date</Label>
-              <Input 
-                id="usageDate" 
-                name="usageDate" 
-                type="date" 
-                defaultValue={format(new Date(), "yyyy-MM-dd")}
-                required
-                data-testid="input-usage-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !usageDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-usage-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {usageDate ? format(parseISO(usageDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={usageDate ? parseISO(usageDate) : undefined}
+                    onSelect={(date) => setUsageDate(date ? format(date, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"))}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <input type="hidden" name="usageDate" value={usageDate} />
             </div>
 
             <div className="space-y-2">
