@@ -465,7 +465,7 @@ function BidRequestCard({ request, onRefresh }: { request: BidRequest; onRefresh
         
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-1 text-muted-foreground">
-            <Calendar className="w-3 h-3" />
+            <CalendarIcon className="w-3 h-3" />
             <span>Due: {format(new Date(request.bidDueDate), "MMM d, yyyy")}</span>
           </div>
           
