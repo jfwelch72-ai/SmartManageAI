@@ -61,6 +61,9 @@ export default function Tasks() {
   const [searchTerm, setSearchTerm] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
+  const [dismissReason, setDismissReason] = useState("");
+  const [dismissingTaskId, setDismissingTaskId] = useState<string | null>(null);
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -109,12 +112,19 @@ export default function Tasks() {
 
   // Update task status mutation
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
-      return apiRequest("PATCH", `/api/tasks/${taskId}`, { status });
+    mutationFn: async ({ taskId, status, dismissReason }: { taskId: string; status: string; dismissReason?: string }) => {
+      const body: { status: string; dismissReason?: string } = { status };
+      if (dismissReason) {
+        body.dismissReason = dismissReason;
+      }
+      return apiRequest("PATCH", `/api/tasks/${taskId}`, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       toast({ title: "Success", description: "Task status updated" });
+      setDismissDialogOpen(false);
+      setDismissReason("");
+      setDismissingTaskId(null);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update task status", variant: "destructive" });
@@ -598,7 +608,10 @@ export default function Tasks() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "DISMISSED" })}
+                      onClick={() => {
+                        setDismissingTaskId(task.id);
+                        setDismissDialogOpen(true);
+                      }}
                       disabled={updateStatusMutation.isPending}
                       data-testid={`button-dismiss-task-${task.id}`}
                     >
@@ -611,6 +624,53 @@ export default function Tasks() {
           ))}
         </div>
       )}
+
+      <Dialog open={dismissDialogOpen} onOpenChange={setDismissDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dismiss Task</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for dismissing this task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Enter dismiss reason..."
+              value={dismissReason}
+              onChange={(e) => setDismissReason(e.target.value)}
+              data-testid="input-dismiss-reason"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDismissDialogOpen(false);
+                  setDismissReason("");
+                  setDismissingTaskId(null);
+                }}
+                data-testid="button-cancel-dismiss"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (dismissingTaskId && dismissReason.trim()) {
+                    updateStatusMutation.mutate({
+                      taskId: dismissingTaskId,
+                      status: "DISMISSED",
+                      dismissReason: dismissReason.trim(),
+                    });
+                  }
+                }}
+                disabled={!dismissReason.trim() || updateStatusMutation.isPending}
+                data-testid="button-confirm-dismiss"
+              >
+                {updateStatusMutation.isPending ? "Dismissing..." : "Dismiss Task"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
