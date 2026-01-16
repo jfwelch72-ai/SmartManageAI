@@ -2465,8 +2465,16 @@ export default function ProjectDetailPage() {
           <Alert variant="destructive" className="mb-6" data-testid="alert-missing-budget">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Missing Financial Data</AlertTitle>
-            <AlertDescription>
-              This project is missing budget and contract information. Please update the financial data to enable accurate profitability tracking and AI analysis.
+            <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
+              <span>This project is missing budget and contract information. Please update the financial data to enable accurate profitability tracking and AI analysis.</span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setActiveTab("financials")}
+                data-testid="button-go-to-financials"
+              >
+                Set Up Financials
+              </Button>
             </AlertDescription>
           </Alert>
         )}

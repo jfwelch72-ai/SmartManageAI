@@ -86,9 +86,31 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
 
   const generateMutation = useMutation({
     mutationFn: async (input: { sourceType: string; description?: string; delayId?: string; inspectionId?: string }) => {
+      // Build linkedItems object based on sourceType
+      const linkedItems: {
+        delayIds?: string[];
+        inspectionIds?: string[];
+        sowItemIds?: string[];
+        photoIds?: string[];
+        notes?: string;
+      } = {};
+      
+      if (input.delayId) {
+        linkedItems.delayIds = [input.delayId];
+      }
+      if (input.inspectionId) {
+        linkedItems.inspectionIds = [input.inspectionId];
+      }
+      if (input.description) {
+        linkedItems.notes = input.description;
+      }
+      
       const response = await apiRequest("POST", "/api/ai-features/change-orders/generate", {
         projectId,
-        ...input,
+        tradeType: input.sourceType,
+        linkedItems,
+        pricingSource: "MANUAL",
+        includeBreakdown: true,
       });
       return response.json();
     },
