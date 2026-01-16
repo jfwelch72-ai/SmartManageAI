@@ -239,10 +239,16 @@ router.post("/requests", requireAuth, async (req: AuthRequest, res: Response) =>
       return res.status(403).json({ error: "Your organization has disabled sending bid requests" });
     }
     
+    // Convert date strings to Date objects for timestamp fields
+    const processedData = { ...data };
+    if (processedData.bidDueDate && typeof processedData.bidDueDate === 'string') {
+      processedData.bidDueDate = new Date(processedData.bidDueDate);
+    }
+    
     const [request] = await db
       .insert(subcontractorBidRequests)
       .values({
-        ...data,
+        ...processedData,
         organizationId: user.organizationId!,
         createdByUserId: user.id,
         status: data.status || "DRAFT"
