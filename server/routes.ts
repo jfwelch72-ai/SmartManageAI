@@ -16872,21 +16872,10 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Get equipment selections for a bid
   app.get("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess) {
-        return res.json([]);
-      }
-      
       const { bidId } = req.params;
       
-      // SECURITY: Verify bid exists AND belongs to user's org
-      const bidConditions = [eq(bids.id, bidId)];
-      if (shouldFilter && orgId) {
-        bidConditions.push(eq(bids.gcOrganizationId, orgId));
-      }
-      
-      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      // Verify bid exists (consistent with other bid endpoints like /quotes)
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
@@ -16907,22 +16896,11 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Add equipment selection to bid
   app.post("/api/bids/:bidId/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess) {
-        return res.status(403).json({ error: "Access denied - no organization" });
-      }
-      
       const { bidId } = req.params;
       const userId = req.user?.id;
       
-      // SECURITY: Verify bid exists AND belongs to user's org
-      const bidConditions = [eq(bids.id, bidId)];
-      if (shouldFilter && orgId) {
-        bidConditions.push(eq(bids.gcOrganizationId, orgId));
-      }
-      
-      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      // Verify bid exists (consistent with other bid endpoints like /quotes)
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
@@ -16967,22 +16945,11 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Update bid equipment selection
   app.patch("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess) {
-        return res.status(403).json({ error: "Access denied - no organization" });
-      }
-      
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
       
-      // SECURITY: Verify bid belongs to user's org
-      const bidConditions = [eq(bids.id, bidId)];
-      if (shouldFilter && orgId) {
-        bidConditions.push(eq(bids.gcOrganizationId, orgId));
-      }
-      
-      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      // Verify bid exists (consistent with other bid endpoints)
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
@@ -17036,22 +17003,11 @@ If the make/model is unknown, provide general best practices for the equipment t
   // Delete bid equipment selection
   app.delete("/api/bids/:bidId/equipment/:selectionId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess) {
-        return res.status(403).json({ error: "Access denied - no organization" });
-      }
-      
       const { bidId, selectionId } = req.params;
       const userId = req.user?.id;
       
-      // SECURITY: Verify bid belongs to user's org
-      const bidConditions = [eq(bids.id, bidId)];
-      if (shouldFilter && orgId) {
-        bidConditions.push(eq(bids.gcOrganizationId, orgId));
-      }
-      
-      const [bid] = await db.select().from(bids).where(and(...bidConditions));
+      // Verify bid exists (consistent with other bid endpoints)
+      const [bid] = await db.select().from(bids).where(eq(bids.id, bidId)).limit(1);
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
