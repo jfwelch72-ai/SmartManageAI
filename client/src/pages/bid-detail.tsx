@@ -27,7 +27,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertBidSubcontractorQuoteSchema, insertBidMaterialQuoteSchema, insertBidSchema, insertBidEquipmentSelectionSchema } from "@shared/schema";
 import type { BidSubcontractorQuote, BidMaterialQuote, InsertBidSubcontractorQuote, InsertBidMaterialQuote, Estimate, EstimateLineItem, CrmOrganisation, CrmContact, BidEquipmentSelection } from "@shared/schema";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { z } from "zod";
 import type { UploadResult } from "@uppy/core";
 
@@ -2030,11 +2034,33 @@ export default function BidDetailPage() {
                 control={bidEditForm.control}
                 name="dueDate"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="flex flex-col">
                     <FormLabel>Due Date</FormLabel>
-                    <FormControl>
-                      <Input {...field} value={field.value || ""} type="date" data-testid="input-due-date" />
-                    </FormControl>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full pl-3 text-left font-normal",
+                              !field.value && "text-muted-foreground"
+                            )}
+                            data-testid="input-due-date"
+                          >
+                            {field.value ? format(parseISO(field.value), "PPP") : "Pick a date"}
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={field.value ? parseISO(field.value) : undefined}
+                          onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                     <FormMessage />
                   </FormItem>
                 )}

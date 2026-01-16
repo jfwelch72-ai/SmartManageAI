@@ -18,7 +18,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { format, isAfter, isBefore, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays } from "date-fns";
+import { format, isAfter, isBefore, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 import type { Bid, CrmOrganisation, CrmContact, SelectUser } from "@shared/schema";
 import { insertBidSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -592,18 +596,33 @@ export default function BidsPage() {
                   control={form.control}
                   name="dueDate"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-col">
                       <FormLabel>Due Date</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="date"
-                          className="[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-100"
-                          {...field}
-                          value={field.value instanceof Date ? field.value.toISOString().split('T')[0] : field.value || ""}
-                          onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : undefined)}
-                          data-testid="input-bid-due-date"
-                        />
-                      </FormControl>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="input-bid-due-date"
+                            >
+                              {field.value ? format(field.value instanceof Date ? field.value : new Date(field.value), "PPP") : "Pick a date"}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarPicker
+                            mode="single"
+                            selected={field.value instanceof Date ? field.value : field.value ? new Date(field.value) : undefined}
+                            onSelect={(date) => field.onChange(date)}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                       <FormMessage />
                     </FormItem>
                   )}

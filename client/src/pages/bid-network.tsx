@@ -15,8 +15,11 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Send, Eye, Clock, CheckCircle, XCircle, Users, FileText, Calendar, DollarSign, Building2, ChevronRight, AlertCircle, Settings } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, Send, Eye, Clock, CheckCircle, XCircle, Users, FileText, Calendar as CalendarIcon, DollarSign, Building2, ChevronRight, AlertCircle, Settings } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 const TRADE_OPTIONS = [
   "GENERAL_CONTRACTOR", "ELECTRICAL", "PLUMBING", "HVAC", "ROOFING", "CONCRETE",
@@ -206,23 +209,67 @@ function CreateBidRequestDialog({ onSuccess }: { onSuccess: () => void }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="bidDueDate">Bid Due Date *</Label>
-              <Input
-                id="bidDueDate"
-                type="datetime-local"
-                value={formData.bidDueDate}
-                onChange={(e) => setFormData({ ...formData, bidDueDate: e.target.value })}
-                data-testid="input-bid-due-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.bidDueDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-bid-due-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.bidDueDate ? format(new Date(formData.bidDueDate), "PPP p") : "Pick a date and time"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={formData.bidDueDate ? new Date(formData.bidDueDate) : undefined}
+                    onSelect={(date) => setFormData({ ...formData, bidDueDate: date ? format(date, "yyyy-MM-dd'T'HH:mm") : "" })}
+                    initialFocus
+                  />
+                  <div className="p-3 border-t">
+                    <Label className="text-xs text-muted-foreground">Time</Label>
+                    <Input
+                      type="time"
+                      value={formData.bidDueDate ? formData.bidDueDate.split('T')[1] || "" : ""}
+                      onChange={(e) => {
+                        const date = formData.bidDueDate ? formData.bidDueDate.split('T')[0] : format(new Date(), "yyyy-MM-dd");
+                        setFormData({ ...formData, bidDueDate: `${date}T${e.target.value}` });
+                      }}
+                      className="mt-1"
+                    />
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="projectStartDate">Project Start Date</Label>
-              <Input
-                id="projectStartDate"
-                type="date"
-                value={formData.projectStartDate}
-                onChange={(e) => setFormData({ ...formData, projectStartDate: e.target.value })}
-                data-testid="input-project-start-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.projectStartDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-project-start-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.projectStartDate ? format(parseISO(formData.projectStartDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={formData.projectStartDate ? parseISO(formData.projectStartDate) : undefined}
+                    onSelect={(date) => setFormData({ ...formData, projectStartDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           

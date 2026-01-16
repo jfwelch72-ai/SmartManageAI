@@ -10,7 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardCheck, Calendar, CheckCircle, XCircle, Clock, Building, User, Mail, Phone, FileText, Download, Eye, Edit2, Loader2, Send, Ban } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -978,11 +982,29 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
                           {resultFormData.reinspectionRequired && (
                             <div className="space-y-2">
                               <Label>Reinspection Date</Label>
-                              <Input
-                                type="date"
-                                value={resultFormData.reinspectionDate}
-                                onChange={(e) => setResultFormData(prev => ({ ...prev, reinspectionDate: e.target.value }))}
-                              />
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    type="button"
+                                    className={cn(
+                                      "w-full justify-start text-left font-normal",
+                                      !resultFormData.reinspectionDate && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {resultFormData.reinspectionDate ? format(parseISO(resultFormData.reinspectionDate), "PPP") : "Pick a date"}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <CalendarPicker
+                                    mode="single"
+                                    selected={resultFormData.reinspectionDate ? parseISO(resultFormData.reinspectionDate) : undefined}
+                                    onSelect={(date) => setResultFormData(prev => ({ ...prev, reinspectionDate: date ? format(date, "yyyy-MM-dd") : "" }))}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
                             </div>
                           )}
                         </div>

@@ -14,8 +14,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useTMTickets, useCreateTMTicket, useSubmitTMTicket, useApproveTMTicket, useRejectTMTicket, useDeleteTMTicket, type TMTicket, type TMTicketLaborEntry, type TMTicketEquipmentEntry, type TMTicketMaterialEntry } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler, ListChecks, Search } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Clock, Send, Trash2, DollarSign, Users, Wrench, Package, Eye, Printer, Ruler, ListChecks, Search, Calendar as CalendarIcon } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import type { ScopeItem } from "@shared/schema";
 
@@ -377,15 +380,32 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
               </DialogHeader>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="tm-work-date">Work Date</Label>
-                    <Input
-                      id="tm-work-date"
-                      type="date"
-                      value={workDate}
-                      onChange={(e) => setWorkDate(e.target.value)}
-                      data-testid="input-tm-work-date"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          type="button"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !workDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-tm-work-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {workDate ? format(parseISO(workDate), "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={workDate ? parseISO(workDate) : undefined}
+                          onSelect={(date) => setWorkDate(date ? format(date, "yyyy-MM-dd") : "")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div>
                     <Label htmlFor="tm-location">Location</Label>

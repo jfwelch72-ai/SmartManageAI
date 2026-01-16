@@ -35,7 +35,11 @@ import {
   CreditCard, FileText, User, Calendar, CheckCircle2, XCircle, Loader2,
   Plus, Banknote
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow, format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -717,16 +721,31 @@ export default function SubcontractorPayablesPage() {
               </div>
 
               <div className="grid gap-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="payment-date">Payment Date</Label>
-                  <Input
-                    id="payment-date"
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="mt-2"
-                    data-testid="input-payment-date"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal mt-2",
+                          !paymentDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-payment-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {paymentDate ? format(parseISO(paymentDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={paymentDate ? parseISO(paymentDate) : undefined}
+                        onSelect={(date) => setPaymentDate(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div>
                   <Label htmlFor="payment-method">Payment Method</Label>

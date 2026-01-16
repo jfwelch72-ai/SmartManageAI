@@ -13,8 +13,12 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Inbox, Eye, Clock, CheckCircle, XCircle, Send, FileText, Calendar, DollarSign, Building2, MessageSquare, ArrowLeft, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { Inbox, Eye, Clock, CheckCircle, XCircle, Send, FileText, Calendar as CalendarIcon, DollarSign, Building2, MessageSquare, ArrowLeft, AlertCircle } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Button as UIButton } from "@/components/ui/button";
 
 interface BidInvitation {
   id: string;
@@ -136,7 +140,7 @@ function InvitationCard({ invitation, onRefresh }: { invitation: BidInvitation; 
         
         <div className="flex items-center justify-between text-sm mb-3">
           <div className={`flex items-center gap-1 ${isOverdue ? "text-destructive" : isDueSoon ? "text-amber-600" : "text-muted-foreground"}`}>
-            <Calendar className="w-3 h-3" />
+            <CalendarIcon className="w-3 h-3" />
             <span>
               {isOverdue ? "Overdue" : isDueSoon ? `Due in ${daysUntilDue} days` : `Due: ${format(new Date(invitation.request.bidDueDate), "MMM d, yyyy")}`}
             </span>
@@ -389,13 +393,29 @@ function SubmitResponseDialog({ invitation, onSuccess }: { invitation: BidInvita
           <div className="grid grid-cols-3 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="startDate">Proposed Start Date</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={formData.proposedStartDate}
-                onChange={(e) => setFormData({ ...formData, proposedStartDate: e.target.value })}
-                data-testid="input-start-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.proposedStartDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-start-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.proposedStartDate ? format(parseISO(formData.proposedStartDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={formData.proposedStartDate ? parseISO(formData.proposedStartDate) : undefined}
+                    onSelect={(date) => setFormData({ ...formData, proposedStartDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="duration">Duration (days)</Label>
@@ -410,13 +430,29 @@ function SubmitResponseDialog({ invitation, onSuccess }: { invitation: BidInvita
             </div>
             <div className="grid gap-2">
               <Label htmlFor="validUntil">Quote Valid Until</Label>
-              <Input
-                id="validUntil"
-                type="date"
-                value={formData.quoteValidUntil}
-                onChange={(e) => setFormData({ ...formData, quoteValidUntil: e.target.value })}
-                data-testid="input-valid-until"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !formData.quoteValidUntil && "text-muted-foreground"
+                    )}
+                    data-testid="input-valid-until"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.quoteValidUntil ? format(parseISO(formData.quoteValidUntil), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={formData.quoteValidUntil ? parseISO(formData.quoteValidUntil) : undefined}
+                    onSelect={(date) => setFormData({ ...formData, quoteValidUntil: date ? format(date, "yyyy-MM-dd") : "" })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </div>

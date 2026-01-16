@@ -38,7 +38,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { ChangeOrder, ScopeItem, DailyScopeProgress } from "@shared/schema";
@@ -1194,23 +1195,57 @@ function RentalBookingDialog({ open, onOpenChange, projectId, plan }: RentalBook
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div className="space-y-2">
               <Label>Start Date</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                data-testid="input-rental-start-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !startDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-rental-start-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {startDate ? format(parseISO(startDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={startDate ? parseISO(startDate) : undefined}
+                    onSelect={(date) => setStartDate(date ? format(date, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
-            <div>
+            <div className="space-y-2">
               <Label>End Date</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                data-testid="input-rental-end-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !endDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-rental-end-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {endDate ? format(parseISO(endDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={endDate ? parseISO(endDate) : undefined}
+                    onSelect={(date) => setEndDate(date ? format(date, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -3826,15 +3861,31 @@ export default function ProjectDetailPage() {
                           data-testid="input-receipt-category"
                         />
                       </div>
-                      <div>
+                      <div className="space-y-2">
                         <Label htmlFor="receipt-date">Date</Label>
-                        <Input
-                          id="receipt-date"
-                          type="date"
-                          value={receiptDate}
-                          onChange={(e) => setReceiptDate(e.target.value)}
-                          data-testid="input-receipt-date"
-                        />
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !receiptDate && "text-muted-foreground"
+                              )}
+                              data-testid="input-receipt-date"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {receiptDate ? format(parseISO(receiptDate), "PPP") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarPicker
+                              mode="single"
+                              selected={receiptDate ? parseISO(receiptDate) : undefined}
+                              onSelect={(date) => setReceiptDate(date ? format(date, "yyyy-MM-dd") : "")}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
                     <DialogFooter>
@@ -4446,15 +4497,31 @@ export default function ProjectDetailPage() {
                       data-testid="input-payment-invoice"
                     />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="payment-date">Payment Date</Label>
-                    <Input
-                      id="payment-date"
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                      data-testid="input-payment-date"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !paymentDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-payment-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {paymentDate ? format(parseISO(paymentDate), "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={paymentDate ? parseISO(paymentDate) : undefined}
+                          onSelect={(date) => setPaymentDate(date ? format(date, "yyyy-MM-dd") : "")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
                 <DialogFooter>

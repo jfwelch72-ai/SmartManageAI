@@ -13,7 +13,10 @@ import { useLocation, useSearch } from "wouter";
 import { useCalendarEvents, useCreateCalendarEvent, useApproveTimeOff } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Calendar as CalendarIcon, CheckCircle, X } from "lucide-react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfDay } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfDay, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 export default function CalendarPage() {
   const [, setLocation] = useLocation();
@@ -200,25 +203,57 @@ export default function CalendarPage() {
                   <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="start-date">Start Date *</Label>
-                    <Input
-                      id="start-date"
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      data-testid="input-start-date"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !startDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-start-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {startDate ? format(parseISO(startDate), "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={startDate ? parseISO(startDate) : undefined}
+                          onSelect={(date) => setStartDate(date ? format(date, "yyyy-MM-dd") : "")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="end-date">End Date (optional)</Label>
-                    <Input
-                      id="end-date"
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      data-testid="input-end-date"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !endDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-end-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {endDate ? format(parseISO(endDate), "PPP") : "Pick a date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={endDate ? parseISO(endDate) : undefined}
+                          onSelect={(date) => setEndDate(date ? format(date, "yyyy-MM-dd") : "")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
                 {!allDay && (

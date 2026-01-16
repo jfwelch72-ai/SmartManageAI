@@ -5,7 +5,11 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar, User, Search, X, Filter } from "lucide-react";
+import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -336,11 +340,33 @@ export default function Tasks() {
                   control={form.control}
                   name="dueDate"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-col">
                       <FormLabel>Due Date (Optional)</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} data-testid="input-task-due-date" />
-                      </FormControl>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="input-task-due-date"
+                            >
+                              {field.value ? format(parseISO(field.value), "PPP") : "Pick a date"}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value ? parseISO(field.value) : undefined}
+                            onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                       <FormMessage />
                     </FormItem>
                   )}

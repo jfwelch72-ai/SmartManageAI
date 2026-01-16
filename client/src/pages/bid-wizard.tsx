@@ -51,12 +51,16 @@ import {
   Trash2,
   Edit2,
   Building2,
-  Calendar,
+  Calendar as CalendarIcon,
   MapPin,
   ClipboardList,
   Eye,
   X,
 } from "lucide-react";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 
 import type { CrmOrganisation, CrmContact } from "@shared/schema";
 
@@ -783,11 +787,33 @@ export default function BidWizardPage() {
                       control={form.control}
                       name="dueDate"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="flex flex-col">
                           <FormLabel>Due Date</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} data-testid="input-due-date" />
-                          </FormControl>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full pl-3 text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                  data-testid="input-due-date"
+                                >
+                                  {field.value ? format(parseISO(field.value), "PPP") : "Pick a date"}
+                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarPicker
+                                mode="single"
+                                selected={field.value ? parseISO(field.value) : undefined}
+                                onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
                           <FormMessage />
                         </FormItem>
                       )}

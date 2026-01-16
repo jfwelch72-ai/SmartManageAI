@@ -40,7 +40,11 @@ import {
   Copy,
   Link2
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 
 interface DocumentType {
   value: string;
@@ -1333,24 +1337,56 @@ export default function CompanySettings() {
               <>
                 <div className="space-y-2">
                   <Label htmlFor="effective-date">Effective Date</Label>
-                  <Input
-                    id="effective-date"
-                    type="date"
-                    value={uploadForm.effectiveDate}
-                    onChange={(e) => setUploadForm({ ...uploadForm, effectiveDate: e.target.value })}
-                    data-testid="input-effective-date"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !uploadForm.effectiveDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-effective-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {uploadForm.effectiveDate ? format(parseISO(uploadForm.effectiveDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={uploadForm.effectiveDate ? parseISO(uploadForm.effectiveDate) : undefined}
+                        onSelect={(date) => setUploadForm({ ...uploadForm, effectiveDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="expiry-date">Expiration Date</Label>
-                  <Input
-                    id="expiry-date"
-                    type="date"
-                    value={uploadForm.expiresAt}
-                    onChange={(e) => setUploadForm({ ...uploadForm, expiresAt: e.target.value })}
-                    data-testid="input-expiry-date"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !uploadForm.expiresAt && "text-muted-foreground"
+                        )}
+                        data-testid="input-expiry-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {uploadForm.expiresAt ? format(parseISO(uploadForm.expiresAt), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={uploadForm.expiresAt ? parseISO(uploadForm.expiresAt) : undefined}
+                        onSelect={(date) => setUploadForm({ ...uploadForm, expiresAt: date ? format(date, "yyyy-MM-dd") : "" })}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </>
             )}

@@ -31,7 +31,11 @@ import {
   AlertTriangle,
   Users
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 
 interface Project {
   id: string;
@@ -520,21 +524,55 @@ export default function SubcontractsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={createForm.startDate}
-                  onChange={(e) => setCreateForm({...createForm, startDate: e.target.value})}
-                  data-testid="input-start-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !createForm.startDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.startDate ? format(parseISO(createForm.startDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={createForm.startDate ? parseISO(createForm.startDate) : undefined}
+                      onSelect={(date) => setCreateForm({...createForm, startDate: date ? format(date, "yyyy-MM-dd") : ""})}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label>Completion Date</Label>
-                <Input
-                  type="date"
-                  value={createForm.completionDate}
-                  onChange={(e) => setCreateForm({...createForm, completionDate: e.target.value})}
-                  data-testid="input-completion-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !createForm.completionDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-completion-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.completionDate ? format(parseISO(createForm.completionDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={createForm.completionDate ? parseISO(createForm.completionDate) : undefined}
+                      onSelect={(date) => setCreateForm({...createForm, completionDate: date ? format(date, "yyyy-MM-dd") : ""})}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 
@@ -791,21 +829,55 @@ export default function SubcontractsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={createForm.startDate}
-                  onChange={(e) => setCreateForm({...createForm, startDate: e.target.value})}
-                  data-testid="input-edit-start"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !createForm.startDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-edit-start"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.startDate ? format(parseISO(createForm.startDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={createForm.startDate ? parseISO(createForm.startDate) : undefined}
+                      onSelect={(date) => setCreateForm({...createForm, startDate: date ? format(date, "yyyy-MM-dd") : ""})}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label>Completion Date</Label>
-                <Input
-                  type="date"
-                  value={createForm.completionDate}
-                  onChange={(e) => setCreateForm({...createForm, completionDate: e.target.value})}
-                  data-testid="input-edit-completion"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !createForm.completionDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-edit-completion"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {createForm.completionDate ? format(parseISO(createForm.completionDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={createForm.completionDate ? parseISO(createForm.completionDate) : undefined}
+                      onSelect={(date) => setCreateForm({...createForm, completionDate: date ? format(date, "yyyy-MM-dd") : ""})}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 

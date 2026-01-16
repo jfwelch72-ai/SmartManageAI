@@ -52,7 +52,9 @@ import {
   Store
 } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog } from "@shared/schema";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Calendar as CalendarIcon } from "lucide-react";
 import { MessageSquare, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -2472,12 +2474,29 @@ export default function CRMPage() {
               </div>
               <div className="space-y-2">
                 <Label>Effective Date</Label>
-                <Input
-                  type="date"
-                  value={newPricing.effectiveDate}
-                  onChange={(e) => setNewPricing({ ...newPricing, effectiveDate: e.target.value })}
-                  data-testid="input-pricing-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !newPricing.effectiveDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-pricing-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {newPricing.effectiveDate ? format(parseISO(newPricing.effectiveDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={newPricing.effectiveDate ? parseISO(newPricing.effectiveDate) : undefined}
+                      onSelect={(date) => setNewPricing({ ...newPricing, effectiveDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div className="space-y-2">

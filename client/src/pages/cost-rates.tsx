@@ -15,7 +15,11 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Edit, Trash2, Plus, Users, Briefcase, DollarSign, AlertCircle, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
 
 interface User {
   id: string;
@@ -877,13 +881,57 @@ export default function CostRatesPage() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="emp-eff-date">Effective Date *</Label>
-                  <Input id="emp-eff-date" type="date" value={empClassEffectiveDate} onChange={(e) => setEmpClassEffectiveDate(e.target.value)} data-testid="input-emp-class-eff-date" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !empClassEffectiveDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-emp-class-eff-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {empClassEffectiveDate ? format(parseISO(empClassEffectiveDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={empClassEffectiveDate ? parseISO(empClassEffectiveDate) : undefined}
+                        onSelect={(date) => setEmpClassEffectiveDate(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="emp-end-date">End Date</Label>
-                  <Input id="emp-end-date" type="date" value={empClassEndDate} onChange={(e) => setEmpClassEndDate(e.target.value)} data-testid="input-emp-class-end-date" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !empClassEndDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-emp-class-end-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {empClassEndDate ? format(parseISO(empClassEndDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={empClassEndDate ? parseISO(empClassEndDate) : undefined}
+                        onSelect={(date) => setEmpClassEndDate(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -956,13 +1004,57 @@ export default function CostRatesPage() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="pw-eff-date">Effective Date *</Label>
-                  <Input id="pw-eff-date" type="date" value={pwEffectiveDate} onChange={(e) => setPwEffectiveDate(e.target.value)} data-testid="input-pw-eff-date" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !pwEffectiveDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-pw-eff-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {pwEffectiveDate ? format(parseISO(pwEffectiveDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={pwEffectiveDate ? parseISO(pwEffectiveDate) : undefined}
+                        onSelect={(date) => setPwEffectiveDate(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="pw-exp-date">Expiration Date</Label>
-                  <Input id="pw-exp-date" type="date" value={pwExpirationDate} onChange={(e) => setPwExpirationDate(e.target.value)} data-testid="input-pw-exp-date" />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !pwExpirationDate && "text-muted-foreground"
+                        )}
+                        data-testid="input-pw-exp-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {pwExpirationDate ? format(parseISO(pwExpirationDate), "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={pwExpirationDate ? parseISO(pwExpirationDate) : undefined}
+                        onSelect={(date) => setPwExpirationDate(date ? format(date, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
               <div>

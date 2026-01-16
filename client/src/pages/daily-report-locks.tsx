@@ -31,9 +31,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { 
-  Lock, Unlock, Search, Shield, Calendar, Loader2, Plus, AlertTriangle, CheckCircle
+  Lock, Unlock, Search, Shield, Calendar as CalendarIcon, Loader2, Plus, AlertTriangle, CheckCircle
 } from "lucide-react";
-import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { DailyReportLock, Project } from "@shared/schema";
@@ -384,12 +387,29 @@ export default function DailyReportLocksPage() {
             </div>
             <div className="space-y-2">
               <Label>Report Date</Label>
-              <Input
-                type="date"
-                value={newLock.reportDate}
-                onChange={(e) => setNewLock({ ...newLock, reportDate: e.target.value })}
-                data-testid="input-new-lock-date"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !newLock.reportDate && "text-muted-foreground"
+                    )}
+                    data-testid="input-new-lock-date"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {newLock.reportDate ? format(parseISO(newLock.reportDate), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={newLock.reportDate ? parseISO(newLock.reportDate) : undefined}
+                    onSelect={(date) => setNewLock({ ...newLock, reportDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <Label>Lock Reason</Label>

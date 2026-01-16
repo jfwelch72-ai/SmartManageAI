@@ -20,8 +20,13 @@ import {
   ChevronDown,
   ChevronRight,
   Save,
-  Loader2
+  Loader2,
+  Calendar as CalendarIcon
 } from "lucide-react";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -298,25 +303,57 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bidDate">Bid Date</Label>
-                <Input
-                  id="bidDate"
-                  type="date"
-                  value={formData.bidDate || ""}
-                  onChange={(e) => handleChange("bidDate", e.target.value)}
-                  disabled={readOnly}
-                  data-testid="input-bid-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formData.bidDate && "text-muted-foreground"
+                      )}
+                      disabled={readOnly}
+                      data-testid="input-bid-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.bidDate ? format(parseISO(formData.bidDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={formData.bidDate ? parseISO(formData.bidDate) : undefined}
+                      onSelect={(date) => handleChange("bidDate", date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="awardDate">Award Date</Label>
-                <Input
-                  id="awardDate"
-                  type="date"
-                  value={formData.awardDate || ""}
-                  onChange={(e) => handleChange("awardDate", e.target.value)}
-                  disabled={readOnly}
-                  data-testid="input-award-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formData.awardDate && "text-muted-foreground"
+                      )}
+                      disabled={readOnly}
+                      data-testid="input-award-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.awardDate ? format(parseISO(formData.awardDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={formData.awardDate ? parseISO(formData.awardDate) : undefined}
+                      onSelect={(date) => handleChange("awardDate", date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="manpower">Manpower</Label>
@@ -331,25 +368,57 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
               </div>
               <div className="space-y-2">
                 <Label htmlFor="projectStartDate">Start Date</Label>
-                <Input
-                  id="projectStartDate"
-                  type="date"
-                  value={formData.projectStartDate || ""}
-                  onChange={(e) => handleChange("projectStartDate", e.target.value)}
-                  disabled={readOnly}
-                  data-testid="input-start-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formData.projectStartDate && "text-muted-foreground"
+                      )}
+                      disabled={readOnly}
+                      data-testid="input-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.projectStartDate ? format(parseISO(formData.projectStartDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={formData.projectStartDate ? parseISO(formData.projectStartDate) : undefined}
+                      onSelect={(date) => handleChange("projectStartDate", date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="projectCompletionDate">Completion Date</Label>
-                <Input
-                  id="projectCompletionDate"
-                  type="date"
-                  value={formData.projectCompletionDate || ""}
-                  onChange={(e) => handleChange("projectCompletionDate", e.target.value)}
-                  disabled={readOnly}
-                  data-testid="input-completion-date"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formData.projectCompletionDate && "text-muted-foreground"
+                      )}
+                      disabled={readOnly}
+                      data-testid="input-completion-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.projectCompletionDate ? format(parseISO(formData.projectCompletionDate), "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={formData.projectCompletionDate ? parseISO(formData.projectCompletionDate) : undefined}
+                      onSelect={(date) => handleChange("projectCompletionDate", date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             <div className="space-y-2">

@@ -14,10 +14,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { 
-  Users, Plus, MapPin, Star, DollarSign, Calendar, Building2,
+  Users, Plus, MapPin, Star, DollarSign, Calendar as CalendarIcon, Building2,
   HardHat, Search, BarChart3, Trash2, Edit, Phone, Mail, Globe
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 interface CrewListing {
   listing: {
@@ -458,7 +461,7 @@ function ListingDetailDialog({
             <div>
               <Label className="text-sm text-muted-foreground">Availability Window</Label>
               <p className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
+                <CalendarIcon className="h-4 w-4" />
                 {listing.listing.availableFrom && format(new Date(listing.listing.availableFrom), "MMM d, yyyy")}
                 {listing.listing.availableFrom && listing.listing.availableTo && " - "}
                 {listing.listing.availableTo && format(new Date(listing.listing.availableTo), "MMM d, yyyy")}
@@ -745,21 +748,55 @@ function CreateListingDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Available From</Label>
-              <Input
-                type="date"
-                value={availableFrom}
-                onChange={(e) => setAvailableFrom(e.target.value)}
-                data-testid="input-available-from"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !availableFrom && "text-muted-foreground"
+                    )}
+                    data-testid="input-available-from"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {availableFrom ? format(parseISO(availableFrom), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={availableFrom ? parseISO(availableFrom) : undefined}
+                    onSelect={(date) => setAvailableFrom(date ? format(date, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <Label>Available To</Label>
-              <Input
-                type="date"
-                value={availableTo}
-                onChange={(e) => setAvailableTo(e.target.value)}
-                data-testid="input-available-to"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !availableTo && "text-muted-foreground"
+                    )}
+                    data-testid="input-available-to"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {availableTo ? format(parseISO(availableTo), "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarPicker
+                    mode="single"
+                    selected={availableTo ? parseISO(availableTo) : undefined}
+                    onSelect={(date) => setAvailableTo(date ? format(date, "yyyy-MM-dd") : "")}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
