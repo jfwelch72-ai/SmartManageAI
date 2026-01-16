@@ -446,9 +446,10 @@ function CreateScoreDialog({
   const [reliability, setReliability] = useState([3]);
   const [notes, setNotes] = useState("");
 
-  const { data: projects } = useQuery<Project[]>({
+  const { data: projects = [] } = useQuery<{ data: Project[]; pagination: any }, Error, Project[]>({
     queryKey: ["/api/projects"],
     enabled: open,
+    select: (response) => response.data || [],
   });
 
   const [projectId, setProjectId] = useState("");

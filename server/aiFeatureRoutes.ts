@@ -98,7 +98,15 @@ router.post("/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ES
 
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
-    const effectiveTradeType = tradeType || org?.tradeType || "GENERAL_CONTRACTOR";
+    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
+    const validTradeTypes = [
+      "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
+      "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
+      "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
+      "SOLAR", "WATERPROOFING", "OTHER"
+    ];
+    const orgTradeType = org?.tradeType;
+    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     // Create analysis record
     const [analysis] = await db.insert(aiTakeoffAnalyses).values({
@@ -627,7 +635,15 @@ router.post("/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SU
 
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
-    const effectiveTradeType = tradeType || org?.tradeType || "GENERAL_CONTRACTOR";
+    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
+    const validTradeTypes = [
+      "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
+      "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
+      "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
+      "SOLAR", "WATERPROOFING", "OTHER"
+    ];
+    const orgTradeType = org?.tradeType;
+    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     const [batch] = await db.insert(jobsiteAnalysisBatches).values({
       organizationId,
@@ -1188,7 +1204,15 @@ router.post("/change-orders/generate", requireAuth, requireRole("ADMIN", "MANAGE
 
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
-    const effectiveTradeType = tradeType || org?.tradeType || "GENERAL_CONTRACTOR";
+    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
+    const validTradeTypes = [
+      "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
+      "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
+      "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
+      "SOLAR", "WATERPROOFING", "OTHER"
+    ];
+    const orgTradeType = org?.tradeType;
+    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     // Generate AI draft content
     const draftContent = await generateCoDraft(effectiveTradeType, linkedItems);

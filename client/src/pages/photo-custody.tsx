@@ -80,9 +80,10 @@ export default function PhotoCustodyPage() {
     enabled: !!user,
   });
 
-  const { data: projects = [] } = useQuery<Project[]>({
+  const { data: projects = [] } = useQuery<{ data: Project[]; pagination: any }, Error, Project[]>({
     queryKey: ["/api/projects"],
     enabled: !!user,
+    select: (response) => response.data || [],
   });
 
   const { data: claims = [] } = useQuery<DelayClaim[]>({

@@ -79,8 +79,9 @@ export default function Tasks() {
   });
 
   // Fetch projects for dropdown
-  const { data: projects = [] } = useQuery<Array<{ id: string; code: string; name: string }>>({
+  const { data: projects = [] } = useQuery<{ data: Array<{ id: string; code: string; name: string }>; pagination: any }, Error, Array<{ id: string; code: string; name: string }>>({
     queryKey: ["/api/projects"],
+    select: (response) => response.data || [],
   });
 
   // Fetch users for assignment dropdown
