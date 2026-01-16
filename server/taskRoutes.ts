@@ -271,6 +271,11 @@ router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Resp
 router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
+    const organizationId = req.user!.organizationId;
+    
+    if (!organizationId) {
+      return res.status(400).json({ error: "User must belong to an organization" });
+    }
 
     // Validate request body
     const schema = z.object({
@@ -280,7 +285,7 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
       category: z.enum(["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]).default("OTHER"),
       priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
       assignedToId: z.string().optional().nullable(),
-      dueDate: z.string().optional().nullable().transform(val => val ? new Date(val) : null),
+      dueDate: z.string().optional().nullable().transform(val => val ? new Date(val) : undefined),
     });
 
     const validated = schema.parse(req.body);
@@ -289,9 +294,17 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
     const [newTask] = await db
       .insert(tasks)
       .values({
-        ...validated,
+        organizationId,
+        projectId: validated.projectId || undefined,
+        title: validated.title,
+        description: validated.description || undefined,
+        category: validated.category,
+        priority: validated.priority,
+        assignedToId: validated.assignedToId || undefined,
+        dueDate: validated.dueDate,
         createdById: userId,
         status: "PENDING",
+        sourceType: "MANUAL",
       })
       .returning();
 
