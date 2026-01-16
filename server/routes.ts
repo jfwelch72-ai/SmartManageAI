@@ -1541,6 +1541,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const MAX_RETRIES = 3;
       let lastError: any = null;
       
+      // Get the user's organization ID to assign to the bid
+      const userOrgId = req.user?.organizationId;
+      
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
           const nextCode = await getNextBidCode();
@@ -1549,6 +1552,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const [newBid] = await db.insert(bids).values({
             ...validationResult.data,
             code: nextCode,
+            // Automatically assign the user's organization to the bid for proper filtering
+            gcOrganizationId: validationResult.data.gcOrganizationId || userOrgId,
           }).returning();
           res.status(201).json(newBid);
           return;
