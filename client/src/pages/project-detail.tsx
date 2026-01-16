@@ -22,7 +22,7 @@ import TMTicketsSection from "@/components/TMTicketsSection";
 import DelaysSection from "@/components/DelaysSection";
 import InspectionsSection from "@/components/InspectionsSection";
 import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
-import { Building2, MapPin, User, Phone, Mail, Calendar, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,6 +35,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -2517,7 +2519,7 @@ export default function ProjectDetailPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="schedule" data-testid="tab-schedule">
-              <Calendar className="h-4 w-4 mr-1" />
+              <CalendarIcon className="h-4 w-4 mr-1" />
               Schedule
             </TabsTrigger>
             <TabsTrigger value="delays" data-testid="tab-delays">
@@ -4865,15 +4867,27 @@ export default function ProjectDetailPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="edit-textura-draw-date">Textura Draw Date (Optional Override)</Label>
-                <Input
-                  id="edit-textura-draw-date"
-                  type="date"
-                  value={editTexturaDrawDate}
-                  onChange={(e) => setEditTexturaDrawDate(e.target.value)}
-                  placeholder="YYYY-MM-DD"
-                  data-testid="input-edit-textura-draw-date"
-                />
+                <Label>Textura Draw Date (Optional Override)</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="input-edit-textura-draw-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editTexturaDrawDate ? format(new Date(editTexturaDrawDate), "PPP") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={editTexturaDrawDate ? new Date(editTexturaDrawDate) : undefined}
+                      onSelect={(date) => setEditTexturaDrawDate(date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
                 <p className="text-xs text-muted-foreground mt-1">
                   Use this to override the recurring draw schedule for a specific month
                 </p>
