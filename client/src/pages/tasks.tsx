@@ -6,10 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter } from "lucide-react";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FormDatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
-import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -342,31 +340,11 @@ export default function Tasks() {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Due Date (Optional)</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                              data-testid="input-task-due-date"
-                            >
-                              {field.value ? format(parseISO(field.value), "PPP") : "Pick a date"}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value ? parseISO(field.value) : undefined}
-                            onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
+                      <FormDatePicker
+                        field={field}
+                        placeholder="Pick a date"
+                        data-testid="input-task-due-date"
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
@@ -587,7 +565,7 @@ export default function Tasks() {
                   )}
                   {task.dueDate && (
                     <div className="flex items-center gap-1" data-testid={`task-due-date-${task.id}`}>
-                      <Calendar className="h-3 w-3" />
+                      <CalendarIcon className="h-3 w-3" />
                       {new Date(task.dueDate).toLocaleDateString()}
                     </div>
                   )}

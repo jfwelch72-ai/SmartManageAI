@@ -19,8 +19,7 @@ import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/h
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format, isAfter, isBefore, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, parseISO } from "date-fns";
-import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FormDatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { Calendar as CalendarIcon } from "lucide-react";
 import type { Bid, CrmOrganisation, CrmContact, SelectUser } from "@shared/schema";
@@ -598,31 +597,12 @@ export default function BidsPage() {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Due Date</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                              )}
-                              data-testid="input-bid-due-date"
-                            >
-                              {field.value ? format(field.value instanceof Date ? field.value : new Date(field.value), "PPP") : "Pick a date"}
-                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <CalendarPicker
-                            mode="single"
-                            selected={field.value instanceof Date ? field.value : field.value ? new Date(field.value) : undefined}
-                            onSelect={(date) => field.onChange(date)}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
+                      <FormDatePicker
+                        field={field}
+                        placeholder="Pick a date"
+                        outputFormat="date"
+                        data-testid="input-bid-due-date"
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
