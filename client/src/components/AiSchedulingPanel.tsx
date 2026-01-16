@@ -481,7 +481,7 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
                   <CalendarPicker
                     mode="single"
                     selected={startDate ? parseISO(startDate) : undefined}
-                    onSelect={(date) => setStartDate(date ? format(date, "yyyy-MM-dd") : "")}
+                    onSelect={(date) => date && setStartDate(format(date, "yyyy-MM-dd"))}
                     initialFocus
                   />
                 </PopoverContent>

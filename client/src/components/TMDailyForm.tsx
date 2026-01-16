@@ -85,7 +85,7 @@ const TMDailyForm = forwardRef<TMDailyFormRef, TMDailyFormProps>(({ projectName,
                   <CalendarPicker
                     mode="single"
                     selected={date ? parseISO(date) : undefined}
-                    onSelect={(d) => setDate(d ? format(d, "yyyy-MM-dd") : "")}
+                    onSelect={(d) => d && setDate(format(d, "yyyy-MM-dd"))}
                     initialFocus
                   />
                 </PopoverContent>

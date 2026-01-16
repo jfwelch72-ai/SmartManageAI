@@ -417,7 +417,7 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
                   <CalendarPicker
                     mode="single"
                     selected={usageDate ? parseISO(usageDate) : undefined}
-                    onSelect={(date) => setUsageDate(date ? format(date, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"))}
+                    onSelect={(date) => date && setUsageDate(format(date, "yyyy-MM-dd"))}
                     initialFocus
                   />
                 </PopoverContent>

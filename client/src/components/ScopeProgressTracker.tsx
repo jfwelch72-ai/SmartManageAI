@@ -554,7 +554,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
                     <CalendarPicker
                       mode="single"
                       selected={workDate ? parseISO(workDate) : undefined}
-                      onSelect={(date) => setWorkDate(date ? format(date, "yyyy-MM-dd") : "")}
+                      onSelect={(date) => date && setWorkDate(format(date, "yyyy-MM-dd"))}
                       initialFocus
                     />
                   </PopoverContent>
