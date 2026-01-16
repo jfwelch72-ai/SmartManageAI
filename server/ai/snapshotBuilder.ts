@@ -264,7 +264,7 @@ export interface DataSnapshot {
     total_claims: number;
     claims_by_status: {
       draft: number;
-      pending_review: number;
+      under_review: number;
       approved: number;
       rejected: number;
       submitted: number;
@@ -273,7 +273,7 @@ export interface DataSnapshot {
     total_claimed_amount: number;
     recent_claims: {
       project_id: string;
-      delay_type: string;
+      claim_type: string;
       claimed_days: number;
       claimed_amount: number;
       status: string;
@@ -1035,7 +1035,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
 
   // Get projects at risk (any materials over 90%)
   const projectsAtRisk: { project_code: string; project_name: string; items_at_risk: number; budgeted_cost: number; actual_cost: number; variance_percent: number }[] = [];
-  for (const [projectId, data] of materialByProject.entries()) {
+  for (const [projectId, data] of Array.from(materialByProject.entries())) {
     if (data.atRisk > 0) {
       const project = activeProjects.find(p => p.code === projectIdToCode.get(projectId)) || 
                       { code: projectIdToCode.get(projectId) || projectId, name: "Unknown Project" };
@@ -1090,23 +1090,23 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
 
   const delayClaimsByStatus = {
     draft: allDelayClaims.filter(c => c.status === 'DRAFT').length,
-    pending_review: allDelayClaims.filter(c => c.status === 'PENDING_REVIEW').length,
+    under_review: allDelayClaims.filter(c => c.status === 'UNDER_REVIEW').length,
     approved: allDelayClaims.filter(c => c.status === 'APPROVED').length,
     rejected: allDelayClaims.filter(c => c.status === 'REJECTED').length,
     submitted: allDelayClaims.filter(c => c.status === 'SUBMITTED').length,
   };
 
-  const totalClaimedDays = allDelayClaims.reduce((sum, c) => sum + Number(c.claimedDays || 0), 0);
-  const totalClaimedAmount = allDelayClaims.reduce((sum, c) => sum + Number(c.claimedAmount || 0), 0);
+  const totalClaimedDays = allDelayClaims.reduce((sum, c) => sum + Number(c.daysRequested || 0), 0);
+  const totalClaimedAmount = allDelayClaims.reduce((sum, c) => sum + Number(c.costRequested || 0), 0);
 
   const recentDelayClaims = allDelayClaims
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 10)
     .map(c => ({
       project_id: c.projectId,
-      delay_type: c.delayType,
-      claimed_days: Number(c.claimedDays || 0),
-      claimed_amount: Number(c.claimedAmount || 0),
+      claim_type: c.claimType,
+      claimed_days: Number(c.daysRequested || 0),
+      claimed_amount: Number(c.costRequested || 0),
       status: c.status,
     }));
 
@@ -1139,7 +1139,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
   const [pendingSyncCount] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(offlineSyncQueue)
-    .where(eq(offlineSyncQueue.syncStatus, 'PENDING'));
+    .where(eq(offlineSyncQueue.status, 'PENDING'));
 
   const recentIssues = await db
     .select({
@@ -1169,7 +1169,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .from(crewMarketplace)
     .limit(500);
 
-  const activeListings = allCrewListings.filter(l => l.status === 'ACTIVE').length;
+  const activeListings = allCrewListings.filter(l => l.availabilityStatus === 'AVAILABLE').length;
 
   // Pricebook status
   const [pricebooksCount] = await db
@@ -1324,8 +1324,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       issue_captures_count: issueCapturesCount?.count || 0,
       pending_sync_items: pendingSyncCount?.count || 0,
       recent_issues: recentIssues.map(i => ({
-        project_id: i.projectId,
-        category: i.category,
+        project_id: i.projectId || 'unknown',
+        category: i.category || 'uncategorized',
         severity: i.severity,
         status: i.status,
       })),
