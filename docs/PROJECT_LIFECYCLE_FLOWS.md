@@ -42,9 +42,14 @@ Step 2: Develop Estimate
 ├── Endpoints:
 │   ├── POST /api/estimates/:id/line-items
 │   ├── PUT /api/estimates/:id/line-items/:lineItemId
-│   └── GET /api/estimates/production-rates/suggestions
+│   ├── GET /api/estimates/production-rates/suggestions
+│   └── GET /api/estimates/production-rates/by-sow-item/:sowItemId (historical rates)
 ├── Tables: estimates, estimateLineItems
-└── Output: Complete estimate with pricing
+├── SOW Tracking: When adding line items via "Guided Selection" mode in the
+│   HierarchicalLineItemBuilder, the organizationSowItemId is captured and
+│   stored with the line item. This enables cross-project production rate
+│   aggregation for future bids using the same scope of work items.
+└── Output: Complete estimate with pricing and SOW item links
 
 Step 3: Perform Takeoff (if plans available)
 ├── Actor: Estimator
@@ -120,8 +125,11 @@ Step 8: Convert to Project (if won)
 │   ├── Assign superintendent
 │   └── System creates project from bid data
 ├── Endpoint: POST /api/bids/:code/convert
-├── Tables: projects (new), bids (linked)
-└── Output: New project created, estimate copied
+├── Tables: projects (new), bids (linked), scopeItems (created from estimate)
+├── SOW Tracking: During conversion, estimateLineItems with organizationSowItemId
+│   are copied to scopeItems, preserving the organizationSowItemId link. This
+│   maintains the chain: estimateLineItems → scopeItems for production tracking.
+└── Output: New project created, estimate copied, scope items with SOW links
 ```
 
 ---
@@ -268,7 +276,11 @@ Step 4: Quantity Progress Entry
 │   └── Add progress notes
 ├── Endpoints: POST /api/projects/:code/daily-progress
 ├── Table: dailyScopeProgress
-└── Output: Progress recorded, production rates captured
+├── SOW Tracking: When creating a daily progress entry, the organizationSowItemId
+│   is automatically inherited from the parent scopeItem. This completes the
+│   tracking chain: estimateLineItems → scopeItems → dailyScopeProgress, enabling
+│   accurate production rate aggregation across all projects using the same SOW item.
+└── Output: Progress recorded, production rates captured with SOW item link
 
 Step 5: Clock Out
 ├── Actor: Field Worker
@@ -655,3 +667,71 @@ Step 7: Post-Project Analysis
 | Delays | projectDelays, delayNotifications, delayClaims |
 | T&M | tmTickets, tmTicketLaborEntries, tmTicketEquipmentEntries, tmTicketMaterialEntries |
 | Closeout | projectInspections, SoV records, tasks |
+
+---
+
+## Unified SOW Tracking System
+
+### Purpose
+The Unified SOW (Scope of Work) Tracking System ensures that scope items remain consistently linked across the entire project lifecycle, enabling accurate cross-project production rate aggregation for future bids.
+
+### The Tracking Chain
+
+```
+organizationSowItems (Master Scope Library)
+         │
+         ▼ organizationSowItemId
+┌─────────────────────────────────────────────────────────┐
+│ estimateLineItems                                       │
+│ - Created during bid estimation                         │
+│ - organizationSowItemId captured via HierarchicalLine   │
+│   ItemBuilder "Guided Selection" mode                   │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼ Bid-to-Project Conversion (propagates link)
+┌─────────────────────────────────────────────────────────┐
+│ scopeItems                                              │
+│ - Created during project conversion                     │
+│ - organizationSowItemId inherited from estimate         │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼ Daily Progress Entry (inherits link)
+┌─────────────────────────────────────────────────────────┐
+│ dailyScopeProgress                                      │
+│ - Created during daily quantity tracking                │
+│ - organizationSowItemId inherited from scopeItem        │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼ Production Rate Aggregation
+┌─────────────────────────────────────────────────────────┐
+│ Production Rate Analysis                                │
+│ - Aggregates all dailyScopeProgress entries             │
+│   with same organizationSowItemId across ALL projects   │
+│ - Provides historical productivity data for future bids │
+└─────────────────────────────────────────────────────────┘
+```
+
+### API Endpoint
+
+**GET /api/estimates/production-rates/by-sow-item/:sowItemId**
+
+Returns aggregated production rate data for a specific scope of work item across all projects.
+
+**Query Parameters:**
+- `organizationId` (required for super-admin, otherwise uses user's org)
+
+**Response:**
+```json
+{
+  "sowItemId": "uuid",
+  "dataPoints": 15,
+  "avgLaborHoursPerUnit": 2.5,
+  "avgLaborCostPerUnit": 75.00,
+  "avgMaterialCostPerUnit": 45.00,
+  "avgTotalCostPerUnit": 120.00,
+  "confidence": "HIGH"
+}
+```
+
+### Backward Compatibility
+All `organizationSowItemId` fields are nullable to maintain compatibility with existing data created before this feature was implemented. New estimates using "Guided Selection" will automatically capture the SOW item link.

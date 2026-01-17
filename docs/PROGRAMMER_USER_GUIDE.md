@@ -61,6 +61,9 @@ If any piece is missing or wrong, the company can't know if they're making money
 | No scope items on project | Can't track progress or production rates |
 | No approval on time entry | Payroll reports incomplete |
 | No quantities on materials | Can't calculate cost per unit |
+| No organizationSowItemId on estimate line item | Can't aggregate production rates across projects |
+| organizationSowItemId not propagated to scope item | Breaks the SOW tracking chain (estimate → project) |
+| organizationSowItemId not inherited by daily progress | Historical production data disconnected from master SOW item |
 
 ---
 
@@ -613,6 +616,39 @@ Signed by: John Smith (GC Rep)
 **Result:** Historical data not available for future estimates
 
 **Fix:** On shift approval, capture (quantity / labor hours) for scope items worked.
+
+---
+
+### 11. Breaking the SOW Tracking Chain
+
+**Mistake:** Not propagating `organizationSowItemId` through the data flow
+
+**Result:** Production rates can't be aggregated across projects for accurate bidding
+
+**The SOW Tracking Chain:**
+```
+organizationSowItems (Master Library)
+        │
+        ▼ Must capture organizationSowItemId
+estimateLineItems (Bid Phase)
+        │
+        ▼ Must propagate on bid-to-project conversion
+scopeItems (Project Phase)
+        │
+        ▼ Must inherit when creating daily progress
+dailyScopeProgress (Execution Phase)
+        │
+        ▼ Enables aggregation
+Production Rate Analysis (All projects with same SOW item)
+```
+
+**Critical Code Paths:**
+1. `HierarchicalLineItemBuilder.tsx` - Must include `organizationSowItemId` in selection callback
+2. `bid-estimate.tsx` - Must pass `organizationSowItemId` to line item creation
+3. `routes.ts` (bid-to-project conversion) - Must copy `organizationSowItemId` to scopeItems
+4. `routes.ts` (daily progress) - Must inherit `organizationSowItemId` from parent scopeItem
+
+**Test by:** Create estimate with scope library item → Convert to project → Log daily progress → Query `/api/estimates/production-rates/by-sow-item/:sowItemId` → Should return aggregated data
 
 ---
 

@@ -47,7 +47,8 @@ The platform serves:
 14. [Website Builder](#14-website-builder)
 15. [Bid Network](#15-bid-network)
 16. [Platform Administration](#16-platform-administration)
-17. [Appendices](#appendices)
+17. [Unified SOW Tracking System](#17-unified-sow-tracking-system)
+18. [Appendices](#appendices)
 
 ---
 
@@ -320,6 +321,7 @@ In construction, companies "bid" on projects by submitting price proposals. The 
 | laborRate | decimal | $/hour |
 | materialCost | decimal | Material $ |
 | markupPercent | decimal | Profit markup |
+| organizationSowItemId | varchar (nullable) | Links to master SOW item for production rate tracking |
 
 ### Takeoff System
 Interactive drawing tools for measuring quantities from PDF plans:
@@ -862,6 +864,88 @@ Platform-level management:
 **Backend:** `server/platformAdminRoutes.ts`, `server/auditLogger.ts`
 
 **Status:** ✅ Working end-to-end
+
+---
+
+## 17. Unified SOW Tracking System
+
+### Purpose
+The Unified SOW (Scope of Work) Tracking System ensures that scope items remain consistently linked across the entire project lifecycle, enabling accurate cross-project production rate aggregation for future bids.
+
+### Why This Matters
+When bidding on new work, estimators need historical production rate data to create accurate estimates. The challenge is that the same type of work (e.g., "Pour 4-inch concrete slab") may be tracked under different descriptions across projects. By linking to a master SOW item, the system can aggregate production data across all projects that performed the same work.
+
+### Data Model
+
+**Table: `organizationSowItems`** (Master Scope Library)
+| Field | Type | Purpose |
+|-------|------|---------|
+| id | varchar | Primary key |
+| organizationId | varchar | Owning organization |
+| description | text | Scope item description |
+| unitOfMeasure | text | Unit (SF, LF, EA, etc.) |
+| category | text | Work category |
+
+**Linked Tables:**
+| Table | Field | Purpose |
+|-------|-------|---------|
+| estimateLineItems | organizationSowItemId | Links estimate to master SOW item |
+| scopeItems | organizationSowItemId | Links project scope to master SOW item |
+| dailyScopeProgress | organizationSowItemId | Links daily progress to master SOW item |
+
+### The Tracking Chain
+
+```
+1. ESTIMATING (Bid Phase)
+   └── Estimator selects scope item from library
+   └── estimateLineItem.organizationSowItemId = selected item
+
+2. BID-TO-PROJECT CONVERSION (Award Phase)
+   └── System copies estimate line items to project scope items
+   └── scopeItem.organizationSowItemId = estimateLineItem.organizationSowItemId
+
+3. DAILY PROGRESS TRACKING (Execution Phase)
+   └── Superintendent logs daily quantities
+   └── dailyScopeProgress.organizationSowItemId = scopeItem.organizationSowItemId
+
+4. PRODUCTION RATE AGGREGATION (Analysis)
+   └── Query all dailyScopeProgress records with same organizationSowItemId
+   └── Calculate average labor hours, costs, profitability per unit
+   └── Provide to estimators for future bids
+```
+
+### API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | /api/estimates/production-rates/by-sow-item/:sowItemId | Get historical production rates for a SOW item |
+
+**Query Parameters:**
+- `organizationId` - Required for super-admin, otherwise uses user's organization
+
+**Response:**
+```json
+{
+  "sowItemId": "uuid",
+  "dataPoints": 15,
+  "avgLaborHoursPerUnit": 2.5,
+  "avgLaborCostPerUnit": 75.00,
+  "avgMaterialCostPerUnit": 45.00,
+  "avgTotalCostPerUnit": 120.00,
+  "confidence": "HIGH"
+}
+```
+
+### Frontend Integration
+The `HierarchicalLineItemBuilder` component (used in bid-estimate.tsx) captures the `organizationSowItemId` when users select items via "Guided Selection" mode.
+
+### Backward Compatibility
+All `organizationSowItemId` fields are nullable, maintaining compatibility with existing data. Only new estimates using "Guided Selection" will have SOW links.
+
+**Frontend:** `client/src/components/HierarchicalLineItemBuilder.tsx`, `client/src/pages/bid-estimate.tsx`  
+**Backend:** `server/productionRateService.ts`, `server/estimateRoutes.ts`
+
+**Status:** ✅ Working end-to-end (Added January 2026)
 
 ---
 

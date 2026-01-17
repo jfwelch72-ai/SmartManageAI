@@ -427,3 +427,31 @@ await logCreate("projects", projectId, userId, orgId, projectData);
 
 ### 5. Type Safety
 Shared types between frontend and backend via `shared/schema.ts`.
+
+### 6. Unified SOW Tracking
+Cross-project scope of work item linking for production rate aggregation:
+
+**Foreign Keys Added (January 2026):**
+| Table | Column | References | Purpose |
+|-------|--------|------------|---------|
+| estimateLineItems | organizationSowItemId | organizationSowItems.id | Links estimate line item to master SOW item |
+| scopeItems | organizationSowItemId | organizationSowItems.id | Links project scope item to master SOW item |
+| dailyScopeProgress | organizationSowItemId | organizationSowItems.id | Links daily progress to master SOW item |
+
+**Indexes:**
+- `estimate_line_items_org_sow_item_idx` on estimateLineItems.organizationSowItemId
+- `scope_items_org_sow_item_idx` on scopeItems.organizationSowItemId
+- `daily_scope_progress_org_sow_item_idx` on dailyScopeProgress.organizationSowItemId
+
+**Data Flow:**
+```
+organizationSowItems → estimateLineItems → scopeItems → dailyScopeProgress
+                                                              │
+                                                              ▼
+                                            Production Rate Aggregation
+                                            (by organizationSowItemId)
+```
+
+**Key Service:**
+- `server/productionRateService.ts` - Contains `getProductionRateBySowItemId()` for historical rate lookup
+- API: `GET /api/estimates/production-rates/by-sow-item/:sowItemId`
