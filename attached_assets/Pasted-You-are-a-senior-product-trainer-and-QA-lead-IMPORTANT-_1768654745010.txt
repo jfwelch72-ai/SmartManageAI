@@ -1,0 +1,154 @@
+You are a senior product trainer and QA lead.
+
+IMPORTANT CONTEXT:
+A documentation bundle already exists for this project and was generated in the prior step.
+It includes files such as:
+- SYSTEM_FEATURE_BIBLE.md
+- FEATURE_MATRIX.csv
+- ARCHITECTURE_MAP.md
+- AUTOMATIONS_AND_EVENTS.md
+- PROJECT_LIFECYCLE_FLOWS.md
+…all saved under the existing documentation directory (the same .doc / docs container already in the repo).
+
+YOUR TASK:
+Generate a **PROGRAMMER-FACING USER & TESTING GUIDE** and SAVE IT INSIDE THE SAME DOCUMENTATION LOCATION as the previously generated files.
+❗ DO NOT create a new docs folder or parallel directory.
+❗ Use the SAME root documentation directory already in use.
+
+────────────────────────────────────
+FILES TO CREATE (IN SAME LOCATION)
+────────────────────────────────────
+
+1) PROGRAMMER_USER_GUIDE.md
+2) CONSTRUCTION_TERMS_FOR_DEVS.md
+3) FEATURE_TESTING_PLAYBOOK.md
+4) ROLE_BASED_TEST_SCENARIOS.md
+
+These must live alongside the previously generated documentation files.
+
+────────────────────────────────────
+AUDIENCE
+────────────────────────────────────
+- Programmers
+- QA testers
+- Product engineers
+- ZERO construction background
+- Must test features accurately without meetings with the founder
+
+────────────────────────────────────
+FILE 1 — PROGRAMMER_USER_GUIDE.md
+────────────────────────────────────
+
+Write this as a **step-by-step operating manual** for developers.
+
+Include:
+
+SECTION 1 — What This App Does (Plain English)
+- What contractors do day-to-day
+- Why estimates → jobs → time → costs → billing must connect
+- What breaks when data is missing
+
+SECTION 2 — Mental Model
+Explain the hierarchy:
+Organization → Projects → Estimates → Budgets → Schedule → Daily Work → Costs → Billing
+
+SECTION 3 — Core Modules & Expectations
+For each module:
+- What the user THINKS they’re doing
+- What must exist first
+- What should update after saving
+
+Modules must include:
+CRM, Estimating, Project Setup, Timeclock, Daily Reports, Materials, Equipment, Budgeting, Delays, T&M, Photos, AI Modules
+
+SECTION 4 — “Real Enough” Test Data Examples
+Provide realistic sample inputs:
+- Project names
+- Quantities
+- Labor hours
+- Equipment usage
+- Delays
+- Daily reports
+
+SECTION 5 — What Correct Behavior Looks Like
+Explain downstream updates and notifications.
+
+SECTION 6 — Common Programmer Mistakes
+Explain why certain missing data causes failures.
+
+────────────────────────────────────
+FILE 2 — CONSTRUCTION_TERMS_FOR_DEVS.md
+────────────────────────────────────
+
+Create a glossary:
+TERM | PLAIN ENGLISH | WHY IT EXISTS IN SOFTWARE | WHAT BREAKS IF WRONG
+
+Must include (and expand if present):
+Estimate, Cost Code, Production Rate, Schedule of Values (SoV),
+Time & Material (T&M), Daily Report, Delay, Change Order, Punchlist,
+Subcontractor, General Contractor (GC), Owner, Crew, Superintendent,
+Project Manager, Quantity Installed, Budget vs Actual, Committed Cost,
+Equipment Utilization, Rent vs Buy, Closeout
+
+────────────────────────────────────
+FILE 3 — FEATURE_TESTING_PLAYBOOK.md
+────────────────────────────────────
+
+For EACH major feature:
+
+- Purpose
+- Who uses it
+- Preconditions
+- Step-by-step testing steps
+- Expected results
+- Automations triggered
+- Common failure modes
+- How to tell if it’s broken
+
+You MUST include:
+Timeclock, Estimating, Project Creation, Daily Reports,
+Materials Auto-Alerts, Delay Creation & Escalation,
+Equipment Maintenance, Rent vs Buy Logic,
+AI PM / AI Scheduler / AI CFO,
+Production Rate Generation, SoV Creation,
+Photo Upload + AI Analysis,
+Messaging, Notifications
+
+────────────────────────────────────
+FILE 4 — ROLE_BASED_TEST_SCENARIOS.md
+────────────────────────────────────
+
+Create role-play testing scenarios:
+
+Scenario 1 — Estimator → PM → Superintendent Flow  
+Scenario 2 — Hourly Worker Timeclock  
+Scenario 3 — Delay Occurs + GC Response Missing  
+Scenario 4 — Equipment Overused → Replacement Trigger  
+Scenario 5 — T&M Ticket → Invoice  
+Scenario 6 — AI Auto-Assigns Tasks  
+Scenario 7 — Project Goes Over Budget  
+
+Each scenario must include:
+- Who logs in
+- What they click
+- What data they enter
+- What happens automatically
+- What to verify
+
+────────────────────────────────────
+FINAL REQUIREMENTS
+────────────────────────────────────
+
+- Save all files in the SAME documentation directory as the prior system docs
+- Cross-reference existing docs where relevant
+- Label unimplemented features clearly
+- Use examples everywhere
+- Write for engineers, not contractors
+- Do NOT modify production code
+
+At the end, output:
+- Confirmation of files created
+- Which directory they were saved in
+- Top 10 testing risk areas
+
+Begin.
