@@ -1,0 +1,151 @@
+You are a senior technical writer + solutions architect for a multi-tenant construction management suite. 
+Your job is to generate a COMPLETE “System Feature Bible” that explains every feature implemented in THIS codebase, where it lives, how it works, how accounts/roles interact, and the current state of functionality (working/partial/stubbed/todo).
+
+CRITICAL RULES:
+1) Do NOT refactor or change any production code. 
+2) You MAY add new documentation files only (markdown), and you MAY add a small read-only “doc inventory” script if needed (optional) that outputs route/schema/module lists WITHOUT changing app behavior.
+3) All claims must be grounded in the repository contents. If something is referenced in UI copy but not implemented, mark it “Planned / Not Implemented”.
+4) Be extremely thorough. This is for non-construction programmers to fully understand the domain and system flows.
+
+OUTPUT REQUIREMENTS:
+Create the following files in /docs (create folder if missing):
+
+A) /docs/SYSTEM_FEATURE_BIBLE.md  (the main file, extremely thorough)
+B) /docs/FEATURE_MATRIX.csv       (feature-by-feature matrix with status + ownership)
+C) /docs/ARCHITECTURE_MAP.md      (high-level architecture + module map)
+D) /docs/ACCOUNT_ROLES_RBAC.md    (roles, permissions, org scoping, data boundaries)
+E) /docs/AUTOMATIONS_AND_EVENTS.md (all automations, triggers, notifications, background jobs)
+F) /docs/PROJECT_LIFECYCLE_FLOWS.md (bid → award → setup → execution → closeout flows)
+G) /docs/AI_CAPABILITIES.md       (all AI features, prompts, inputs/outputs, guardrails)
+
+If repo already has some docs, DO NOT delete them; incorporate and cross-link.
+
+PHASE 1 — REPO DISCOVERY (READ-ONLY)
+1) Identify:
+   - Backend entrypoints, route registration, controllers/services
+   - DB layer (schema definitions, migrations, ORM models)
+   - Frontend page routes, components, state mgmt
+   - Auth/session, org scoping, RBAC/permissions
+   - Any background workers/queues/cron/schedulers
+   - Any webhook integrations (email, calendar, payments, weather, maps, storage)
+   - File upload/storage modules (photos, docs, plans)
+   - Messaging/notifications modules
+   - Estimating/takeoff modules
+   - Timeclock/time tracking modules
+   - Equipment/rental tracking modules
+   - Budgeting/CFO modules
+   - CRM/website modules
+   - Vendor catalog/network modules
+   - AI modules (assistant, onboarding wizard, estimators, schedulers, CFO, PM)
+
+2) Produce an “inventory list” inside SYSTEM_FEATURE_BIBLE.md appendix:
+   - All backend routes (method + path + file)
+   - All DB tables/entities (table + purpose + key fields + relations)
+   - All major frontend pages (route + file)
+   - All scheduled/background processes (what triggers, where defined)
+
+PHASE 2 — FEATURE EXTRACTION (COMPREHENSIVE)
+You MUST document, at minimum, all of these feature areas if present (and if not present, explicitly mark as missing/planned):
+- Multi-tenant org model: organizations, projects, users, roles, cross-org “hustler multi-business” patterns if present
+- Authentication: login, sessions, dev login buttons, impersonation/super admin if present
+- Timeclock: clock-in/out, job cost codes, GPS/geofence if present, approvals, edits, overtime rules if present
+- Calendar requests: PTO/time-off, scheduling requests, approvals, conflict handling, calendar sync if present
+- Estimating: estimate creation, line items, assemblies, production rates, markup, tax, labor burden, export (PDF/SoV)
+- Takeoff: plan upload, measurement tools, Bluebeam/Stack-like workflows, or placeholder integration points
+- Project management: project setup, milestones, tasks, assignments, submittals, RFIs, change orders if present
+- Delay tracking: delay logs, delay letters/emails, responsible party, required follow-ups, escalation reminders
+- Time & material (T&M): tickets, signatures, daily work logs, T&M invoice generation if present
+- Daily progress tracking: superintendent daily report, quantities installed, manpower, equipment, photos, notes
+- Materials ordering automation: low-quantity alerts, procurement workflow, vendor linkage, approvals
+- Budget tracking / job costing: committed cost vs actual, cost codes, variance reporting, earned value if present
+- Equipment tracking: owned equipment, maintenance schedules, work orders, repair cost, replacement logic
+- Rent vs buy analysis: rental logs, utilization, break-even calculators, decision thresholds
+- Website module: site generation, hosting, blog, gallery, SEO, analytics, social linking, AI post generator if present
+- CRM: leads, pipelines, contacts, companies, activities, follow-ups, email templates, integrations
+- Vendor catalog: uploads, preferred vendors, pricing sheets, links, procurement associations
+- Contractor networks: subcontractor directory, invites, onboarding, compliance docs, COI tracking
+- Bid submission: subcontractor bid invites, submissions, leveling/comparison, award workflow
+- Internal messaging: org/project channels, DMs, file shares, mentions, notifications
+- AI features (PM/CFO/Scheduler/Estimator/Onboarding): what each does, data it reads, actions it can take
+- Weather tracking: project-location weather feed, alerts impacting schedule, daily logs
+- AI-driven task assignment: triggers, priority scoring, routing to roles, audit logs
+- Production rate creation: derived from historical logs/quantities; how rates are stored and used in estimating
+- Schedule of Values (SoV): creation, line mapping, percent complete, billing periods, lien waiver flow if present
+- Photo upload + analysis: storage location, metadata, tagging, AI analysis results, links to daily reports
+
+PHASE 3 — “WHERE IT LIVES” MAPPING (MANDATORY)
+For EVERY feature you document, you must include:
+1) What it does (user-facing)
+2) Primary users/roles
+3) Data model (tables/entities + key fields)
+4) Backend endpoints involved (routes)
+5) Frontend screens/components involved
+6) Events/automations/notifications triggered
+7) Permissions/RBAC requirements
+8) Current functionality status:
+   - ✅ Working end-to-end
+   - 🟡 Partially implemented
+   - 🔴 Stub / not implemented / UI only
+   - ⚠️ Needs verification (if unclear)
+9) Known edge cases & failure modes
+10) Logs/audit trails (where to check)
+11) Configuration/env vars (if needed)
+
+PHASE 4 — CRITICAL LIFECYCLE FLOWS (DEEP DETAIL)
+In /docs/PROJECT_LIFECYCLE_FLOWS.md, write step-by-step flows with “who does what” and “what happens in the system”:
+Flow 1: Lead → Estimate → Proposal → Award
+Flow 2: Award → Project Setup → Assign Team → Schedule Baseline
+Flow 3: Daily Execution → Timeclock → Daily Report → Quantities → Budget Updates
+Flow 4: Materials Needed → Auto Alerts → PO/Order → Delivery → Inventory/Installed Quantities
+Flow 5: Delay Occurs → Delay Log → Delay Notice/Email → Alert Until Response Uploaded → Schedule/Budget Impact
+Flow 6: T&M Work → Ticket → Approval → Invoice
+Flow 7: Closeout → Punchlist → Final Billing → Archive
+
+Each flow must reference actual screens/endpoints/tables from the repo.
+
+PHASE 5 — AUTOMATIONS & EVENTS (DEEP DETAIL)
+In /docs/AUTOMATIONS_AND_EVENTS.md, list every automation:
+- Trigger (user action / schedule / webhook)
+- Condition logic
+- Actions performed
+- Notifications sent (who, channel, escalation)
+- Source code location
+- Failure handling / retries
+- Audit trail references
+
+Include: reminders for missing GC delay responses, ordering alerts, task escalations, daily report reminders, maintenance reminders, etc—IF present.
+
+PHASE 6 — FEATURE MATRIX CSV
+Create /docs/FEATURE_MATRIX.csv with columns:
+Feature Area, Feature Name, Description, Primary Roles, Frontend Path(s), Backend Route(s), Tables/Entities, Automations/Events, Status, Owner Module/Folder, Notes/TODO
+
+PHASE 7 — FINAL “SYSTEM_FEATURE_BIBLE” STRUCTURE
+SYSTEM_FEATURE_BIBLE.md must include:
+- Executive overview (what the platform is)
+- Tenant/org model & account types
+- Role glossary (super admin, org admin, PM, superintendent, estimator, foreman, accountant/CFO, vendor/sub, client/GC if present)
+- Complete feature chapters (one chapter per feature area, extremely thorough)
+- Communication map: how accounts interact and how data flows between them (org scoped, project scoped, cross-user)
+- Notification/alert map
+- Appendix A: backend route inventory
+- Appendix B: DB entity inventory
+- Appendix C: frontend page inventory
+- Appendix D: environment/config inventory
+
+QUALITY BAR:
+Write it so a programmer with ZERO construction background can understand:
+- What a Schedule of Values is and why it matters
+- What T&M tickets are
+- Why daily reports matter
+- How cost codes + quantities drive job costing
+- How delays impact schedule + notices
+
+But keep it technical: always link to code locations and data structures.
+
+DELIVERABLE:
+When finished, print a short summary in the console:
+- Files created
+- Any major gaps you discovered
+- Top 10 “needs verification” items
+
+Now perform the work.
