@@ -460,6 +460,167 @@ export async function getProductionRateSuggestions(
   return allRates.slice(0, limit);
 }
 
+// Get production rate for a specific organizationSowItemId (Unified SOW Tracking)
+// This provides more reliable cross-project aggregation than description matching
+export async function getProductionRateBySowItemId(
+  organizationSowItemId: string,
+  organizationId: string,
+  options?: { minQuantity?: number; maxQuantity?: number }
+): Promise<ProductionRateStats | null> {
+  if (!organizationSowItemId || organizationSowItemId.trim() === '') {
+    return null;
+  }
+  
+  if (!organizationId || organizationId.trim() === '') {
+    throw new OrganizationRequiredError("getProductionRateBySowItemId requires a valid organizationId");
+  }
+  
+  const conditions: any[] = [
+    eq(dailyScopeProgress.organizationSowItemId, organizationSowItemId),
+    eq(projects.gcOrganizationId, organizationId),
+    isNotNull(dailyScopeProgress.quantityCompleted),
+  ];
+  
+  if (options?.minQuantity !== undefined) {
+    conditions.push(gte(sql`CAST(${scopeItems.totalQuantity} AS NUMERIC)`, options.minQuantity));
+  }
+  if (options?.maxQuantity !== undefined && options.maxQuantity !== Infinity) {
+    conditions.push(lte(sql`CAST(${scopeItems.totalQuantity} AS NUMERIC)`, options.maxQuantity));
+  }
+  
+  const results = await db
+    .select({
+      description: scopeItems.description,
+      unit: scopeItems.unit,
+      workDate: dailyScopeProgress.workDate,
+      quantityCompleted: dailyScopeProgress.quantityCompleted,
+      laborHours: dailyScopeProgress.laborHours,
+      laborCost: dailyScopeProgress.laborCost,
+      materialCost: dailyScopeProgress.materialCost,
+      equipmentCost: dailyScopeProgress.equipmentCost,
+      crewSize: dailyScopeProgress.crewSize,
+      projectCode: projects.code,
+      unitPrice: scopeItems.unitPrice,
+    })
+    .from(dailyScopeProgress)
+    .innerJoin(scopeItems, eq(dailyScopeProgress.scopeItemId, scopeItems.id))
+    .innerJoin(projects, eq(dailyScopeProgress.projectId, projects.id))
+    .where(and(...conditions));
+  
+  if (results.length === 0) {
+    return null;
+  }
+  
+  const description = results[0].description;
+  const unit = results[0].unit;
+  
+  // Process and aggregate the results using the same logic as getProductionRateForSOW
+  const dailyQuantities: number[] = [];
+  const crewSizes: number[] = [];
+  let totalLaborHours = 0;
+  let totalLaborCost = 0;
+  let totalMaterialCost = 0;
+  let totalEquipmentCost = 0;
+  let totalQuantity = 0;
+  let totalRevenue = 0;
+  const projectSet = new Set<string>();
+  
+  for (const row of results) {
+    const qty = parseFloat(row.quantityCompleted);
+    if (qty > 0) {
+      dailyQuantities.push(qty);
+      totalQuantity += qty;
+      projectSet.add(row.projectCode);
+      
+      if (row.laborHours) totalLaborHours += parseFloat(row.laborHours);
+      if (row.laborCost) totalLaborCost += parseFloat(row.laborCost);
+      if (row.materialCost) totalMaterialCost += parseFloat(row.materialCost);
+      if (row.equipmentCost) totalEquipmentCost += parseFloat(row.equipmentCost);
+      if (row.crewSize) crewSizes.push(row.crewSize);
+      if (row.unitPrice) totalRevenue += qty * parseFloat(row.unitPrice);
+    }
+  }
+  
+  if (dailyQuantities.length === 0) {
+    return null;
+  }
+  
+  const totalDays = dailyQuantities.length;
+  const totalProjects = projectSet.size;
+  
+  // Calculate confidence level
+  const confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' = 
+    totalDays >= 10 && totalProjects >= 3 ? 'HIGH' :
+    totalDays >= 5 ? 'MEDIUM' :
+    totalDays >= 1 ? 'LOW' : 'NONE';
+  
+  // Calculate averages
+  const qtyStats = calculateStatsHelper(dailyQuantities);
+  const avgLaborHoursPerUnit = totalQuantity > 0 ? totalLaborHours / totalQuantity : 0;
+  const avgLaborCostPerUnit = totalQuantity > 0 ? totalLaborCost / totalQuantity : 0;
+  const avgMaterialCostPerUnit = totalQuantity > 0 ? totalMaterialCost / totalQuantity : 0;
+  const avgEquipmentCostPerUnit = totalQuantity > 0 ? totalEquipmentCost / totalQuantity : 0;
+  const totalCost = totalLaborCost + totalMaterialCost + totalEquipmentCost;
+  const avgTotalCostPerUnit = totalQuantity > 0 ? totalCost / totalQuantity : 0;
+  const avgRevenuePerUnit = totalQuantity > 0 ? totalRevenue / totalQuantity : 0;
+  const avgProfitPerUnit = avgRevenuePerUnit - avgTotalCostPerUnit;
+  const avgProfitMargin = avgRevenuePerUnit > 0 ? (avgProfitPerUnit / avgRevenuePerUnit) * 100 : 0;
+  const avgCrewSize = crewSizes.length > 0 ? crewSizes.reduce((a, b) => a + b, 0) / crewSizes.length : 0;
+  
+  return {
+    description,
+    unit,
+    avgQuantityPerDay: round(qtyStats.avg),
+    minQuantityPerDay: round(qtyStats.min),
+    maxQuantityPerDay: round(qtyStats.max),
+    medianQuantityPerDay: round(qtyStats.median),
+    avgCrewSize: round(avgCrewSize, 1),
+    avgLaborHoursPerUnit: round(avgLaborHoursPerUnit, 4),
+    avgLaborCostPerUnit: round(avgLaborCostPerUnit, 4),
+    totalLaborHours: round(totalLaborHours),
+    totalLaborCost: round(totalLaborCost),
+    avgMaterialCostPerUnit: round(avgMaterialCostPerUnit, 4),
+    totalMaterialCost: round(totalMaterialCost),
+    avgEquipmentCostPerUnit: round(avgEquipmentCostPerUnit, 4),
+    totalEquipmentCost: round(totalEquipmentCost),
+    avgTotalCostPerUnit: round(avgTotalCostPerUnit, 4),
+    totalCost: round(totalCost),
+    avgRevenuePerUnit: round(avgRevenuePerUnit, 4),
+    avgProfitPerUnit: round(avgProfitPerUnit, 4),
+    avgProfitMargin: round(avgProfitMargin, 1),
+    totalQuantityCompleted: round(totalQuantity),
+    totalDays,
+    totalProjects,
+    stdDev: round(qtyStats.stdDev),
+    confidence,
+  };
+}
+
+// Helper to calculate statistics (inline copy for use in new function)
+function calculateStatsHelper(values: number[]): { avg: number; min: number; max: number; median: number; stdDev: number } {
+  if (values.length === 0) {
+    return { avg: 0, min: 0, max: 0, median: 0, stdDev: 0 };
+  }
+  
+  const sorted = [...values].sort((a, b) => a - b);
+  const sum = values.reduce((a, b) => a + b, 0);
+  const avg = sum / values.length;
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  
+  let median = 0;
+  const mid = Math.floor(sorted.length / 2);
+  median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  
+  let stdDev = 0;
+  if (values.length > 1) {
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / values.length;
+    stdDev = Math.sqrt(variance);
+  }
+  
+  return { avg, min, max, median, stdDev };
+}
+
 // Calculate and store per-unit metrics when creating/updating scope progress
 export function calculatePerUnitMetrics(
   quantityCompleted: number,

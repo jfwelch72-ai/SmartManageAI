@@ -708,7 +708,8 @@ export default function BidEstimate() {
         source: "MANUAL",
         notes: values.notes || undefined,
         scopeWorkTypeId: values.scopeWorkTypeId || undefined,
-        workTypeCode: selectedScopeData?.workTypeCode || undefined,
+        workTypeCode: selectedScopeData?.workTypeCode || hierarchicalSelection?.workTypeCode || undefined,
+        organizationSowItemId: hierarchicalSelection?.organizationSowItemId || undefined,
         ...materialCalcPayload,
       };
       

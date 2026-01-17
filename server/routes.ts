@@ -1989,6 +1989,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const [newScopeItem] = await db.insert(scopeItems).values({
               projectId: newProject.id,
               estimateLineItemId: lineItem.id,
+              // Unified SOW Tracking: propagate organizationSowItemId for production rate tracking
+              organizationSowItemId: lineItemAny.organizationSowItemId || null,
               subcontractorQuoteId: lineItemAny.subcontractorQuoteId || null,
               description: lineItem.description,
               unit: lineItem.unit,
@@ -4474,6 +4476,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...sanitizedBody,
         scopeItemId: req.params.scopeItemId,
         projectId: scopeItem.projectId,
+        // Unified SOW Tracking: propagate organizationSowItemId for cross-project production rate aggregation
+        organizationSowItemId: scopeItem.organizationSowItemId || null,
         createdById: req.user!.id,
       });
 

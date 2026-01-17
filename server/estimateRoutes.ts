@@ -26,6 +26,7 @@ import {
 import { getOrgIdForFilter } from "./orgFilter";
 import { 
   getProductionRateForSOW, 
+  getProductionRateBySowItemId,
   estimateLaborHoursFromProductionRate,
   getProductionRateSuggestions,
   OrganizationRequiredError,
@@ -1153,6 +1154,75 @@ Provide comprehensive financial analysis and recommendations.`
       }
       console.error("Error looking up production rate:", error);
       res.status(404).json({ error: "Not found" });
+    }
+  });
+
+  // Unified SOW Tracking: Get production rate by organizationSowItemId
+  // This provides more reliable historical data than description-based matching
+  app.get("/api/estimates/production-rates/by-sow-item/:sowItemId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const { sowItemId } = req.params;
+      
+      if (!sowItemId) {
+        return res.status(400).json({ error: "SOW item ID is required" });
+      }
+
+      const rawRequestedOrgId = req.query.organizationId;
+      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
+        ? rawRequestedOrgId.trim() 
+        : null;
+      let targetOrgId: string | null = null;
+
+      if (isSuperAdmin) {
+        if (!requestedOrgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        // Verify organization exists
+        const orgExists = await db.query.organizations.findFirst({
+          where: eq(organizations.id, requestedOrgId),
+        });
+        if (!orgExists) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = requestedOrgId;
+      } else {
+        if (!orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        if (requestedOrgId && requestedOrgId !== orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = orgId;
+      }
+
+      const rate = await getProductionRateBySowItemId(
+        sowItemId,
+        targetOrgId
+      );
+
+      if (!rate) {
+        return res.json({ 
+          rate: null, 
+          message: "No historical production data found for this scope item" 
+        });
+      }
+
+      res.json({ 
+        rate,
+        message: `Based on ${rate.totalDays} days of data across ${rate.totalProjects} projects`
+      });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error looking up production rate by SOW item:", error);
+      res.status(500).json({ error: "Failed to lookup production rate" });
     }
   });
 

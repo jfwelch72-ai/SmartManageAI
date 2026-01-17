@@ -74,6 +74,7 @@ export interface LineItemSelectionData {
   modifierIds: string[];
   modifierNames: string[];
   canonicalName: string;
+  organizationSowItemId: string;
 }
 
 interface HierarchicalLineItemBuilderProps {
@@ -300,6 +301,7 @@ export default function HierarchicalLineItemBuilder({
         modifierIds: selectedModifierIds,
         modifierNames: selectedModifiers.map(m => m.name),
         canonicalName,
+        organizationSowItemId: selectedWorkType.id,
       });
     } else {
       onSelectionChange(null);
