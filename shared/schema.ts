@@ -873,6 +873,8 @@ export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
+  // Unified SOW Tracking - links to organization's master SOW library for production rate tracking across projects
+  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
   subcontractorQuoteId: varchar("subcontractor_quote_id"),
   description: text("description").notNull(),
   unit: text("unit").notNull(),
@@ -905,6 +907,7 @@ export const scopeItems = pgTable("scope_items", {
 }, (table) => ({
   // Enforce one-to-one mapping: one scope item per estimate line item
   uniqueEstimateLineItem: unique("scope_items_estimate_line_item_unique").on(table.estimateLineItemId),
+  organizationSowItemIdx: index("scope_items_org_sow_item_idx").on(table.organizationSowItemId),
 }));
 
 // Daily Scope Progress table - tracks daily quantities completed for each scope item
@@ -913,6 +916,8 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  // Unified SOW Tracking - denormalized for efficient cross-project production rate queries
+  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
   workDate: date("work_date").notNull(),
   quantityCompleted: decimal("quantity_completed", { precision: 12, scale: 2 }).notNull(),
   billedQuantity: decimal("billed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
@@ -947,6 +952,7 @@ export const dailyScopeProgress = pgTable("daily_scope_progress", {
   projectIdIdx: index("daily_scope_progress_project_id_idx").on(table.projectId),
   workDateIdx: index("daily_scope_progress_work_date_idx").on(table.workDate),
   billingStatusIdx: index("daily_scope_progress_billing_status_idx").on(table.billingStatus),
+  organizationSowItemIdx: index("daily_scope_progress_org_sow_item_idx").on(table.organizationSowItemId),
 }));
 
 // Project Material Budgets table - snapshots bid/estimate material quantities when project is created
@@ -1870,6 +1876,9 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   jobClassificationId: varchar("job_classification_id").references(() => jobClassifications.id, { onDelete: "set null" }),
   laborRateUsed: decimal("labor_rate_used", { precision: 10, scale: 2 }), // Stores the rate at time of creation for historical accuracy
   
+  // Unified SOW Tracking - links to organization's master SOW library for production rate tracking
+  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1880,6 +1889,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
   subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),
   jobClassificationIdx: index("estimate_line_items_job_classification_idx").on(table.jobClassificationId),
+  organizationSowItemIdx: index("estimate_line_items_org_sow_item_idx").on(table.organizationSowItemId),
 }));
 
 // Estimate Versions table (snapshots of estimates)
