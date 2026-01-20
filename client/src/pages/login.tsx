@@ -70,7 +70,11 @@ export default function LoginPage() {
         setLocation(getRedirectPath(loggedInUser || {}));
       }
     } catch (error: any) {
-      throw new Error(error.message || "Login failed");
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid email or password",
+        variant: "destructive",
+      });
     }
   };
 
