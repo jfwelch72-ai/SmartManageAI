@@ -1591,30 +1591,30 @@ export default function BidDetailPage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="p-4 bg-muted rounded-md min-w-0">
                           <p className="text-sm font-medium mb-1">Total Estimate</p>
-                          <p className="text-xl font-bold font-mono truncate" data-testid="text-estimate-total">
+                          <p className="text-sm sm:text-lg lg:text-xl font-bold font-mono tabular-nums break-words" data-testid="text-estimate-total">
                             ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">{estimate.lineItems.length} line items</p>
                         </div>
                         <div className="p-4 bg-muted rounded-md min-w-0">
                           <p className="text-sm font-medium mb-1">Labor Cost</p>
-                          <p className="text-lg font-bold font-mono truncate">
+                          <p className="text-sm sm:text-lg font-bold font-mono tabular-nums break-words">
                             ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">{estimate.totals.laborHours.toFixed(1)} hours</p>
                         </div>
                         <div className="p-4 bg-muted rounded-md min-w-0">
                           <p className="text-sm font-medium mb-1">Material Cost</p>
-                          <p className="text-lg font-bold font-mono truncate">
+                          <p className="text-sm sm:text-lg font-bold font-mono tabular-nums break-words">
                             ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                         </div>
                         <div className="p-4 bg-muted rounded-md min-w-0">
                           <p className="text-sm font-medium mb-1">Status</p>
-                          <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
+                          <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"} className="text-[10px] sm:text-xs max-w-full">
                             {estimate.status}
                           </Badge>
                         </div>
