@@ -800,7 +800,7 @@ export default function BidWizardPage() {
                                   )}
                                   data-testid="input-due-date"
                                 >
-                                  {field.value ? format(parseISO(field.value), "PPP") : "Pick a date"}
+                                  {field.value && !isNaN(parseISO(field.value).getTime()) ? format(parseISO(field.value), "PPP") : "Pick a date"}
                                   <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                 </Button>
                               </FormControl>
@@ -808,7 +808,7 @@ export default function BidWizardPage() {
                             <PopoverContent className="w-auto p-0" align="start">
                               <CalendarPicker
                                 mode="single"
-                                selected={field.value ? parseISO(field.value) : undefined}
+                                selected={field.value && !isNaN(parseISO(field.value).getTime()) ? parseISO(field.value) : undefined}
                                 onSelect={(date) => field.onChange(date ? format(date, "yyyy-MM-dd") : "")}
                                 initialFocus
                               />
