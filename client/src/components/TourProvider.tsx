@@ -553,13 +553,15 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         const nextStep = roleSteps[index + 1];
         const targetStep = index + 1;
         
+        // Update step immediately for Joyride controlled mode
+        setCurrentStep(targetStep);
+        
         if (nextStep?.path && nextStep.path !== location) {
           setPendingNavigation({ path: nextStep.path, targetStep });
           setLocation(nextStep.path);
+          // Persist after navigation completes via useEffect
           return;
         }
-        
-        setCurrentStep(targetStep);
         
         try {
           await apiRequest("PATCH", "/api/ai/walkthrough/step", {
@@ -579,13 +581,15 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         
         if (targetStep < 0) return; // Can't go back from first step
         
+        // Update step immediately for Joyride controlled mode
+        setCurrentStep(targetStep);
+        
         if (prevStep?.path && prevStep.path !== location) {
           setPendingNavigation({ path: prevStep.path, targetStep });
           setLocation(prevStep.path);
+          // Persist after navigation completes via useEffect
           return;
         }
-        
-        setCurrentStep(targetStep);
         
         try {
           await apiRequest("PATCH", "/api/ai/walkthrough/step", {
