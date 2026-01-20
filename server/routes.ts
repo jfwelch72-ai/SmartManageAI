@@ -1341,15 +1341,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let allBids;
       if (shouldFilter && orgId) {
-        allBids = await db.select().from(bids)
+        allBids = await db
+          .select({
+            bid: bids,
+            estimatorName: sql<string | null>`CONCAT(${users.firstName}, ' ', ${users.lastName})`.as('estimator_name'),
+          })
+          .from(bids)
+          .leftJoin(users, eq(bids.estimatorId, users.id))
           .where(eq(bids.gcOrganizationId, orgId))
           .orderBy(bids.createdAt);
       } else {
-        allBids = await db.select().from(bids).orderBy(bids.createdAt);
+        allBids = await db
+          .select({
+            bid: bids,
+            estimatorName: sql<string | null>`CONCAT(${users.firstName}, ' ', ${users.lastName})`.as('estimator_name'),
+          })
+          .from(bids)
+          .leftJoin(users, eq(bids.estimatorId, users.id))
+          .orderBy(bids.createdAt);
       }
       
+      // Flatten the result to include estimatorName in the bid object
+      const bidsWithEstimatorNames = allBids.map(({ bid, estimatorName }) => ({
+        ...bid,
+        estimatorName: estimatorName || null,
+      }));
+      
       // Short-circuit if no bids exist
-      if (allBids.length === 0) {
+      if (bidsWithEstimatorNames.length === 0) {
         res.json([]);
         return;
       }
@@ -1357,7 +1376,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Fetch estimate summaries for all bids
       // NOTE: We use DISTINCT ON to get only one estimate per bid (the most recent one based on created_at)
       // This prevents duplicate summaries when a bid has multiple historical estimates
-      const bidIds = allBids.map(bid => bid.id);
+      const bidIds = bidsWithEstimatorNames.map(bid => bid.id);
       
       // Get the most recent estimate per bid using a subquery
       const latestEstimates = await db
@@ -1438,7 +1457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // Enrich bids with estimate summaries
-      const bidsWithEstimates = allBids.map(bid => ({
+      const bidsWithEstimates = bidsWithEstimatorNames.map(bid => ({
         ...bid,
         estimateSummary: estimateMap.get(bid.id) || null,
       }));

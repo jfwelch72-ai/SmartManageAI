@@ -29,13 +29,14 @@ import { useForm } from "react-hook-form";
 import type { z } from "zod";
 import { Label } from "@/components/ui/label";
 
-// Extended bid type with estimate summary
+// Extended bid type with estimate summary and estimator name
 type BidWithEstimate = Bid & {
   estimateSummary: {
     totalCost: number;
     lineItemCount: number;
     status: string;
   } | null;
+  estimatorName: string | null;
 };
 import {
   AlertDialog,
@@ -510,7 +511,7 @@ export default function BidsPage() {
                 bidAmount={bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : "TBD"}
                 dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
                 location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
-                estimator={bid.estimatorId || ""}
+                estimator={bid.estimatorName || "Unassigned"}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={() => handleConvertToProject(bid.code)}
                 onDelete={canDelete ? () => handleDeleteBid(bid.code, bid.name) : undefined}
