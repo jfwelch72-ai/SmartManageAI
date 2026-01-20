@@ -1,10 +1,9 @@
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useState, useCallback, useRef } from "react";
+import type { ReactNode, DragEvent } from "react";
 import Uppy from "@uppy/core";
 import DashboardModal from "@uppy/react/dashboard-modal";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
-import { Button } from "@/components/ui/button";
 
 interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
@@ -29,12 +28,14 @@ export function ObjectUploader({
   allowedFileTypes,
   onGetUploadParameters,
   onComplete,
-  buttonVariant = "default",
-  buttonClassName,
   children,
   testId,
 }: ObjectUploaderProps) {
   const [showModal, setShowModal] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [uppy] = useState(() =>
     new Uppy({
       restrictions: {
@@ -54,16 +55,92 @@ export function ObjectUploader({
       })
   );
 
+  const addFilesToUppy = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    fileArray.forEach((file) => {
+      try {
+        uppy.addFile({
+          name: file.name,
+          type: file.type,
+          data: file,
+          source: "local",
+        });
+      } catch (error) {
+        console.warn("File add error:", error);
+      }
+    });
+    if (fileArray.length > 0) {
+      setShowModal(true);
+    }
+  }, [uppy]);
+
+  const handleDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      addFilesToUppy(e.dataTransfer.files);
+    }
+  }, [addFilesToUppy]);
+
+  const handleClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addFilesToUppy(e.target.files);
+      e.target.value = "";
+    }
+  }, [addFilesToUppy]);
+
   return (
     <div>
-      <Button 
-        onClick={() => setShowModal(true)} 
-        variant={buttonVariant}
-        className={buttonClassName}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple={maxNumberOfFiles > 1}
+        accept={allowedFileTypes?.join(",")}
+        className="hidden"
+        onChange={handleFileInput}
+        data-testid={testId ? `${testId}-input` : undefined}
+      />
+      <div
+        onClick={handleClick}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`cursor-pointer transition-colors ${isDragging ? 'ring-2 ring-primary ring-offset-2' : ''}`}
         data-testid={testId}
       >
         {children}
-      </Button>
+      </div>
 
       <DashboardModal
         uppy={uppy}
