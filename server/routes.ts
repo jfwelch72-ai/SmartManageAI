@@ -1373,84 +1373,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Fetch estimate summaries for all bids
-      // NOTE: We use DISTINCT ON to get only one estimate per bid (the most recent one based on created_at)
-      // This prevents duplicate summaries when a bid has multiple historical estimates
+      // Fetch estimate summaries for all bids using a simpler direct query
       const bidIds = bidsWithEstimatorNames.map(bid => bid.id);
       
-      // Get the most recent estimate per bid using a subquery
-      const latestEstimates = await db
-        .select({
-          bidId: estimates.bidId,
-          estimateId: sql<string>`(
-            SELECT id 
-            FROM ${estimates} e2 
-            WHERE e2.bid_id = ${estimates.bidId} 
-              AND e2.project_id IS NULL 
-            ORDER BY e2.created_at DESC 
-            LIMIT 1
-          )`.as('estimate_id'),
-        })
-        .from(estimates)
-        .where(
-          and(
-            inArray(estimates.bidId, bidIds),
-            isNull(estimates.projectId)
-          )
-        )
-        .groupBy(estimates.bidId);
-
-      // Fetch detailed summaries for those latest estimates
-      const estimateIds = latestEstimates.map(e => e.estimateId).filter((id): id is string => id !== null);
-      
-      let estimateData: Array<{
-        id: string;
-        bidId: string | null;
+      // Get estimates with their line item summaries directly
+      const estimateSummaries = await db.execute<{
+        bid_id: string;
+        estimate_id: string;
         status: string;
-        totalCost: number;
-        lineItemCount: number;
-      }> = [];
-
-      if (estimateIds.length > 0) {
-        estimateData = await db
-          .select({
-            id: estimates.id,
-            bidId: estimates.bidId,
-            status: estimates.status,
-            totalCost: sql<number>`
-              COALESCE((
-                SELECT SUM(
-                  COALESCE(CAST(${estimateLineItems.materialCost} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.laborCost} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.equipmentCost} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.consumablesCost} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.subcontractCost} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.overheadAllocation} AS NUMERIC), 0) +
-                  COALESCE(CAST(${estimateLineItems.profitAllocation} AS NUMERIC), 0)
-                )
-                FROM ${estimateLineItems}
-                WHERE ${estimateLineItems.estimateId} = ${estimates.id}
-              ), 0)
-            `,
-            lineItemCount: sql<number>`
-              COALESCE((
-                SELECT COUNT(*)
-                FROM ${estimateLineItems}
-                WHERE ${estimateLineItems.estimateId} = ${estimates.id}
-              ), 0)
-            `,
-          })
-          .from(estimates)
-          .where(inArray(estimates.id, estimateIds));
-      }
+        total_cost: string;
+        line_item_count: string;
+      }>(sql`
+        SELECT DISTINCT ON (e.bid_id)
+          e.bid_id,
+          e.id as estimate_id,
+          e.status,
+          COALESCE((
+            SELECT SUM(
+              COALESCE(eli.material_cost::numeric, 0) +
+              COALESCE(eli.labor_cost::numeric, 0) +
+              COALESCE(eli.equipment_cost::numeric, 0) +
+              COALESCE(eli.consumables_cost::numeric, 0) +
+              COALESCE(eli.subcontract_cost::numeric, 0) +
+              COALESCE(eli.overhead_allocation::numeric, 0) +
+              COALESCE(eli.profit_allocation::numeric, 0)
+            )
+            FROM estimate_line_items eli
+            WHERE eli.estimate_id = e.id
+          ), 0) as total_cost,
+          COALESCE((
+            SELECT COUNT(*)
+            FROM estimate_line_items eli
+            WHERE eli.estimate_id = e.id
+          ), 0) as line_item_count
+        FROM estimates e
+        WHERE e.bid_id = ANY(${bidIds})
+        ORDER BY e.bid_id, e.created_at DESC
+      `);
 
       // Create map of bidId to estimate summary
       const estimateMap = new Map(
-        estimateData.map(e => [
-          e.bidId!,
+        estimateSummaries.rows.map(e => [
+          e.bid_id,
           {
-            totalCost: Number(e.totalCost),
-            lineItemCount: Number(e.lineItemCount),
+            totalCost: Number(e.total_cost),
+            lineItemCount: Number(e.line_item_count),
             status: e.status,
           }
         ])
