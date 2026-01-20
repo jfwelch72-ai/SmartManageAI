@@ -12151,7 +12151,7 @@ SmartManageAI Construction Management Platform
       
       let allCrews;
       if (shouldFilter && orgId) {
-        // Filter crews by lead's organization
+        // Filter crews by crew's organization
         allCrews = await db
           .select({
             crew: crews,
@@ -12163,7 +12163,7 @@ SmartManageAI Construction Management Platform
           })
           .from(crews)
           .leftJoin(users, eq(crews.leadId, users.id))
-          .where(eq(users.organizationId, orgId))
+          .where(eq(crews.organizationId, orgId))
           .orderBy(desc(crews.isActive), crews.name);
       } else {
         allCrews = await db
@@ -12218,6 +12218,8 @@ SmartManageAI Construction Management Platform
         ...req.body,
         name: sanitizeShortText(req.body.name),
         description: req.body.description ? sanitizeText(req.body.description) : undefined,
+        // Auto-set organizationId from user's organization
+        organizationId: req.user!.organizationId,
       };
 
       const validationResult = insertCrewSchema.safeParse(sanitizedBody);

@@ -2578,6 +2578,7 @@ export type AIContractDocumentAnalysis = typeof aiContractDocumentAnalysis.$infe
 // Crews table
 export const crews = pgTable("crews", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id),
   name: text("name").notNull(),
   description: text("description"),
   leadId: varchar("lead_id").references(() => users.id),
