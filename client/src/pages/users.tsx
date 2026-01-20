@@ -6,6 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -77,10 +86,72 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [activeTab, setActiveTab] = useState("users");
+  
+  // Invite user dialog state
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    role: "HOURLY_EMPLOYEE",
+    password: "",
+  });
 
   const { data: users = [], isLoading } = useQuery<SelectUser[]>({
     queryKey: ["/api/users"],
   });
+  
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (data: typeof inviteForm) => {
+      return await apiRequest("POST", "/api/users", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "Success",
+        description: "User created successfully",
+      });
+      setShowInviteDialog(false);
+      setInviteForm({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        role: "HOURLY_EMPLOYEE",
+        password: "",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create user",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleInviteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteForm.firstName || !inviteForm.lastName || !inviteForm.email || !inviteForm.password) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (inviteForm.password.length < 8) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 8 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+    createUserMutation.mutate(inviteForm);
+  };
   
   // Fetch dashboard permissions for all users (admin only)
   const { data: usersWithPermissions = [], isLoading: permissionsLoading } = useQuery<UserWithPermissions[]>({
@@ -217,11 +288,114 @@ export default function UsersPage() {
             <h1 className="text-3xl font-bold" data-testid="text-page-title">User Management</h1>
             <p className="text-muted-foreground">Manage user accounts and permissions</p>
           </div>
-          <Button data-testid="button-invite-user">
+          <Button data-testid="button-invite-user" onClick={() => setShowInviteDialog(true)}>
             <UserPlus className="w-4 h-4 mr-2" />
             Invite User
           </Button>
         </div>
+        
+        <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Invite New User</DialogTitle>
+              <DialogDescription>
+                Create a new user account for your organization
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleInviteSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name *</Label>
+                  <Input
+                    id="firstName"
+                    data-testid="input-invite-first-name"
+                    value={inviteForm.firstName}
+                    onChange={(e) => setInviteForm({ ...inviteForm, firstName: e.target.value })}
+                    placeholder="John"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name *</Label>
+                  <Input
+                    id="lastName"
+                    data-testid="input-invite-last-name"
+                    value={inviteForm.lastName}
+                    onChange={(e) => setInviteForm({ ...inviteForm, lastName: e.target.value })}
+                    placeholder="Doe"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  data-testid="input-invite-email"
+                  value={inviteForm.email}
+                  onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                  placeholder="john.doe@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  data-testid="input-invite-phone"
+                  value={inviteForm.phone}
+                  onChange={(e) => setInviteForm({ ...inviteForm, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Select
+                  value={inviteForm.role}
+                  onValueChange={(value) => setInviteForm({ ...inviteForm, role: value })}
+                >
+                  <SelectTrigger data-testid="select-invite-role">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value} data-testid={`option-role-${value.toLowerCase()}`}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Temporary Password *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  data-testid="input-invite-password"
+                  value={inviteForm.password}
+                  onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
+                  placeholder="Min 8 characters"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowInviteDialog(false)}
+                  data-testid="button-invite-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createUserMutation.isPending}
+                  data-testid="button-invite-submit"
+                >
+                  {createUserMutation.isPending ? "Creating..." : "Create User"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList data-testid="tabs-user-management">

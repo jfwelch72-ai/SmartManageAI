@@ -1028,6 +1028,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const passwordHash = await hashPassword(password);
 
+      // Auto-assign to requesting admin's organization
       const [newUser] = await db.insert(users).values({
         firstName,
         lastName,
@@ -1036,6 +1037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: role || "HOURLY_EMPLOYEE",
         isActive: true,
         passwordHash,
+        organizationId: req.user!.organizationId,
       }).returning();
 
       const { passwordHash: _, ...userWithoutPassword } = newUser;
