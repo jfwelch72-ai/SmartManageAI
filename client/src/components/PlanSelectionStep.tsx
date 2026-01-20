@@ -224,11 +224,13 @@ export function PlanSelectionStep({
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="font-semibold text-sm">${addon.price}</span>
-                      <Switch 
-                        checked={isActive}
-                        onCheckedChange={() => toggleAddon(addonKey)}
-                        data-testid={`switch-addon-${addonKey}`}
-                      />
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Switch 
+                          checked={isActive}
+                          onCheckedChange={() => toggleAddon(addonKey)}
+                          data-testid={`switch-addon-${addonKey}`}
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -268,11 +270,13 @@ export function PlanSelectionStep({
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="font-semibold text-sm">${addon.price}</span>
-                      <Switch 
-                        checked={isActive}
-                        onCheckedChange={() => toggleAddon(addonKey)}
-                        data-testid={`switch-addon-${addonKey}`}
-                      />
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Switch 
+                          checked={isActive}
+                          onCheckedChange={() => toggleAddon(addonKey)}
+                          data-testid={`switch-addon-${addonKey}`}
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
