@@ -1591,30 +1591,34 @@ export default function BidDetailPage() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="p-4 bg-muted rounded-md min-w-0">
-                          <p className="text-sm font-medium mb-1">Total Estimate</p>
-                          <p className="text-sm sm:text-lg lg:text-xl font-bold font-mono tabular-nums break-words" data-testid="text-estimate-total">
-                            ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">{estimate.lineItems.length} line items</p>
+                      <div className="border rounded-md divide-y">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                          <span className="text-sm font-medium">Total Estimate</span>
+                          <div className="text-right min-w-0">
+                            <span className="text-lg font-bold font-mono" data-testid="text-estimate-total">
+                              ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2">({estimate.lineItems.length} items)</span>
+                          </div>
                         </div>
-                        <div className="p-4 bg-muted rounded-md min-w-0">
-                          <p className="text-sm font-medium mb-1">Labor Cost</p>
-                          <p className="text-sm sm:text-lg font-bold font-mono tabular-nums break-words">
-                            ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">{estimate.totals.laborHours.toFixed(1)} hours</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                          <span className="text-sm font-medium">Labor Cost</span>
+                          <div className="text-right min-w-0">
+                            <span className="font-mono font-semibold">
+                              ${estimate.totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-2">({estimate.totals.laborHours.toFixed(1)} hrs)</span>
+                          </div>
                         </div>
-                        <div className="p-4 bg-muted rounded-md min-w-0">
-                          <p className="text-sm font-medium mb-1">Material Cost</p>
-                          <p className="text-sm sm:text-lg font-bold font-mono tabular-nums break-words">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                          <span className="text-sm font-medium">Material Cost</span>
+                          <span className="font-mono font-semibold min-w-0">
                             ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
+                          </span>
                         </div>
-                        <div className="p-4 bg-muted rounded-md min-w-0">
-                          <p className="text-sm font-medium mb-1">Status</p>
-                          <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"} className="text-[10px] sm:text-xs max-w-full">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                          <span className="text-sm font-medium">Status</span>
+                          <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>
                             {estimate.status}
                           </Badge>
                         </div>
