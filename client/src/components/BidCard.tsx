@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, DollarSign, Calendar, FileText, CheckCircle, Trash2 } from "lucide-react";
+import { Building2, MapPin, DollarSign, Calendar, FileText, CheckCircle, Trash2, Award } from "lucide-react";
 
 interface BidCardProps {
   code: string;
@@ -11,6 +11,7 @@ interface BidCardProps {
   dueDate?: string;
   location?: string;
   estimator: string;
+  status?: "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED";
   onClick?: () => void;
   onConvertToProject?: () => void;
   onDelete?: () => void;
@@ -29,27 +30,37 @@ export default function BidCard({
   dueDate,
   location,
   estimator,
+  status = "ACTIVE",
   onClick,
   onConvertToProject,
   onDelete,
   estimateData,
 }: BidCardProps) {
+  const isAwarded = status === "AWARDED";
+  
   return (
     <Card
-      className="p-6 hover-elevate cursor-pointer"
+      className={`p-6 hover-elevate cursor-pointer ${isAwarded ? "border-green-500/50 bg-green-50/30 dark:bg-green-900/10" : ""}`}
       onClick={onClick}
       data-testid={`card-bid-${code}`}
     >
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <Badge variant="outline" className="font-mono text-xs shrink-0">
                 {code}
               </Badge>
-              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                BID
-              </Badge>
+              {isAwarded ? (
+                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 gap-1">
+                  <Award className="w-3 h-3" />
+                  AWARDED
+                </Badge>
+              ) : (
+                <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                  BID
+                </Badge>
+              )}
             </div>
             <h3 className="text-lg font-semibold text-card-foreground truncate mb-1">
               {name}
@@ -126,7 +137,7 @@ export default function BidCard({
         )}
 
         <div className="flex gap-2">
-          {onConvertToProject && (
+          {onConvertToProject && !isAwarded && (
             <Button
               size="sm"
               className="flex-1"
@@ -139,7 +150,7 @@ export default function BidCard({
               Mark as Awarded
             </Button>
           )}
-          {onDelete && (
+          {onDelete && !isAwarded && (
             <Button
               size="sm"
               variant="destructive"

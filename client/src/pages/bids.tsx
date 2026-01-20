@@ -290,10 +290,10 @@ export default function BidsPage() {
     try {
       await convertBid.mutateAsync({ code: bidCode });
       toast({
-        title: "Success",
-        description: `Bid ${bidCode} has been converted to an active project!`,
+        title: "Bid Awarded!",
+        description: `Bid ${bidCode} has been marked as awarded and converted to an active project.`,
       });
-      setLocation("/projects");
+      // Stay on bids page to show the awarded status - don't navigate away
     } catch (error: any) {
       toast({
         title: "Error",
@@ -512,6 +512,7 @@ export default function BidsPage() {
                 dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
                 location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
                 estimator={bid.estimatorName || "Unassigned"}
+                status={bid.status as "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED"}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={() => handleConvertToProject(bid.code)}
                 onDelete={canDelete ? () => handleDeleteBid(bid.code, bid.name) : undefined}

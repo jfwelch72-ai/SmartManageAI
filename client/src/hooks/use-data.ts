@@ -572,10 +572,8 @@ export function useConvertBidToProject() {
       return response.json();
     },
     onSuccess: () => {
-      // Only invalidate projects and notifications - don't invalidate bids cache here
-      // because the caller navigates away immediately. Invalidating bids cache causes
-      // a visible re-render where the bid disappears before navigation completes.
-      // The bids cache will naturally refresh when user returns to the bids page.
+      // Invalidate bids cache so awarded status shows immediately
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });

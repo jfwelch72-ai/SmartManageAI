@@ -6,6 +6,7 @@ import { z } from "zod";
 // Enums
 export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER"]);
 export const projectStatusEnum = pgEnum("project_status", ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"]);
+export const bidStatusEnum = pgEnum("bid_status", ["ACTIVE", "AWARDED", "LOST", "CANCELLED"]);
 export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
 export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["MANUAL", "TAKEOFF", "GENERATED"]);
 export const procurementStatusEnum = pgEnum("procurement_status", ["PLANNED", "QUOTED", "APPROVED", "ORDERED", "DELIVERED"]);
@@ -394,6 +395,9 @@ export const bids = pgTable("bids", {
   estimatorId: varchar("estimator_id").references(() => users.id),
   gcOrganizationId: varchar("gc_organization_id"),
   ownerRepOrganizationId: varchar("owner_rep_organization_id"),
+  status: bidStatusEnum("status").notNull().default("ACTIVE"),
+  convertedToProjectId: varchar("converted_to_project_id"),
+  awardedAt: timestamp("awarded_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

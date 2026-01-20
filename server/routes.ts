@@ -1862,6 +1862,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Check if bid has already been awarded/converted
+      if (bid.status === "AWARDED") {
+        res.status(409).json({ 
+          error: "Bid already awarded",
+          newValue: `This bid has already been converted to a project.`
+        });
+        return;
+      }
+
       // BUSINESS VALIDATION: Check if project with same code already exists
       const [existingProject] = await db
         .select()
@@ -2237,8 +2246,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[Bid Conversion] Transferred ${bidEquipmentSelections.length} equipment selections to project equipment plans`);
       }
 
-      // Delete the bid after converting (SET NULL on estimates.bidId preserves traceability)
-      await db.delete(bids).where(eq(bids.code, req.params.code));
+      // Mark bid as AWARDED and link to the converted project (instead of deleting)
+      await db.update(bids)
+        .set({
+          status: "AWARDED",
+          convertedToProjectId: newProject.id,
+          awardedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(bids.code, req.params.code));
 
       // Create PROJECT_ASSIGNMENT notifications for superintendent and project manager
       const { notifications: notificationsTable } = await import("@shared/schema");
