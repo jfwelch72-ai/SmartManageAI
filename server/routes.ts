@@ -1373,55 +1373,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Fetch estimate summaries for all bids using a simpler direct query
+      // Fetch estimate summaries for all bids
       const bidIds = bidsWithEstimatorNames.map(bid => bid.id);
       
-      // Get estimates with their line item summaries directly
-      const estimateSummaries = await db.execute<{
-        bid_id: string;
-        estimate_id: string;
-        status: string;
-        total_cost: string;
-        line_item_count: string;
-      }>(sql`
-        SELECT DISTINCT ON (e.bid_id)
-          e.bid_id,
-          e.id as estimate_id,
-          e.status,
-          COALESCE((
-            SELECT SUM(
-              COALESCE(eli.material_cost::numeric, 0) +
-              COALESCE(eli.labor_cost::numeric, 0) +
-              COALESCE(eli.equipment_cost::numeric, 0) +
-              COALESCE(eli.consumables_cost::numeric, 0) +
-              COALESCE(eli.subcontract_cost::numeric, 0) +
-              COALESCE(eli.overhead_allocation::numeric, 0) +
-              COALESCE(eli.profit_allocation::numeric, 0)
-            )
-            FROM estimate_line_items eli
-            WHERE eli.estimate_id = e.id
-          ), 0) as total_cost,
-          COALESCE((
-            SELECT COUNT(*)
-            FROM estimate_line_items eli
-            WHERE eli.estimate_id = e.id
-          ), 0) as line_item_count
-        FROM estimates e
-        WHERE e.bid_id = ANY(${bidIds})
-        ORDER BY e.bid_id, e.created_at DESC
-      `);
-
-      // Create map of bidId to estimate summary
-      const estimateMap = new Map(
-        estimateSummaries.rows.map(e => [
-          e.bid_id,
-          {
-            totalCost: Number(e.total_cost),
-            lineItemCount: Number(e.line_item_count),
-            status: e.status,
-          }
-        ])
+      // Get estimates for each bid using Drizzle's query builder
+      const estimateResults = await db
+        .select({
+          bidId: estimates.bidId,
+          estimateId: estimates.id,
+          status: estimates.status,
+          createdAt: estimates.createdAt,
+        })
+        .from(estimates)
+        .where(inArray(estimates.bidId, bidIds))
+        .orderBy(desc(estimates.createdAt));
+      
+      // Get the most recent estimate per bid
+      const latestEstimatesByBid = new Map<string, { estimateId: string; status: string }>();
+      for (const est of estimateResults) {
+        if (est.bidId && !latestEstimatesByBid.has(est.bidId)) {
+          latestEstimatesByBid.set(est.bidId, { estimateId: est.estimateId, status: est.status });
+        }
+      }
+      
+      // Get line item summaries for the latest estimates
+      const latestEstimateIds = Array.from(latestEstimatesByBid.values()).map(e => e.estimateId);
+      
+      let lineItemSummaries: Array<{ estimateId: string; totalCost: number; lineItemCount: number }> = [];
+      if (latestEstimateIds.length > 0) {
+        lineItemSummaries = await db
+          .select({
+            estimateId: estimateLineItems.estimateId,
+            totalCost: sql<number>`
+              SUM(
+                COALESCE(CAST(${estimateLineItems.materialCost} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.laborCost} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.equipmentCost} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.consumablesCost} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.subcontractCost} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.overheadAllocation} AS NUMERIC), 0) +
+                COALESCE(CAST(${estimateLineItems.profitAllocation} AS NUMERIC), 0)
+              )
+            `.as('total_cost'),
+            lineItemCount: sql<number>`COUNT(*)`.as('line_item_count'),
+          })
+          .from(estimateLineItems)
+          .where(inArray(estimateLineItems.estimateId, latestEstimateIds))
+          .groupBy(estimateLineItems.estimateId);
+      }
+      
+      // Create a map of estimateId to line item summary
+      const lineItemMap = new Map(
+        lineItemSummaries.map(s => [s.estimateId, { totalCost: Number(s.totalCost) || 0, lineItemCount: Number(s.lineItemCount) || 0 }])
       );
+      
+      // Create map of bidId to estimate summary
+      const estimateMap = new Map<string, { totalCost: number; lineItemCount: number; status: string }>();
+      latestEstimatesByBid.forEach((est, bidId) => {
+        const lineItemData = lineItemMap.get(est.estimateId) || { totalCost: 0, lineItemCount: 0 };
+        estimateMap.set(bidId, {
+          totalCost: lineItemData.totalCost,
+          lineItemCount: lineItemData.lineItemCount,
+          status: est.status,
+        });
+      });
 
       // Enrich bids with estimate summaries
       const bidsWithEstimates = bidsWithEstimatorNames.map(bid => ({
