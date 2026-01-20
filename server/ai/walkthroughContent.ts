@@ -472,7 +472,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Crew Time",
         description: "Last one, {{firstName}}! Here's where you manage your crew's clock-in and clock-out. GPS-tracked, easy to review.",
         action: "Check out the timeclock system to see how crew hours are tracked.",
-        targetPage: "/timeclock",
+        targetPage: "/time-clock",
         tips: [
           "GPS location is captured automatically at clock-in",
           "Review and approve timesheets each week",
@@ -555,7 +555,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Clocking In",
         description: "First thing every day, {{firstName}} — clock in! It tracks your hours automatically and keeps everything organized.",
         action: "Check out the timeclock. When you arrive on site, you'll hit that clock-in button.",
-        targetPage: "/timeclock",
+        targetPage: "/time-clock",
         tips: [
           "Clock in when you get to the job site",
           "Make sure your GPS/location is on",
@@ -581,7 +581,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Clocking Out",
         description: "End of the day, {{firstName}}! Clock out before you leave so your hours get counted correctly.",
         action: "Head back to the timeclock at the end of your shift and hit clock-out.",
-        targetPage: "/timeclock",
+        targetPage: "/time-clock",
         tips: [
           "Clock out before leaving the site",
           "Double-check your hours look right",
