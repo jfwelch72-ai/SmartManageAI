@@ -434,7 +434,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
   const [tourSteps, setTourSteps] = useState<Step[]>([]);
-  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<{ path: string; targetStep: number } | null>(null);
   
   const role = user?.role || "HOURLY_EMPLOYEE";
   
@@ -467,8 +467,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [user?.role]);
   
   useEffect(() => {
-    if (pendingNavigation && location === pendingNavigation) {
-      const targetStep = currentStep + 1;
+    if (pendingNavigation && location === pendingNavigation.path) {
+      const targetStep = pendingNavigation.targetStep;
       setPendingNavigation(null);
       
       // Wait for DOM to settle, then persist step and update state
@@ -489,7 +489,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       
       return () => clearTimeout(timeoutId);
     }
-  }, [location, pendingNavigation, currentStep]);
+  }, [location, pendingNavigation]);
   
   const startTour = useCallback(async () => {
     if (!user?.role) return;
@@ -551,18 +551,19 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       if (type === EVENTS.STEP_AFTER && action === ACTIONS.NEXT) {
         const roleSteps = getTourStepsForRole(role);
         const nextStep = roleSteps[index + 1];
+        const targetStep = index + 1;
         
         if (nextStep?.path && nextStep.path !== location) {
-          setPendingNavigation(nextStep.path);
+          setPendingNavigation({ path: nextStep.path, targetStep });
           setLocation(nextStep.path);
           return;
         }
         
-        setCurrentStep(index + 1);
+        setCurrentStep(targetStep);
         
         try {
           await apiRequest("PATCH", "/api/ai/walkthrough/step", {
-            step: index + 2,
+            step: targetStep + 1,
             completed: false,
           });
           queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
@@ -574,15 +575,27 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       if (type === EVENTS.STEP_AFTER && action === ACTIONS.PREV) {
         const roleSteps = getTourStepsForRole(role);
         const prevStep = roleSteps[index - 1];
+        const targetStep = index - 1;
+        
+        if (targetStep < 0) return; // Can't go back from first step
         
         if (prevStep?.path && prevStep.path !== location) {
-          setPendingNavigation(prevStep.path);
+          setPendingNavigation({ path: prevStep.path, targetStep });
           setLocation(prevStep.path);
-          setCurrentStep(index - 1);
           return;
         }
         
-        setCurrentStep(index - 1);
+        setCurrentStep(targetStep);
+        
+        try {
+          await apiRequest("PATCH", "/api/ai/walkthrough/step", {
+            step: targetStep + 1,
+            completed: false,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/ai/walkthrough/status"] });
+        } catch (error) {
+          console.error("Failed to persist tour step:", error);
+        }
       }
       
       if (status === STATUS.FINISHED) {
