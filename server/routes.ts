@@ -1968,6 +1968,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         projectManagerId: projectManagerId || null,
         contractAmount: contractAmount,
         budget: directCostBudget,
+        gcOrganizationId: bid.gcOrganizationId, // Copy organization from bid
       }).returning();
 
       for (const estimate of bidEstimates) {
