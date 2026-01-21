@@ -9,13 +9,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, CloudRain, Clock, Building, Truck, FileWarning, CheckCircle, AlertTriangle, Send, Undo2, FileText, ExternalLink, DollarSign, Loader2, Mail, Download, Eye, Edit2 } from "lucide-react";
+import { Plus, CloudRain, Clock, Building, Truck, FileWarning, CheckCircle, AlertTriangle, Send, Undo2, FileText, ExternalLink, DollarSign, Loader2, Mail, Download, Eye, Edit2, CalendarIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import type { ProjectDelay, ChangeOrder } from "@shared/schema";
 import { WeatherEvidenceCard } from "./WeatherEvidenceCard";
 
@@ -672,24 +675,98 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="startDateTime">Start Date/Time *</Label>
-                <Input
-                  id="startDateTime"
-                  type="datetime-local"
-                  value={formData.startDateTime}
-                  onChange={(e) => setFormData({ ...formData, startDateTime: e.target.value })}
-                  data-testid="input-start-datetime"
-                />
+                <Label>Start Date/Time *</Label>
+                <div className="flex gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "flex-1 justify-start text-left font-normal",
+                          !formData.startDateTime && "text-muted-foreground"
+                        )}
+                        data-testid="button-start-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.startDateTime
+                          ? format(parseISO(formData.startDateTime), "MMM d, yyyy")
+                          : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.startDateTime ? parseISO(formData.startDateTime) : undefined}
+                        onSelect={(date) => {
+                          if (date) {
+                            const time = formData.startDateTime
+                              ? formData.startDateTime.split("T")[1] || "08:00"
+                              : "08:00";
+                            setFormData({ ...formData, startDateTime: `${format(date, "yyyy-MM-dd")}T${time}` });
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={formData.startDateTime?.split("T")[1] || ""}
+                    onChange={(e) => {
+                      const date = formData.startDateTime?.split("T")[0] || format(new Date(), "yyyy-MM-dd");
+                      setFormData({ ...formData, startDateTime: `${date}T${e.target.value}` });
+                    }}
+                    data-testid="input-start-time"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endDateTime">End Date/Time (optional)</Label>
-                <Input
-                  id="endDateTime"
-                  type="datetime-local"
-                  value={formData.endDateTime}
-                  onChange={(e) => setFormData({ ...formData, endDateTime: e.target.value })}
-                  data-testid="input-end-datetime"
-                />
+                <Label>End Date/Time (optional)</Label>
+                <div className="flex gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "flex-1 justify-start text-left font-normal",
+                          !formData.endDateTime && "text-muted-foreground"
+                        )}
+                        data-testid="button-end-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.endDateTime
+                          ? format(parseISO(formData.endDateTime), "MMM d, yyyy")
+                          : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.endDateTime ? parseISO(formData.endDateTime) : undefined}
+                        onSelect={(date) => {
+                          if (date) {
+                            const time = formData.endDateTime
+                              ? formData.endDateTime.split("T")[1] || "17:00"
+                              : "17:00";
+                            setFormData({ ...formData, endDateTime: `${format(date, "yyyy-MM-dd")}T${time}` });
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={formData.endDateTime?.split("T")[1] || ""}
+                    onChange={(e) => {
+                      const date = formData.endDateTime?.split("T")[0] || format(new Date(), "yyyy-MM-dd");
+                      setFormData({ ...formData, endDateTime: `${date}T${e.target.value}` });
+                    }}
+                    data-testid="input-end-time"
+                  />
+                </div>
               </div>
             </div>
             <div className="space-y-2">
@@ -802,22 +879,98 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-startDateTime">Start Date/Time *</Label>
-                <Input
-                  id="edit-startDateTime"
-                  type="datetime-local"
-                  value={formData.startDateTime}
-                  onChange={(e) => setFormData({ ...formData, startDateTime: e.target.value })}
-                />
+                <Label>Start Date/Time *</Label>
+                <div className="flex gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "flex-1 justify-start text-left font-normal",
+                          !formData.startDateTime && "text-muted-foreground"
+                        )}
+                        data-testid="button-edit-start-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.startDateTime
+                          ? format(parseISO(formData.startDateTime), "MMM d, yyyy")
+                          : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.startDateTime ? parseISO(formData.startDateTime) : undefined}
+                        onSelect={(date) => {
+                          if (date) {
+                            const time = formData.startDateTime
+                              ? formData.startDateTime.split("T")[1] || "08:00"
+                              : "08:00";
+                            setFormData({ ...formData, startDateTime: `${format(date, "yyyy-MM-dd")}T${time}` });
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={formData.startDateTime?.split("T")[1] || ""}
+                    onChange={(e) => {
+                      const date = formData.startDateTime?.split("T")[0] || format(new Date(), "yyyy-MM-dd");
+                      setFormData({ ...formData, startDateTime: `${date}T${e.target.value}` });
+                    }}
+                    data-testid="input-edit-start-time"
+                  />
+                </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-endDateTime">End Date/Time (optional)</Label>
-                <Input
-                  id="edit-endDateTime"
-                  type="datetime-local"
-                  value={formData.endDateTime}
-                  onChange={(e) => setFormData({ ...formData, endDateTime: e.target.value })}
-                />
+                <Label>End Date/Time (optional)</Label>
+                <div className="flex gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "flex-1 justify-start text-left font-normal",
+                          !formData.endDateTime && "text-muted-foreground"
+                        )}
+                        data-testid="button-edit-end-date"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.endDateTime
+                          ? format(parseISO(formData.endDateTime), "MMM d, yyyy")
+                          : "Pick date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={formData.endDateTime ? parseISO(formData.endDateTime) : undefined}
+                        onSelect={(date) => {
+                          if (date) {
+                            const time = formData.endDateTime
+                              ? formData.endDateTime.split("T")[1] || "17:00"
+                              : "17:00";
+                            setFormData({ ...formData, endDateTime: `${format(date, "yyyy-MM-dd")}T${time}` });
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={formData.endDateTime?.split("T")[1] || ""}
+                    onChange={(e) => {
+                      const date = formData.endDateTime?.split("T")[0] || format(new Date(), "yyyy-MM-dd");
+                      setFormData({ ...formData, endDateTime: `${date}T${e.target.value}` });
+                    }}
+                    data-testid="input-edit-end-time"
+                  />
+                </div>
               </div>
             </div>
             <div className="space-y-2">
