@@ -103,6 +103,18 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
   const { data: selectedItems, isLoading: loadingItems } = useQuery<{ items: PricebookItem[] }>({
     queryKey: ["/api/ai-features/vendor-pricebooks", selectedPricebook, "items"],
     enabled: !!selectedPricebook,
+    select: (data: any) => ({
+      items: (data?.items || []).map((item: any) => ({
+        id: item.id,
+        sku: item.vendorCode || item.sku || '',
+        name: item.vendorDescription || item.name || '',
+        category: item.category || '',
+        unitPrice: Number(item.unitPrice) || 0,
+        uom: item.unit || item.uom || 'EA',
+        lastUpdated: item.lastUpdated,
+        priceChange: item.priceChange,
+      }))
+    })
   });
 
   const uploadMutation = useMutation({
