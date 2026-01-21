@@ -1950,7 +1950,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get superintendent and project manager from request body (optional)
       const { superintendentId, projectManagerId } = req.body || {};
       
-      // Create project from bid data
+      // Create project from bid data - set to ACTIVE since bid was awarded
       const [newProject] = await db.insert(projects).values({
         name: bid.name,
         code: bid.code,
@@ -1958,7 +1958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clientContactName: bid.clientContactName,
         clientContactEmail: bid.clientContactEmail,
         clientContactPhone: bid.clientContactPhone,
-        status: "PLANNING",
+        status: "ACTIVE",
         locationAddress: bid.locationAddress,
         city: bid.city,
         state: bid.state,
