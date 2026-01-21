@@ -345,8 +345,8 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         stepNumber: 2,
         title: "Takeoffs Made Easy",
         description: "{{firstName}}, this is where it gets fun! Upload drawings and measure right on screen. Linear, area, count — whatever you need.",
-        action: "Try out the Takeoff tool. Upload a PDF and start measuring. It's way faster than the old-school way!",
-        targetPage: "/takeoff",
+        action: "Open a bid or project and navigate to the 'Plans & Takeoff' tab. Upload a PDF and start measuring!",
+        targetPage: "/bids",
         tips: [
           "Drop in PDF drawings and they're ready to measure",
           "Use linear for lengths, area for surfaces, count for items",
