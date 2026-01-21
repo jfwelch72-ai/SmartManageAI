@@ -2538,7 +2538,65 @@ export default function ProjectDetailPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="w-full justify-start overflow-x-auto">
+          {/* Mobile dropdown - visible only on small screens */}
+          <div className="md:hidden">
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger className="w-full" data-testid="select-tab-mobile">
+                <SelectValue placeholder="Select tab" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="overview">Overview</SelectItem>
+                <SelectItem value="scope">Scope & Progress</SelectItem>
+                <SelectItem value="materials">Materials</SelectItem>
+                <SelectItem value="change-orders">
+                  Change Orders {changeOrders.filter(co => co.status === "SUBMITTED").length > 0 && `(${changeOrders.filter(co => co.status === "SUBMITTED").length})`}
+                </SelectItem>
+                <SelectItem value="schedule">Schedule</SelectItem>
+                <SelectItem value="delays">Delays</SelectItem>
+                <SelectItem value="inspections">Inspections</SelectItem>
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="jobsite-ai">AI Jobsite</SelectItem>
+                )}
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="client-portal">Client Portal</SelectItem>
+                )}
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="email-communications">Email</SelectItem>
+                )}
+                <SelectItem value="daily-notes">Daily Notes</SelectItem>
+                <SelectItem value="media">Photos & Videos</SelectItem>
+                {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
+                  <SelectItem value="estimate">Estimate</SelectItem>
+                )}
+                {FeaturePermissions.VIEW_PROCUREMENT_TAB(user?.role) && (
+                  <SelectItem value="procurement">Procurement</SelectItem>
+                )}
+                <SelectItem value="plans">Plans & Takeoff</SelectItem>
+                {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
+                  <SelectItem value="time">Time & T&M</SelectItem>
+                )}
+                {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
+                  <SelectItem value="labor-hours">Labor Hours</SelectItem>
+                )}
+                {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
+                  <SelectItem value="receipts">Receipts</SelectItem>
+                )}
+                {FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(user?.role) && (
+                  <SelectItem value="subcontractors">Subcontractors</SelectItem>
+                )}
+                {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (
+                  <SelectItem value="labor-rates">Labor Rates</SelectItem>
+                )}
+                <SelectItem value="job-info">Job Info</SelectItem>
+                {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
+                  <SelectItem value="equipment">Equipment</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Desktop tabs - hidden on mobile, flex wrap on larger screens */}
+          <TabsList className="hidden md:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="scope" data-testid="tab-scope">Scope & Progress</TabsTrigger>
             <TabsTrigger value="materials" data-testid="tab-materials">
