@@ -552,16 +552,16 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
                               <Badge variant="outline">{item.category}</Badge>
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              ${item.unitPrice.toFixed(2)}
+                              ${Number(item.unitPrice || 0).toFixed(2)}
                             </TableCell>
                             <TableCell>{item.uom}</TableCell>
                             <TableCell>
-                              {item.priceChange !== undefined && item.priceChange !== 0 && (
+                              {item.priceChange != null && Number(item.priceChange) !== 0 && (
                                 <span className={cn(
                                   "text-sm font-medium",
-                                  item.priceChange > 0 ? "text-red-600" : "text-green-600"
+                                  Number(item.priceChange) > 0 ? "text-red-600" : "text-green-600"
                                 )}>
-                                  {item.priceChange > 0 ? "+" : ""}{item.priceChange.toFixed(1)}%
+                                  {Number(item.priceChange) > 0 ? "+" : ""}{Number(item.priceChange).toFixed(1)}%
                                 </span>
                               )}
                             </TableCell>
