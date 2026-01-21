@@ -8123,7 +8123,7 @@ SmartManageAI Construction Management Platform
       }).returning();
 
       // Parse the file and create pricebook items
-      const xlsx = require("xlsx");
+      const xlsx = await import("xlsx");
       const workbook = xlsx.read(file.buffer, { type: "buffer" });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
