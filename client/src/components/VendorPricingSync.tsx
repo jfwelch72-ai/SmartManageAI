@@ -160,11 +160,20 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
 
   const saveItemMutation = useMutation({
     mutationFn: async (item: Partial<PricebookItem>) => {
+      // Map frontend field names to backend field names
+      const backendItem = {
+        vendorCode: item.sku,
+        vendorDescription: item.name,
+        category: item.category,
+        unitPrice: item.unitPrice,
+        unit: item.uom,
+      };
+      
       if (item.id) {
-        const response = await apiRequest("PATCH", `/api/ai-features/vendor-pricebooks/items/${item.id}`, item);
+        const response = await apiRequest("PATCH", `/api/ai-features/vendor-pricebooks/items/${item.id}`, backendItem);
         return response.json();
       } else {
-        const response = await apiRequest("POST", `/api/ai-features/vendor-pricebooks/${selectedPricebook}/items`, item);
+        const response = await apiRequest("POST", `/api/ai-features/vendor-pricebooks/${selectedPricebook}/items`, backendItem);
         return response.json();
       }
     },
