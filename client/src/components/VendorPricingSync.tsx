@@ -436,9 +436,11 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
                       <p className="text-xs text-muted-foreground">
                         {pricebook.itemCount} items • v{pricebook.version}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Effective {format(parseISO(pricebook.effectiveDate), "MMM d, yyyy")}
-                      </p>
+                      {pricebook.effectiveDate && (
+                        <p className="text-xs text-muted-foreground">
+                          Effective {format(parseISO(pricebook.effectiveDate), "MMM d, yyyy")}
+                        </p>
+                      )}
                     </div>
                   ))
                 )}
