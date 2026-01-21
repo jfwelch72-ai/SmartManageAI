@@ -170,6 +170,9 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-features/vendor-pricebooks"] });
+      if (selectedPricebook) {
+        queryClient.invalidateQueries({ queryKey: ["/api/ai-features/vendor-pricebooks", selectedPricebook, "items"] });
+      }
       setAddItemDialogOpen(false);
       setEditingItem(null);
       toast({
