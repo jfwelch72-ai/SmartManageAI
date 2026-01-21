@@ -68,8 +68,23 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PricebookItem | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string>("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   const { toast } = useToast();
+
+  interface CrmOrganisation {
+    id: string;
+    name: string;
+    type: string;
+  }
+
+  const { data: vendors = [] } = useQuery<CrmOrganisation[]>({
+    queryKey: ["/api/crm/organisations"],
+    select: (data) => data.filter(org => 
+      org.type === "SUPPLIER" || org.type === "VENDOR"
+    ),
+  });
 
   interface PricebookResponse {
     pricebooks: Pricebook[];
@@ -106,6 +121,8 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-features/vendor-pricebooks"] });
       setUploadDialogOpen(false);
+      setSelectedVendorId("");
+      setUploadFile(null);
       toast({
         title: "Pricebook Uploaded",
         description: `Imported ${data.itemCount || 0} items from the pricebook`,
@@ -169,12 +186,26 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
     },
   });
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setUploadFile(file);
+    }
+  };
+
+  const handleFileUpload = () => {
+    if (!uploadFile || !selectedVendorId) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a vendor and choose a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", uploadFile);
+    formData.append("vendorId", selectedVendorId);
     uploadMutation.mutate(formData);
   };
 
@@ -226,27 +257,74 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
                   Upload an Excel or CSV file with vendor pricing data
                 </DialogDescription>
               </DialogHeader>
-              <div className="py-6">
-                <div className="border-2 border-dashed rounded-lg p-8 text-center">
-                  <FileSpreadsheet className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-sm text-muted-foreground mb-4">
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-select">Select Vendor *</Label>
+                  <Select value={selectedVendorId} onValueChange={setSelectedVendorId}>
+                    <SelectTrigger id="vendor-select" data-testid="select-vendor">
+                      <SelectValue placeholder="Choose a vendor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vendors.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          No vendors found. Add vendors in CRM first.
+                        </div>
+                      ) : (
+                        vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                  <FileSpreadsheet className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-sm text-muted-foreground mb-3">
                     Drag and drop your file here, or click to browse
                   </p>
                   <Input
                     type="file"
                     accept=".csv,.xlsx,.xls"
-                    onChange={handleFileUpload}
+                    onChange={handleFileSelect}
                     className="max-w-xs mx-auto"
                     data-testid="input-file-upload"
                   />
-                  <p className="text-xs text-muted-foreground mt-4">
+                  {uploadFile && (
+                    <p className="text-sm text-primary mt-2">
+                      Selected: {uploadFile.name}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-3">
                     Supported formats: CSV, Excel (.xlsx, .xls)
                   </p>
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => {
+                  setUploadDialogOpen(false);
+                  setSelectedVendorId("");
+                  setUploadFile(null);
+                }}>
                   Cancel
+                </Button>
+                <Button 
+                  onClick={handleFileUpload}
+                  disabled={!selectedVendorId || !uploadFile || uploadMutation.isPending}
+                  data-testid="button-upload-submit"
+                >
+                  {uploadMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Pricebook
+                    </>
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
