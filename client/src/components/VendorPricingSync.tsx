@@ -213,11 +213,14 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
   const stats = data?.stats || { totalItems: 0, avgPriceChange: 0, lastSync: null };
   const items = selectedItems?.items || [];
   
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredItems = items.filter(item => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (item.name?.toLowerCase() || '').includes(query) ||
+      (item.sku?.toLowerCase() || '').includes(query) ||
+      (item.category?.toLowerCase() || '').includes(query)
+    );
+  });
 
   const activePricebook = pricebooks.find(p => p.id === selectedPricebook);
 
