@@ -411,6 +411,7 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                     <Label htmlFor="tm-location">Location</Label>
                     <Input
                       id="tm-location"
+                      className="mt-[8px] mb-[8px]"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       placeholder="Work location (optional)"
