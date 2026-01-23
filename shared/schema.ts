@@ -2789,7 +2789,7 @@ export type Subcontractor = typeof subcontractors.$inferSelect;
 // Subcontractor Contracts table
 export const subcontractorContracts = pgTable("subcontractor_contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  subcontractorId: varchar("subcontractor_id").notNull().references(() => subcontractors.id, { onDelete: "cascade" }),
+  subcontractorId: varchar("subcontractor_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   contractNumber: text("contract_number").notNull(),
   scopeOfWork: text("scope_of_work").notNull(),
