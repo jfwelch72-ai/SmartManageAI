@@ -233,8 +233,11 @@ router.post("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     const [subcontractor] = await db
       .select()
-      .from(subcontractors)
-      .where(eq(subcontractors.id, data.subcontractorId))
+      .from(crmOrganisations)
+      .where(and(
+        eq(crmOrganisations.id, data.subcontractorId),
+        eq(crmOrganisations.type, "SUBCONTRACTOR")
+      ))
       .limit(1);
 
     if (!subcontractor) {
@@ -409,8 +412,11 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     const [subcontractor] = await db
       .select()
-      .from(subcontractors)
-      .where(eq(subcontractors.id, contract.subcontractorId))
+      .from(crmOrganisations)
+      .where(and(
+        eq(crmOrganisations.id, contract.subcontractorId),
+        eq(crmOrganisations.type, "SUBCONTRACTOR")
+      ))
       .limit(1);
 
     if (!subcontractor) {
@@ -467,10 +473,10 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "ADM
         createdAt: contract.createdAt
       },
       subcontractor: {
-        companyName: subcontractor.companyName,
-        contactName: subcontractor.contactName,
-        email: subcontractor.email,
-        phone: subcontractor.phone,
+        companyName: subcontractor.name,
+        contactName: null,
+        email: null,
+        phone: null,
         address: subcontractor.address,
         specialties: subcontractor.specialties
       },
