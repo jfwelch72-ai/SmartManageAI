@@ -311,13 +311,22 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
                   <p className="text-sm text-muted-foreground mb-3">
                     Drag and drop your file here, or click to browse
                   </p>
-                  <Input
+                  <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
                     onChange={handleFileSelect}
-                    className="max-w-xs mx-auto"
+                    className="hidden"
+                    id="pricebook-file-input"
                     data-testid="input-file-upload"
                   />
+                  <Button
+                    type="button"
+                    className="bg-orange-500 hover:bg-orange-600 text-white"
+                    onClick={() => document.getElementById('pricebook-file-input')?.click()}
+                    data-testid="button-select-file"
+                  >
+                    Select File
+                  </Button>
                   {uploadFile && (
                     <p className="text-sm text-primary mt-2">
                       Selected: {uploadFile.name}
