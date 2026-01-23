@@ -225,7 +225,7 @@ export default function StandardizedScopeSelector({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label>Work Type Category</Label>
+          <Label className="mt-[0px] mb-[0px] pt-[5px] pb-[5px]">Work Type Category</Label>
           <Select value={selectedCategoryId} onValueChange={handleCategoryChange}>
             <SelectTrigger data-testid="select-scope-category">
               <SelectValue placeholder="Select category" />
