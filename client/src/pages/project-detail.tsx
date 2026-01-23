@@ -3970,6 +3970,7 @@ export default function ProjectDetailPage() {
                           handleReceiptUploadComplete(result);
                         }}
                         buttonVariant="default"
+                        buttonClassName="bg-orange-500 hover:bg-orange-600 text-white"
                         testId="button-select-receipt-file"
                       >
                         {isUploadingReceipt ? "Uploading..." : "Select File"}
