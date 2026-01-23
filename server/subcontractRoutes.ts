@@ -57,6 +57,64 @@ async function verifyContractAccess(contractId: string, orgId: string | null, sh
   return { contract, hasAccess: true };
 }
 
+router.get("/subcontracts/projects", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    let query = db
+      .select({
+        id: projects.id,
+        code: projects.code,
+        name: projects.name,
+      })
+      .from(projects)
+      .orderBy(desc(projects.createdAt))
+      .limit(100);
+
+    if (shouldFilter && orgId) {
+      query = query.where(eq(projects.gcOrganizationId, orgId)) as typeof query;
+    }
+
+    const projectList = await query;
+    res.json(projectList);
+  } catch (error) {
+    console.error("Get projects for subcontracts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/subcontracts/subcontractors", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    const subList = await db
+      .select({
+        id: subcontractors.id,
+        companyName: subcontractors.companyName,
+        contactName: subcontractors.contactName,
+        email: subcontractors.email,
+        phone: subcontractors.phone,
+      })
+      .from(subcontractors)
+      .where(eq(subcontractors.isActive, true))
+      .orderBy(subcontractors.companyName)
+      .limit(100);
+
+    res.json(subList);
+  } catch (error) {
+    console.error("Get subcontractors error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/subcontracts/project/:projectId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;

@@ -5,3 +5,10 @@
  * Use it for custom style overrides that should apply app-wide.
  */
 
+.create-sub-contract-modal .form-wrapper {
+  margin-right: -15px;
+}
+
+.create-sub-contract-modal .form-wrapper div {
+  padding-right: 15px;
+}
