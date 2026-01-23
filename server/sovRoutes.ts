@@ -108,7 +108,19 @@ router.get("/sov", requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     const sovList = await query;
-    res.json(sovList);
+
+    const sovsWithLineItems = await Promise.all(
+      sovList.map(async (sov) => {
+        const lineItems = await db
+          .select()
+          .from(sovLineItems)
+          .where(eq(sovLineItems.sovId, sov.id))
+          .orderBy(sovLineItems.lineNumber);
+        return { ...sov, lineItems };
+      })
+    );
+
+    res.json(sovsWithLineItems);
   } catch (error) {
     console.error("Get SOVs error:", error);
     res.status(500).json({ error: "Internal server error" });
