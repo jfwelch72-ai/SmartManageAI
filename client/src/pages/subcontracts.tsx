@@ -47,9 +47,7 @@ interface Project {
 interface Subcontractor {
   id: string;
   companyName: string;
-  contactName: string | null;
-  email: string | null;
-  phone: string | null;
+  name?: string;
 }
 
 interface SubcontractorContract {
@@ -404,7 +402,7 @@ export default function SubcontractsPage() {
                           </div>
                           <div className="min-w-0">
                             <h3 className="font-medium truncate">
-                              {contract.contractNumber} - {contract.subcontractor.companyName}
+                              {contract.contractNumber} - {contract.subcontractor?.name || "Unknown"}
                             </h3>
                             <p className="text-sm text-muted-foreground">
                               {contract.project.code} - {contract.project.name}
@@ -647,13 +645,7 @@ export default function SubcontractsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="font-medium">{selectedContract.subcontractor.companyName}</p>
-                    {selectedContract.subcontractor.contactName && (
-                      <p className="text-sm text-muted-foreground">{selectedContract.subcontractor.contactName}</p>
-                    )}
-                    {selectedContract.subcontractor.email && (
-                      <p className="text-sm text-muted-foreground">{selectedContract.subcontractor.email}</p>
-                    )}
+                    <p className="font-medium">{selectedContract.subcontractor?.name || "Unknown"}</p>
                   </CardContent>
                 </Card>
                 <Card>
