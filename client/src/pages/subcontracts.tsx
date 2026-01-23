@@ -460,7 +460,7 @@ export default function SubcontractsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto form-wrapper">
             <div className="space-y-2">
               <Label>Project</Label>
               <Select 
