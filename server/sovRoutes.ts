@@ -143,6 +143,39 @@ router.get("/sov/project/:projectId", requireAuth, async (req: AuthRequest, res:
   }
 });
 
+// Get projects available for SOV creation (must come BEFORE /sov/:id route)
+router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    // Get projects for this organization that are in active status
+    let query = db
+      .select({
+        id: projects.id,
+        code: projects.code,
+        name: projects.name,
+        clientName: projects.clientName,
+        contractAmount: projects.contractAmount,
+      })
+      .from(projects);
+
+    if (shouldFilter && orgId) {
+      query = query.where(eq(projects.gcOrganizationId, orgId)) as typeof query;
+    }
+
+    const projectList = await query.orderBy(desc(projects.createdAt));
+
+    res.json(projectList);
+  } catch (error) {
+    console.error("Get SOV projects error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
