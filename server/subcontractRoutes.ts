@@ -6,6 +6,7 @@ import {
   subcontractors, 
   projects,
   organizations,
+  crmOrganisations,
   insertSubcontractorContractSchema
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -89,23 +90,25 @@ router.get("/subcontracts/projects", requireAuth, requireRole("SUPER_ADMIN", "AD
 
 router.get("/subcontracts/subcontractors", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
-    const { mustDenyAccess } = getOrgIdForFilter(req);
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
     if (mustDenyAccess) {
       return res.json([]);
     }
 
+    let conditions = [eq(crmOrganisations.type, "SUBCONTRACTOR")];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(crmOrganisations.organizationId, orgId));
+    }
+
     const subList = await db
       .select({
-        id: subcontractors.id,
-        companyName: subcontractors.companyName,
-        contactName: subcontractors.contactName,
-        email: subcontractors.email,
-        phone: subcontractors.phone,
+        id: crmOrganisations.id,
+        companyName: crmOrganisations.name,
       })
-      .from(subcontractors)
-      .where(eq(subcontractors.isActive, true))
-      .orderBy(subcontractors.companyName)
+      .from(crmOrganisations)
+      .where(and(...conditions))
+      .orderBy(crmOrganisations.name)
       .limit(100);
 
     res.json(subList);
