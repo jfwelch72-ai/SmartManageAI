@@ -2355,6 +2355,7 @@ export const delayClaims = pgTable("delay_claims", {
 
 export const insertDelayClaimSchema = createInsertSchema(delayClaims).omit({
   id: true,
+  claimNumber: true,
   createdAt: true,
   updatedAt: true,
   submittedAt: true,
