@@ -40,7 +40,8 @@ import {
   projectEquipmentPlans, insertProjectEquipmentPlanSchema,
   rentalEquipmentUsages, insertRentalEquipmentUsageSchema,
   tradeFeatures, organizations, organizationSowItems, masterSowItems,
-  masterModifierCategories, masterModifiers
+  masterModifierCategories, masterModifiers,
+  scheduleOfValues, sovLineItems
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -10976,13 +10977,22 @@ SmartManageAI Construction Management Platform
   app.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
     try {
       // Transform the request data to match schema expectations
+      // Handle empty string for amount - convert to "0" or undefined
+      const rawAmount = req.body.amount;
+      let processedAmount: string | undefined = undefined;
+      if (rawAmount !== undefined && rawAmount !== null && rawAmount !== "") {
+        processedAmount = String(rawAmount);
+      } else if (rawAmount === "") {
+        processedAmount = "0"; // Default empty amount to 0
+      }
+      
       const transformedData = {
         ...req.body,
         userId: req.user!.id,
         // Ensure date is a Date object
         date: req.body.date ? new Date(req.body.date) : undefined,
-        // Ensure amount is a string for decimal type
-        amount: req.body.amount !== undefined ? String(req.body.amount) : undefined,
+        // Ensure amount is a valid string for decimal type
+        amount: processedAmount,
       };
       
       const validationResult = insertReceiptSchema.extend({
@@ -17157,6 +17167,330 @@ If the make/model is unknown, provide general best practices for the equipment t
       });
     } catch (error) {
       console.error("Get equipment for selection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ===============================================
+  // SCHEDULE OF VALUES (SOV) API
+  // ===============================================
+
+  // Get projects available for SOV creation
+  app.get("/api/sov/projects", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      // Get projects for this organization that are in active status
+      // Projects link to organizations via gcOrganizationId
+      const projectList = await db
+        .select({
+          id: projects.id,
+          code: projects.code,
+          name: projects.name,
+          clientName: projects.clientName,
+          contractAmount: projects.contractAmount,
+        })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.gcOrganizationId, req.user.organizationId),
+            inArray(projects.status, ["ACTIVE", "PLANNING"] as any)
+          )
+        )
+        .orderBy(desc(projects.createdAt));
+
+      res.json(projectList);
+    } catch (error) {
+      console.error("Get SOV projects error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all Schedule of Values for organization
+  app.get("/api/sov", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      const sovList = await db
+        .select({
+          id: scheduleOfValues.id,
+          projectId: scheduleOfValues.projectId,
+          sovNumber: scheduleOfValues.sovNumber,
+          title: scheduleOfValues.title,
+          description: scheduleOfValues.description,
+          status: scheduleOfValues.status,
+          contractValue: scheduleOfValues.contractValue,
+          totalScheduledValue: scheduleOfValues.totalScheduledValue,
+          totalPreviouslyCompleted: scheduleOfValues.totalPreviouslyCompleted,
+          totalThisPeriod: scheduleOfValues.totalThisPeriod,
+          totalMaterialsStored: scheduleOfValues.totalMaterialsStored,
+          totalCompletedToDate: scheduleOfValues.totalCompletedToDate,
+          totalRetainage: scheduleOfValues.totalRetainage,
+          totalEarnedLessRetainage: scheduleOfValues.totalEarnedLessRetainage,
+          createdAt: scheduleOfValues.createdAt,
+          updatedAt: scheduleOfValues.updatedAt,
+          projectCode: projects.code,
+          projectName: projects.name,
+          createdByFirstName: users.firstName,
+          createdByLastName: users.lastName,
+        })
+        .from(scheduleOfValues)
+        .leftJoin(projects, eq(scheduleOfValues.projectId, projects.id))
+        .leftJoin(users, eq(scheduleOfValues.createdById, users.id))
+        .where(eq(scheduleOfValues.organizationId, req.user.organizationId))
+        .orderBy(desc(scheduleOfValues.createdAt));
+
+      // Fetch line items for each SOV
+      const sovsWithLineItems = await Promise.all(
+        sovList.map(async (sov) => {
+          const lineItems = await db
+            .select()
+            .from(sovLineItems)
+            .where(eq(sovLineItems.sovId, sov.id))
+            .orderBy(sovLineItems.lineNumber);
+          return { 
+            ...sov, 
+            createdByName: sov.createdByFirstName && sov.createdByLastName 
+              ? `${sov.createdByFirstName} ${sov.createdByLastName}` 
+              : null,
+            lineItems 
+          };
+        })
+      );
+
+      res.json(sovsWithLineItems);
+    } catch (error) {
+      console.error("Get SOVs error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create new Schedule of Values
+  app.post("/api/sov", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      const { projectId, title, description } = req.body;
+
+      if (!projectId || !title) {
+        return res.status(400).json({ error: "Project and title are required" });
+      }
+
+      // Get project details
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.id, projectId),
+            eq(projects.gcOrganizationId, req.user.organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Generate SOV number
+      const existingCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(scheduleOfValues)
+        .where(eq(scheduleOfValues.organizationId, req.user.organizationId));
+      const sovNumber = `SOV-${String((existingCount[0]?.count || 0) + 1).padStart(4, "0")}`;
+
+      const [newSOV] = await db
+        .insert(scheduleOfValues)
+        .values({
+          organizationId: req.user.organizationId,
+          projectId,
+          sovNumber,
+          title,
+          description: description || null,
+          status: "DRAFT",
+          contractValue: project.contractAmount || "0",
+          totalScheduledValue: "0",
+          totalPreviouslyCompleted: "0",
+          totalThisPeriod: "0",
+          totalMaterialsStored: "0",
+          totalCompletedToDate: "0",
+          totalRetainage: "0",
+          totalEarnedLessRetainage: "0",
+          createdById: req.user.id,
+        })
+        .returning();
+
+      res.status(201).json(newSOV);
+    } catch (error) {
+      console.error("Create SOV error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update SOV status
+  app.patch("/api/sov/:id/status", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      const { status } = req.body;
+      const validStatuses = ["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED"];
+
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const [updated] = await db
+        .update(scheduleOfValues)
+        .set({ status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(scheduleOfValues.id, req.params.id),
+            eq(scheduleOfValues.organizationId, req.user.organizationId)
+          )
+        )
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "SOV not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update SOV status error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Add line item to SOV
+  app.post("/api/sov/:id/line-items", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      const { description, scheduledValue } = req.body;
+
+      if (!description || scheduledValue === undefined) {
+        return res.status(400).json({ error: "Description and scheduled value are required" });
+      }
+
+      // Verify SOV exists and belongs to org
+      const [sov] = await db
+        .select()
+        .from(scheduleOfValues)
+        .where(
+          and(
+            eq(scheduleOfValues.id, req.params.id),
+            eq(scheduleOfValues.organizationId, req.user.organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!sov) {
+        return res.status(404).json({ error: "SOV not found" });
+      }
+
+      // Get next line number
+      const existingItems = await db
+        .select({ maxItem: sql<number>`COALESCE(MAX(line_number), 0)` })
+        .from(sovLineItems)
+        .where(eq(sovLineItems.sovId, req.params.id));
+
+      const lineNumber = (existingItems[0]?.maxItem || 0) + 1;
+
+      const [newItem] = await db
+        .insert(sovLineItems)
+        .values({
+          sovId: req.params.id,
+          lineNumber,
+          description,
+          scheduledValue: String(scheduledValue),
+          previouslyCompleted: "0",
+          thisPeriodCompleted: "0",
+          materialsStored: "0",
+          totalCompletedAndStored: "0",
+          percentComplete: "0",
+          balanceToFinish: String(scheduledValue),
+          retainageAmount: "0",
+        })
+        .returning();
+
+      // Update SOV totals
+      const totalScheduled = parseFloat(sov.totalScheduledValue || "0") + parseFloat(scheduledValue);
+
+      await db
+        .update(scheduleOfValues)
+        .set({
+          totalScheduledValue: String(totalScheduled),
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleOfValues.id, req.params.id));
+
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Add SOV line item error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Delete SOV line item
+  app.delete("/api/sov/:sovId/line-items/:itemId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user?.organizationId) {
+        return res.status(403).json({ error: "Organization required" });
+      }
+
+      // Verify SOV belongs to org
+      const [sov] = await db
+        .select()
+        .from(scheduleOfValues)
+        .where(
+          and(
+            eq(scheduleOfValues.id, req.params.sovId),
+            eq(scheduleOfValues.organizationId, req.user.organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!sov) {
+        return res.status(404).json({ error: "SOV not found" });
+      }
+
+      // Get item to delete (for updating totals)
+      const [item] = await db
+        .select()
+        .from(sovLineItems)
+        .where(eq(sovLineItems.id, req.params.itemId))
+        .limit(1);
+
+      if (!item) {
+        return res.status(404).json({ error: "Line item not found" });
+      }
+
+      await db.delete(sovLineItems).where(eq(sovLineItems.id, req.params.itemId));
+
+      // Update SOV totals
+      const totalScheduled = parseFloat(sov.totalScheduledValue || "0") - parseFloat(item.scheduledValue || "0");
+
+      await db
+        .update(scheduleOfValues)
+        .set({
+          totalScheduledValue: String(Math.max(0, totalScheduled)),
+          updatedAt: new Date(),
+        })
+        .where(eq(scheduleOfValues.id, req.params.sovId));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete SOV line item error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
