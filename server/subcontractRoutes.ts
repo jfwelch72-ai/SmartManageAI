@@ -58,6 +58,51 @@ async function verifyContractAccess(contractId: string, orgId: string | null, sh
   return { contract, hasAccess: true };
 }
 
+router.get("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    const allContracts = await db
+      .select({
+        contract: subcontractorContracts,
+        project: {
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+        subcontractor: {
+          id: crmOrganisations.id,
+          name: crmOrganisations.name,
+        },
+      })
+      .from(subcontractorContracts)
+      .leftJoin(projects, eq(subcontractorContracts.projectId, projects.id))
+      .leftJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
+      .orderBy(desc(subcontractorContracts.createdAt));
+
+    let filteredContracts = allContracts;
+    if (shouldFilter && orgId && !isSuperAdmin) {
+      filteredContracts = allContracts.filter(c => c.project?.gcOrganizationId === orgId);
+    }
+
+    const result = filteredContracts.map(c => ({
+      ...c.contract,
+      project: c.project,
+      subcontractor: c.subcontractor,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get all subcontracts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/subcontracts/projects", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
