@@ -136,12 +136,11 @@ export function ObjectUploader({
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        className={`cursor-pointer transition-colors ${isDragging ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+        className="cursor-pointer transition-colors bg-[#fa6b1bf7] mt-[6px] mb-[6px] pl-[10px] pr-[10px] pt-[3px] pb-[3px]"
         data-testid={testId}
       >
         {children}
       </div>
-
       <DashboardModal
         uppy={uppy}
         open={showModal}
