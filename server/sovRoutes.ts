@@ -355,6 +355,150 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
   }
 });
 
+const addLineItemSchema = z.object({
+  description: z.string(),
+  scheduledValue: z.string().or(z.number()),
+  itemCode: z.string().optional(),
+  category: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id: sovId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(404).json({ error: "SOV not found" });
+    }
+
+    const validationResult = addLineItemSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: "Validation failed", 
+        details: validationResult.error.flatten() 
+      });
+    }
+
+    const { description, scheduledValue, itemCode, category, notes } = validationResult.data;
+
+    const { sov, hasAccess } = await verifySOVAccess(sovId, orgId, shouldFilter);
+
+    if (!sov || !hasAccess) {
+      return res.status(404).json({ error: "SOV not found" });
+    }
+
+    if (sov.status !== "DRAFT") {
+      return res.status(400).json({ error: "Can only add line items to DRAFT SOVs" });
+    }
+
+    const existingItems = await db
+      .select({ maxLine: sql<number>`COALESCE(MAX(line_number), 0)` })
+      .from(sovLineItems)
+      .where(eq(sovLineItems.sovId, sovId));
+
+    const nextLineNumber = (existingItems[0]?.maxLine || 0) + 1;
+    const scheduled = Math.max(0, Number(scheduledValue) || 0);
+    const retainagePct = Math.max(0, Math.min(100, Number(sov.retainagePercent || 10))) / 100;
+
+    const [newItem] = await db
+      .insert(sovLineItems)
+      .values({
+        sovId,
+        lineNumber: nextLineNumber,
+        itemCode: itemCode || null,
+        description,
+        category: category || null,
+        scheduledValue: String(scheduled),
+        previouslyCompleted: "0",
+        thisPeriodCompleted: "0",
+        materialsStored: "0",
+        totalCompletedAndStored: "0",
+        percentComplete: "0",
+        balanceToFinish: String(scheduled),
+        retainageAmount: "0",
+        notes: notes || null,
+      })
+      .returning();
+
+    const allLineItems = await db
+      .select()
+      .from(sovLineItems)
+      .where(eq(sovLineItems.sovId, sovId));
+
+    const totals = calculateSOVTotals(allLineItems, retainagePct);
+
+    await db
+      .update(scheduleOfValues)
+      .set({
+        ...totals,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleOfValues.id, sovId));
+
+    res.status(201).json(newItem);
+  } catch (error) {
+    console.error("Add SOV line item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { sovId, itemId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(404).json({ error: "SOV not found" });
+    }
+
+    const { sov, hasAccess } = await verifySOVAccess(sovId, orgId, shouldFilter);
+
+    if (!sov || !hasAccess) {
+      return res.status(404).json({ error: "SOV not found" });
+    }
+
+    if (sov.status !== "DRAFT") {
+      return res.status(400).json({ error: "Can only delete line items from DRAFT SOVs" });
+    }
+
+    const [deletedItem] = await db
+      .delete(sovLineItems)
+      .where(
+        and(
+          eq(sovLineItems.id, itemId),
+          eq(sovLineItems.sovId, sovId)
+        )
+      )
+      .returning();
+
+    if (!deletedItem) {
+      return res.status(404).json({ error: "Line item not found" });
+    }
+
+    const allLineItems = await db
+      .select()
+      .from(sovLineItems)
+      .where(eq(sovLineItems.sovId, sovId));
+
+    const retainagePct = Math.max(0, Math.min(100, Number(sov.retainagePercent || 10))) / 100;
+    const totals = calculateSOVTotals(allLineItems, retainagePct);
+
+    await db
+      .update(scheduleOfValues)
+      .set({
+        ...totals,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduleOfValues.id, sovId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete SOV line item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 const updateLineItemSchema = z.object({
   previouslyCompleted: z.string().or(z.number()).optional(),
   thisPeriodCompleted: z.string().or(z.number()).optional(),
