@@ -105,6 +105,245 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// ============================================================================
+// DAILY REPORT LOCKS ROUTES (defined before parameterized routes)
+// ============================================================================
+
+// GET /api/delay-claims/locks - List locks for a project
+router.get("/locks", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const projectId = req.query.projectId as string | undefined;
+    
+    let conditions = [eq(dailyReportLocks.organizationId, orgId!)];
+    if (projectId) {
+      conditions.push(eq(dailyReportLocks.projectId, projectId));
+    }
+    
+    const locks = await db
+      .select({
+        lock: dailyReportLocks,
+        project: {
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+        },
+      })
+      .from(dailyReportLocks)
+      .innerJoin(projects, eq(dailyReportLocks.projectId, projects.id))
+      .where(and(...conditions))
+      .orderBy(desc(dailyReportLocks.reportDate));
+    
+    res.json(locks.map(({ lock, project }) => ({
+      ...lock,
+      project,
+    })));
+  } catch (error) {
+    console.error("Error fetching daily report locks:", error);
+    res.status(500).json({ error: "Failed to fetch daily report locks" });
+  }
+});
+
+// POST /api/delay-claims/locks - Lock a daily report
+router.post("/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const userId = req.user!.id;
+    const { projectId, reportDate, lockReason, contentHash } = req.body;
+    
+    if (!projectId || !reportDate) {
+      return res.status(400).json({ error: "Project ID and report date are required" });
+    }
+    
+    // Check for existing lock
+    const [existing] = await db
+      .select()
+      .from(dailyReportLocks)
+      .where(and(
+        eq(dailyReportLocks.projectId, projectId),
+        eq(dailyReportLocks.reportDate, reportDate)
+      ))
+      .limit(1);
+    
+    if (existing && existing.status !== "UNLOCKED") {
+      return res.status(400).json({ error: "Report is already locked" });
+    }
+    
+    let lock;
+    if (existing) {
+      [lock] = await db
+        .update(dailyReportLocks)
+        .set({
+          status: "LOCKED",
+          lockedAt: new Date(),
+          lockedById: userId,
+          lockReason: sanitizeText(lockReason),
+          contentHash,
+          updatedAt: new Date(),
+        })
+        .where(eq(dailyReportLocks.id, existing.id))
+        .returning();
+    } else {
+      [lock] = await db
+        .insert(dailyReportLocks)
+        .values({
+          organizationId: orgId,
+          projectId,
+          reportDate,
+          status: "LOCKED",
+          lockedAt: new Date(),
+          lockedById: userId,
+          lockReason: sanitizeText(lockReason),
+          contentHash,
+        })
+        .returning();
+    }
+    
+    await logAudit({
+      userId,
+      action: "CREATE",
+      entityType: "daily_report_lock",
+      entityId: lock.id,
+      newValue: JSON.stringify(lock),
+    }, req);
+    
+    res.status(201).json(lock);
+  } catch (error) {
+    console.error("Error locking daily report:", error);
+    res.status(500).json({ error: "Failed to lock daily report" });
+  }
+});
+
+// GET /api/delay-claims/locks/:projectId/:date - Get lock status for specific date
+router.get("/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const { projectId, date } = req.params;
+    
+    const [lock] = await db
+      .select()
+      .from(dailyReportLocks)
+      .where(and(
+        eq(dailyReportLocks.organizationId, orgId!),
+        eq(dailyReportLocks.projectId, projectId),
+        eq(dailyReportLocks.reportDate, date)
+      ))
+      .limit(1);
+    
+    res.json(lock || { status: "UNLOCKED", projectId, reportDate: date });
+  } catch (error) {
+    console.error("Error fetching lock status:", error);
+    res.status(500).json({ error: "Failed to fetch lock status" });
+  }
+});
+
+// POST /api/delay-claims/locks/:id/supervisor-lock - Supervisor-level lock
+router.post("/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const userId = req.user!.id;
+    const { id } = req.params;
+    const { supervisorLockNotes } = req.body;
+    
+    const [existing] = await db
+      .select()
+      .from(dailyReportLocks)
+      .where(and(eq(dailyReportLocks.id, id), eq(dailyReportLocks.organizationId, orgId!)))
+      .limit(1);
+    
+    if (!existing) {
+      return res.status(404).json({ error: "Lock record not found" });
+    }
+    
+    const [updated] = await db
+      .update(dailyReportLocks)
+      .set({
+        status: "SUPERVISOR_LOCKED",
+        supervisorLockedAt: new Date(),
+        supervisorLockedById: userId,
+        supervisorLockNotes: sanitizeText(supervisorLockNotes),
+        updatedAt: new Date(),
+      })
+      .where(eq(dailyReportLocks.id, id))
+      .returning();
+    
+    res.json(updated);
+  } catch (error) {
+    console.error("Error applying supervisor lock:", error);
+    res.status(500).json({ error: "Failed to apply supervisor lock" });
+  }
+});
+
+// POST /api/delay-claims/locks/:id/unlock - Unlock a locked report
+router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const userId = req.user!.id;
+    const { id } = req.params;
+    const { unlockReason } = req.body;
+    
+    const [existing] = await db
+      .select()
+      .from(dailyReportLocks)
+      .where(and(eq(dailyReportLocks.id, id), eq(dailyReportLocks.organizationId, orgId!)))
+      .limit(1);
+    
+    if (!existing) {
+      return res.status(404).json({ error: "Lock record not found" });
+    }
+    
+    if (existing.status === "SUPERVISOR_LOCKED") {
+      return res.status(400).json({ error: "Supervisor locked reports cannot be unlocked" });
+    }
+    
+    if (existing.status === "UNLOCKED") {
+      return res.status(400).json({ error: "Report is already unlocked" });
+    }
+    
+    const [updated] = await db
+      .update(dailyReportLocks)
+      .set({
+        status: "UNLOCKED",
+        updatedAt: new Date(),
+      })
+      .where(eq(dailyReportLocks.id, id))
+      .returning();
+    
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      entityType: "daily_report_lock",
+      entityId: id,
+      oldValue: JSON.stringify({ status: existing.status }),
+      newValue: JSON.stringify({ status: "UNLOCKED", unlockReason }),
+    }, req);
+    
+    res.json(updated);
+  } catch (error) {
+    console.error("Error unlocking daily report:", error);
+    res.status(500).json({ error: "Failed to unlock daily report" });
+  }
+});
+
+// ============================================================================
+// END DAILY REPORT LOCKS ROUTES
+// ============================================================================
+
 // GET /api/delay-claims/:id - Get single delay claim
 router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -526,12 +765,14 @@ router.delete("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: 
   }
 });
 
+// NOTE: DAILY REPORT LOCKS ROUTES are defined earlier in this file (before parameterized routes)
+
 // ============================================================================
-// DAILY REPORT LOCKS ROUTES
+// PHOTO CUSTODY RECORDS ROUTES (placeholder - old locks section removed)
 // ============================================================================
 
-// GET /api/daily-report-locks - List locks for a project
-router.get("/locks", requireAuth, async (req: AuthRequest, res: Response) => {
+// Placeholder to mark where locks used to be - actual locks routes are above
+router.get("/locks-removed-placeholder", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
