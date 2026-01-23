@@ -10975,14 +10975,22 @@ SmartManageAI Construction Management Platform
   // Create receipt (All authenticated users)
   app.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertReceiptSchema.extend({
-        userId: z.string().optional(),
-      }).safeParse({
+      // Transform the request data to match schema expectations
+      const transformedData = {
         ...req.body,
         userId: req.user!.id,
-      });
+        // Ensure date is a Date object
+        date: req.body.date ? new Date(req.body.date) : undefined,
+        // Ensure amount is a string for decimal type
+        amount: req.body.amount !== undefined ? String(req.body.amount) : undefined,
+      };
+      
+      const validationResult = insertReceiptSchema.extend({
+        userId: z.string().optional(),
+      }).safeParse(transformedData);
       
       if (!validationResult.success) {
+        console.error("Receipt validation errors:", JSON.stringify(validationResult.error.errors, null, 2));
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
       }
