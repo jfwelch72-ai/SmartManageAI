@@ -344,6 +344,137 @@ router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "S
 // END DAILY REPORT LOCKS ROUTES
 // ============================================================================
 
+// ============================================================================
+// PHOTO CUSTODY ROUTES (defined before parameterized routes)
+// ============================================================================
+
+// GET /api/delay-claims/photo-custody - List photo custody records
+router.get("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const projectId = req.query.projectId as string | undefined;
+    const claimId = req.query.claimId as string | undefined;
+    const photoUrl = req.query.photoUrl as string | undefined;
+    
+    let conditions = [eq(photoCustodyRecords.organizationId, orgId!)];
+    if (projectId) {
+      conditions.push(eq(photoCustodyRecords.projectId, projectId));
+    }
+    if (claimId) {
+      conditions.push(eq(photoCustodyRecords.linkedClaimId, claimId));
+    }
+    if (photoUrl) {
+      conditions.push(eq(photoCustodyRecords.photoUrl, photoUrl));
+    }
+    
+    const records = await db
+      .select({
+        record: photoCustodyRecords,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(photoCustodyRecords)
+      .innerJoin(users, eq(photoCustodyRecords.actionById, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(photoCustodyRecords.actionAt));
+    
+    res.json(records.map(({ record, user }) => ({
+      ...record,
+      actionByUser: user,
+    })));
+  } catch (error) {
+    console.error("Error fetching photo custody records:", error);
+    res.status(500).json({ error: "Failed to fetch photo custody records" });
+  }
+});
+
+// POST /api/delay-claims/photo-custody - Record a custody action
+router.post("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const userId = req.user!.id;
+    
+    const body = {
+      ...req.body,
+      organizationId: orgId,
+      actionById: userId,
+      ipAddress: req.ip || req.socket.remoteAddress,
+      userAgent: req.headers["user-agent"],
+    };
+    
+    const validated = insertPhotoCustodyRecordSchema.parse(body);
+    
+    const [record] = await db
+      .insert(photoCustodyRecords)
+      .values(validated)
+      .returning();
+    
+    res.status(201).json(record);
+  } catch (error) {
+    console.error("Error creating photo custody record:", error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: error.errors });
+    }
+    res.status(500).json({ error: "Failed to create photo custody record" });
+  }
+});
+
+// GET /api/delay-claims/photo-custody/chain/:photoUrl - Get full chain of custody for a photo
+router.get("/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const photoUrl = decodeURIComponent(req.params.photoUrl);
+    
+    const records = await db
+      .select({
+        record: photoCustodyRecords,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(photoCustodyRecords)
+      .innerJoin(users, eq(photoCustodyRecords.actionById, users.id))
+      .where(and(
+        eq(photoCustodyRecords.organizationId, orgId!),
+        eq(photoCustodyRecords.photoUrl, photoUrl)
+      ))
+      .orderBy(photoCustodyRecords.actionAt);
+    
+    res.json({
+      photoUrl,
+      chainOfCustody: records.map(({ record, user }) => ({
+        action: record.action,
+        actionAt: record.actionAt,
+        actionBy: `${user.firstName} ${user.lastName}`,
+        actionNotes: record.actionNotes,
+        ipAddress: record.ipAddress,
+      })),
+      totalActions: records.length,
+    });
+  } catch (error) {
+    console.error("Error fetching chain of custody:", error);
+    res.status(500).json({ error: "Failed to fetch chain of custody" });
+  }
+});
+
+// ============================================================================
+// END PHOTO CUSTODY ROUTES
+// ============================================================================
+
 // GET /api/delay-claims/:id - Get single delay claim
 router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -1002,131 +1133,6 @@ router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "S
   }
 });
 
-// ============================================================================
-// PHOTO CUSTODY RECORDS ROUTES
-// ============================================================================
-
-// GET /api/photo-custody - List photo custody records
-router.get("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const projectId = req.query.projectId as string | undefined;
-    const claimId = req.query.claimId as string | undefined;
-    const photoUrl = req.query.photoUrl as string | undefined;
-    
-    let conditions = [eq(photoCustodyRecords.organizationId, orgId!)];
-    if (projectId) {
-      conditions.push(eq(photoCustodyRecords.projectId, projectId));
-    }
-    if (claimId) {
-      conditions.push(eq(photoCustodyRecords.linkedClaimId, claimId));
-    }
-    if (photoUrl) {
-      conditions.push(eq(photoCustodyRecords.photoUrl, photoUrl));
-    }
-    
-    const records = await db
-      .select({
-        record: photoCustodyRecords,
-        user: {
-          id: users.id,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        },
-      })
-      .from(photoCustodyRecords)
-      .innerJoin(users, eq(photoCustodyRecords.actionById, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(photoCustodyRecords.actionAt));
-    
-    res.json(records.map(({ record, user }) => ({
-      ...record,
-      actionByUser: user,
-    })));
-  } catch (error) {
-    console.error("Error fetching photo custody records:", error);
-    res.status(500).json({ error: "Failed to fetch photo custody records" });
-  }
-});
-
-// POST /api/photo-custody - Record a custody action
-router.post("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const userId = req.user!.id;
-    
-    const body = {
-      ...req.body,
-      organizationId: orgId,
-      actionById: userId,
-      ipAddress: req.ip || req.socket.remoteAddress,
-      userAgent: req.headers["user-agent"],
-    };
-    
-    const validated = insertPhotoCustodyRecordSchema.parse(body);
-    
-    const [record] = await db
-      .insert(photoCustodyRecords)
-      .values(validated)
-      .returning();
-    
-    res.status(201).json(record);
-  } catch (error) {
-    console.error("Error creating photo custody record:", error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
-    }
-    res.status(500).json({ error: "Failed to create photo custody record" });
-  }
-});
-
-// GET /api/photo-custody/chain/:photoUrl - Get full chain of custody for a photo
-router.get("/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const photoUrl = decodeURIComponent(req.params.photoUrl);
-    
-    const records = await db
-      .select({
-        record: photoCustodyRecords,
-        user: {
-          id: users.id,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        },
-      })
-      .from(photoCustodyRecords)
-      .innerJoin(users, eq(photoCustodyRecords.actionById, users.id))
-      .where(and(
-        eq(photoCustodyRecords.organizationId, orgId!),
-        eq(photoCustodyRecords.photoUrl, photoUrl)
-      ))
-      .orderBy(photoCustodyRecords.actionAt);
-    
-    res.json({
-      photoUrl,
-      chainOfCustody: records.map(({ record, user }) => ({
-        action: record.action,
-        actionAt: record.actionAt,
-        actionBy: `${user.firstName} ${user.lastName}`,
-        actionNotes: record.actionNotes,
-        ipAddress: record.ipAddress,
-      })),
-      totalActions: records.length,
-    });
-  } catch (error) {
-    console.error("Error fetching chain of custody:", error);
-    res.status(500).json({ error: "Failed to fetch chain of custody" });
-  }
-});
+// NOTE: Photo custody routes are defined earlier in this file (before parameterized routes)
 
 export default router;
