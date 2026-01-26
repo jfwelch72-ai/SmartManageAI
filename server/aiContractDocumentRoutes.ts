@@ -266,6 +266,44 @@ function parseContractAnalysis(analysis: any) {
   };
 }
 
+// GET /api/ai-contract-document/projects - List projects for the dropdown
+router.get("/ai-contract-document/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    const baseSelect = {
+      id: projects.id,
+      code: projects.code,
+      name: projects.name,
+      clientName: projects.clientName,
+      status: projects.status,
+    };
+
+    let projectsList;
+    if (shouldFilter && orgId) {
+      projectsList = await db
+        .select(baseSelect)
+        .from(projects)
+        .where(eq(projects.gcOrganizationId, orgId))
+        .orderBy(projects.name);
+    } else {
+      projectsList = await db
+        .select(baseSelect)
+        .from(projects)
+        .orderBy(projects.name);
+    }
+
+    res.json(projectsList);
+  } catch (error) {
+    console.error("Get projects for contract analysis error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai/contract-document-analysis", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
