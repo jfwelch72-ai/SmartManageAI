@@ -544,12 +544,12 @@ export default function PhotoCustodyPage() {
             </div>
             <div className="space-y-2">
               <Label>Link to Claim (optional)</Label>
-              <Select value={newRecord.delayClaimId} onValueChange={(v) => setNewRecord({ ...newRecord, delayClaimId: v })}>
+              <Select value={newRecord.delayClaimId || "NONE"} onValueChange={(v) => setNewRecord({ ...newRecord, delayClaimId: v === "NONE" ? "" : v })}>
                 <SelectTrigger data-testid="select-new-record-claim">
                   <SelectValue placeholder="Select claim (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No claim</SelectItem>
+                  <SelectItem value="NONE">No claim</SelectItem>
                   {claims.map(claim => (
                     <SelectItem key={claim.id} value={claim.id}>
                       {claim.claimNumber} - {claim.title}
