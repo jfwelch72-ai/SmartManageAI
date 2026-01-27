@@ -31,9 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Package, Filter, Loader2 } from "lucide-react";
+import { Plus, Search, Package, Filter, Loader2, Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isVendor } from "@/lib/rbac";
 import { Redirect } from "wouter";
@@ -93,6 +94,12 @@ export default function VendorPricing() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkStep, setBulkStep] = useState<number>(1);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [bulkSelectedClients, setBulkSelectedClients] = useState<string[]>([]);
 
   if (!isVendor(user?.role)) {
     return <Redirect to="/dashboard" />;
@@ -142,6 +149,89 @@ export default function VendorPricing() {
       });
     },
   });
+
+  const bulkUploadMutation = useMutation({
+    mutationFn: async (data: { csvData: string; contractorOrgIds?: string[] }) => {
+      const response = await apiRequest("POST", "/api/vendor/pricing/bulk", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setUploadSuccess(`Items added successfully. ${data.itemsCreated} items uploaded.`);
+      setUploadError(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/vendor/pricing"] });
+    },
+    onError: (error: any) => {
+      if (error.error === "EMPTY_FILE") {
+        setUploadError("You uploaded an empty file. Please fill out the CSV and upload again.");
+      } else if (error.error === "INVALID_FORMAT") {
+        setUploadError("Error: File does not match the required format.");
+      } else {
+        setUploadError(error.message || "Failed to upload items");
+      }
+      setUploadSuccess(null);
+    },
+  });
+
+  const handleDownloadTemplate = () => {
+    window.open("/api/vendor/pricing/csv-template", "_blank");
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadedFile(file);
+      setUploadError(null);
+      setUploadSuccess(null);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.name.endsWith(".csv")) {
+      setUploadedFile(file);
+      setUploadError(null);
+      setUploadSuccess(null);
+    } else {
+      setUploadError("Please upload a CSV file");
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (!uploadedFile) {
+      setUploadError("Please select a file to upload");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const csvData = e.target?.result as string;
+      bulkUploadMutation.mutate({
+        csvData,
+        contractorOrgIds: bulkSelectedClients.length > 0 ? bulkSelectedClients : undefined,
+      });
+    };
+    reader.readAsText(uploadedFile);
+  };
+
+  const resetBulkDialog = () => {
+    setBulkStep(1);
+    setUploadedFile(null);
+    setUploadError(null);
+    setUploadSuccess(null);
+    setBulkSelectedClients([]);
+  };
+
+  const handleCloseBulkDialog = () => {
+    setBulkDialogOpen(false);
+    resetBulkDialog();
+  };
 
   const resetForm = () => {
     setFormData({
@@ -221,13 +311,18 @@ export default function VendorPricing() {
               Manage your pricing items for enrolled contractor clients
             </p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-pricing">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Pricing Item
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBulkDialogOpen(true)} data-testid="button-add-bulk-items">
+              <Upload className="h-4 w-4 mr-2" />
+              Add Bulk Items
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-add-pricing">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Pricing Item
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add Pricing Item</DialogTitle>
@@ -404,6 +499,198 @@ export default function VendorPricing() {
                   Submit Pricing
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </div>
+
+          <Dialog open={bulkDialogOpen} onOpenChange={(open) => {
+            if (!open) handleCloseBulkDialog();
+            else setBulkDialogOpen(true);
+          }}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Bulk Items</DialogTitle>
+                <DialogDescription>
+                  Upload multiple pricing items at once using a CSV file
+                </DialogDescription>
+              </DialogHeader>
+
+              {uploadSuccess ? (
+                <div className="py-6">
+                  <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <AlertTitle className="text-green-600">Success</AlertTitle>
+                    <AlertDescription className="text-green-600">
+                      {uploadSuccess}
+                    </AlertDescription>
+                  </Alert>
+                  <div className="flex justify-end mt-6">
+                    <Button onClick={handleCloseBulkDialog} data-testid="button-bulk-done">
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              ) : uploadError ? (
+                <div className="py-6">
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{uploadError}</AlertDescription>
+                  </Alert>
+                  <div className="flex justify-end gap-2 mt-6">
+                    <Button variant="outline" onClick={() => {
+                      setUploadError(null);
+                      setUploadedFile(null);
+                    }} data-testid="button-try-again">
+                      Try Again
+                    </Button>
+                    <Button variant="outline" onClick={handleCloseBulkDialog}>
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6 py-4">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium shrink-0">
+                        1
+                      </div>
+                      <div className="space-y-2 flex-1">
+                        <h4 className="font-medium">Download CSV Template</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Download the template file to ensure your data matches the required format.
+                        </p>
+                        <button 
+                          onClick={handleDownloadTemplate}
+                          className="text-primary hover:underline text-sm font-medium flex items-center gap-1"
+                          data-testid="link-download-csv"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download CSV
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium shrink-0">
+                        2
+                      </div>
+                      <div className="space-y-2 flex-1">
+                        <h4 className="font-medium">Fill Out the CSV File</h4>
+                        <p className="text-sm text-muted-foreground">
+                          Open the downloaded file in Excel or Google Sheets and fill in your item details.
+                          For multiple categories, separate values with a comma.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium shrink-0">
+                        3
+                      </div>
+                      <div className="space-y-2 flex-1">
+                        <h4 className="font-medium">Upload CSV File</h4>
+                        <div 
+                          className="border-2 border-dashed rounded-lg p-6 text-center hover-elevate cursor-pointer"
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                          onClick={() => document.getElementById('bulk-file-input')?.click()}
+                        >
+                          <FileSpreadsheet className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                          <p className="text-sm text-muted-foreground mb-3">
+                            Drag and drop your CSV file here, or click to browse
+                          </p>
+                          <input
+                            type="file"
+                            accept=".csv"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            id="bulk-file-input"
+                            data-testid="input-bulk-file"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              document.getElementById('bulk-file-input')?.click();
+                            }}
+                            data-testid="button-select-csv"
+                          >
+                            Select CSV File
+                          </Button>
+                          {uploadedFile && (
+                            <p className="text-sm text-primary mt-3 font-medium">
+                              Selected: {uploadedFile.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {activeEnrollments.length > 0 && (
+                      <div className="flex items-start gap-3">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-medium shrink-0">
+                          4
+                        </div>
+                        <div className="space-y-2 flex-1">
+                          <h4 className="font-medium">Select Clients (Optional)</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Choose specific clients or leave empty to submit to all enrolled clients.
+                          </p>
+                          <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2">
+                            {activeEnrollments.map(enrollment => (
+                              <label 
+                                key={enrollment.id} 
+                                className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={bulkSelectedClients.includes(enrollment.contractorOrgId)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setBulkSelectedClients([...bulkSelectedClients, enrollment.contractorOrgId]);
+                                    } else {
+                                      setBulkSelectedClients(bulkSelectedClients.filter(id => id !== enrollment.contractorOrgId));
+                                    }
+                                  }}
+                                  className="rounded"
+                                  data-testid={`checkbox-bulk-client-${enrollment.contractorOrgId}`}
+                                />
+                                <span className="text-sm">{enrollment.contractorOrgName}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <DialogFooter>
+                    <Button variant="outline" onClick={handleCloseBulkDialog}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleBulkUpload}
+                      disabled={!uploadedFile || bulkUploadMutation.isPending}
+                      data-testid="button-upload-csv"
+                    >
+                      {bulkUploadMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Upload
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )}
             </DialogContent>
           </Dialog>
         </div>

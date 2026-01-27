@@ -7932,6 +7932,237 @@ SmartManageAI Construction Management Platform
     }
   });
 
+  // Get CSV template for bulk upload
+  app.get("/api/vendor/pricing/csv-template", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      // Generate CSV template with headers matching the database schema
+      const headers = [
+        "itemName",
+        "itemCode", 
+        "category",
+        "description",
+        "unit",
+        "unitPrice",
+        "minimumOrder",
+        "deliveryFee",
+        "leadTimeDays"
+      ];
+      
+      // Create a sample row to help users understand the format
+      const sampleRow = [
+        "Ready Mix Concrete 4000 PSI",
+        "RMC-4000",
+        "Concrete & Masonry",
+        "High strength concrete for slabs and foundations",
+        "CY",
+        "145.00",
+        "10",
+        "75.00",
+        "2"
+      ];
+      
+      const csvContent = [
+        headers.join(","),
+        sampleRow.join(",")
+      ].join("\n");
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=pricing_template.csv");
+      res.send(csvContent);
+    } catch (error) {
+      console.error("Get CSV template error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Bulk upload vendor pricing via CSV
+  app.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get vendor user's linked CRM organization
+      const [vendorUser] = await db.select().from(vendorUsers)
+        .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true), eq(vendorUsers.canSubmitPricing, true)))
+        .limit(1);
+
+      if (!vendorUser) {
+        return res.status(403).json({ error: "No permission to submit pricing" });
+      }
+
+      const { csvData, contractorOrgIds } = req.body;
+
+      if (!csvData || typeof csvData !== "string") {
+        return res.status(400).json({ error: "CSV data is required" });
+      }
+
+      // Parse CSV data
+      const lines = csvData.trim().split("\n");
+      if (lines.length < 2) {
+        return res.status(400).json({ 
+          error: "EMPTY_FILE",
+          message: "You uploaded an empty file. Please fill out the CSV and upload again."
+        });
+      }
+
+      const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ''));
+      
+      // Validate headers match expected format
+      const expectedHeaders = ["itemName", "itemCode", "category", "description", "unit", "unitPrice", "minimumOrder", "deliveryFee", "leadTimeDays"];
+      const missingHeaders = expectedHeaders.filter(h => !headers.includes(h));
+      
+      if (missingHeaders.length > 0) {
+        return res.status(400).json({ 
+          error: "INVALID_FORMAT",
+          message: "Error: File does not match the required format.",
+          details: `Missing headers: ${missingHeaders.join(", ")}`
+        });
+      }
+
+      // Parse data rows
+      const items: any[] = [];
+      const errors: string[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue; // Skip empty lines
+
+        // Parse CSV line (handling quoted values with commas)
+        const values: string[] = [];
+        let currentValue = "";
+        let insideQuotes = false;
+        
+        for (const char of line) {
+          if (char === '"') {
+            insideQuotes = !insideQuotes;
+          } else if (char === ',' && !insideQuotes) {
+            values.push(currentValue.trim());
+            currentValue = "";
+          } else {
+            currentValue += char;
+          }
+        }
+        values.push(currentValue.trim());
+
+        const rowData: any = {};
+        headers.forEach((header, index) => {
+          rowData[header] = values[index]?.replace(/^"|"$/g, '') || null;
+        });
+
+        // Validate required fields
+        if (!rowData.itemName || rowData.itemName.trim() === "") {
+          errors.push(`Row ${i + 1}: itemName is required`);
+          continue;
+        }
+        if (!rowData.unitPrice || isNaN(parseFloat(rowData.unitPrice))) {
+          errors.push(`Row ${i + 1}: valid unitPrice is required`);
+          continue;
+        }
+        if (!rowData.unit || rowData.unit.trim() === "") {
+          errors.push(`Row ${i + 1}: unit is required`);
+          continue;
+        }
+
+        items.push({
+          itemName: rowData.itemName.trim(),
+          itemCode: rowData.itemCode?.trim() || null,
+          category: rowData.category?.trim() || null,
+          description: rowData.description?.trim() || null,
+          unit: rowData.unit.trim(),
+          unitPrice: rowData.unitPrice.trim(),
+          minimumOrder: rowData.minimumOrder ? parseInt(rowData.minimumOrder) : null,
+          deliveryFee: rowData.deliveryFee?.trim() || null,
+          leadTimeDays: rowData.leadTimeDays ? parseInt(rowData.leadTimeDays) : null,
+        });
+      }
+
+      if (items.length === 0) {
+        return res.status(400).json({ 
+          error: "EMPTY_FILE",
+          message: "You uploaded an empty file. Please fill out the CSV and upload again.",
+          validationErrors: errors.length > 0 ? errors : undefined
+        });
+      }
+
+      // Get active enrollments for this vendor
+      const conditions: any[] = [
+        eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+        eq(vendorEnrollments.status, "ACTIVE"),
+      ];
+      if (contractorOrgIds && contractorOrgIds.length > 0) {
+        conditions.push(sql`${vendorEnrollments.contractorOrgId} IN (${sql.join(contractorOrgIds.map((id: string) => sql`${id}`), sql`, `)})`);
+      }
+
+      const enrollments = await db.select().from(vendorEnrollments).where(and(...conditions));
+
+      if (enrollments.length === 0) {
+        return res.status(400).json({ error: "No active enrollments found for pricing submission" });
+      }
+
+      const now = new Date();
+      const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+      const insertedItems: any[] = [];
+
+      // Insert pricing items for each enrolled contractor
+      for (const enrollment of enrollments) {
+        for (const item of items) {
+          const approvalStatus = enrollment.autoApproveNewPricing ? "AUTO_APPROVED" : "PENDING_REVIEW";
+          
+          const [inserted] = await db.insert(vendorPricingCatalogs).values({
+            crmOrganisationId: vendorUser.crmOrganisationId,
+            organizationId: enrollment.contractorOrgId,
+            itemName: item.itemName,
+            itemCode: item.itemCode,
+            category: item.category,
+            description: item.description,
+            unit: item.unit,
+            unitPrice: item.unitPrice,
+            minimumOrder: item.minimumOrder,
+            deliveryFee: item.deliveryFee,
+            effectiveQuarter: currentQuarter,
+            effectiveDate: now,
+            leadTimeDays: item.leadTimeDays,
+            sourceType: "MANUAL",
+            approvalStatus: approvalStatus,
+            submittedByVendorUserId: userId,
+            isActive: true,
+            createdById: userId,
+          }).returning();
+          
+          insertedItems.push(inserted);
+        }
+      }
+
+      // Log the bulk upload
+      await logAudit({
+        action: "CREATE",
+        entityType: "vendor_pricing_catalogs",
+        entityId: insertedItems[0]?.id || "bulk",
+        userId: userId,
+        oldValue: null,
+        newValue: JSON.stringify({ 
+          itemCount: items.length,
+          totalInserted: insertedItems.length,
+          enrollmentsServed: enrollments.length
+        }),
+      }, req);
+
+      res.json({
+        success: true,
+        message: "Items added successfully.",
+        itemsCreated: items.length,
+        totalRecords: insertedItems.length,
+        enrollmentsServed: enrollments.length,
+        validationWarnings: errors.length > 0 ? errors : undefined
+      });
+    } catch (error) {
+      console.error("Bulk upload vendor pricing error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ====================
   // Contractor: Review vendor-submitted pricing
   // ====================
