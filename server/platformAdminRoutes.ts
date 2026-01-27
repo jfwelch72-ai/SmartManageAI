@@ -497,6 +497,43 @@ router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (re
   }
 });
 
+// Restore archived user (set isActive to true)
+router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.isActive) {
+      return res.status(400).json({ error: "User is already active" });
+    }
+
+    const [updated] = await db.update(users)
+      .set({ isActive: true })
+      .where(eq(users.id, userId))
+      .returning();
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: user.id,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ isActive: false }),
+      newValue: JSON.stringify({ isActive: true, restored: true }),
+    }, req);
+
+    console.log(`User restored: ${user.email} by admin: ${req.user!.email}`);
+    res.json({ message: `User ${user.email} has been restored and reactivated` });
+  } catch (error: any) {
+    console.error("Restore user error:", error.message);
+    res.status(500).json({ error: "Failed to restore user" });
+  }
+});
+
 router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { userId } = req.params;

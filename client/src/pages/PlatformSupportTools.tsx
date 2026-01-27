@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive } from "lucide-react";
+import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive, RotateCcw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -181,6 +181,24 @@ export default function PlatformSupportTools() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to delete user", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const restoreUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest("POST", `/api/platform/users/${userId}/restore`);
+    },
+    onSuccess: (_, userId) => {
+      const restoredUser = archivedUsers?.find(u => u.id === userId);
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users/archived"] });
+      toast({ 
+        title: "User account restored", 
+        description: `${restoredUser?.email} has been reactivated and can now log in` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to restore user", description: error.message, variant: "destructive" });
     },
   });
 
@@ -499,43 +517,82 @@ export default function PlatformSupportTools() {
                             <Badge variant="destructive">Archived</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  disabled={permanentDeleteMutation.isPending}
-                                  data-testid={`button-permanent-delete-${archivedUser.id}`}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Permanently Delete User</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    <span className="text-destructive font-semibold">Warning: This action cannot be undone!</span>
-                                    <br /><br />
-                                    You are about to permanently delete the account for:
-                                    <br />
-                                    <strong>{archivedUser.firstName} {archivedUser.lastName}</strong> ({archivedUser.email})
-                                    <br /><br />
-                                    All data associated with this user will be permanently removed from the database.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => permanentDeleteMutation.mutate(archivedUser.id)}
-                                    data-testid={`button-confirm-permanent-delete-${archivedUser.id}`}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            <div className="flex items-center justify-end gap-2">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    disabled={restoreUserMutation.isPending}
+                                    data-testid={`button-restore-user-${archivedUser.id}`}
                                   >
-                                    Yes, Permanently Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                                    <RotateCcw className="h-4 w-4 mr-1" />
+                                    Restore Account
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Restore User Account</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to restore this user account?
+                                      <br /><br />
+                                      <strong>{archivedUser.firstName} {archivedUser.lastName}</strong> ({archivedUser.email}) will be:
+                                      <ul className="list-disc list-inside mt-2 space-y-1">
+                                        <li>Reactivated and able to log in again</li>
+                                        <li>Moved back to All Users</li>
+                                        <li>Status updated to Active</li>
+                                      </ul>
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => restoreUserMutation.mutate(archivedUser.id)}
+                                      data-testid={`button-confirm-restore-${archivedUser.id}`}
+                                    >
+                                      Yes, Restore Account
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    disabled={permanentDeleteMutation.isPending}
+                                    data-testid={`button-permanent-delete-${archivedUser.id}`}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Permanently Delete User</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      <span className="text-destructive font-semibold">Warning: This action cannot be undone!</span>
+                                      <br /><br />
+                                      You are about to permanently delete the account for:
+                                      <br />
+                                      <strong>{archivedUser.firstName} {archivedUser.lastName}</strong> ({archivedUser.email})
+                                      <br /><br />
+                                      All data associated with this user will be permanently removed from the database.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => permanentDeleteMutation.mutate(archivedUser.id)}
+                                      data-testid={`button-confirm-permanent-delete-${archivedUser.id}`}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Yes, Permanently Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
