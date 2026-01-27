@@ -186,8 +186,30 @@ export default function VendorPricing() {
     },
   });
 
-  const handleDownloadTemplate = () => {
-    window.open("/api/vendor/pricing/csv-template", "_blank");
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch("/api/vendor/pricing/csv-template", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to download template");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "pricing_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Could not download the CSV template. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
