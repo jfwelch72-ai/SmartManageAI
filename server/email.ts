@@ -1,43 +1,39 @@
-import nodemailer from 'nodemailer';
+// Email service using SendGrid (Replit Integration)
+import { getUncachableSendGridClient } from './services/emailService';
 
 interface EmailOptions {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   text?: string;
 }
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.log('Email configuration not set. Email would have been sent to:', options.to);
-    console.log('Subject:', options.subject);
-    console.log('---');
-    console.log('To enable email sending, set SMTP_USER and SMTP_PASS environment variables.');
-    return true;
-  }
-
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: options.to,
+    const { client, fromEmail } = await getUncachableSendGridClient();
+    
+    // Normalize recipients - handle both string and array formats
+    let recipients: string | string[] = options.to;
+    if (typeof options.to === 'string' && options.to.includes(',')) {
+      // Handle comma-separated string by converting to array
+      recipients = options.to.split(',').map(email => email.trim());
+    }
+    
+    const msg = {
+      to: recipients,
+      from: fromEmail,
       subject: options.subject,
+      text: options.text || '',
       html: options.html,
-      text: options.text,
-    });
-    console.log('Email sent successfully to:', options.to);
+    };
+    
+    await client.send(msg);
+    const recipientList = Array.isArray(recipients) ? recipients.join(', ') : recipients;
+    console.log('Email sent successfully via SendGrid to:', recipientList);
     return true;
-  } catch (error) {
-    console.error('Failed to send email:', error);
+  } catch (error: any) {
+    const errorDetails = error?.response?.body?.errors || error?.response?.body || error.message || error;
+    console.error('Failed to send email via SendGrid:', JSON.stringify(errorDetails));
     return false;
   }
 }

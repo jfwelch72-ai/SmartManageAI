@@ -637,16 +637,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const baseUrl = process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
         const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
-        await sendEmail({
+        const emailSent = await sendEmail({
           to: user.email,
           subject: 'Password Reset Request - SmartManageAI',
           html: getPasswordResetEmailHtml(resetLink, user.firstName),
           text: getPasswordResetEmailText(resetLink, user.firstName),
         });
 
-        console.log(`Password reset requested for: ${sanitizedEmail}`);
+        if (emailSent) {
+          console.log(`Password reset email sent successfully for: ${sanitizedEmail}`);
+        } else {
+          // Log failure but don't expose to user (security: prevents email enumeration)
+          console.error(`CRITICAL: Password reset email FAILED to send for: ${sanitizedEmail}`);
+        }
       }
 
+      // Always return success message to prevent email enumeration attacks
       res.json({ message: "If an account with that email exists, a password reset link has been sent." });
     } catch (error) {
       console.error("Forgot password error:", error);
