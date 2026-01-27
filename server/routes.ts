@@ -7808,6 +7808,49 @@ SmartManageAI Construction Management Platform
     }
   });
 
+  // Get vendor enrollments for the vendor portal (Enrolled Clients page)
+  app.get("/api/vendor/enrollments", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // Get vendor user's linked CRM organization
+      const [vendorUser] = await db.select().from(vendorUsers)
+        .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+        .limit(1);
+
+      if (!vendorUser) {
+        // Return empty array instead of error for better UX
+        return res.json([]);
+      }
+
+      // Get all enrollments for this vendor (both ACTIVE and PENDING)
+      const enrollments = await db
+        .select({
+          id: vendorEnrollments.id,
+          vendorId: vendorEnrollments.vendorCrmOrgId,
+          contractorOrgId: vendorEnrollments.contractorOrgId,
+          contractorOrgName: organizations.name,
+          status: vendorEnrollments.status,
+          autoApproveNewPricing: vendorEnrollments.autoApproveNewPricing,
+          notifyOnPriceUpdate: vendorEnrollments.notifyOnPriceUpdate,
+          enrolledAt: vendorEnrollments.enrolledAt,
+          invitedByUserId: vendorEnrollments.invitedByUserId,
+        })
+        .from(vendorEnrollments)
+        .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+        .where(eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId))
+        .orderBy(organizations.name);
+
+      res.json(enrollments);
+    } catch (error) {
+      console.error("Get vendor enrollments error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Submit pricing to enrolled clients (vendor portal)
   app.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
     try {
