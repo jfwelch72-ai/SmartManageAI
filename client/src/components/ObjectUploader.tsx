@@ -136,7 +136,7 @@ export function ObjectUploader({
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        className="cursor-pointer transition-colors bg-[#fa6b1bf7] mt-[6px] mb-[6px] pl-[10px] pr-[10px] pt-[3px] pb-[3px]"
+        className="cursor-pointer transition-colors bg-[#fa6b1bf7] pl-[10px] pr-[10px] pt-[3px] pb-[3px] text-center ml-[0px] mr-[0px] mt-[10px] mb-[10px]"
         data-testid={testId}
       >
         {children}
