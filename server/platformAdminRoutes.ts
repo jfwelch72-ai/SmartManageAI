@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
@@ -588,8 +588,29 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
       return res.status(400).json({ error: "User must be archived (soft-deleted) before permanent deletion" });
     }
 
+    // Clean up all related records before deleting the user
+    // Order matters due to foreign key dependencies
+    
+    // Messages sent by user
+    await db.delete(messages).where(eq(messages.senderId, userId));
+    
+    // Conversation participants
+    await db.delete(conversationParticipants).where(eq(conversationParticipants.userId, userId));
+    
+    // Conversations created by user
+    await db.delete(conversations).where(eq(conversations.createdById, userId));
+    
+    // Tasks assigned to or created by user
+    await db.delete(tasks).where(eq(tasks.assignedToId, userId));
+    await db.delete(tasks).where(eq(tasks.createdById, userId));
+    
+    // Notifications
+    await db.delete(notifications).where(eq(notifications.userId, userId));
+    
+    // Password reset tokens
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
     
+    // Finally delete the user
     await db.delete(users).where(eq(users.id, userId));
 
     await logAudit({
