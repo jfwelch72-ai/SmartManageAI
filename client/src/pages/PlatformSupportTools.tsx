@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive, RotateCcw } from "lucide-react";
+import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive, RotateCcw, LogIn } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -199,6 +200,27 @@ export default function PlatformSupportTools() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to restore user", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const impersonateUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await apiRequest("POST", `/api/platform/users/${userId}/impersonate`);
+      return response.json();
+    },
+    onSuccess: (data, userId) => {
+      const impersonatedUser = users?.find(u => u.id === userId);
+      // Open a new tab with the impersonation token
+      const baseUrl = window.location.origin;
+      const impersonationUrl = `${baseUrl}/impersonate?token=${encodeURIComponent(data.token)}`;
+      window.open(impersonationUrl, '_blank');
+      toast({ 
+        title: "Login session started", 
+        description: `Opening ${impersonatedUser?.email}'s account in a new tab` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to login as user", description: error.message, variant: "destructive" });
     },
   });
 
@@ -403,6 +425,24 @@ export default function PlatformSupportTools() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            {user.role !== "SUPER_ADMIN" && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    disabled={impersonateUserMutation.isPending}
+                                    onClick={() => impersonateUserMutation.mutate(user.id)}
+                                    data-testid={`button-login-as-${user.id}`}
+                                  >
+                                    <LogIn className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Login as this user</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             {user.role !== "SUPER_ADMIN" && (
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>

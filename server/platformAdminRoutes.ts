@@ -2,7 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
 import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications } from "@shared/schema";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, type AuthRequest, generateToken } from "./auth";
 import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { logAudit } from "./auditLogger";
@@ -494,6 +494,55 @@ router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (re
   } catch (error: any) {
     console.error("Platform archived users error:", error.message);
     res.status(500).json({ error: "Failed to fetch archived users" });
+  }
+});
+
+// Impersonate user - generate a temporary login token for Super Admin to access user account
+router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.role === "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Cannot impersonate other platform administrators" });
+    }
+
+    if (!user.isActive) {
+      return res.status(400).json({ error: "Cannot impersonate an archived user" });
+    }
+
+    // Generate a short-lived token for impersonation (1 hour expiry)
+    const impersonationToken = generateToken(user.id, user.tokenVersion);
+
+    // Log the impersonation action for audit purposes (using UPDATE as the action type)
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: user.id,
+      userId: req.user!.id,
+      oldValue: null,
+      newValue: JSON.stringify({ 
+        actionType: "IMPERSONATE",
+        impersonatedUser: user.email, 
+        adminUser: req.user!.email,
+        timestamp: new Date().toISOString()
+      }),
+    }, req);
+
+    console.log(`SECURITY: Admin ${req.user!.email} impersonating user ${user.email} (${user.id})`);
+    
+    res.json({ 
+      token: impersonationToken,
+      message: `Impersonation token generated for ${user.email}` 
+    });
+  } catch (error: any) {
+    console.error("Impersonate user error:", error.message);
+    res.status(500).json({ error: "Failed to generate impersonation token" });
   }
 });
 
