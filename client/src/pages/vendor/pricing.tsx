@@ -161,13 +161,27 @@ export default function VendorPricing() {
       queryClient.invalidateQueries({ queryKey: ["/api/vendor/pricing"] });
     },
     onError: (error: any) => {
-      if (error.error === "EMPTY_FILE") {
-        setUploadError("You uploaded an empty file. Please fill out the CSV and upload again.");
-      } else if (error.error === "INVALID_FORMAT") {
-        setUploadError("Error: File does not match the required format.");
-      } else {
-        setUploadError(error.message || "Failed to upload items");
+      // Parse error message - apiRequest throws "statusCode: jsonBody" format
+      let errorMessage = "Failed to upload items";
+      try {
+        const errorText = error.message || "";
+        // Try to extract JSON from the error message (format: "400: {...}")
+        const jsonMatch = errorText.match(/^\d+:\s*(.+)$/);
+        if (jsonMatch) {
+          const errorData = JSON.parse(jsonMatch[1]);
+          if (errorData.error === "EMPTY_FILE") {
+            errorMessage = "You uploaded an empty file. Please fill out the CSV and upload again.";
+          } else if (errorData.error === "INVALID_FORMAT") {
+            errorMessage = "Error: File does not match the required format. Please download the template and use the correct headers.";
+          } else {
+            errorMessage = errorData.message || errorData.error || errorMessage;
+          }
+        }
+      } catch {
+        // If parsing fails, use the raw error message
+        errorMessage = error.message || "Failed to upload items";
       }
+      setUploadError(errorMessage);
       setUploadSuccess(null);
     },
   });
