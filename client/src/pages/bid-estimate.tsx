@@ -843,14 +843,23 @@ export default function BidEstimate() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-profit-margin">
-                ${totals.profitAllocation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {totals.totalCost > 0 
-                  ? `${((totals.profitAllocation / totals.totalCost) * 100).toFixed(1)}% of total`
-                  : "0% of total"}
-              </p>
+              {(() => {
+                const directCosts = totals.materialCost + totals.laborCost + totals.equipmentCost + 
+                  totals.consumablesCost + totals.subcontractCost;
+                const projectedOverhead = directCosts * (overheadPercent / 100);
+                const costPlusOverhead = directCosts + projectedOverhead;
+                const projectedProfit = costPlusOverhead * (profitMarginPercent / 100);
+                return (
+                  <>
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-profit-margin">
+                      ${projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {profitMarginPercent}% of cost + overhead
+                    </p>
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </div>
