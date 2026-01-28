@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { Badge } from "@/components/ui/badge";
@@ -176,6 +176,42 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // Fetch sheets for this project
   const { data: sheets = [], isLoading: sheetsLoading } = useQuery<TakeoffSheet[]>({
     queryKey: ["/api/projects", projectId, "takeoff", "sheets"],
+  });
+
+  // Fetch plan documents for this project (for import dialog)
+  interface PlanDocument {
+    id: string;
+    fileName: string;
+    title: string | null;
+    fileUrl: string | null;
+    uploadedAt: string;
+  }
+  const { data: planDocuments = [], isLoading: documentsLoading } = useQuery<PlanDocument[]>({
+    queryKey: ["/api/projects", projectCode, "documents"],
+    enabled: uploadDialogOpen,
+  });
+
+  // Mutation to import a plan document to takeoff
+  const importPlanMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      return await apiRequest("POST", `/api/projects/${projectId}/takeoff/import-plan`, { documentId });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+      setUploadDialogOpen(false);
+      // Auto-select the first imported sheet
+      if (data?.sheets?.[0]?.id) {
+        setSelectedSheet(data.sheets[0].id);
+      }
+      toast({ title: "Success", description: "Plan sheet imported to takeoff workspace" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error", 
+        description: error?.message || "Failed to import plan sheet", 
+        variant: "destructive" 
+      });
+    },
   });
 
   // Fetch measurements for selected sheet
@@ -1300,12 +1336,17 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         <Separator className="my-2 w-12" />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" data-testid="button-upload-plan">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setUploadDialogOpen(true)}
+              data-testid="button-upload-plan"
+            >
               <Upload className="w-5 h-5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right">
-            <p>Upload Plan</p>
+            <p>Import Plan Sheet</p>
           </TooltipContent>
         </Tooltip>
         <Separator className="my-2 w-12" />
@@ -1665,10 +1706,15 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </Layer>
             </Stage>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
+            <div 
+              className="flex items-center justify-center h-full cursor-pointer hover-elevate"
+              onClick={() => setUploadDialogOpen(true)}
+              data-testid="button-empty-upload-area"
+            >
+              <div className="text-center text-muted-foreground p-8 rounded-lg border-2 border-dashed border-muted-foreground/30">
                 <Upload className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Select or upload a plan sheet to begin takeoff</p>
+                <p className="font-medium">Select or upload a plan sheet to begin takeoff</p>
+                <p className="text-sm mt-2">Click here to import a document</p>
               </div>
             </div>
           )}
@@ -2382,6 +2428,86 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Plan Dialog */}
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Plan Sheet</DialogTitle>
+            <DialogDescription>
+              Select a plan document to import into the takeoff workspace
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {documentsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : planDocuments.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No plan documents found</p>
+                <p className="text-sm mt-2">
+                  Upload plan documents to the project first via the Documents section
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="max-h-[300px]">
+                <div className="space-y-2">
+                  {planDocuments.map((doc) => {
+                    // Check if this document is already imported
+                    const isAlreadyImported = sheets.some(
+                      (sheet: any) => sheet.documentId === doc.id
+                    );
+                    
+                    return (
+                      <div
+                        key={doc.id}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-lg border",
+                          isAlreadyImported 
+                            ? "bg-muted/50 cursor-not-allowed opacity-60"
+                            : "hover-elevate cursor-pointer"
+                        )}
+                        onClick={() => {
+                          if (!isAlreadyImported && !importPlanMutation.isPending) {
+                            importPlanMutation.mutate(doc.id);
+                          }
+                        }}
+                        data-testid={`button-import-doc-${doc.id}`}
+                      >
+                        <FileText className="w-8 h-8 text-primary flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">
+                            {doc.title || doc.fileName}
+                          </p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {doc.fileName}
+                          </p>
+                        </div>
+                        {isAlreadyImported ? (
+                          <Badge variant="secondary">Imported</Badge>
+                        ) : importPlanMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setUploadDialogOpen(false)}
+              data-testid="button-close-import-dialog"
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
