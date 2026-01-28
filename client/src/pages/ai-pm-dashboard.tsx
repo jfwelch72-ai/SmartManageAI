@@ -159,7 +159,7 @@ export default function AIPMDashboard() {
           </CardContent>
         </Card>
       ) : latestRun && (
-        <Card>
+        <Card className="mt-[15px] mb-[15px]">
           <CardHeader>
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
