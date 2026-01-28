@@ -12,6 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -554,22 +555,26 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="requestedDate">Requested Date *</Label>
-                  <Input
-                    type="datetime-local"
-                    id="requestedDate"
-                    value={formData.requestedDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, requestedDate: e.target.value }))}
+                  <DateTimePicker
+                    value={formData.requestedDate ? parseISO(formData.requestedDate) : undefined}
+                    onChange={(date) => setFormData(prev => ({ 
+                      ...prev, 
+                      requestedDate: date ? format(date, "yyyy-MM-dd'T'HH:mm") : "" 
+                    }))}
+                    placeholder="Select date and time"
                     required
                     data-testid="input-requested-date"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="scheduledDate">Scheduled Date</Label>
-                  <Input
-                    type="datetime-local"
-                    id="scheduledDate"
-                    value={formData.scheduledDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                  <DateTimePicker
+                    value={formData.scheduledDate ? parseISO(formData.scheduledDate) : undefined}
+                    onChange={(date) => setFormData(prev => ({ 
+                      ...prev, 
+                      scheduledDate: date ? format(date, "yyyy-MM-dd'T'HH:mm") : "" 
+                    }))}
+                    placeholder="Select date and time"
                     data-testid="input-scheduled-date"
                   />
                 </div>
@@ -780,21 +785,27 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-requestedDate">Requested Date *</Label>
-                  <Input
-                    type="datetime-local"
-                    id="edit-requestedDate"
-                    value={formData.requestedDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, requestedDate: e.target.value }))}
+                  <DateTimePicker
+                    value={formData.requestedDate ? parseISO(formData.requestedDate) : undefined}
+                    onChange={(date) => setFormData(prev => ({ 
+                      ...prev, 
+                      requestedDate: date ? format(date, "yyyy-MM-dd'T'HH:mm") : "" 
+                    }))}
+                    placeholder="Select date and time"
                     required
+                    data-testid="input-edit-requested-date"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-scheduledDate">Scheduled Date</Label>
-                  <Input
-                    type="datetime-local"
-                    id="edit-scheduledDate"
-                    value={formData.scheduledDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                  <DateTimePicker
+                    value={formData.scheduledDate ? parseISO(formData.scheduledDate) : undefined}
+                    onChange={(date) => setFormData(prev => ({ 
+                      ...prev, 
+                      scheduledDate: date ? format(date, "yyyy-MM-dd'T'HH:mm") : "" 
+                    }))}
+                    placeholder="Select date and time"
+                    data-testid="input-edit-scheduled-date"
                   />
                 </div>
               </div>
