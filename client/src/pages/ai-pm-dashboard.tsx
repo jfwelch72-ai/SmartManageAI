@@ -275,7 +275,7 @@ export default function AIPMDashboard() {
       )}
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-[10px] mb-[10px]">
           <h2 className="text-2xl font-bold">Your Tasks</h2>
           <Badge variant="outline" data-testid="text-task-count">
             {tasks?.length || 0} tasks for {user.role}
