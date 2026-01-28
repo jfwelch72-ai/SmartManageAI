@@ -145,7 +145,7 @@ export default function ScopeSettings() {
   });
 
   const createWorkTypeMutation = useMutation({
-    mutationFn: async (data: typeof workTypeForm) => {
+    mutationFn: async (data: typeof workTypeForm & { tradeName?: string; categoryName?: string }) => {
       return await apiRequest("POST", "/api/scope/work-types", data);
     },
     onSuccess: () => {
@@ -254,9 +254,9 @@ export default function ScopeSettings() {
     ? ["General", ...(TRADE_SUBCATEGORIES[selectedTrade] || [])] 
     : [];
   
-  // Find categoryId based on trade + subcategory selection
-  // Uses multiple matching strategies to handle various category naming conventions
-  const findCategoryId = (trade: string, subCategory: string): string => {
+  // Find category info based on trade + subcategory selection
+  // Returns both categoryId and categoryName for robust mapping
+  const findCategoryInfo = (trade: string, subCategory: string): { id: string; name: string } | null => {
     // Format trade name for comparison (underscores to spaces for display matching)
     const tradeFormatted = trade.replace(/_/g, " ");
     
@@ -266,7 +266,7 @@ export default function ScopeSettings() {
       cat.name.toLowerCase() === targetName.toLowerCase()
     );
     if (exactMatch) {
-      return exactMatch.id;
+      return { id: exactMatch.id, name: exactMatch.name };
     }
     
     // Strategy 2: Try matching just the subcategory name alone (handles standalone categories like "Curb & Gutter")
@@ -275,7 +275,7 @@ export default function ScopeSettings() {
         cat.name.toLowerCase() === subCategory.toLowerCase()
       );
       if (standaloneMatch) {
-        return standaloneMatch.id;
+        return { id: standaloneMatch.id, name: standaloneMatch.name };
       }
     }
     
@@ -286,12 +286,18 @@ export default function ScopeSettings() {
         cat.name.toLowerCase() === tradeFormatted.toLowerCase()
       );
       if (tradeCategory) {
-        return tradeCategory.id;
+        return { id: tradeCategory.id, name: tradeCategory.name };
       }
     }
     
-    // No match found - return empty to trigger validation
-    return "";
+    // No match found
+    return null;
+  };
+  
+  // Legacy wrapper for backward compatibility
+  const findCategoryId = (trade: string, subCategory: string): string => {
+    const info = findCategoryInfo(trade, subCategory);
+    return info?.id || "";
   };
   
   // Check if current selection has a valid category match
@@ -367,7 +373,17 @@ export default function ScopeSettings() {
     if (editingWorkType) {
       updateWorkTypeMutation.mutate({ id: editingWorkType.id, ...workTypeForm });
     } else {
-      createWorkTypeMutation.mutate(workTypeForm);
+      // Get category info - either existing category name or generate new one
+      const existingCategoryInfo = findCategoryInfo(selectedTrade, selectedSubCategory);
+      const categoryName = existingCategoryInfo?.name 
+        || `${selectedTrade.replace(/_/g, " ")} - ${selectedSubCategory}`;
+      
+      createWorkTypeMutation.mutate({
+        ...workTypeForm,
+        tradeName: selectedTrade,
+        // Always send categoryName for robust backend handling (no index-based mapping)
+        categoryName: categoryName,
+      });
     }
   };
 
@@ -726,13 +742,12 @@ export default function ScopeSettings() {
               </div>
             </div>
             
-            {/* Validation message when category match not found */}
+            {/* Info message when new category will be created */}
             {selectedTrade && selectedSubCategory && !workTypeForm.categoryId && (
-              <div className="p-3 rounded-lg border border-destructive/50 bg-destructive/10 text-sm">
-                <span className="font-medium text-destructive">Category not found:</span>
+              <div className="p-3 rounded-lg border border-primary/50 bg-primary/10 text-sm">
+                <span className="font-medium text-primary">New category will be created:</span>
                 <span className="text-muted-foreground ml-1">
-                  No matching category exists for "{selectedTrade.replace(/_/g, " ")} - {selectedSubCategory}". 
-                  Try selecting "General" or a different sub-category that matches your existing categories.
+                  A new category "{selectedTrade.replace(/_/g, " ")} - {selectedSubCategory}" will be automatically created for this work type.
                 </span>
               </div>
             )}
@@ -815,7 +830,7 @@ export default function ScopeSettings() {
             </Button>
             <Button
               onClick={handleSaveWorkType}
-              disabled={!workTypeForm.categoryId || !workTypeForm.name || !workTypeForm.code}
+              disabled={(!workTypeForm.categoryId && (!selectedTrade || !selectedSubCategory)) || !workTypeForm.name || !workTypeForm.code}
               data-testid="button-save-work-type"
             >
               {editingWorkType ? "Update" : "Create"}

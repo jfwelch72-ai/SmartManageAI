@@ -8882,27 +8882,106 @@ SmartManageAI Construction Management Platform
     }
   });
 
-  // Admin: Create work type
+  // Admin: Create work type (creates in organizationSowItems for multi-tenant support)
   app.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
-      const validationResult = insertScopeWorkTypeSchema.safeParse({
-        ...req.body,
-        isCustom: true // Admin-added types are marked as custom
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+
+      // Validate input shape with Zod
+      const inputSchema = z.object({
+        name: z.string().min(1, "Name is required"),
+        code: z.string().min(1, "Code is required").regex(/^[a-zA-Z0-9_-]+$/, "Code must contain only letters, numbers, underscores, and dashes"),
+        defaultUnit: z.string().optional().default("EA"),
+        requiresDimensions: z.boolean().optional().default(false),
+        dimensionType: z.string().optional().nullable(),
+        tradeName: z.string().optional(),
+        categoryName: z.string().optional(), // Direct category name from frontend
+        displayOrder: z.number().optional(),
+        categoryId: z.string().optional(), // Legacy support
       });
+
+      const validationResult = inputSchema.safeParse(req.body);
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
       }
 
+      const { name, code, defaultUnit, requiresDimensions, dimensionType, tradeName, categoryName: inputCategoryName, displayOrder } = validationResult.data;
+
+      // Sanitize text fields
+      const sanitizedName = sanitizeShortText(name);
+      const sanitizedCode = sanitizeShortText(code);
+
+      // Use categoryName directly from frontend (robust approach - no index-based mapping)
+      // Frontend sends the actual category name, either from existing category or generated
+      const categoryName = sanitizeShortText(inputCategoryName) || sanitizeShortText(tradeName?.replace(/_/g, " ")) || "Custom";
+
+      // Get max display order for this organization
+      const [maxOrder] = await db
+        .select({ max: sql<number>`COALESCE(MAX(display_order), 0)` })
+        .from(organizationSowItems)
+        .where(eq(organizationSowItems.organizationId, organizationId));
+
+      const newDisplayOrder = displayOrder || (maxOrder?.max || 0) + 1;
+
+      // Create the work type in organizationSowItems
       const [newWorkType] = await db
-        .insert(scopeWorkTypes)
-        .values(validationResult.data)
+        .insert(organizationSowItems)
+        .values({
+          organizationId,
+          categoryName,
+          name: sanitizedName,
+          code: sanitizedCode,
+          unit: sanitizeShortText(defaultUnit) || "EA",
+          requiresDimensions: requiresDimensions || false,
+          dimensionLabel: dimensionType ? sanitizeShortText(dimensionType) : null,
+          displayOrder: newDisplayOrder,
+          isFromTemplate: false, // Custom items are not from template
+          isActive: true,
+        })
         .returning();
 
-      res.status(201).json(newWorkType);
+      // Calculate the actual categoryId by getting updated category list
+      const updatedItems = await db
+        .select({ categoryName: organizationSowItems.categoryName })
+        .from(organizationSowItems)
+        .where(
+          and(
+            eq(organizationSowItems.organizationId, organizationId),
+            eq(organizationSowItems.isActive, true)
+          )
+        )
+        .orderBy(organizationSowItems.displayOrder);
+      
+      const categoryMap = new Map<string, number>();
+      let categoryIndex = 0;
+      for (const item of updatedItems) {
+        if (!categoryMap.has(item.categoryName)) {
+          categoryMap.set(item.categoryName, categoryIndex++);
+        }
+      }
+      const actualCategoryId = `cat-${categoryMap.get(categoryName) ?? 0}`;
+
+      // Return response matching the format expected by GET endpoint
+      res.status(201).json({
+        id: newWorkType.id,
+        categoryId: actualCategoryId,
+        name: newWorkType.name,
+        code: newWorkType.code,
+        defaultUnit: newWorkType.unit,
+        requiresDimensions: newWorkType.requiresDimensions,
+        dimensionType: newWorkType.dimensionLabel,
+        displayOrder: newWorkType.displayOrder,
+        isCustom: true,
+        isActive: newWorkType.isActive,
+      });
     } catch (error: any) {
       if (error.code === '23505') {
-        res.status(400).json({ error: "A work type with this code already exists" });
+        res.status(400).json({ error: "A work type with this code already exists in your organization" });
         return;
       }
       console.error("Create work type error:", error);
