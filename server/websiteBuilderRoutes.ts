@@ -1883,10 +1883,10 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
     // Get published blog posts using raw SQL to avoid schema mismatch
     const blogPostsResult = await db.execute(sql`
       SELECT id, website_id, organization_id, slug, title, excerpt,
-             featured_image_url, author_id, author_name, author_image_url, author_bio,
-             status, category, tags, meta_title, meta_description, keywords,
-             published_at, view_count, reading_time_minutes, cover_image_url,
-             content_json, content_html, created_at, updated_at
+             author_id, author_name, status, category, tags, 
+             meta_title, meta_description, keywords, published_at, 
+             view_count, cover_image_url, content_json, content_html, 
+             created_at, updated_at
       FROM website_blog_posts 
       WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
       ORDER BY published_at DESC NULLS LAST
@@ -1897,7 +1897,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
     // Get featured projects using raw SQL to avoid schema mismatch
     const projectsResult = await db.execute(sql`
       SELECT id, website_id, organization_id, slug, title, short_description,
-             full_description, project_type, service_type, client_name, location,
+             full_description, project_type, service_type, location,
              completion_date, cover_image_url, before_image_url, after_image_url,
              featured, status, view_count, meta_title, meta_description, published_at,
              created_at, updated_at
