@@ -7,6 +7,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import OpenAI from "openai";
 import { openai } from "./ai/openaiClient";
+import { ObjectStorageService } from "./objectStorage";
 
 const router = Router();
 
@@ -963,6 +964,58 @@ router.delete("/ai/contract-document-analysis/:id", requireAuth, requireRole("SU
     res.json({ success: true, message: "Analysis deleted" });
   } catch (error) {
     console.error("Delete contract document analysis error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Download contract document file
+router.get("/download/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const id = req.params.id;
+    const inline = req.query.inline === "true";
+    const { shouldFilter, orgId } = getOrgIdForFilter(req);
+
+    const [analysis] = await db
+      .select()
+      .from(aiContractDocumentAnalysis)
+      .where(eq(aiContractDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!analysis) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && orgId && analysis.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!analysis.documentUrl) {
+      return res.status(404).json({ error: "No document URL found for this analysis" });
+    }
+
+    const objectStorageService = new ObjectStorageService();
+    
+    // Normalize the GCS URL to internal path format
+    const normalizedPath = objectStorageService.normalizeObjectEntityPath(analysis.documentUrl);
+    
+    if (!normalizedPath.startsWith("/objects/")) {
+      // If it can't be normalized, return an error
+      return res.status(400).json({ error: "Document URL is not in a valid format for download" });
+    }
+
+    const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
+
+    // Set disposition header - inline for viewing, attachment for download
+    const fileName = analysis.documentName || "document.pdf";
+    const disposition = inline ? "inline" : "attachment";
+    res.set("Content-Disposition", `${disposition}; filename="${fileName}"`);
+
+    await objectStorageService.downloadObject(objectFile, res, 0);
+  } catch (error: any) {
+    console.error("Download contract document error:", error);
+    if (error.name === "ObjectNotFoundError") {
+      return res.status(404).json({ error: "Document file not found in storage" });
+    }
     res.status(500).json({ error: "Internal server error" });
   }
 });

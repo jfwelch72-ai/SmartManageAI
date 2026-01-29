@@ -660,19 +660,15 @@ export default function AIContractAnalysisPage() {
                 <Button 
                   variant="outline"
                   onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = selectedAnalysis.fileUrl;
-                    link.download = selectedAnalysis.fileName || 'document.pdf';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    // Use backend download endpoint to proxy file access
+                    window.open(`/api/ai-contract-document/download/${selectedAnalysis.id}`, "_blank");
                   }} 
                   data-testid="button-download-contract-doc"
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Download
                 </Button>
-                <Button onClick={() => window.open(selectedAnalysis.fileUrl, "_blank")} data-testid="button-view-contract-doc">
+                <Button onClick={() => window.open(`/api/ai-contract-document/download/${selectedAnalysis.id}?inline=true`, "_blank")} data-testid="button-view-contract-doc">
                   <Eye className="h-4 w-4 mr-2" />
                   View Document
                 </Button>
