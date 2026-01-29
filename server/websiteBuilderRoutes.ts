@@ -1882,7 +1882,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
 
     // Get published blog posts using raw SQL to avoid schema mismatch
     const blogPostsResult = await db.execute(sql`
-      SELECT id, website_id, organization_id, slug, title, excerpt, content, 
+      SELECT id, website_id, organization_id, slug, title, excerpt,
              featured_image_url, author_id, author_name, author_image_url, author_bio,
              status, category, tags, meta_title, meta_description, keywords,
              published_at, view_count, reading_time_minutes, cover_image_url,
