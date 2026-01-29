@@ -969,7 +969,7 @@ router.delete("/ai/contract-document-analysis/:id", requireAuth, requireRole("SU
 });
 
 // Download contract document file
-router.get("/download/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-contract-document/download/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = req.params.id;
     const inline = req.query.inline === "true";
