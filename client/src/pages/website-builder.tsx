@@ -701,9 +701,9 @@ export default function WebsiteBuilderPage() {
               <Badge variant={website?.status === "PUBLISHED" ? "default" : "secondary"} data-testid="badge-website-status">
                 {website?.status || "DRAFT"}
               </Badge>
-              {website?.status === "PUBLISHED" && (
+              {website?.subdomain && website?.status === "PUBLISHED" && (
                 <Button variant="outline" size="sm" asChild data-testid="button-view-site">
-                  <a href={`https://${website?.subdomain}.smartmanageai-sites.com`} target="_blank" rel="noopener noreferrer">
+                  <a href={`/site/${website.subdomain}`} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-4 w-4 mr-1" />
                     View Site
                   </a>

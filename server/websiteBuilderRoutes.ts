@@ -1842,6 +1842,92 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
 // WEBSITE PREVIEW
 // ============================================
 
+// GET /api/website/public/:subdomain - Get public website data by subdomain (no auth required)
+router.get("/public/:subdomain", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+
+    if (!subdomain) {
+      return res.status(400).json({ error: "Subdomain is required" });
+    }
+
+    // Get website by subdomain - only return published websites
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found or not published" });
+    }
+
+    const orgId = website.organizationId;
+
+    // Get organization info for branding
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+    });
+
+    // Get all pages for rendering content
+    const allPages = await db.query.organizationWebsitePages.findMany({
+      where: eq(organizationWebsitePages.organizationId, orgId),
+      orderBy: [asc(organizationWebsitePages.navigationOrder)],
+    });
+
+    // Get published blog posts using raw SQL to avoid schema mismatch
+    const blogPostsResult = await db.execute(sql`
+      SELECT id, website_id, organization_id, slug, title, excerpt,
+             author_id, author_name, status, category, tags, 
+             meta_title, meta_description, keywords, published_at, 
+             view_count, cover_image_url, content_json, content_html, 
+             created_at, updated_at
+      FROM website_blog_posts 
+      WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT 6
+    `);
+    const blogPosts = blogPostsResult.rows;
+
+    // Get featured projects using raw SQL to avoid schema mismatch
+    const projectsResult = await db.execute(sql`
+      SELECT id, website_id, organization_id, slug, title, short_description,
+             full_description, project_type, service_type, location,
+             completion_date, cover_image_url, before_image_url, after_image_url,
+             featured, status, view_count, meta_title, meta_description,
+             created_at, updated_at
+      FROM website_projects 
+      WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
+      ORDER BY completion_date DESC NULLS LAST
+      LIMIT 6
+    `);
+    const projects = projectsResult.rows;
+
+    // Get social links
+    const socialLinks = await db.query.organizationSocialLinks.findFirst({
+      where: eq(organizationSocialLinks.organizationId, orgId),
+    });
+
+    res.json({
+      website,
+      organization: org ? {
+        name: org.name,
+        tradeType: org.tradeType,
+        region: org.region,
+        logoUrl: org.logoUrl,
+      } : null,
+      pages: allPages,
+      blogPosts,
+      projects,
+      socialLinks,
+    });
+  } catch (error) {
+    console.error("Error fetching public website:", error);
+    res.status(500).json({ error: "Failed to fetch website" });
+  }
+});
+
 // GET /api/website/preview - Get all data needed for website preview
 router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
