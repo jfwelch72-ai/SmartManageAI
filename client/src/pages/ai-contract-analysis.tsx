@@ -97,6 +97,40 @@ export default function AIContractAnalysisPage() {
     }
   });
 
+  const handleDownload = async (analysisId: string, fileName: string, inline: boolean = false) => {
+    try {
+      const url = `/api/ai-contract-document/download/${analysisId}${inline ? '?inline=true' : ''}`;
+      const response = await fetch(url, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error("Failed to download file");
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      if (inline) {
+        window.open(blobUrl, "_blank");
+      } else {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = fileName || "document.pdf";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+        toast({ title: "Document downloaded successfully" });
+      }
+    } catch (error) {
+      toast({ 
+        title: "Download failed", 
+        description: "Could not download the document", 
+        variant: "destructive" 
+      });
+    }
+  };
+
   const reanalyzeMutation = useMutation({
     mutationFn: async (id: string) => {
       return await apiRequest("POST", `/api/ai-contract-document/${id}/reanalyze`);
@@ -659,16 +693,16 @@ export default function AIContractAnalysisPage() {
               <>
                 <Button 
                   variant="outline"
-                  onClick={() => {
-                    // Use backend download endpoint to proxy file access
-                    window.open(`/api/ai-contract-document/download/${selectedAnalysis.id}`, "_blank");
-                  }} 
+                  onClick={() => handleDownload(selectedAnalysis.id, selectedAnalysis.fileName, false)} 
                   data-testid="button-download-contract-doc"
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Download
                 </Button>
-                <Button onClick={() => window.open(`/api/ai-contract-document/download/${selectedAnalysis.id}?inline=true`, "_blank")} data-testid="button-view-contract-doc">
+                <Button 
+                  onClick={() => handleDownload(selectedAnalysis.id, selectedAnalysis.fileName, true)} 
+                  data-testid="button-view-contract-doc"
+                >
                   <Eye className="h-4 w-4 mr-2" />
                   View Document
                 </Button>
