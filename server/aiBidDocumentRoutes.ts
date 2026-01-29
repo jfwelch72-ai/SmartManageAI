@@ -228,6 +228,254 @@ router.get("/ai-bid-document/bids", requireAuth, async (req: AuthRequest, res: R
   }
 });
 
+// Main endpoint for frontend - GET /api/ai-bid-document
+router.get("/ai-bid-document", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    let query = db
+      .select({
+        id: aiBidDocumentAnalysis.id,
+        bidId: aiBidDocumentAnalysis.bidId,
+        fileName: aiBidDocumentAnalysis.documentName,
+        fileUrl: aiBidDocumentAnalysis.documentUrl,
+        analysisStatus: aiBidDocumentAnalysis.status,
+        analysisResult: aiBidDocumentAnalysis.rawAiResponse,
+        createdAt: aiBidDocumentAnalysis.createdAt,
+        analyzedAt: aiBidDocumentAnalysis.analyzedAt,
+        confidenceScore: aiBidDocumentAnalysis.confidenceScore,
+        projectName: aiBidDocumentAnalysis.projectName,
+        clientName: aiBidDocumentAnalysis.clientName,
+        scopeSummary: aiBidDocumentAnalysis.scopeSummary,
+      })
+      .from(aiBidDocumentAnalysis)
+      .orderBy(desc(aiBidDocumentAnalysis.createdAt))
+      .limit(100);
+
+    if (shouldFilter && orgId) {
+      query = query.where(eq(aiBidDocumentAnalysis.organizationId, orgId)) as typeof query;
+    }
+
+    const analyses = await query;
+    
+    // Enrich with bid info
+    const enrichedAnalyses = await Promise.all(analyses.map(async (analysis) => {
+      if (analysis.bidId) {
+        const [bid] = await db.select({ code: bids.code, name: bids.name })
+          .from(bids)
+          .where(eq(bids.id, analysis.bidId))
+          .limit(1);
+        return {
+          ...analysis,
+          bidCode: bid?.code || '',
+          bidName: bid?.name || '',
+        };
+      }
+      return { ...analysis, bidCode: '', bidName: '' };
+    }));
+    
+    res.json(enrichedAnalyses);
+  } catch (error) {
+    console.error("Get AI bid document analyses error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/ai-bid-document/analyze - Create new analysis (frontend endpoint)
+router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { bidId, fileUrl, fileName } = req.body;
+
+    if (!bidId || !fileUrl || !fileName) {
+      return res.status(400).json({ error: "bidId, fileUrl, and fileName are required" });
+    }
+
+    const targetOrgId = orgId;
+    
+    if (!targetOrgId) {
+      return res.status(400).json({ error: "Organization ID is required" });
+    }
+
+    const [bid] = await db
+      .select()
+      .from(bids)
+      .where(eq(bids.id, bidId))
+      .limit(1);
+
+    if (!bid) {
+      return res.status(404).json({ error: "Bid not found" });
+    }
+
+    if (shouldFilter && bid.gcOrganizationId !== targetOrgId) {
+      return res.status(403).json({ error: "Cannot analyze document for another organization's bid" });
+    }
+
+    const [org] = await db
+      .select({ tradeType: organizations.tradeType })
+      .from(organizations)
+      .where(eq(organizations.id, bid.gcOrganizationId || targetOrgId))
+      .limit(1);
+
+    const [newAnalysis] = await db
+      .insert(aiBidDocumentAnalysis)
+      .values({
+        bidId: bidId,
+        organizationId: bid.gcOrganizationId || targetOrgId,
+        documentUrl: fileUrl,
+        documentName: fileName,
+        documentType: "PDF",
+        status: "PROCESSING",
+        analyzedById: req.user?.id,
+      })
+      .returning();
+
+    res.status(201).json({ id: newAnalysis.id, status: "PROCESSING" });
+
+    // Background AI analysis
+    (async () => {
+      try {
+        const result = await analyzeDocumentWithAI(fileUrl, fileName, org?.tradeType || undefined);
+        
+        await db
+          .update(aiBidDocumentAnalysis)
+          .set({
+            status: "COMPLETED",
+            projectName: result.projectName || null,
+            clientName: result.clientName || null,
+            bidDueDate: result.bidDueDate ? new Date(result.bidDueDate) : null,
+            projectLocation: result.projectLocation || null,
+            projectScope: result.projectScope || null,
+            scopeSummary: result.scopeSummary || null,
+            lineItems: JSON.stringify(result.lineItems || []),
+            requirements: JSON.stringify(result.requirements || []),
+            qualifications: JSON.stringify(result.qualifications || []),
+            insuranceRequirements: result.insuranceRequirements || null,
+            bondingRequirements: result.bondingRequirements || null,
+            suggestedPricingFactors: JSON.stringify(result.suggestedPricingFactors || []),
+            riskFactors: JSON.stringify(result.riskFactors || []),
+            confidenceScore: result.confidenceScore ?? 0,
+            analyzedAt: new Date(),
+            rawAiResponse: JSON.stringify(result),
+            updatedAt: new Date(),
+          })
+          .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
+
+        console.log(`AI bid document analysis completed for: ${fileName}`);
+      } catch (error) {
+        console.error("Background AI analysis error:", error);
+        await db
+          .update(aiBidDocumentAnalysis)
+          .set({
+            status: "FAILED",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
+      }
+    })();
+
+  } catch (error) {
+    console.error("Create AI bid document analysis error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/ai-bid-document/:id/reanalyze - Reanalyze (frontend endpoint)
+router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await db
+      .update(aiBidDocumentAnalysis)
+      .set({ status: "PROCESSING", updatedAt: new Date() })
+      .where(eq(aiBidDocumentAnalysis.id, id));
+
+    res.json({ id, status: "PROCESSING" });
+
+    // Background reanalysis
+    (async () => {
+      try {
+        const [org] = await db
+          .select({ tradeType: organizations.tradeType })
+          .from(organizations)
+          .where(eq(organizations.id, existing.organizationId))
+          .limit(1);
+
+        const result = await analyzeDocumentWithAI(existing.documentUrl, existing.documentName, org?.tradeType || undefined);
+        
+        await db
+          .update(aiBidDocumentAnalysis)
+          .set({
+            status: "COMPLETED",
+            projectName: result.projectName || null,
+            clientName: result.clientName || null,
+            bidDueDate: result.bidDueDate ? new Date(result.bidDueDate) : null,
+            projectLocation: result.projectLocation || null,
+            projectScope: result.projectScope || null,
+            scopeSummary: result.scopeSummary || null,
+            lineItems: JSON.stringify(result.lineItems || []),
+            requirements: JSON.stringify(result.requirements || []),
+            qualifications: JSON.stringify(result.qualifications || []),
+            insuranceRequirements: result.insuranceRequirements || null,
+            bondingRequirements: result.bondingRequirements || null,
+            suggestedPricingFactors: JSON.stringify(result.suggestedPricingFactors || []),
+            riskFactors: JSON.stringify(result.riskFactors || []),
+            confidenceScore: result.confidenceScore ?? 0,
+            analyzedAt: new Date(),
+            rawAiResponse: JSON.stringify(result),
+            updatedAt: new Date(),
+          })
+          .where(eq(aiBidDocumentAnalysis.id, id));
+
+        console.log(`AI bid document reanalysis completed for: ${existing.documentName}`);
+      } catch (error) {
+        console.error("Background AI reanalysis error:", error);
+        await db
+          .update(aiBidDocumentAnalysis)
+          .set({
+            status: "FAILED",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(aiBidDocumentAnalysis.id, id));
+      }
+    })();
+
+  } catch (error) {
+    console.error("Reanalyze AI bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai/bid-document-analysis", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
