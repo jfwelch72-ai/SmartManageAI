@@ -332,7 +332,7 @@ export default function CFODashboard() {
 
           {/* Equipment Metrics Section */}
           <div className="space-y-4">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
+            <h2 className="text-2xl font-bold flex items-center gap-2 mt-[15px] mb-[15px]">
               <Truck className="h-6 w-6" />
               Equipment Metrics
             </h2>
