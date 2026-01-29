@@ -195,6 +195,39 @@ function parseAnalysis(analysis: any) {
   };
 }
 
+// Get list of bids for AI analysis dropdown
+router.get("/ai-bid-document/bids", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    let query = db
+      .select({
+        id: bids.id,
+        code: bids.code,
+        name: bids.name,
+        clientName: bids.clientName,
+        status: bids.status,
+        dueDate: bids.dueDate,
+      })
+      .from(bids)
+      .orderBy(desc(bids.createdAt));
+
+    if (shouldFilter && orgId) {
+      query = query.where(eq(bids.gcOrganizationId, orgId)) as typeof query;
+    }
+
+    const bidsList = await query;
+    res.json(bidsList);
+  } catch (error) {
+    console.error("Get bids for AI analysis error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai/bid-document-analysis", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
