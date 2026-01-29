@@ -29,7 +29,8 @@ import {
   RefreshCw,
   Scale,
   AlertCircle,
-  FileWarning
+  FileWarning,
+  Download
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -650,15 +651,32 @@ export default function AIContractAnalysisPage() {
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowResultDialog(false)} data-testid="button-close-contract-result">
               Close
             </Button>
             {selectedAnalysis?.fileUrl && (
-              <Button onClick={() => window.open(selectedAnalysis.fileUrl, "_blank")} data-testid="button-view-contract-doc">
-                <Eye className="h-4 w-4 mr-2" />
-                View Document
-              </Button>
+              <>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = selectedAnalysis.fileUrl;
+                    link.download = selectedAnalysis.fileName || 'document.pdf';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }} 
+                  data-testid="button-download-contract-doc"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+                <Button onClick={() => window.open(selectedAnalysis.fileUrl, "_blank")} data-testid="button-view-contract-doc">
+                  <Eye className="h-4 w-4 mr-2" />
+                  View Document
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
