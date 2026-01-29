@@ -296,7 +296,7 @@ export default function CFODashboard() {
 
           {/* Projects Missing Budget Data Warning */}
           {projectsMissingBudget.length > 0 && (
-            <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20" data-testid="card-missing-budget-warning">
+            <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20 mt-[15px] mb-[15px]" data-testid="card-missing-budget-warning">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-500" />
