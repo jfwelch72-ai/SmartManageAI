@@ -49,6 +49,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **PostgreSQL (Neon)**: Primary database service.
 *   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.
 *   **OpenAI GPT-4 / GPT-4o**: Powers AI functionalities including Vision.
+*   **Resend**: Transactional email service (RESEND_API_KEY secret required).
 *   **JWT**: For secure authentication and authorization.
 *   **Bcrypt**: For password hashing.
 *   **Uppy**: For enhanced file uploads.
