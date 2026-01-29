@@ -649,14 +649,14 @@ router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) 
     // Use raw SQL to avoid Drizzle ORM schema mismatch issues
     const result = await db.execute(sql`
       INSERT INTO website_blog_posts (
-        website_id, organization_id, slug, title, excerpt, content,
-        content_html, content_json, category, tags, featured_image_url,
+        website_id, organization_id, slug, title, excerpt,
+        content_html, content_json, category, tags,
         cover_image_url, author_id, author_name, meta_title, meta_description,
         keywords, ai_generated, ai_prompt, status
       ) VALUES (
-        ${website.id}, ${orgId}, ${slug}, ${title}, ${excerpt || null}, ${content || null},
-        ${contentHtml || null}, ${contentJson || null}, ${category || null}, ${tags || null}, ${featuredImageUrl || null},
-        ${coverImageUrl || null}, ${user.id}, ${authorName}, ${metaTitle || null}, ${metaDescription || null},
+        ${website.id}, ${orgId}, ${slug}, ${title}, ${excerpt || null},
+        ${contentHtml || content || null}, ${contentJson || null}, ${category || null}, ${tags || null},
+        ${coverImageUrl || featuredImageUrl || null}, ${user.id}, ${authorName}, ${metaTitle || null}, ${metaDescription || null},
         ${keywords || null}, ${aiGenerated || false}, ${aiPrompt || null}, 'DRAFT'
       ) RETURNING *
     `);
@@ -1899,7 +1899,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
       SELECT id, website_id, organization_id, slug, title, short_description,
              full_description, project_type, service_type, location,
              completion_date, cover_image_url, before_image_url, after_image_url,
-             featured, status, view_count, meta_title, meta_description, published_at,
+             featured, status, view_count, meta_title, meta_description,
              created_at, updated_at
       FROM website_projects 
       WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
