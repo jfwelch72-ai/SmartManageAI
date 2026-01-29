@@ -739,7 +739,6 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
         SET 
           title = COALESCE(${title}, title),
           excerpt = COALESCE(${excerpt}, excerpt),
-          content = COALESCE(${content}, content),
           content_html = COALESCE(${content}, content_html),
           category = COALESCE(${category}, category),
           status = COALESCE(${status}, status),
@@ -754,7 +753,6 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
         SET 
           title = COALESCE(${title}, title),
           excerpt = COALESCE(${excerpt}, excerpt),
-          content = COALESCE(${content}, content),
           content_html = COALESCE(${content}, content_html),
           category = COALESCE(${category}, category),
           status = COALESCE(${status}, status),
