@@ -1,48 +1,23 @@
-// SendGrid Email Service - Replit Integration
-// Uses the Replit SendGrid connector for secure API key management
+// Resend Email Service
+// Uses Resend for transactional email
 
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 
-let connectionSettings: any;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
+// Default from email - can be customized per organization
+const DEFAULT_FROM_EMAIL = 'SmartManageAI <onboarding@resend.dev>';
 
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=sendgrid',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key || !connectionSettings.settings.from_email)) {
-    throw new Error('SendGrid not connected');
-  }
-  return { apiKey: connectionSettings.settings.api_key, email: connectionSettings.settings.from_email };
+export async function getResendClient() {
+  return {
+    client: resend,
+    fromEmail: DEFAULT_FROM_EMAIL
+  };
 }
 
-// WARNING: Never cache this client.
-// Access tokens expire, so a new client must be created each time.
-// Always call this function again to get a fresh client.
+// Keep this for backwards compatibility with existing code
 export async function getUncachableSendGridClient() {
-  const { apiKey, email } = await getCredentials();
-  sgMail.setApiKey(apiKey);
-  return {
-    client: sgMail,
-    fromEmail: email
-  };
+  return getResendClient();
 }
 
 // Email sending helper functions
@@ -56,22 +31,29 @@ export interface EmailOptions {
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
-    const { client, fromEmail } = await getUncachableSendGridClient();
+    const { fromEmail } = await getResendClient();
     
-    const msg = {
-      to: options.to,
+    // Normalize recipients
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
+    
+    const { data, error } = await resend.emails.send({
       from: fromEmail,
+      to: recipients,
       subject: options.subject,
       text: options.text || '',
       html: options.html || options.text || '',
       replyTo: options.replyTo,
-    };
+    });
     
-    await client.send(msg);
-    console.log(`Email sent successfully to ${Array.isArray(options.to) ? options.to.join(', ') : options.to}`);
+    if (error) {
+      console.error('Resend email error:', error);
+      return false;
+    }
+    
+    console.log(`Email sent successfully via Resend to ${recipients.join(', ')}`, data?.id);
     return true;
   } catch (error: any) {
-    console.error('SendGrid email error:', error?.response?.body || error.message);
+    console.error('Resend email error:', error.message);
     return false;
   }
 }
@@ -81,23 +63,15 @@ export async function sendTemplateEmail(
   templateId: string,
   dynamicData: Record<string, any>
 ): Promise<boolean> {
-  try {
-    const { client, fromEmail } = await getUncachableSendGridClient();
-    
-    const msg = {
-      to,
-      from: fromEmail,
-      templateId,
-      dynamicTemplateData: dynamicData,
-    };
-    
-    await client.send(msg);
-    console.log(`Template email sent successfully to ${Array.isArray(to) ? to.join(', ') : to}`);
-    return true;
-  } catch (error: any) {
-    console.error('SendGrid template email error:', error?.response?.body || error.message);
-    return false;
-  }
+  // Resend doesn't have templates in the same way as SendGrid
+  // For now, we'll just send a basic email with the dynamic data
+  console.warn('sendTemplateEmail: Resend template emails not implemented, falling back to basic email');
+  return sendEmail({
+    to,
+    subject: dynamicData.subject || 'Notification',
+    html: dynamicData.html || JSON.stringify(dynamicData),
+    text: dynamicData.text,
+  });
 }
 
 // Convenience functions for common email types

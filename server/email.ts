@@ -1,5 +1,6 @@
-// Email service using SendGrid (Replit Integration)
-import { getUncachableSendGridClient } from './services/emailService';
+// Email service using Resend
+import { getResendClient } from './services/emailService';
+import { Resend } from 'resend';
 
 interface EmailOptions {
   to: string | string[];
@@ -8,32 +9,40 @@ interface EmailOptions {
   text?: string;
 }
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+const DEFAULT_FROM_EMAIL = 'SmartManageAI <onboarding@resend.dev>';
+
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
-    const { client, fromEmail } = await getUncachableSendGridClient();
-    
     // Normalize recipients - handle both string and array formats
-    let recipients: string | string[] = options.to;
-    if (typeof options.to === 'string' && options.to.includes(',')) {
-      // Handle comma-separated string by converting to array
-      recipients = options.to.split(',').map(email => email.trim());
+    let recipients: string[] = [];
+    if (typeof options.to === 'string') {
+      if (options.to.includes(',')) {
+        recipients = options.to.split(',').map(email => email.trim());
+      } else {
+        recipients = [options.to];
+      }
+    } else {
+      recipients = options.to;
     }
     
-    const msg = {
+    const { data, error } = await resend.emails.send({
+      from: DEFAULT_FROM_EMAIL,
       to: recipients,
-      from: fromEmail,
       subject: options.subject,
       text: options.text || '',
       html: options.html,
-    };
+    });
     
-    await client.send(msg);
-    const recipientList = Array.isArray(recipients) ? recipients.join(', ') : recipients;
-    console.log('Email sent successfully via SendGrid to:', recipientList);
+    if (error) {
+      console.error('Failed to send email via Resend:', error);
+      return false;
+    }
+    
+    console.log('Email sent successfully via Resend to:', recipients.join(', '), 'ID:', data?.id);
     return true;
   } catch (error: any) {
-    const errorDetails = error?.response?.body?.errors || error?.response?.body || error.message || error;
-    console.error('Failed to send email via SendGrid:', JSON.stringify(errorDetails));
+    console.error('Failed to send email via Resend:', error.message || error);
     return false;
   }
 }
