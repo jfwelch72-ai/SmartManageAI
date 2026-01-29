@@ -335,8 +335,19 @@ router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: R
 
     const analyses = await query;
     
-    // Enrich with project info
+    // Enrich with project info and parse analysisResult
     const enrichedAnalyses = await Promise.all(analyses.map(async (analysis) => {
+      let parsedResult = null;
+      if (analysis.analysisResult) {
+        try {
+          parsedResult = typeof analysis.analysisResult === 'string' 
+            ? JSON.parse(analysis.analysisResult) 
+            : analysis.analysisResult;
+        } catch (e) {
+          console.error('Failed to parse analysisResult:', e);
+        }
+      }
+      
       if (analysis.projectId) {
         const [project] = await db.select({ code: projects.code, name: projects.name })
           .from(projects)
@@ -344,11 +355,12 @@ router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: R
           .limit(1);
         return {
           ...analysis,
+          analysisResult: parsedResult,
           projectCode: project?.code || '',
           projectName: project?.name || '',
         };
       }
-      return { ...analysis, projectCode: '', projectName: '' };
+      return { ...analysis, analysisResult: parsedResult, projectCode: '', projectName: '' };
     }));
     
     res.json(enrichedAnalyses);
