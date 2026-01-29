@@ -304,6 +304,275 @@ router.get("/ai-contract-document/projects", requireAuth, async (req: AuthReques
   }
 });
 
+// Main endpoint for frontend - GET /api/ai-contract-document
+router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    let query = db
+      .select({
+        id: aiContractDocumentAnalysis.id,
+        projectId: aiContractDocumentAnalysis.projectId,
+        fileName: aiContractDocumentAnalysis.documentName,
+        fileUrl: aiContractDocumentAnalysis.documentUrl,
+        documentType: aiContractDocumentAnalysis.documentType,
+        analysisStatus: aiContractDocumentAnalysis.status,
+        analysisResult: aiContractDocumentAnalysis.rawAiResponse,
+        createdAt: aiContractDocumentAnalysis.createdAt,
+        analyzedAt: aiContractDocumentAnalysis.analyzedAt,
+      })
+      .from(aiContractDocumentAnalysis)
+      .orderBy(desc(aiContractDocumentAnalysis.createdAt))
+      .limit(100);
+
+    if (shouldFilter && orgId) {
+      query = query.where(eq(aiContractDocumentAnalysis.organizationId, orgId)) as typeof query;
+    }
+
+    const analyses = await query;
+    
+    // Enrich with project info
+    const enrichedAnalyses = await Promise.all(analyses.map(async (analysis) => {
+      if (analysis.projectId) {
+        const [project] = await db.select({ code: projects.code, name: projects.name })
+          .from(projects)
+          .where(eq(projects.id, analysis.projectId))
+          .limit(1);
+        return {
+          ...analysis,
+          projectCode: project?.code || '',
+          projectName: project?.name || '',
+        };
+      }
+      return { ...analysis, projectCode: '', projectName: '' };
+    }));
+    
+    res.json(enrichedAnalyses);
+  } catch (error) {
+    console.error("Get AI contract document analyses error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/ai-contract-document/analyze - Create new analysis (frontend endpoint)
+router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { projectId, fileUrl, fileName, documentType } = req.body;
+
+    if (!projectId || !fileUrl || !fileName) {
+      return res.status(400).json({ error: "projectId, fileUrl, and fileName are required" });
+    }
+
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    if (shouldFilter && project.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Cannot analyze document for another organization's project" });
+    }
+
+    const [newAnalysis] = await db
+      .insert(aiContractDocumentAnalysis)
+      .values({
+        projectId: projectId,
+        organizationId: project.gcOrganizationId!,
+        documentUrl: fileUrl,
+        documentName: fileName,
+        documentType: documentType || "CONTRACT",
+        status: "PROCESSING",
+        analyzedById: req.user?.id,
+      })
+      .returning();
+
+    res.status(201).json({ id: newAnalysis.id, status: "PROCESSING" });
+
+    // Background AI analysis
+    (async () => {
+      try {
+        const result = await analyzeContractWithAI(fileUrl, fileName, documentType || "CONTRACT");
+        
+        await db
+          .update(aiContractDocumentAnalysis)
+          .set({
+            status: "COMPLETED",
+            contractType: result.contractType || null,
+            contractNumber: result.contractNumber || null,
+            contractDate: result.contractDate ? new Date(result.contractDate) : null,
+            effectiveDate: result.effectiveDate ? new Date(result.effectiveDate) : null,
+            completionDate: result.completionDate ? new Date(result.completionDate) : null,
+            ownerName: result.ownerName || null,
+            generalContractorName: result.generalContractorName || null,
+            subcontractorName: result.subcontractorName || null,
+            ownerAddress: result.ownerAddress || null,
+            gcAddress: result.gcAddress || null,
+            projectName: result.projectName || null,
+            projectLocation: result.projectLocation || null,
+            contractValue: result.contractValue || null,
+            retainage: result.retainage || null,
+            paymentTerms: result.paymentTerms || null,
+            billingSchedule: result.billingSchedule || null,
+            scopeOfWork: result.scopeOfWork || null,
+            scopeSummary: result.scopeSummary || null,
+            scopeItems: JSON.stringify(result.scopeItems || []),
+            exclusions: JSON.stringify(result.exclusions || []),
+            startDate: result.startDate ? new Date(result.startDate) : null,
+            duration: result.duration || null,
+            milestones: JSON.stringify(result.milestones || []),
+            liquidatedDamages: result.liquidatedDamages || null,
+            insuranceRequirements: result.insuranceRequirements || null,
+            bondingRequirements: result.bondingRequirements || null,
+            warrantyTerms: result.warrantyTerms || null,
+            changeOrderProcess: result.changeOrderProcess || null,
+            disputeResolution: result.disputeResolution || null,
+            terminationClauses: result.terminationClauses || null,
+            indemnificationClauses: result.indemnificationClauses || null,
+            keyTerms: JSON.stringify(result.keyTerms || []),
+            riskFactors: JSON.stringify(result.riskFactors || []),
+            obligations: JSON.stringify(result.obligations || []),
+            confidenceScore: result.confidenceScore ?? 0,
+            analyzedAt: new Date(),
+            rawAiResponse: JSON.stringify(result),
+            updatedAt: new Date(),
+          })
+          .where(eq(aiContractDocumentAnalysis.id, newAnalysis.id));
+
+        console.log(`AI contract document analysis completed for: ${fileName}`);
+      } catch (error) {
+        console.error("Background AI contract analysis error:", error);
+        await db
+          .update(aiContractDocumentAnalysis)
+          .set({
+            status: "FAILED",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(aiContractDocumentAnalysis.id, newAnalysis.id));
+      }
+    })();
+
+  } catch (error) {
+    console.error("Create AI contract document analysis error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/ai-contract-document/:id/reanalyze - Reanalyze (frontend endpoint)
+router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(aiContractDocumentAnalysis)
+      .where(eq(aiContractDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await db
+      .update(aiContractDocumentAnalysis)
+      .set({ status: "PROCESSING", updatedAt: new Date() })
+      .where(eq(aiContractDocumentAnalysis.id, id));
+
+    res.json({ id, status: "PROCESSING" });
+
+    // Background reanalysis
+    (async () => {
+      try {
+        const result = await analyzeContractWithAI(existing.documentUrl, existing.documentName, existing.documentType || "CONTRACT");
+        
+        await db
+          .update(aiContractDocumentAnalysis)
+          .set({
+            status: "COMPLETED",
+            contractType: result.contractType || null,
+            contractNumber: result.contractNumber || null,
+            contractDate: result.contractDate ? new Date(result.contractDate) : null,
+            effectiveDate: result.effectiveDate ? new Date(result.effectiveDate) : null,
+            completionDate: result.completionDate ? new Date(result.completionDate) : null,
+            ownerName: result.ownerName || null,
+            generalContractorName: result.generalContractorName || null,
+            subcontractorName: result.subcontractorName || null,
+            ownerAddress: result.ownerAddress || null,
+            gcAddress: result.gcAddress || null,
+            projectName: result.projectName || null,
+            projectLocation: result.projectLocation || null,
+            contractValue: result.contractValue || null,
+            retainage: result.retainage || null,
+            paymentTerms: result.paymentTerms || null,
+            billingSchedule: result.billingSchedule || null,
+            scopeOfWork: result.scopeOfWork || null,
+            scopeSummary: result.scopeSummary || null,
+            scopeItems: JSON.stringify(result.scopeItems || []),
+            exclusions: JSON.stringify(result.exclusions || []),
+            startDate: result.startDate ? new Date(result.startDate) : null,
+            duration: result.duration || null,
+            milestones: JSON.stringify(result.milestones || []),
+            liquidatedDamages: result.liquidatedDamages || null,
+            insuranceRequirements: result.insuranceRequirements || null,
+            bondingRequirements: result.bondingRequirements || null,
+            warrantyTerms: result.warrantyTerms || null,
+            changeOrderProcess: result.changeOrderProcess || null,
+            disputeResolution: result.disputeResolution || null,
+            terminationClauses: result.terminationClauses || null,
+            indemnificationClauses: result.indemnificationClauses || null,
+            keyTerms: JSON.stringify(result.keyTerms || []),
+            riskFactors: JSON.stringify(result.riskFactors || []),
+            obligations: JSON.stringify(result.obligations || []),
+            confidenceScore: result.confidenceScore ?? 0,
+            analyzedAt: new Date(),
+            rawAiResponse: JSON.stringify(result),
+            updatedAt: new Date(),
+          })
+          .where(eq(aiContractDocumentAnalysis.id, id));
+
+        console.log(`AI contract document reanalysis completed for: ${existing.documentName}`);
+      } catch (error) {
+        console.error("Background AI contract reanalysis error:", error);
+        await db
+          .update(aiContractDocumentAnalysis)
+          .set({
+            status: "FAILED",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            updatedAt: new Date(),
+          })
+          .where(eq(aiContractDocumentAnalysis.id, id));
+      }
+    })();
+
+  } catch (error) {
+    console.error("Reanalyze AI contract document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai/contract-document-analysis", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
