@@ -27,8 +27,9 @@ interface ScopeItemProgressRowProps {
 export default function ScopeItemProgressRow({ scopeItemId, onDelete }: ScopeItemProgressRowProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { data: progressEntries, isLoading } = useQuery<DailyProgressWithCreator[]>({
+  const { data: progressEntries, isLoading, isFetching } = useQuery<DailyProgressWithCreator[]>({
     queryKey: ["/api/scope-items", scopeItemId, "progress"],
+    staleTime: 1000,
   });
 
   // Mutation to update billing status
@@ -49,7 +50,8 @@ export default function ScopeItemProgressRow({ scopeItemId, onDelete }: ScopeIte
   // Check if user can edit billing status (Superintendent, Office Manager, Admin, Manager)
   const canEditBillingStatus = user && ["SUPERINTENDENT", "OFFICE_MANAGER", "ADMIN", "MANAGER"].includes(user.role);
 
-  if (isLoading) {
+  // Only show loading on initial load, not during refetch
+  if (isLoading && !progressEntries) {
     return (
       <TableRow>
         <TableCell colSpan={9} className="bg-muted/50 p-4">
@@ -59,12 +61,18 @@ export default function ScopeItemProgressRow({ scopeItemId, onDelete }: ScopeIte
     );
   }
 
+  // Show "no entries" only when we have fetched and confirmed there are none
+  const hasEntries = progressEntries && progressEntries.length > 0;
+
   return (
     <TableRow>
       <TableCell colSpan={9} className="bg-muted/50 p-4">
         <div className="space-y-2">
-          <h4 className="font-semibold text-sm mb-3">Daily Progress History</h4>
-          {!progressEntries || progressEntries.length === 0 ? (
+          <div className="flex items-center gap-2">
+            <h4 className="font-semibold text-sm">Daily Progress History</h4>
+            {isFetching && <span className="text-xs text-muted-foreground">(updating...)</span>}
+          </div>
+          {!hasEntries ? (
             <p className="text-sm text-muted-foreground">No daily progress entries yet</p>
           ) : (
             <div className="rounded-md border bg-background">
