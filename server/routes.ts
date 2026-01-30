@@ -4455,6 +4455,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { dailyScopeProgress, insertDailyScopeProgressSchema } = await import("@shared/schema");
 
+  // Helper function to calculate billing status based on quantities
+  function calculateBillingStatus(completedQty: number, billedQty: number, totalQty: number): "NOT_READY" | "READY_TO_BILL" | "BILLED" {
+    if (billedQty >= totalQty && totalQty > 0) {
+      return "BILLED";
+    } else if (completedQty > 0 && billedQty < completedQty) {
+      return "READY_TO_BILL";
+    } else {
+      return "NOT_READY";
+    }
+  }
+
   // Get all daily progress entries for a scope item
   app.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -4524,11 +4535,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
 
+      // Get scope item's totalQuantity to calculate billing status
+      const [scopeItemForStatus] = await db
+        .select({ totalQuantity: scopeItems.totalQuantity })
+        .from(scopeItems)
+        .where(eq(scopeItems.id, req.params.scopeItemId))
+        .limit(1);
+
+      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
+      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+
       await db
         .update(scopeItems)
         .set({
           completedQuantity: totalCompleted.toString(),
           billedQuantity: totalBilled.toString(),
+          billingStatus,
           updatedAt: new Date(),
         })
         .where(eq(scopeItems.id, req.params.scopeItemId));
@@ -4663,11 +4685,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
 
+      // Get scope item's totalQuantity to calculate billing status
+      const [scopeItemForStatus] = await db
+        .select({ totalQuantity: scopeItems.totalQuantity })
+        .from(scopeItems)
+        .where(eq(scopeItems.id, existingProgress.scopeItemId))
+        .limit(1);
+
+      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
+      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+
       await db
         .update(scopeItems)
         .set({
           completedQuantity: totalCompleted.toString(),
           billedQuantity: totalBilled.toString(),
+          billingStatus,
           updatedAt: new Date(),
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
@@ -4713,11 +4746,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
 
+      // Get scope item's totalQuantity to calculate billing status
+      const [scopeItemForStatus] = await db
+        .select({ totalQuantity: scopeItems.totalQuantity })
+        .from(scopeItems)
+        .where(eq(scopeItems.id, existingProgress.scopeItemId))
+        .limit(1);
+
+      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
+      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+
       await db
         .update(scopeItems)
         .set({
           completedQuantity: totalCompleted.toString(),
           billedQuantity: totalBilled.toString(),
+          billingStatus,
           updatedAt: new Date(),
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
