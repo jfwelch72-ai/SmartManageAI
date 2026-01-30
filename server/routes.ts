@@ -4455,28 +4455,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets } = await import("@shared/schema");
 
-  // Helper function to sync material budget with scope item completed quantity
+  // Helper function to sync all material budgets linked to a scope item
+  // Uses the scope item's completed quantity to update material budget tracking
+  // Only syncs if units match (e.g., both are EA, SF, etc.) to avoid incorrect conversions
   // This ensures Materials data matches Scope & Progress data
-  async function syncMaterialBudgetFromScopeItem(scopeItemId: string, completedQuantity: number) {
+  async function syncMaterialBudgetsFromScopeItem(scopeItemId: string, completedQuantity: number) {
     try {
-      // Find the material budget linked to this scope item
-      const [materialBudget] = await db
-        .select()
-        .from(projectMaterialBudgets)
-        .where(eq(projectMaterialBudgets.scopeItemId, scopeItemId))
+      // Get the scope item to know its unit
+      const [scopeItem] = await db
+        .select({ unit: scopeItems.unit })
+        .from(scopeItems)
+        .where(eq(scopeItems.id, scopeItemId))
         .limit(1);
 
-      if (materialBudget) {
+      if (!scopeItem) return;
+
+      const scopeUnit = (scopeItem.unit || "").toLowerCase().trim();
+
+      // Find ALL material budgets linked to this scope item (there can be multiple)
+      const materialBudgets = await db
+        .select()
+        .from(projectMaterialBudgets)
+        .where(eq(projectMaterialBudgets.scopeItemId, scopeItemId));
+
+      for (const materialBudget of materialBudgets) {
+        const materialUnit = (materialBudget.unit || "").toLowerCase().trim();
+        
+        // Only sync if units match to avoid incorrect quantity mappings
+        if (scopeUnit !== materialUnit) {
+          continue;
+        }
+
         const budgetedQty = Number(materialBudget.budgetedQuantity || 0);
-        const varianceQty = completedQuantity - budgetedQty;
-        const variancePercent = budgetedQty > 0 ? (completedQuantity / budgetedQty) * 100 : 0;
+        const budgetedUnitCost = Number(materialBudget.budgetedUnitCost || 0);
+        
+        // Calculate actual values based on completed quantity
+        const actualQtyUsed = completedQuantity;
+        const actualTotalCost = actualQtyUsed * budgetedUnitCost;
+        
+        const varianceQty = actualQtyUsed - budgetedQty;
+        const variancePercent = budgetedQty > 0 ? (actualQtyUsed / budgetedQty) * 100 : 0;
         const shouldAlert = variancePercent >= Number(materialBudget.alertThresholdPercent || 90);
         const alertJustTriggered = shouldAlert && !materialBudget.alertTriggered;
 
         await db
           .update(projectMaterialBudgets)
           .set({
-            actualQuantityUsed: completedQuantity.toString(),
+            actualQuantityUsed: actualQtyUsed.toString(),
+            actualTotalCost: actualTotalCost.toFixed(2),
             varianceQuantity: varianceQty.toString(),
             variancePercent: variancePercent.toFixed(2),
             alertTriggered: shouldAlert,
@@ -4486,7 +4512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(projectMaterialBudgets.id, materialBudget.id));
       }
     } catch (error) {
-      console.error("Error syncing material budget:", error);
+      console.error("Error syncing material budgets:", error);
       // Don't throw - this is a non-critical update
     }
   }
@@ -4594,8 +4620,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(scopeItems.id, req.params.scopeItemId));
 
-      // Sync material budget with updated completed quantity
-      await syncMaterialBudgetFromScopeItem(req.params.scopeItemId, totalCompleted);
+      // Sync material budgets with updated completed quantity
+      await syncMaterialBudgetsFromScopeItem(req.params.scopeItemId, totalCompleted);
 
       res.status(201).json(newProgress);
     } catch (error: any) {
@@ -4738,8 +4764,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
 
-      // Sync material budget with updated completed quantity
-      await syncMaterialBudgetFromScopeItem(existingProgress.scopeItemId, totalCompleted);
+      // Sync material budgets with updated completed quantity
+      await syncMaterialBudgetsFromScopeItem(existingProgress.scopeItemId, totalCompleted);
 
       res.json(updatedProgress);
     } catch (error: any) {
@@ -4793,8 +4819,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
 
-      // Sync material budget with updated completed quantity
-      await syncMaterialBudgetFromScopeItem(existingProgress.scopeItemId, totalCompleted);
+      // Sync material budgets with updated completed quantity
+      await syncMaterialBudgetsFromScopeItem(existingProgress.scopeItemId, totalCompleted);
 
       res.json({ success: true });
     } catch (error) {
