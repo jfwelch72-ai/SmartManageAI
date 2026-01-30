@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   const [showProgressDialog, setShowProgressDialog] = useState(false);
   const [selectedScopeItem, setSelectedScopeItem] = useState<ScopeItem | null>(null);
   const [showNewScopeDialog, setShowNewScopeDialog] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ scopeItemId: string; progressId: string } | null>(null);
   
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -256,8 +258,13 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
   };
 
   const handleDeleteProgress = (scopeItemId: string, progressId: string) => {
-    if (confirm("Are you sure you want to delete this progress entry?")) {
-      deleteProgressMutation.mutate({ scopeItemId, progressId });
+    setDeleteConfirmation({ scopeItemId, progressId });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirmation) {
+      deleteProgressMutation.mutate(deleteConfirmation);
+      setDeleteConfirmation(null);
     }
   };
 
@@ -707,6 +714,27 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirmation} onOpenChange={(open) => !open && setDeleteConfirmation(null)}>
+        <AlertDialogContent data-testid="dialog-delete-progress">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Progress Entry</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this progress entry? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
