@@ -4455,11 +4455,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const { dailyScopeProgress, insertDailyScopeProgressSchema } = await import("@shared/schema");
 
-  // Helper function to calculate billing status based on quantities
-  function calculateBillingStatus(completedQty: number, billedQty: number, totalQty: number): "NOT_READY" | "READY_TO_BILL" | "BILLED" {
-    if (billedQty >= totalQty && totalQty > 0) {
+  // Helper function to calculate billing status based on progress entries' billing statuses
+  // Uses the "lowest" status: if any entry is NOT_READY → NOT_READY, 
+  // if any entry is READY_TO_BILL → READY_TO_BILL, only if all are BILLED → BILLED
+  function calculateBillingStatus(progressEntries: { billingStatus: string }[]): "NOT_READY" | "READY_TO_BILL" | "BILLED" {
+    if (progressEntries.length === 0) {
+      return "NOT_READY";
+    }
+    
+    const hasNotReady = progressEntries.some(p => p.billingStatus === "NOT_READY");
+    const hasReadyToBill = progressEntries.some(p => p.billingStatus === "READY_TO_BILL");
+    const allBilled = progressEntries.every(p => p.billingStatus === "BILLED");
+    
+    if (allBilled) {
       return "BILLED";
-    } else if (completedQty > 0 && billedQty < completedQty) {
+    } else if (hasNotReady) {
+      return "NOT_READY";
+    } else if (hasReadyToBill) {
       return "READY_TO_BILL";
     } else {
       return "NOT_READY";
@@ -4534,16 +4546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
-
-      // Get scope item's totalQuantity to calculate billing status
-      const [scopeItemForStatus] = await db
-        .select({ totalQuantity: scopeItems.totalQuantity })
-        .from(scopeItems)
-        .where(eq(scopeItems.id, req.params.scopeItemId))
-        .limit(1);
-
-      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
-      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+      const billingStatus = calculateBillingStatus(allProgress);
 
       await db
         .update(scopeItems)
@@ -4684,16 +4687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
-
-      // Get scope item's totalQuantity to calculate billing status
-      const [scopeItemForStatus] = await db
-        .select({ totalQuantity: scopeItems.totalQuantity })
-        .from(scopeItems)
-        .where(eq(scopeItems.id, existingProgress.scopeItemId))
-        .limit(1);
-
-      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
-      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+      const billingStatus = calculateBillingStatus(allProgress);
 
       await db
         .update(scopeItems)
@@ -4745,16 +4739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const totalCompleted = allProgress.reduce((sum, p) => sum + parseFloat(p.quantityCompleted), 0);
       const totalBilled = allProgress.reduce((sum, p) => sum + parseFloat(p.billedQuantity), 0);
-
-      // Get scope item's totalQuantity to calculate billing status
-      const [scopeItemForStatus] = await db
-        .select({ totalQuantity: scopeItems.totalQuantity })
-        .from(scopeItems)
-        .where(eq(scopeItems.id, existingProgress.scopeItemId))
-        .limit(1);
-
-      const totalQty = scopeItemForStatus ? parseFloat(scopeItemForStatus.totalQuantity) : 0;
-      const billingStatus = calculateBillingStatus(totalCompleted, totalBilled, totalQty);
+      const billingStatus = calculateBillingStatus(allProgress);
 
       await db
         .update(scopeItems)
