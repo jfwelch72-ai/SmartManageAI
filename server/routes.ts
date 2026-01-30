@@ -4453,7 +4453,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Daily Scope Progress Routes
   // =============================
 
-  const { dailyScopeProgress, insertDailyScopeProgressSchema } = await import("@shared/schema");
+  const { dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets } = await import("@shared/schema");
+
+  // Helper function to sync material budget with scope item completed quantity
+  // This ensures Materials data matches Scope & Progress data
+  async function syncMaterialBudgetFromScopeItem(scopeItemId: string, completedQuantity: number) {
+    try {
+      // Find the material budget linked to this scope item
+      const [materialBudget] = await db
+        .select()
+        .from(projectMaterialBudgets)
+        .where(eq(projectMaterialBudgets.scopeItemId, scopeItemId))
+        .limit(1);
+
+      if (materialBudget) {
+        const budgetedQty = Number(materialBudget.budgetedQuantity || 0);
+        const varianceQty = completedQuantity - budgetedQty;
+        const variancePercent = budgetedQty > 0 ? (completedQuantity / budgetedQty) * 100 : 0;
+        const shouldAlert = variancePercent >= Number(materialBudget.alertThresholdPercent || 90);
+        const alertJustTriggered = shouldAlert && !materialBudget.alertTriggered;
+
+        await db
+          .update(projectMaterialBudgets)
+          .set({
+            actualQuantityUsed: completedQuantity.toString(),
+            varianceQuantity: varianceQty.toString(),
+            variancePercent: variancePercent.toFixed(2),
+            alertTriggered: shouldAlert,
+            alertTriggeredAt: alertJustTriggered ? new Date() : materialBudget.alertTriggeredAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectMaterialBudgets.id, materialBudget.id));
+      }
+    } catch (error) {
+      console.error("Error syncing material budget:", error);
+      // Don't throw - this is a non-critical update
+    }
+  }
 
   // Helper function to calculate billing status based on progress entries' billing statuses
   // Uses the "lowest" status: if any entry is NOT_READY → NOT_READY, 
@@ -4557,6 +4593,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updatedAt: new Date(),
         })
         .where(eq(scopeItems.id, req.params.scopeItemId));
+
+      // Sync material budget with updated completed quantity
+      await syncMaterialBudgetFromScopeItem(req.params.scopeItemId, totalCompleted);
 
       res.status(201).json(newProgress);
     } catch (error: any) {
@@ -4699,6 +4738,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
 
+      // Sync material budget with updated completed quantity
+      await syncMaterialBudgetFromScopeItem(existingProgress.scopeItemId, totalCompleted);
+
       res.json(updatedProgress);
     } catch (error: any) {
       console.error("Update daily progress error:", error);
@@ -4750,6 +4792,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updatedAt: new Date(),
         })
         .where(eq(scopeItems.id, existingProgress.scopeItemId));
+
+      // Sync material budget with updated completed quantity
+      await syncMaterialBudgetFromScopeItem(existingProgress.scopeItemId, totalCompleted);
 
       res.json({ success: true });
     } catch (error) {
