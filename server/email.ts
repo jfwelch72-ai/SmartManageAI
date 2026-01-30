@@ -10,7 +10,9 @@ interface EmailOptions {
 }
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const DEFAULT_FROM_EMAIL = 'SmartManageAI <onboarding@resend.dev>';
+// From email address - configurable via environment variable
+// For production, set EMAIL_FROM_ADDRESS to your verified domain (e.g., "SmartManageAI <noreply@yourdomain.com>")
+const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'SmartManageAI <onboarding@resend.dev>';
 
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
