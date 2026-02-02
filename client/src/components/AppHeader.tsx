@@ -158,14 +158,15 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     // Get destination URL
     const destination = getNotificationDestination(notification);
     
-    // Close dropdown
+    // Close dropdown first
     setNotificationsOpen(false);
     
-    // Navigate after a brief delay to ensure dropdown closes first
+    // Navigate using window.location for reliable SPA navigation
     if (destination) {
-      requestAnimationFrame(() => {
-        setLocation(destination);
-      });
+      // Use setTimeout to ensure state update completes before navigation
+      setTimeout(() => {
+        window.location.href = destination;
+      }, 100);
     }
   };
 
@@ -701,30 +702,61 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     const destination = getNotificationDestination(notification);
                     const hasDestination = !!destination;
                     
+                    const notificationContent = (
+                      <div className="flex items-start justify-between w-full gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-sm">{notification.title}</p>
+                            {hasDestination && (
+                              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {format(new Date(notification.createdAt), "MMM d, h:mm a")}
+                          </p>
+                        </div>
+                        {!notification.isRead && (
+                          <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                        )}
+                      </div>
+                    );
+                    
+                    if (hasDestination && destination) {
+                      return (
+                        <DropdownMenuItem
+                          key={notification.id}
+                          asChild
+                          className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
+                          data-testid={`notification-${notification.id}`}
+                        >
+                          <Link 
+                            href={destination}
+                            onClick={() => {
+                              if (!notification.isRead) {
+                                markAsRead.mutate(notification.id);
+                              }
+                              setNotificationsOpen(false);
+                            }}
+                          >
+                            {notificationContent}
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    }
+                    
                     return (
                       <DropdownMenuItem
                         key={notification.id}
                         className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
-                        onSelect={(e) => handleNotificationClick(notification, e)}
+                        onSelect={() => {
+                          if (!notification.isRead) {
+                            markAsRead.mutate(notification.id);
+                          }
+                        }}
                         data-testid={`notification-${notification.id}`}
                       >
-                        <div className="flex items-start justify-between w-full gap-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <p className="font-medium text-sm">{notification.title}</p>
-                              {hasDestination && (
-                                <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {format(new Date(notification.createdAt), "MMM d, h:mm a")}
-                            </p>
-                          </div>
-                          {!notification.isRead && (
-                            <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
-                          )}
-                        </div>
+                        {notificationContent}
                       </DropdownMenuItem>
                     );
                   })
