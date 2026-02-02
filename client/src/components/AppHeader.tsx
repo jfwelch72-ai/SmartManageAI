@@ -22,13 +22,86 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store } from "lucide-react";
+import { Building2, LogOut, User, Bell, CheckCheck, Clock, ChevronDown, ChevronRight, Briefcase, Calendar, Users as UsersIcon, LayoutDashboard, Bot, DollarSign, Settings, Shield, MessageSquare, Gavel, Menu, X, MessageCircle, Truck, Wrench, Smartphone, RefreshCw, Package, Store, ExternalLink } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead, useUnreadNotificationCount, useUnreadMessageCount } from "@/hooks/use-data";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, hasContractorAccess, isVendor } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
+
+// Helper function to determine navigation destination for notifications
+function getNotificationDestination(notification: {
+  type: string;
+  relatedEntityId?: string | null;
+  relatedEntityType?: string | null;
+  message?: string;
+}): string | null {
+  const { type, relatedEntityId, relatedEntityType, message } = notification;
+  
+  // Extract project code from message as fallback (e.g., "project 260017")
+  const projectCodeMatch = message?.match(/project\s+(\d+)/i);
+  const projectCode = projectCodeMatch ? projectCodeMatch[1] : null;
+  
+  // Helper to get project destination
+  const getProjectDestination = () => {
+    if (relatedEntityType === "project" && relatedEntityId) {
+      return `/projects/${relatedEntityId}`;
+    }
+    if (relatedEntityType === "PROJECT" && relatedEntityId) {
+      return `/projects/${relatedEntityId}`;
+    }
+    if (projectCode) {
+      return `/projects/${projectCode}`;
+    }
+    return "/projects";
+  };
+  
+  switch (type) {
+    case "BILLING_READY":
+      // Navigate to project detail page (SOV is a tab within project)
+      return getProjectDestination();
+      
+    case "CHANGE_ORDER_PENDING":
+      // Navigate to project detail page (change orders are a tab within project)
+      if (relatedEntityType === "changeOrder" && relatedEntityId) {
+        // Change orders are linked to projects, navigate to projects list as fallback
+        return projectCode ? `/projects/${projectCode}` : "/projects";
+      }
+      return getProjectDestination();
+      
+    case "TIME_OFF_REQUEST":
+      // Navigate to time clock manager for approvals
+      return "/time-clock-manager";
+      
+    case "MATERIAL_OVERAGE":
+      // Navigate to project detail page (materials tab)
+      return getProjectDestination();
+      
+    case "PROJECT_ASSIGNMENT":
+      // Navigate to the assigned project
+      return getProjectDestination();
+      
+    case "MAINTENANCE_REQUEST":
+    case "REPAIR_REQUEST":
+      // Navigate to equipment detail page
+      if (relatedEntityType === "equipment" && relatedEntityId) {
+        return `/equipment/${relatedEntityId}`;
+      }
+      return "/equipment";
+      
+    case "DELAY_SUBMITTED":
+    case "DELAY_ACKNOWLEDGED":
+    case "DELAY_CHANGE_ORDER_NEEDED":
+      // Navigate to delay claims page
+      return "/delay-claims";
+      
+    case "GENERAL":
+    default:
+      // No specific destination for general notifications
+      return null;
+  }
+}
 
 interface AppHeaderProps {
   userName: string;
@@ -43,7 +116,8 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   const [timeClockOpen, setTimeClockOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [location] = useLocation();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [location, setLocation] = useLocation();
 
   const initials = userName
     .split(" ")
@@ -67,6 +141,23 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
 
   const handleMarkAllAsRead = () => {
     markAllAsRead.mutate();
+  };
+
+  // Handle notification click - navigate to destination and mark as read
+  const handleNotificationClick = (notification: typeof notifications[0]) => {
+    // Mark as read if not already
+    if (!notification.isRead) {
+      markAsRead.mutate(notification.id);
+    }
+    
+    // Get destination URL
+    const destination = getNotificationDestination(notification);
+    
+    // Close dropdown first, then navigate
+    setNotificationsOpen(false);
+    if (destination) {
+      setLocation(destination);
+    }
   };
 
   const handleLogout = async (e: React.MouseEvent) => {
@@ -560,7 +651,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
 
           {/* Notifications - only for contractor users */}
           {hasContractorAccess(userRole) && (
-            <DropdownMenu>
+            <DropdownMenu open={notificationsOpen} onOpenChange={setNotificationsOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
                   <Bell className="w-5 h-5" />
@@ -597,27 +688,37 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     No notifications
                   </div>
                 ) : (
-                  notifications.map((notification) => (
-                    <DropdownMenuItem
-                      key={notification.id}
-                      className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
-                      onClick={() => !notification.isRead && handleMarkAsRead(notification.id)}
-                      data-testid={`notification-${notification.id}`}
-                    >
-                      <div className="flex items-start justify-between w-full gap-2">
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{notification.title}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {format(new Date(notification.createdAt), "MMM d, h:mm a")}
-                          </p>
+                  notifications.map((notification) => {
+                    const destination = getNotificationDestination(notification);
+                    const hasDestination = !!destination;
+                    
+                    return (
+                      <DropdownMenuItem
+                        key={notification.id}
+                        className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
+                        onClick={() => handleNotificationClick(notification)}
+                        data-testid={`notification-${notification.id}`}
+                      >
+                        <div className="flex items-start justify-between w-full gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-sm">{notification.title}</p>
+                              {hasDestination && (
+                                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {format(new Date(notification.createdAt), "MMM d, h:mm a")}
+                            </p>
+                          </div>
+                          {!notification.isRead && (
+                            <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                          )}
                         </div>
-                        {!notification.isRead && (
-                          <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
-                        )}
-                      </div>
-                    </DropdownMenuItem>
-                  ))
+                      </DropdownMenuItem>
+                    );
+                  })
                 )}
               </ScrollArea>
             </DropdownMenuContent>
