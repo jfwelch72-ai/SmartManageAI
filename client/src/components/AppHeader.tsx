@@ -144,7 +144,12 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
   };
 
   // Handle notification click - navigate to destination and mark as read
-  const handleNotificationClick = (notification: typeof notifications[0]) => {
+  const handleNotificationClick = (notification: typeof notifications[0], e?: Event) => {
+    // Prevent default dropdown close behavior so we control the timing
+    if (e) {
+      e.preventDefault();
+    }
+    
     // Mark as read if not already
     if (!notification.isRead) {
       markAsRead.mutate(notification.id);
@@ -153,10 +158,14 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     // Get destination URL
     const destination = getNotificationDestination(notification);
     
-    // Close dropdown first, then navigate
+    // Close dropdown
     setNotificationsOpen(false);
+    
+    // Navigate after a brief delay to ensure dropdown closes first
     if (destination) {
-      setLocation(destination);
+      requestAnimationFrame(() => {
+        setLocation(destination);
+      });
     }
   };
 
@@ -696,7 +705,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                       <DropdownMenuItem
                         key={notification.id}
                         className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
-                        onClick={() => handleNotificationClick(notification)}
+                        onSelect={(e) => handleNotificationClick(notification, e)}
                         data-testid={`notification-${notification.id}`}
                       >
                         <div className="flex items-start justify-between w-full gap-2">
