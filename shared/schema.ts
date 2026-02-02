@@ -4757,11 +4757,15 @@ export const sovLineItems = pgTable("sov_line_items", {
   // Reference to estimate line item (if applicable)
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
   
+  // Unified SOW Tracking - links to organization's master SOW library for billing analytics across projects
+  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
+  
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   sovIdx: index("sov_line_items_sov_idx").on(table.sovId),
+  organizationSowItemIdx: index("sov_line_items_org_sow_item_idx").on(table.organizationSowItemId),
 }));
 
 export const insertSovLineItemSchema = createInsertSchema(sovLineItems).omit({ id: true, createdAt: true, updatedAt: true });

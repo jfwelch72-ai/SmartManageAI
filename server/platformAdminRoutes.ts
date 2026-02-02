@@ -687,6 +687,7 @@ router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, asyn
       scopeItemsUpdated: 0,
       estimateLineItemsUpdated: 0,
       dailyProgressUpdated: 0,
+      sovLineItemsUpdated: 0,
       errors: [] as string[],
     };
 
@@ -765,6 +766,28 @@ router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, asyn
           results.estimateLineItemsUpdated++;
         }
       }
+
+      // Get SOV line items that don't have organizationSowItemId but belong to this org's projects
+      const unlinkedSovLineItems = await db.execute(sql`
+        SELECT sli.* FROM sov_line_items sli
+        JOIN schedule_of_values sov ON sli.sov_id = sov.id
+        WHERE sov.organization_id = ${org.id}
+        AND sli.organization_sow_item_id IS NULL
+      `);
+
+      for (const item of unlinkedSovLineItems.rows as any[]) {
+        const normalizedDesc = (item.description || "").toLowerCase().trim();
+        const matchedSow = sowLookup.get(normalizedDesc);
+        
+        if (matchedSow) {
+          await db.execute(sql`
+            UPDATE sov_line_items 
+            SET organization_sow_item_id = ${matchedSow.id}, updated_at = NOW()
+            WHERE id = ${item.id}
+          `);
+          results.sovLineItemsUpdated++;
+        }
+      }
     }
 
     await logAudit({
@@ -801,11 +824,16 @@ router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (re
       SELECT 'daily_progress_without_sow' as metric, COUNT(*) as count 
       FROM daily_scope_progress WHERE organization_sow_item_id IS NULL
       UNION ALL
+      SELECT 'sov_line_items_without_sow' as metric, COUNT(*) as count 
+      FROM sov_line_items WHERE organization_sow_item_id IS NULL
+      UNION ALL
       SELECT 'total_scope_items' as metric, COUNT(*) as count FROM scope_items
       UNION ALL
       SELECT 'total_estimate_line_items' as metric, COUNT(*) as count FROM estimate_line_items
       UNION ALL
       SELECT 'total_daily_progress' as metric, COUNT(*) as count FROM daily_scope_progress
+      UNION ALL
+      SELECT 'total_sov_line_items' as metric, COUNT(*) as count FROM sov_line_items
     `);
 
     res.json(stats.rows);

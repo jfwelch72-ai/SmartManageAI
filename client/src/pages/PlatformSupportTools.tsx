@@ -69,6 +69,7 @@ interface BackfillResult {
   scopeItemsUpdated: number;
   estimateLineItemsUpdated: number;
   dailyProgressUpdated: number;
+  sovLineItemsUpdated: number;
 }
 
 export default function PlatformSupportTools() {
@@ -251,7 +252,7 @@ export default function PlatformSupportTools() {
       refetchSowStats();
       toast({ 
         title: "SOW Links Backfill Complete", 
-        description: `Updated ${data.scopeItemsUpdated} scope items, ${data.estimateLineItemsUpdated} estimate line items, and ${data.dailyProgressUpdated} daily progress entries` 
+        description: `Updated ${data.scopeItemsUpdated} scope items, ${data.estimateLineItemsUpdated} estimate line items, ${data.dailyProgressUpdated} daily progress entries, and ${data.sovLineItemsUpdated} SOV line items` 
       });
     },
     onError: (error: any) => {
@@ -906,9 +907,10 @@ export default function PlatformSupportTools() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {sowStatsLoading ? (
                   <>
+                    <Skeleton className="h-24" />
                     <Skeleton className="h-24" />
                     <Skeleton className="h-24" />
                     <Skeleton className="h-24" />
@@ -963,6 +965,22 @@ export default function PlatformSupportTools() {
                         of {sowLinkStats?.find(s => s.metric === "total_daily_progress")?.count || 0} unlinked
                       </div>
                     </Card>
+                    <Card className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        {(sowLinkStats?.find(s => s.metric === "sov_line_items_without_sow")?.count || 0) > 0 ? (
+                          <AlertCircle className="h-5 w-5 text-amber-500" />
+                        ) : (
+                          <CheckCircle className="h-5 w-5 text-green-500" />
+                        )}
+                        <span className="text-sm font-medium">SOV Line Items</span>
+                      </div>
+                      <div className="text-2xl font-bold">
+                        {sowLinkStats?.find(s => s.metric === "sov_line_items_without_sow")?.count || 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        of {sowLinkStats?.find(s => s.metric === "total_sov_line_items")?.count || 0} unlinked
+                      </div>
+                    </Card>
                   </>
                 )}
               </div>
@@ -998,9 +1016,9 @@ export default function PlatformSupportTools() {
               <div className="text-sm text-muted-foreground p-4 bg-muted rounded-lg">
                 <p className="font-medium mb-2">What this tool does:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Matches existing scope items and estimate line items to your organization's master SOW library by description</li>
+                  <li>Matches existing scope items, estimate line items, and SOV line items to your organization's master SOW library by description</li>
                   <li>Updates daily progress entries to inherit the SOW link from their parent scope items</li>
-                  <li>Enables production rate tracking and cross-project analytics for historical data</li>
+                  <li>Enables production rate tracking, billing analytics, and cross-project analytics for historical data</li>
                 </ul>
               </div>
             </CardContent>

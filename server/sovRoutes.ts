@@ -6,6 +6,7 @@ import {
   sovLineItems, 
   projects, 
   organizations,
+  estimateLineItems,
 } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole } from "./auth";
@@ -235,6 +236,9 @@ const createSOVSchema = z.object({
     thisPeriodCompleted: z.string().or(z.number()).optional(),
     materialsStored: z.string().or(z.number()).optional(),
     notes: z.string().optional(),
+    // Unified SOW Tracking - link to estimate line item and/or organization SOW item
+    estimateLineItemId: z.string().optional(),
+    organizationSowItemId: z.string().optional(),
   })).optional(),
 });
 
@@ -328,8 +332,25 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
           balanceToFinish: String(balance),
           retainageAmount: String(retainageAmt.toFixed(2)),
           notes: item.notes || null,
+          // Unified SOW Tracking - preserve links for billing analytics
+          estimateLineItemId: (item as any).estimateLineItemId || null,
+          organizationSowItemId: (item as any).organizationSowItemId || null,
         };
       });
+
+      // If organizationSowItemId is not provided but estimateLineItemId is, look up the SOW link
+      for (const lineItem of lineItemsToInsert) {
+        if (!lineItem.organizationSowItemId && lineItem.estimateLineItemId) {
+          const [estItem] = await db
+            .select({ organizationSowItemId: estimateLineItems.organizationSowItemId })
+            .from(estimateLineItems)
+            .where(eq(estimateLineItems.id, lineItem.estimateLineItemId))
+            .limit(1);
+          if (estItem?.organizationSowItemId) {
+            lineItem.organizationSowItemId = estItem.organizationSowItemId;
+          }
+        }
+      }
 
       await db.insert(sovLineItems).values(lineItemsToInsert);
 
@@ -373,6 +394,9 @@ const addLineItemSchema = z.object({
   itemCode: z.string().optional(),
   category: z.string().optional(),
   notes: z.string().optional(),
+  // Unified SOW Tracking - link to estimate line item and/or organization SOW item
+  estimateLineItemId: z.string().optional(),
+  organizationSowItemId: z.string().optional(),
 });
 
 router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response) => {
@@ -392,7 +416,7 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       });
     }
 
-    const { description, scheduledValue, itemCode, category, notes } = validationResult.data;
+    const { description, scheduledValue, itemCode, category, notes, estimateLineItemId, organizationSowItemId } = validationResult.data;
 
     const { sov, hasAccess } = await verifySOVAccess(sovId, orgId, shouldFilter);
 
@@ -413,6 +437,19 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
     const scheduled = Math.max(0, Number(scheduledValue) || 0);
     const retainagePct = Math.max(0, Math.min(100, Number(sov.retainagePercent || 10))) / 100;
 
+    // Unified SOW Tracking - look up organizationSowItemId from estimate line item if not provided
+    let resolvedSowItemId = organizationSowItemId || null;
+    if (!resolvedSowItemId && estimateLineItemId) {
+      const [estItem] = await db
+        .select({ organizationSowItemId: estimateLineItems.organizationSowItemId })
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.id, estimateLineItemId))
+        .limit(1);
+      if (estItem?.organizationSowItemId) {
+        resolvedSowItemId = estItem.organizationSowItemId;
+      }
+    }
+
     const [newItem] = await db
       .insert(sovLineItems)
       .values({
@@ -430,6 +467,8 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
         balanceToFinish: String(scheduled),
         retainageAmount: "0",
         notes: notes || null,
+        estimateLineItemId: estimateLineItemId || null,
+        organizationSowItemId: resolvedSowItemId,
       })
       .returning();
 
