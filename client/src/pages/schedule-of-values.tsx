@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -113,6 +113,16 @@ export default function ScheduleOfValuesPage() {
     queryKey: ["/api/sov"],
     enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(user.role)
   });
+
+  // Sync selectedSOV with refreshed sovs data after query invalidation
+  useEffect(() => {
+    if (selectedSOV && sovs.length > 0) {
+      const updatedSOV = sovs.find(s => s.id === selectedSOV.id);
+      if (updatedSOV && JSON.stringify(updatedSOV) !== JSON.stringify(selectedSOV)) {
+        setSelectedSOV(updatedSOV);
+      }
+    }
+  }, [sovs, selectedSOV]);
 
   const createSOVMutation = useMutation({
     mutationFn: async (data: typeof createForm) => {
