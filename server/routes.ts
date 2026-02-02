@@ -910,7 +910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get comprehensive dashboard snapshot for AI analysis
-  app.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -931,7 +931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Aggregate time tracking data for production rate calculations
-  app.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -5165,7 +5165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Used for bidding and estimating based on historical performance
 
   // Get production rates for all SOW types (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
-  app.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { startDate, endDate, projectCode, unit } = req.query;
       
@@ -5321,7 +5321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get production rate details for a specific SOW type
-  app.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { description, unit, startDate, endDate } = req.query;
       
@@ -5456,7 +5456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Extended production rates including T&M and Change Order scope data
   // Aggregates workTypeCode data from all sources for unified production tracking
-  app.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { startDate, endDate, projectCode, source } = req.query;
       
@@ -5748,7 +5748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Enhanced production rates with full cost and profitability metrics
   // Returns labor hours/cost, material cost, total cost, profit per unit
-  app.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { description, unit, startDate, endDate, projectCode, minQuantity, maxQuantity } = req.query;
       
@@ -5998,7 +5998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Estimate costs using production rate data
   // Query: "What will it cost to do 500 SF of 4" sidewalk?"
-  app.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  app.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { description, unit, quantity } = req.query;
       
