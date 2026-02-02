@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, scopeItems, estimateLineItems, dailyScopeProgress, estimates } from "@shared/schema";
 import { requireAuth, type AuthRequest, generateToken } from "./auth";
 import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
@@ -676,6 +676,142 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
   } catch (error: any) {
     console.error("Permanent delete user error:", error.message);
     res.status(500).json({ error: "Failed to permanently delete user" });
+  }
+});
+
+// Backfill organizationSowItemId for scope_items, estimate_line_items, and daily_scope_progress
+// Matches by description similarity within the same organization
+router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const results = {
+      scopeItemsUpdated: 0,
+      estimateLineItemsUpdated: 0,
+      dailyProgressUpdated: 0,
+      errors: [] as string[],
+    };
+
+    // Get all organizations with their SOW items
+    const allOrgs = await db.select({ id: organizations.id }).from(organizations);
+
+    for (const org of allOrgs) {
+      // Get organization's SOW items for matching
+      const orgSowItems = await db
+        .select()
+        .from(organizationSowItems)
+        .where(eq(organizationSowItems.organizationId, org.id));
+
+      if (orgSowItems.length === 0) continue;
+
+      // Build a lookup map for faster matching (normalized name -> sowItem)
+      const sowLookup = new Map<string, typeof orgSowItems[0]>();
+      for (const sow of orgSowItems) {
+        const normalizedName = sow.name.toLowerCase().trim();
+        sowLookup.set(normalizedName, sow);
+      }
+
+      // Get all scope items that don't have organizationSowItemId but belong to projects
+      // linked to this organization's estimates/bids
+      const unlinkedScopeItems = await db.execute(sql`
+        SELECT si.* FROM scope_items si
+        JOIN projects p ON si.project_id = p.id
+        JOIN estimates e ON e.project_id = p.id
+        JOIN bids b ON e.bid_id = b.id
+        WHERE b.gc_organization_id = ${org.id}
+        AND si.organization_sow_item_id IS NULL
+      `);
+
+      for (const item of unlinkedScopeItems.rows as any[]) {
+        const normalizedDesc = (item.description || "").toLowerCase().trim();
+        const matchedSow = sowLookup.get(normalizedDesc);
+        
+        if (matchedSow) {
+          await db
+            .update(scopeItems)
+            .set({ organizationSowItemId: matchedSow.id, updatedAt: new Date() })
+            .where(eq(scopeItems.id, item.id));
+          results.scopeItemsUpdated++;
+
+          // Also update any daily progress entries for this scope item
+          const updatedProgress = await db
+            .update(dailyScopeProgress)
+            .set({ organizationSowItemId: matchedSow.id })
+            .where(and(
+              eq(dailyScopeProgress.scopeItemId, item.id),
+              sql`${dailyScopeProgress.organizationSowItemId} IS NULL`
+            ))
+            .returning();
+          results.dailyProgressUpdated += updatedProgress.length;
+        }
+      }
+
+      // Get estimate line items that don't have organizationSowItemId
+      const unlinkedLineItems = await db.execute(sql`
+        SELECT eli.* FROM estimate_line_items eli
+        JOIN estimates e ON eli.estimate_id = e.id
+        JOIN bids b ON e.bid_id = b.id
+        WHERE b.gc_organization_id = ${org.id}
+        AND eli.organization_sow_item_id IS NULL
+      `);
+
+      for (const item of unlinkedLineItems.rows as any[]) {
+        const normalizedDesc = (item.description || "").toLowerCase().trim();
+        const matchedSow = sowLookup.get(normalizedDesc);
+        
+        if (matchedSow) {
+          await db
+            .update(estimateLineItems)
+            .set({ organizationSowItemId: matchedSow.id, updatedAt: new Date() })
+            .where(eq(estimateLineItems.id, item.id));
+          results.estimateLineItemsUpdated++;
+        }
+      }
+    }
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "system",
+      entityId: "sow_backfill",
+      oldValue: null,
+      newValue: JSON.stringify(results),
+    }, req);
+
+    console.log("SOW backfill completed:", results);
+    res.json({
+      message: "SOW link backfill completed",
+      ...results,
+    });
+  } catch (error: any) {
+    console.error("SOW backfill error:", error.message);
+    res.status(500).json({ error: "Failed to backfill SOW links", details: error.message });
+  }
+});
+
+// Get SOW link statistics for monitoring
+router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const stats = await db.execute(sql`
+      SELECT 
+        'scope_items_without_sow' as metric, COUNT(*) as count 
+      FROM scope_items WHERE organization_sow_item_id IS NULL
+      UNION ALL
+      SELECT 'estimate_line_items_without_sow' as metric, COUNT(*) as count 
+      FROM estimate_line_items WHERE organization_sow_item_id IS NULL
+      UNION ALL
+      SELECT 'daily_progress_without_sow' as metric, COUNT(*) as count 
+      FROM daily_scope_progress WHERE organization_sow_item_id IS NULL
+      UNION ALL
+      SELECT 'total_scope_items' as metric, COUNT(*) as count FROM scope_items
+      UNION ALL
+      SELECT 'total_estimate_line_items' as metric, COUNT(*) as count FROM estimate_line_items
+      UNION ALL
+      SELECT 'total_daily_progress' as metric, COUNT(*) as count FROM daily_scope_progress
+    `);
+
+    res.json(stats.rows);
+  } catch (error: any) {
+    console.error("SOW stats error:", error.message);
+    res.status(500).json({ error: "Failed to get SOW link stats" });
   }
 });
 
