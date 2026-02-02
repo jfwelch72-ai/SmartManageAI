@@ -13379,7 +13379,7 @@ SmartManageAI Construction Management Platform
   // Data Quality Routes
   // ====================
 
-  // Get data quality score for a project
+  // Get data quality score for a project (UI-facing endpoint with boolean flags)
   app.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { code } = req.params;
@@ -13396,13 +13396,99 @@ SmartManageAI Construction Management Platform
         return;
       }
 
-      // Import the data quality scorer
-      const { calculateProjectDataQuality } = await import("./ai/dataQualityScorer");
+      // Calculate data quality with boolean flags for each category
+      const { 
+        scopeItems, estimates, estimateLineItems, timeEntries, procurementItems,
+        dailyScopeProgress, media, changeOrders, scheduleOfValues, planDocuments 
+      } = await import("@shared/schema");
 
-      // Calculate data quality score
-      const qualityScore = await calculateProjectDataQuality(code);
+      // Check for scope items
+      const scopeCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(scopeItems)
+        .where(eq(scopeItems.projectId, project.id));
+      const has_scope = Number(scopeCount[0]?.count || 0) > 0;
 
-      res.json(qualityScore);
+      // Check for estimate line items (actual pricing data via estimates linked to project)
+      const lineItemsCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(estimateLineItems)
+        .innerJoin(estimates, eq(estimateLineItems.estimateId, estimates.id))
+        .where(eq(estimates.projectId, project.id));
+      const has_estimates = Number(lineItemsCount[0]?.count || 0) > 0;
+
+      // Check for budget (project has budget amount set)
+      const has_budget = project.budget !== null && Number(project.budget) > 0;
+
+      // Check for timeline (start date and estimated completion date)
+      const has_timeline = !!(project.startDate && project.estimatedCompletionDate);
+
+      // Check for daily updates (daily scope progress entries)
+      const dailyUpdatesCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(dailyScopeProgress)
+        .where(eq(dailyScopeProgress.projectId, project.id));
+      const has_daily_updates = Number(dailyUpdatesCount[0]?.count || 0) > 0;
+
+      // Check for cost tracking (time entries or procurement items)
+      const timeEntriesCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(timeEntries)
+        .where(eq(timeEntries.projectId, project.id));
+      const procurementCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(procurementItems)
+        .where(eq(procurementItems.projectId, project.id));
+      const has_cost_tracking = Number(timeEntriesCount[0]?.count || 0) > 0 || Number(procurementCount[0]?.count || 0) > 0;
+
+      // Check for media uploads
+      const mediaCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(media)
+        .where(eq(media.projectId, project.id));
+      const has_media = Number(mediaCount[0]?.count || 0) > 0;
+
+      // Check for documentation (plan documents)
+      const docsCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(planDocuments)
+        .where(eq(planDocuments.projectId, project.id));
+      const has_documentation = Number(docsCount[0]?.count || 0) > 0;
+
+      // Check for change orders
+      const changeOrdersCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(changeOrders)
+        .where(eq(changeOrders.projectId, project.id));
+      const has_change_orders_managed = Number(changeOrdersCount[0]?.count || 0) > 0;
+
+      // Check for billing setup (schedule of values)
+      const sovCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(scheduleOfValues)
+        .where(eq(scheduleOfValues.projectId, project.id));
+      const has_billing_setup = Number(sovCount[0]?.count || 0) > 0;
+
+      // Calculate overall score (each flag worth 10 points)
+      const flags = [
+        has_scope, has_estimates, has_budget, has_timeline, has_daily_updates,
+        has_cost_tracking, has_media, has_documentation, has_change_orders_managed, has_billing_setup
+      ];
+      const overall_score = flags.filter(Boolean).length * 10;
+
+      res.json({
+        overall_score,
+        has_scope,
+        has_estimates,
+        has_budget,
+        has_timeline,
+        has_daily_updates,
+        has_cost_tracking,
+        has_media,
+        has_documentation,
+        has_change_orders_managed,
+        has_billing_setup
+      });
     } catch (error) {
       console.error("Error fetching data quality score:", error);
       res.status(500).json({ error: "Internal server error" });
