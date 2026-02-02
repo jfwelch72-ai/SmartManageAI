@@ -499,4 +499,158 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
   }
 });
 
+router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const inspection = await getInspectionById(req.params.id);
+
+    if (!inspection) {
+      return res.status(404).json({ error: "Inspection not found" });
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, inspection.projectId)).limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, project.gcOrganizationId!)).limit(1);
+    
+    const [createdByUser] = await db.select().from(users).where(eq(users.id, inspection.createdById)).limit(1);
+
+    const pdfData = {
+      inspection: {
+        inspectionNumber: inspection.inspectionNumber,
+        title: inspection.title,
+        description: inspection.description,
+        inspectionType: inspection.inspectionType,
+        typeLabel: INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType,
+        requestMethod: inspection.requestMethod,
+        requestMethodLabel: inspection.requestMethod ? REQUEST_METHOD_LABELS[inspection.requestMethod] || inspection.requestMethod : null,
+        requestedDate: inspection.requestedDate,
+        scheduledDate: inspection.scheduledDate,
+        status: inspection.status,
+        statusLabel: INSPECTION_STATUS_LABELS[inspection.status] || inspection.status,
+        inspectorName: inspection.inspectorName,
+        inspectorCompany: inspection.inspectorCompany,
+        inspectorPhone: inspection.inspectorPhone,
+        inspectorEmail: inspection.inspectorEmail,
+        gcRepName: inspection.gcRepName,
+        gcRepCompany: inspection.gcRepCompany,
+        gcRepPhone: inspection.gcRepPhone,
+        gcRepEmail: inspection.gcRepEmail,
+        ownerRepName: inspection.ownerRepName,
+        ownerRepCompany: inspection.ownerRepCompany,
+        ownerRepPhone: inspection.ownerRepPhone,
+        ownerRepEmail: inspection.ownerRepEmail,
+      },
+      project: {
+        code: project.code,
+        name: project.name,
+        clientName: project.clientName,
+        locationAddress: project.locationAddress,
+        city: project.city,
+        state: project.state,
+      },
+      createdBy: {
+        firstName: createdByUser?.firstName || 'Unknown',
+        lastName: createdByUser?.lastName || 'User',
+        email: createdByUser?.email || null,
+        phone: createdByUser?.phone || null,
+      },
+      organizationName: org?.name || 'SmartManageAI',
+      branding: org ? {
+        organizationName: org.name,
+        primaryColor: org.primaryColor || '#1a365d',
+        accentColor: '#0284c7',
+      } : undefined,
+    };
+
+    const pdfStream = generateInspectionRequestPDF(pdfData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Inspection-${inspection.inspectionNumber}.pdf"`);
+
+    pdfStream.pipe(res);
+  } catch (error) {
+    console.error("Error generating inspection PDF:", error);
+    res.status(500).json({ error: "Failed to generate PDF" });
+  }
+});
+
+router.get("/inspections/:id/pdf", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const inspection = await getInspectionById(req.params.id);
+
+    if (!inspection) {
+      return res.status(404).json({ error: "Inspection not found" });
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, inspection.projectId)).limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, project.gcOrganizationId!)).limit(1);
+    
+    const [createdByUser] = await db.select().from(users).where(eq(users.id, inspection.createdById)).limit(1);
+
+    const pdfData = {
+      inspection: {
+        inspectionNumber: inspection.inspectionNumber,
+        title: inspection.title,
+        description: inspection.description,
+        inspectionType: inspection.inspectionType,
+        typeLabel: INSPECTION_TYPE_LABELS[inspection.inspectionType] || inspection.inspectionType,
+        requestMethod: inspection.requestMethod,
+        requestMethodLabel: inspection.requestMethod ? REQUEST_METHOD_LABELS[inspection.requestMethod] || inspection.requestMethod : null,
+        requestedDate: inspection.requestedDate,
+        scheduledDate: inspection.scheduledDate,
+        status: inspection.status,
+        statusLabel: INSPECTION_STATUS_LABELS[inspection.status] || inspection.status,
+        inspectorName: inspection.inspectorName,
+        inspectorCompany: inspection.inspectorCompany,
+        inspectorPhone: inspection.inspectorPhone,
+        inspectorEmail: inspection.inspectorEmail,
+        gcRepName: inspection.gcRepName,
+        gcRepCompany: inspection.gcRepCompany,
+        gcRepPhone: inspection.gcRepPhone,
+        gcRepEmail: inspection.gcRepEmail,
+        ownerRepName: inspection.ownerRepName,
+        ownerRepCompany: inspection.ownerRepCompany,
+        ownerRepPhone: inspection.ownerRepPhone,
+        ownerRepEmail: inspection.ownerRepEmail,
+      },
+      project: {
+        code: project.code,
+        name: project.name,
+        clientName: project.clientName,
+        locationAddress: project.locationAddress,
+        city: project.city,
+        state: project.state,
+      },
+      createdBy: {
+        firstName: createdByUser?.firstName || 'Unknown',
+        lastName: createdByUser?.lastName || 'User',
+        email: createdByUser?.email || null,
+        phone: createdByUser?.phone || null,
+      },
+      organizationName: org?.name || 'SmartManageAI',
+      branding: org ? {
+        organizationName: org.name,
+        primaryColor: org.primaryColor || '#1a365d',
+        accentColor: '#0284c7',
+      } : undefined,
+    };
+
+    const pdfStream = generateInspectionRequestPDF(pdfData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Inspection-${inspection.inspectionNumber}.pdf"`);
+
+    pdfStream.pipe(res);
+  } catch (error) {
+    console.error("Error serving inspection PDF:", error);
+    res.status(500).json({ error: "Failed to serve PDF" });
+  }
+});
+
 export default router;

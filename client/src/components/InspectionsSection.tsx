@@ -258,21 +258,30 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
     },
   });
 
-  const generatePDF = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("POST", `/api/inspections/${id}/generate-pdf`, {});
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "inspections"] });
-      if (data.pdfUrl) {
-        window.open(data.pdfUrl, "_blank");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const generatePDF = {
+    mutate: async (id: string) => {
+      try {
+        setPdfLoading(true);
+        const response = await fetch(`/api/inspections/${id}/pdf`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+        if (!response.ok) {
+          throw new Error('Failed to generate PDF');
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        toast({ title: "Success", description: "PDF opened in new tab" });
+      } catch (error: any) {
+        toast({ title: "Error", description: error.message || "Failed to generate PDF", variant: "destructive" });
+      } finally {
+        setPdfLoading(false);
       }
-      toast({ title: "Success", description: "PDF generated" });
     },
-    onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to generate PDF", variant: "destructive" });
-    },
-  });
+    isPending: pdfLoading,
+  };
 
   const resetForm = () => {
     setFormData({
