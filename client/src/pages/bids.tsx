@@ -15,7 +15,7 @@ import {
 import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { canEditBids } from "@/lib/rbac";
+import { canEditBids, canDeleteBids } from "@/lib/rbac";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -365,9 +365,6 @@ export default function BidsPage() {
     }
   };
 
-  // Check if user can delete bids (ADMIN or MANAGER only)
-  const canDelete = user?.role === "ADMIN" || user?.role === "MANAGER";
-
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
@@ -517,8 +514,8 @@ export default function BidsPage() {
                 estimator={bid.estimatorName || "Unassigned"}
                 status={bid.status as "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED"}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
-                onConvertToProject={() => handleConvertToProject(bid.code)}
-                onDelete={canDelete ? () => handleDeleteBid(bid.code, bid.name) : undefined}
+                onConvertToProject={canEditBids(user?.role) ? () => handleConvertToProject(bid.code) : undefined}
+                onDelete={canDeleteBids(user?.role) ? () => handleDeleteBid(bid.code, bid.name) : undefined}
                 estimateData={bid.estimateSummary}
               />
             ))}
