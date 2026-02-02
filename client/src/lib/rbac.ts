@@ -99,6 +99,35 @@ export function hasEquipmentAccess(role?: string): boolean {
 }
 
 /**
+ * Check if user is a superintendent (view-only access to bids)
+ */
+export function isSuperintendent(role?: string): boolean {
+  return role === "SUPERINTENDENT";
+}
+
+/**
+ * Check if user can edit bids (create, edit, delete, convert, add quotes/equipment)
+ * SUPERINTENDENT has view-only access to bids
+ */
+export function canEditBids(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR";
+}
+
+/**
+ * Check if user can delete bids (more restricted than edit)
+ */
+export function canDeleteBids(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER";
+}
+
+/**
+ * Check if user can generate bid PDFs
+ */
+export function canGenerateBidPDFs(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR";
+}
+
+/**
  * Route access permissions
  */
 export const RoutePermissions = {

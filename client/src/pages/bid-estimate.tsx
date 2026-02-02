@@ -52,6 +52,7 @@ import type {
   BidSubcontractorQuote,
 } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { canEditBids } from "@/lib/rbac";
 
 const lineItemSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -151,7 +152,7 @@ export default function BidEstimate() {
   const { user, logout, organizationName } = useAuth();
   
   // Check if user has estimate editing access (Admin, Manager, Estimator only)
-  const hasEstimateAccess = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR";
+  const hasEstimateAccess = canEditBids(user?.role);
   
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);

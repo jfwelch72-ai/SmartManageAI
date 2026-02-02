@@ -15,6 +15,7 @@ import {
 import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { canEditBids } from "@/lib/rbac";
 import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -379,12 +380,14 @@ export default function BidsPage() {
           </div>
           <div className="flex gap-2">
             <AIAnalysisButton module="BIDS" />
-            <Button asChild data-testid="button-new-bid">
-              <Link href="/bids/new">
-                <Wand2 className="w-4 h-4 mr-2" />
-                New Bid
-              </Link>
-            </Button>
+            {canEditBids(user?.role) && (
+              <Button asChild data-testid="button-new-bid">
+                <Link href="/bids/new">
+                  <Wand2 className="w-4 h-4 mr-2" />
+                  New Bid
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
 

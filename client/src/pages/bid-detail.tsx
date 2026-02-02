@@ -19,6 +19,7 @@ import JobInformationForm from "@/components/JobInformationForm";
 import { SubcontractorScopeReportDialog } from "@/components/SubcontractorScopeReport";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { canEditBids, canDeleteBids, canGenerateBidPDFs } from "@/lib/rbac";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1142,15 +1143,17 @@ export default function BidDetailPage() {
             <h1 className="text-2xl font-bold text-foreground mb-2">{bid.name}</h1>
             <p className="text-sm text-muted-foreground">{bid.clientName} • {locationString}</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleEditBid} data-testid="button-edit-bid-header">
-              <Edit className="w-4 h-4 mr-2" />
-              Edit Bid Info
-            </Button>
-            <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
-              Mark as Awarded
-            </Button>
-          </div>
+          {canEditBids(user?.role) && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleEditBid} data-testid="button-edit-bid-header">
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Bid Info
+              </Button>
+              <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
+                Mark as Awarded
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Cost Builder Stepper Layout */}
@@ -1248,7 +1251,7 @@ export default function BidDetailPage() {
                     </CardTitle>
                     <CardDescription>Get quotes from suppliers for materials identified in the Scope of Work</CardDescription>
                   </div>
-                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                  {canEditBids(user?.role) && (
                     <Button onClick={handleAddMaterialQuote} size="sm" data-testid="button-add-material-quote">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Quote
@@ -1297,7 +1300,7 @@ export default function BidDetailPage() {
                     <div className="text-center py-8 text-muted-foreground">
                       <p className="font-medium mb-1">No supplier quotes added yet</p>
                       <p className="text-sm mb-4">Add quotes from suppliers to finalize material costs</p>
-                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                      {canEditBids(user?.role) && (
                         <Button onClick={handleAddMaterialQuote} variant="outline" data-testid="button-add-first-material-quote">
                           <Plus className="w-4 h-4 mr-2" />
                           Add Your First Quote
@@ -1359,7 +1362,7 @@ export default function BidDetailPage() {
                                 )}
                               </div>
                             </div>
-                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                            {canEditBids(user?.role) && (
                               <div className="flex gap-2 ml-4">
                                 <Button
                                   size="icon"
@@ -1408,7 +1411,7 @@ export default function BidDetailPage() {
                     </CardTitle>
                     <CardDescription>Select equipment identified in the Scope of Work from your fleet or rentals</CardDescription>
                   </div>
-                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                  {canEditBids(user?.role) && (
                     <Button onClick={handleAddEquipment} size="sm" data-testid="button-add-equipment">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Equipment
@@ -1456,7 +1459,7 @@ export default function BidDetailPage() {
                     <div className="text-center py-8 text-muted-foreground">
                       <p className="font-medium mb-1">No equipment selected yet</p>
                       <p className="text-sm mb-4">Select equipment from your fleet or add rentals</p>
-                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                      {canEditBids(user?.role) && (
                         <Button onClick={handleAddEquipment} variant="outline" data-testid="button-add-first-equipment">
                           <Plus className="w-4 h-4 mr-2" />
                           Add Equipment
@@ -1505,7 +1508,7 @@ export default function BidDetailPage() {
                                 )}
                               </div>
                             </div>
-                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                            {canEditBids(user?.role) && (
                               <div className="flex gap-2 ml-4">
                                 <Button size="icon" variant="ghost" onClick={() => handleEditEquipmentSelection(selection)}>
                                   <Edit className="w-4 h-4" />
@@ -1545,7 +1548,7 @@ export default function BidDetailPage() {
                     <CardDescription>Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    {!estimate && (user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                    {!estimate && canEditBids(user?.role) && (
                       <Button 
                         onClick={() => createEstimateMutation.mutate()} 
                         disabled={createEstimateMutation.isPending}
@@ -1577,7 +1580,7 @@ export default function BidDetailPage() {
                       <Calculator className="h-12 w-12 mx-auto mb-4 opacity-40" />
                       <p className="font-medium mb-1">No estimate created yet</p>
                       <p className="text-sm mb-4">Create an estimate to define scope quantities and track labor costs</p>
-                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                      {canEditBids(user?.role) && (
                         <Button 
                           onClick={() => createEstimateMutation.mutate()} 
                           disabled={createEstimateMutation.isPending}
@@ -1657,7 +1660,7 @@ export default function BidDetailPage() {
                     </CardTitle>
                     <CardDescription>Get quotes from subcontractors for specialized work</CardDescription>
                   </div>
-                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                  {canEditBids(user?.role) && (
                     <Button onClick={handleAddQuote} size="sm" data-testid="button-add-quote">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Quote
@@ -1705,7 +1708,7 @@ export default function BidDetailPage() {
                     <div className="text-center py-8 text-muted-foreground">
                       <p className="font-medium mb-1">No subcontractor quotes added yet</p>
                       <p className="text-sm mb-4">Add quotes from subs for specialized scope items</p>
-                      {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                      {canEditBids(user?.role) && (
                         <Button onClick={handleAddQuote} variant="outline" data-testid="button-add-first-quote">
                           <Plus className="w-4 h-4 mr-2" />
                           Add Subcontractor Quote
@@ -1762,7 +1765,7 @@ export default function BidDetailPage() {
                                 )}
                               </div>
                             </div>
-                            {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "ESTIMATOR") && (
+                            {canEditBids(user?.role) && (
                               <div className="flex gap-2 ml-4">
                                 <Button size="icon" variant="ghost" onClick={() => handleEditQuote(quote)}>
                                   <Edit className="w-4 h-4" />
@@ -1898,42 +1901,46 @@ export default function BidDetailPage() {
                     </div>
 
                     {/* PDF Generation Buttons */}
-                    <div className="p-4 bg-muted/30 rounded-md border">
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        Generate Documents
-                      </h4>
-                      <div className="flex flex-wrap gap-3">
-                        <Button 
-                          variant="outline" 
-                          onClick={() => window.open(`/api/bids/${bidCode}/pdf/internal-summary`, '_blank')}
-                          data-testid="button-download-internal-pdf"
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Internal Bid Summary (PDF)
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          onClick={() => window.open(`/api/bids/${bidCode}/pdf/customer-quote`, '_blank')}
-                          data-testid="button-download-customer-pdf"
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Customer Quote (PDF)
-                        </Button>
+                    {canGenerateBidPDFs(user?.role) && (
+                      <div className="p-4 bg-muted/30 rounded-md border">
+                        <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          Generate Documents
+                        </h4>
+                        <div className="flex flex-wrap gap-3">
+                          <Button 
+                            variant="outline" 
+                            onClick={() => window.open(`/api/bids/${bidCode}/pdf/internal-summary`, '_blank')}
+                            data-testid="button-download-internal-pdf"
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Internal Bid Summary (PDF)
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            onClick={() => window.open(`/api/bids/${bidCode}/pdf/customer-quote`, '_blank')}
+                            data-testid="button-download-customer-pdf"
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Customer Quote (PDF)
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing.
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing.
-                      </p>
-                    </div>
+                    )}
 
                     <div className="flex justify-between pt-4">
                       <Button variant="outline" onClick={() => setCurrentStep(4)} data-testid="button-prev-step-5">
                         Back to Subcontractors
                       </Button>
-                      <Button onClick={handleMarkAsAwarded} data-testid="button-award-bid">
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Award Bid & Create Project
-                      </Button>
+                      {canEditBids(user?.role) && (
+                        <Button onClick={handleMarkAsAwarded} data-testid="button-award-bid">
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          Award Bid & Create Project
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
