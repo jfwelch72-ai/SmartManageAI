@@ -499,7 +499,7 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
   }
 });
 
-router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
@@ -576,7 +576,7 @@ router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/inspections/:id/pdf", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
