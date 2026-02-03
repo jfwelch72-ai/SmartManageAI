@@ -128,6 +128,34 @@ export function canGenerateBidPDFs(role?: string): boolean {
 }
 
 /**
+ * Check if user can access bid network features (as GC - creating bid requests, sending invitations)
+ */
+export function canAccessBidNetworkAsGC(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR";
+}
+
+/**
+ * Check if user can access bid network inbox (as subcontractor - receiving and responding to bid invitations)
+ */
+export function canAccessBidNetworkAsSub(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR";
+}
+
+/**
+ * Check if user can manage bid response status (shortlist, award, reject)
+ */
+export function canManageBidResponseStatus(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER";
+}
+
+/**
+ * Check if user can delete bid requests
+ */
+export function canDeleteBidRequests(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER";
+}
+
+/**
  * Route access permissions
  */
 export const RoutePermissions = {
@@ -179,6 +207,10 @@ export const RoutePermissions = {
   DELAY_CLAIMS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
   DAILY_REPORT_LOCKS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
   PHOTO_CUSTODY: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  
+  // Bid Network routes
+  BID_NETWORK_GC: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
+  BID_NETWORK_INBOX: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR",
 };
 
 /**
