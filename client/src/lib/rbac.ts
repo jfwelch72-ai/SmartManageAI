@@ -225,10 +225,10 @@ export function canViewTimeApprovals(role?: string): boolean {
 }
 
 /**
- * Check if user can approve time entries/shifts (Admin/Manager/Superintendent only - not Office Manager)
+ * Check if user can approve time entries/shifts (Admin/Manager/Superintendent/Office Manager)
  */
 export function canApproveTime(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER";
 }
 
 /**

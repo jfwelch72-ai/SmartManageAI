@@ -807,8 +807,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Adjust shift (managers and superintendents)
-  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Adjust shift (managers, superintendents, office managers)
+  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -992,8 +992,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Approve shift (managers, superintendents)
-  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Approve shift (managers, superintendents, office managers)
+  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const schema = z.object({
         createTimeEntry: z.boolean().optional(),
@@ -1104,8 +1104,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Reject shift (managers and superintendents)
-  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Reject shift (managers, superintendents, office managers)
+  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -1424,8 +1424,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Approve time entry (managers only)
-  app.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Approve time entry (managers, superintendents, office managers)
+  app.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1491,8 +1491,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Reject time entry (managers only)
-  app.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Reject time entry (managers, superintendents, office managers)
+  app.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
