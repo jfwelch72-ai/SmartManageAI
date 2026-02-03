@@ -680,8 +680,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Get pending shift approvals (managers and office managers for viewing)
-  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  // Get pending shift approvals (managers, superintendents, and office managers for viewing)
+  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // Get all shifts that are clocked out and pending approval
       const pendingShifts = await db

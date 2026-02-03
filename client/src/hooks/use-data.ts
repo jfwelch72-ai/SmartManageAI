@@ -712,6 +712,7 @@ export function useActiveShifts() {
 export function usePendingShiftApprovals() {
   return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/pending-approvals"],
+    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
   });
 }
 
@@ -790,6 +791,7 @@ export interface PendingTimeEntry {
 export function usePendingTimeEntryApprovals() {
   return useQuery<PendingTimeEntry[]>({
     queryKey: ["/api/time-entries/pending-approvals"],
+    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
   });
 }
 
