@@ -1078,8 +1078,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Reject shift (managers only)
-  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Reject shift (managers and superintendents)
+  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
