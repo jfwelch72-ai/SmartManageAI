@@ -680,8 +680,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Get pending shift approvals (managers only)
-  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Get pending shift approvals (managers and office managers for viewing)
+  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // Get all shifts that are clocked out and pending approval
       const pendingShifts = await db
@@ -1326,8 +1326,8 @@ export function registerTimeClockRoutes(app: Express): void {
   // TIME ENTRY APPROVAL WORKFLOW ROUTES
   // ============================================
 
-  // Get pending time entry approvals (managers only) - with mustDenyAccess pattern
-  app.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Get pending time entry approvals (managers, superintendents, office managers for viewing) - with mustDenyAccess pattern
+  app.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1777,8 +1777,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Get approval summary by project for a date range
-  app.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Get approval summary by project for a date range (managers, superintendents, office managers)
+  app.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       

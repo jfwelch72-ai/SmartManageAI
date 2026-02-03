@@ -6389,8 +6389,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create contact (ADMIN, MANAGER, ESTIMATOR)
-  app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  // Create contact (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
+  app.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -11926,8 +11926,8 @@ SmartManageAI Construction Management Platform
     }
   });
 
-  // Create change order (Admin/Manager/Superintendent)
-  app.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  // Create change order (Admin/Manager/Superintendent/Office Manager)
+  app.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {

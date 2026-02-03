@@ -203,6 +203,35 @@ export function canEditProjectHandoff(role?: string, userId?: string, projectSup
 }
 
 /**
+ * Check if user can create CRM contacts (Admin/Manager/Estimator/Superintendent)
+ */
+export function canCreateCrmContact(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT";
+}
+
+/**
+ * Check if user can create change orders (Admin/Manager/Superintendent/Office Manager)
+ */
+export function canCreateChangeOrder(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER";
+}
+
+/**
+ * Check if user can view time approval data (Admin/Manager/Superintendent/Office Manager)
+ * Note: OFFICE_MANAGER can view but not approve
+ */
+export function canViewTimeApprovals(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER";
+}
+
+/**
+ * Check if user can approve time entries/shifts (Admin/Manager/Superintendent only - not Office Manager)
+ */
+export function canApproveTime(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT";
+}
+
+/**
  * Route access permissions
  */
 export const RoutePermissions = {
