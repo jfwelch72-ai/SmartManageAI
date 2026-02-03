@@ -781,8 +781,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Adjust shift (managers only)
-  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Adjust shift (managers and superintendents)
+  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
