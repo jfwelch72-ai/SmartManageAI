@@ -699,9 +699,22 @@ export function registerTimeClockRoutes(app: Express): void {
         ))
         .orderBy(desc(timeClockShifts.clockOut));
 
-      // Flatten the response to match the expected frontend format
+      // Return nested format to match the expected frontend format
       const formattedShifts = pendingShifts.map(({ shift, user, project }) => ({
         ...shift,
+        user: user ? {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+        } : null,
+        project: project ? {
+          id: project.id,
+          name: project.name,
+          code: project.code,
+        } : null,
+        // Keep flat fields for backwards compatibility
         userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
         userEmail: user?.email,
         projectName: project?.name,
@@ -731,9 +744,22 @@ export function registerTimeClockRoutes(app: Express): void {
         .where(sql`${timeClockShifts.clockOut} IS NULL`)
         .orderBy(desc(timeClockShifts.clockIn));
 
-      // Flatten the response to match the expected frontend format
+      // Return nested format to match the expected frontend format
       const formattedShifts = activeShifts.map(({ shift, user, project }) => ({
         ...shift,
+        user: user ? {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+        } : null,
+        project: project ? {
+          id: project.id,
+          name: project.name,
+          code: project.code,
+        } : null,
+        // Keep flat fields for backwards compatibility
         userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
         userEmail: user?.email,
         projectName: project?.name,
