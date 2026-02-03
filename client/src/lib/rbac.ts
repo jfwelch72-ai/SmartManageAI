@@ -77,11 +77,20 @@ export function hasContractorAccess(role?: string): boolean {
 /**
  * Check if user has management-level access within an organization (not hourly employee, not super admin)
  * HUSTLER role has management access to work across their organizations
+ * Note: MAINTENANCE_MANAGER has specialized access to equipment only - use hasEquipmentAccess() for them
  */
 export function hasManagementAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
-         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER" ||
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" ||
          role === "HUSTLER";
+}
+
+/**
+ * Check if user has full management access INCLUDING maintenance manager
+ * Use this for features like CRM contacts that maintenance managers can view but not financial features
+ */
+export function hasExtendedManagementAccess(role?: string): boolean {
+  return hasManagementAccess(role) || role === "MAINTENANCE_MANAGER";
 }
 
 /**
@@ -103,6 +112,15 @@ export function hasEquipmentAccess(role?: string): boolean {
  */
 export function isSuperintendent(role?: string): boolean {
   return role === "SUPERINTENDENT";
+}
+
+/**
+ * Check if user can access bids at all (view/list)
+ * MAINTENANCE_MANAGER and HOURLY_EMPLOYEE cannot access bids
+ */
+export function canAccessBids(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER";
 }
 
 /**
@@ -173,9 +191,9 @@ export const RoutePermissions = {
   SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
   COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role),
 
-  // Management routes (blocked for hourly employees and SUPER_ADMIN)
-  BIDS: (role?: string) => hasManagementAccess(role),
-  BID_DETAIL: (role?: string) => hasManagementAccess(role),
+  // Management routes (blocked for hourly employees, maintenance managers, and SUPER_ADMIN)
+  BIDS: (role?: string) => canAccessBids(role),
+  BID_DETAIL: (role?: string) => canAccessBids(role),
   TIME_ENTRY: (role?: string) => hasManagementAccess(role),
   TIME_CLOCK_MANAGER: (role?: string) => isAdminOrManager(role),
   AI_PM: (role?: string) => hasManagementAccess(role),

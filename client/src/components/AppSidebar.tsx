@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess } from "@/lib/rbac";
 import { useTour } from "@/components/TourProvider";
 import {
   Sidebar,
@@ -311,16 +311,18 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/bids")} tooltip="Bids">
-                  <Link href="/bids" data-testid="sidebar-bids">
-                    <Gavel className="w-4 h-4" />
-                    <span>Bids</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {canAccessBids(userRole) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/bids")} tooltip="Bids">
+                    <Link href="/bids" data-testid="sidebar-bids">
+                      <Gavel className="w-4 h-4" />
+                      <span>Bids</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
               
-              {hasManagementAccess(userRole) && (
+              {canAccessBidNetworkAsGC(userRole) && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/bid-network")} tooltip="Bid Network">
                     <Link href="/bid-network" data-testid="sidebar-bid-network">
@@ -331,7 +333,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
               
-              {hasManagementAccess(userRole) && (
+              {canAccessBidNetworkAsSub(userRole) && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/bid-inbox")} tooltip="Bid Inbox">
                     <Link href="/bid-inbox" data-testid="sidebar-bid-inbox">
@@ -353,7 +355,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
               
-              {(userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPERINTENDENT") && (
+              {hasEquipmentAccess(userRole) && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/equipment")} tooltip="Equipment">
                     <Link href="/equipment" data-testid="sidebar-equipment">
