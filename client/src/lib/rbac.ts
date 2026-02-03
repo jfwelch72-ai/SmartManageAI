@@ -174,6 +174,35 @@ export function canDeleteBidRequests(role?: string): boolean {
 }
 
 /**
+ * Check if user can edit a project (Admin/Manager always, ESTIMATOR if they are assigned estimator)
+ * This is an ownership-based permission check
+ */
+export function canEditProject(role?: string, userId?: string, projectEstimatorId?: string | null): boolean {
+  if (role === "ADMIN" || role === "MANAGER") return true;
+  if (role === "ESTIMATOR" && userId && projectEstimatorId && userId === projectEstimatorId) return true;
+  return false;
+}
+
+/**
+ * Check if user can delete scope items (Admin/Manager always, SUPERINTENDENT if assigned to project)
+ * This is an ownership-based permission check
+ */
+export function canDeleteScopeItems(role?: string, userId?: string, projectSuperintendentId?: string | null): boolean {
+  if (role === "ADMIN" || role === "MANAGER") return true;
+  if (role === "SUPERINTENDENT" && userId && projectSuperintendentId && userId === projectSuperintendentId) return true;
+  return false;
+}
+
+/**
+ * Check if user can edit project handoff (Admin/Manager/Office Manager, or SUPERINTENDENT if assigned)
+ */
+export function canEditProjectHandoff(role?: string, userId?: string, projectSuperintendentId?: string | null): boolean {
+  if (role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER") return true;
+  if (role === "SUPERINTENDENT" && userId && projectSuperintendentId && userId === projectSuperintendentId) return true;
+  return false;
+}
+
+/**
  * Route access permissions
  */
 export const RoutePermissions = {

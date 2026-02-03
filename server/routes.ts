@@ -2806,12 +2806,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update handoff packet for a project
-  app.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  // Update handoff packet for a project (Admin/Manager/Office Manager, or SUPERINTENDENT if assigned)
+  app.put("/api/projects/:code/handoff-packet", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
       if (!project) {
         res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // OWNERSHIP CHECK: SUPERINTENDENT can only edit handoff for projects they are assigned to
+      const userRole = req.user!.effectiveRole || req.user!.role;
+      if (userRole === "SUPERINTENDENT" && project.superintendentId !== req.user!.id) {
+        res.status(403).json({ error: "You can only edit handoff packets for projects where you are the assigned superintendent" });
         return;
       }
 
@@ -3874,9 +3881,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update project schema
   const updateProjectSchema = insertProjectSchema.partial();
 
-  // Update project (Admin/Manager only)
-  app.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Update project (Admin/Manager, or ESTIMATOR if they are the assigned estimator)
+  app.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
     try {
+      // Fetch project first to check permissions and status transitions
+      const [existingProject] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.code, req.params.code))
+        .limit(1);
+
+      if (!existingProject) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+
+      // OWNERSHIP CHECK: ESTIMATOR can only edit projects they are assigned to
+      const userRole = req.user!.effectiveRole || req.user!.role;
+      if (userRole === "ESTIMATOR" && existingProject.estimatorId !== req.user!.id) {
+        res.status(403).json({ error: "You can only edit projects where you are the assigned estimator" });
+        return;
+      }
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
@@ -3895,16 +3921,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // BUSINESS VALIDATION: Check status transitions if status is being updated
       if (validationResult.data.status !== undefined) {
-        const [currentProject] = await db
-          .select()
-          .from(projects)
-          .where(eq(projects.code, req.params.code))
-          .limit(1);
-
-        if (!currentProject) {
-          res.status(404).json({ error: "Project not found" });
-          return;
-        }
+        const currentProject = existingProject;
 
         const transitionCheck = validateProjectStatusTransition(
           currentProject.status as ProjectStatus,
@@ -4259,18 +4276,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete scope item (Admin/Manager only)
-  app.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Delete scope item (Admin/Manager, or SUPERINTENDENT if they are assigned to the project)
+  app.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
     try {
+      // Fetch scope item first to check project ownership for SUPERINTENDENT
+      const [scopeItem] = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.id, req.params.id))
+        .limit(1);
+
+      if (!scopeItem) {
+        res.status(404).json({ error: "Scope item not found" });
+        return;
+      }
+
+      // OWNERSHIP CHECK: SUPERINTENDENT can only delete scope items from projects they are assigned to
+      const userRole = req.user!.effectiveRole || req.user!.role;
+      if (userRole === "SUPERINTENDENT") {
+        const [project] = await db
+          .select()
+          .from(projects)
+          .where(eq(projects.id, scopeItem.projectId))
+          .limit(1);
+
+        if (!project || project.superintendentId !== req.user!.id) {
+          res.status(403).json({ error: "You can only delete scope items from projects where you are the assigned superintendent" });
+          return;
+        }
+      }
+
       const [deletedItem] = await db
         .delete(scopeItems)
         .where(eq(scopeItems.id, req.params.id))
         .returning();
-
-      if (!deletedItem) {
-        res.status(404).json({ error: "Scope item not found" });
-        return;
-      }
 
       res.json({ success: true });
     } catch (error) {
