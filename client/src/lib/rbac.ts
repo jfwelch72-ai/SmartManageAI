@@ -253,7 +253,7 @@ export const RoutePermissions = {
   BIDS: (role?: string) => canAccessBids(role),
   BID_DETAIL: (role?: string) => canAccessBids(role),
   TIME_ENTRY: (role?: string) => hasManagementAccess(role),
-  TIME_CLOCK_MANAGER: (role?: string) => isAdminOrManager(role),
+  TIME_CLOCK_MANAGER: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
@@ -411,7 +411,7 @@ export const NavigationConfig = {
       href: "/time-clock-manager",
       label: "Manage Time Clock",
       testId: "nav-manage-time-clock",
-      visible: (role?: string) => isAdminOrManager(role),
+      visible: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
     },
     {
       href: "/time-entry",
