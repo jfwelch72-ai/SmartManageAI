@@ -186,7 +186,7 @@ export const RoutePermissions = {
   // Organization Admin-only routes (not for SUPER_ADMIN)
   USERS: (role?: string) => isOrganizationAdmin(role),
   AI_SETTINGS: (role?: string) => isOrganizationAdmin(role),
-  COST_RATES: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR",
+  COST_RATES: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
   CREWS: (role?: string) => isOrganizationAdmin(role),
   SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
   COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role),
@@ -425,7 +425,7 @@ export const NavigationConfig = {
       href: "/cost-rates",
       label: "Cost Rates",
       testId: "nav-cost-rates",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
     },
     {
       href: "/subcontractor-payables",
