@@ -715,8 +715,8 @@ export function registerTimeClockRoutes(app: Express): void {
     }
   });
 
-  // Get active shifts (managers only)
-  app.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Get active shifts (managers, superintendents, office managers)
+  app.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // Get all shifts that are currently clocked in (no clock out time)
       const activeShifts = await db
