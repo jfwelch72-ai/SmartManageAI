@@ -1,0 +1,66 @@
+Here's my analysis of the SUPERINTENDENT role:
+
+SUPERINTENDENT Role Overview
+SUPERINTENDENT is a field leadership role focused on day-to-day project operations, crew management, and quality control.
+
+✅ SUPERINTENDENT Unique Perks (Over ESTIMATOR/OFFICE_MANAGER)
+Feature	SUPERINTENDENT Has	ESTIMATOR Doesn't
+Add Scope Items	✓	✗
+Edit Scope Items	✓	✗
+Update Scope Materials	✓	✗
+View Project Financials	✓	✗
+View Labor/Employee Rates	✓	✗
+View Material Overages	✓	✗
+Dashboard Snapshot	✓	✗
+Create Change Orders	✓	✗
+Approve Time Entries	✓	✗
+Approve Shifts	✓	✗
+Pass/Fail Inspections	✓	✗
+Create Delays	✓	✗
+T&M Daily Sheets	✓	✗
+Crew Assignments	✓	✗
+AI Schedule Generation	✓	✗
+AI Jobsite Analysis	✓	✗
+⚠️ Broken Integrations / Issues Found
+1. Bids: View-Only But Frontend May Not Match ⚠️
+Backend: SUPERINTENDENT can VIEW bids but NOT create/edit/delete
+Frontend: We fixed this earlier with canEditBids() checks
+Status: Fixed in recent changes
+2. Project Handoff Packet Mismatch ⚠️
+Can VIEW bid handoff packet ✓
+Can VIEW project handoff packet ✓
+Cannot EDIT project handoff packet (only ADMIN, MANAGER, OFFICE_MANAGER)
+Issue: May need edit access for field notes
+3. Cannot Delete Scope Items
+Can CREATE and EDIT scope items
+Cannot DELETE scope items (ADMIN, MANAGER only)
+May cause issues if superintendent adds wrong item
+4. CRM Limited Access
+Can VIEW organizations, contacts, pricing
+Cannot CREATE/EDIT organizations or contacts
+May need to add vendors encountered in field
+5. Subcontracts Access
+Can VIEW subcontracts ✓
+Cannot CREATE/EDIT subcontracts
+This may be intentional
+Areas Needing Improvement
+Area	Current	Suggested
+Delete Scope Items	✗ Blocked	Consider allowing for own creations
+Edit Project Handoff	✗ Blocked	Allow field notes updates
+CRM Create Contact	✗ Blocked	Allow adding field contacts
+Delay Delete	✗ Blocked	Allow deleting own DRAFT delays
+Comparison: SUPERINTENDENT vs Other Roles
+Capability	ADMIN	MANAGER	SUPT	ESTIMATOR	OFFICE_MGR
+Create Bids	✓	✓	✗	✓	✗
+Edit Projects	✓	✓	✗	✗	✗
+View Financials	✓	✓	✓	✗	✗
+Approve Time	✓	✓	✓	✗	✗
+Add Scope Items	✓	✓	✓	✗	✗
+Create Change Orders	✓	✓	✓	✗	✗
+Pass/Fail Inspections	✓	✓	✓	✗	✗
+Equipment Management	✓	✓	✓	✗	✗
+Delay Claims	✓	✓	✓	✗	✗
+Summary
+SUPERINTENDENT has strong field operations permissions but is appropriately restricted from financial/administrative changes. The main gaps are around CRM contact creation and handoff packet editing which may impact field workflow.
+
+Would you like me to create a task list to address any of these improvements?
