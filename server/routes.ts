@@ -958,8 +958,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User Management Routes
   // ====================
 
-  // Get all users (Admin/Manager only)
-  app.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  // Get all users (Admin/Manager/Office Manager)
+  app.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
     try {
       // Organization filtering: SUPER_ADMIN sees all users, others see only their org's users
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
