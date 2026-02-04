@@ -578,18 +578,88 @@ router.get("/uom/list", async (req: AuthRequest, res) => {
   }
 });
 
-// Helper function to find similar SOW items
+// Mutually exclusive work-type nouns - what the item IS (not materials or verbs)
+// Map singular to singular for consistent matching
+const PRIMARY_WORK_TYPE_NOUNS = new Set([
+  // Flatwork & paving
+  'curb', 'gutter', 'sidewalk', 'slab', 'driveway', 'patio', 'walkway', 'apron', 'pavement', 'paver',
+  // Structural elements
+  'footing', 'foundation', 'wall', 'column', 'beam', 'pier', 'pillar', 'bollard',
+  // Vertical access
+  'stair', 'step', 'ramp',
+  // Outdoor structures
+  'fence', 'gate', 'deck', 'porch', 'retaining',
+  // Infrastructure
+  'drainage', 'pipe', 'conduit', 'manhole', 'catchbasin', 'inlet', 'culvert',
+  // Building trades
+  'framing', 'roofing', 'siding', 'drywall', 'flooring', 'ceiling', 'trim',
+  // Systems
+  'electrical', 'plumbing', 'hvac', 'ductwork',
+  // Striping and misc
+  'striping', 'marking', 'signage',
+]);
+
+// Normalize word to base form (simple stemming for plurals)
+function normalizeWord(word: string): string {
+  // Remove trailing 's' for simple plurals (curbs -> curb, stairs -> stair)
+  if (word.endsWith('s') && word.length > 3) {
+    return word.slice(0, -1);
+  }
+  return word;
+}
+
+// Extract and clean words from text (strip punctuation, units, numbers)
+function extractWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ') // Remove non-letters
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .map(normalizeWord);
+}
+
+// Find primary work type nouns in word list
+function findPrimaryTypes(words: string[]): string[] {
+  return words.filter(w => PRIMARY_WORK_TYPE_NOUNS.has(w));
+}
+
+// Helper function to find similar SOW items with improved matching
 function findSimilarItems(
   userInput: string, 
   existingItems: (MasterSowItem | OrganizationSowItem)[]
 ): SimilarItem[] {
-  const inputWords = userInput.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const inputWords = extractWords(userInput);
+  const inputPrimaryTypes = findPrimaryTypes(inputWords);
   
   return existingItems
     .map(item => {
-      const itemWords = `${item.name} ${item.code} ${item.categoryName}`.toLowerCase().split(/\s+/);
-      const matchCount = inputWords.filter(w => itemWords.some(iw => iw.includes(w) || w.includes(iw))).length;
-      const similarity = inputWords.length > 0 ? (matchCount / inputWords.length) * 100 : 0;
+      const itemWords = extractWords(`${item.name} ${item.code}`);
+      const itemPrimaryTypes = findPrimaryTypes(itemWords);
+      
+      // STRICT RULE: If user input has primary work types, item MUST have at least one matching
+      if (inputPrimaryTypes.length > 0) {
+        const hasMatchingPrimaryType = inputPrimaryTypes.some(inputType => 
+          itemPrimaryTypes.includes(inputType)
+        );
+        
+        // No matching primary work type = not similar (curb != sidewalk)
+        if (!hasMatchingPrimaryType) {
+          return {
+            id: item.id,
+            name: item.name,
+            code: item.code,
+            categoryName: item.categoryName,
+            unit: 'unit' in item ? item.unit || undefined : ('defaultUomCode' in item ? item.defaultUomCode || undefined : undefined),
+            similarity: 0,
+          };
+        }
+      }
+      
+      // Calculate exact word match similarity (no substring matching)
+      const inputWordSet = new Set(inputWords);
+      const itemWordSet = new Set(itemWords);
+      const matchCount = Array.from(inputWordSet).filter(w => itemWordSet.has(w)).length;
+      const similarity = inputWordSet.size > 0 ? (matchCount / inputWordSet.size) * 100 : 0;
       
       return {
         id: item.id,
@@ -600,7 +670,7 @@ function findSimilarItems(
         similarity,
       };
     })
-    .filter(item => item.similarity > 20)
+    .filter(item => item.similarity >= 50) // Require 50%+ exact word overlap
     .sort((a, b) => b.similarity - a.similarity);
 }
 
