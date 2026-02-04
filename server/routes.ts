@@ -1562,8 +1562,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const [newBid] = await db.insert(bids).values({
             ...validationResult.data,
             code: nextCode,
-            // Automatically assign the user's organization to the bid for proper filtering
-            gcOrganizationId: validationResult.data.gcOrganizationId || userOrgId,
+            // Always use user's organization for filtering - gcOrganizationId from form is the CRM client
+            gcOrganizationId: userOrgId || validationResult.data.gcOrganizationId,
           }).returning();
           res.status(201).json(newBid);
           return;
