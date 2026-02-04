@@ -12237,8 +12237,6 @@ SmartManageAI Construction Management Platform
     try {
       const { startDate, endDate, eventType } = req.query;
       
-      let query = db.select().from(calendarEvents);
-      
       const conditions = [];
       if (startDate) {
         conditions.push(sql`${calendarEvents.startDate} >= ${startDate as string}`);
@@ -12250,13 +12248,30 @@ SmartManageAI Construction Management Platform
         conditions.push(eq(calendarEvents.eventType, eventType as any));
       }
       
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions)) as any;
-      }
-      
-      const events = await query.orderBy(calendarEvents.startDate);
+      const eventsWithUser = await db
+        .select({
+          id: calendarEvents.id,
+          eventType: calendarEvents.eventType,
+          title: calendarEvents.title,
+          description: calendarEvents.description,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          allDay: calendarEvents.allDay,
+          userId: calendarEvents.userId,
+          projectId: calendarEvents.projectId,
+          approvedById: calendarEvents.approvedById,
+          approvedAt: calendarEvents.approvedAt,
+          createdById: calendarEvents.createdById,
+          createdAt: calendarEvents.createdAt,
+          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username})`.as('requestee_name'),
+          requesteeRole: users.role,
+        })
+        .from(calendarEvents)
+        .leftJoin(users, eq(calendarEvents.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(calendarEvents.startDate);
 
-      res.json(events);
+      res.json(eventsWithUser);
     } catch (error) {
       console.error("Get calendar events error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -12266,13 +12281,30 @@ SmartManageAI Construction Management Platform
   // Get user's calendar events
   app.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const events = await db
-        .select()
+      const eventsWithUser = await db
+        .select({
+          id: calendarEvents.id,
+          eventType: calendarEvents.eventType,
+          title: calendarEvents.title,
+          description: calendarEvents.description,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          allDay: calendarEvents.allDay,
+          userId: calendarEvents.userId,
+          projectId: calendarEvents.projectId,
+          approvedById: calendarEvents.approvedById,
+          approvedAt: calendarEvents.approvedAt,
+          createdById: calendarEvents.createdById,
+          createdAt: calendarEvents.createdAt,
+          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username})`.as('requestee_name'),
+          requesteeRole: users.role,
+        })
         .from(calendarEvents)
+        .leftJoin(users, eq(calendarEvents.userId, users.id))
         .where(eq(calendarEvents.userId, req.user!.id))
         .orderBy(calendarEvents.startDate);
 
-      res.json(events);
+      res.json(eventsWithUser);
     } catch (error) {
       console.error("Get user calendar events error:", error);
       res.status(500).json({ error: "Internal server error" });
