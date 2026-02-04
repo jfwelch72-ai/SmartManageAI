@@ -33,7 +33,7 @@ import {
 import { 
   DollarSign, AlertCircle, Clock, Search, Building2, Check, X, 
   CreditCard, FileText, User, Calendar, CheckCircle2, XCircle, Loader2,
-  Plus, Banknote
+  Plus, Banknote, RefreshCw
 } from "lucide-react";
 import { formatDistanceToNow, format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
@@ -182,6 +182,28 @@ export default function SubcontractorPayablesPage() {
     }
   });
 
+  const backfillMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/payables/backfill", {});
+      return response.json() as Promise<{ message: string; created: number; failed?: number }>;
+    },
+    onSuccess: (data) => {
+      toast({ 
+        title: "Backfill Complete", 
+        description: data.message 
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/payables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payables/summary"] });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Backfill Failed", 
+        description: error.message, 
+        variant: "destructive" 
+      });
+    }
+  });
+
   const filteredPayables = useMemo(() => {
     return payables.filter(payable => {
       if (!payable.subcontractor || !payable.project) return false;
@@ -275,14 +297,36 @@ export default function SubcontractorPayablesPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2" data-testid="title-payables">
-            <DollarSign className="w-7 h-7 text-primary" />
-            Subcontractor Payables
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Track, approve, and manage all subcontractor payments across projects
-          </p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2" data-testid="title-payables">
+              <DollarSign className="w-7 h-7 text-primary" />
+              Subcontractor Payables
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Track, approve, and manage all subcontractor payments across projects
+            </p>
+          </div>
+          {user?.role === "ADMIN" && payables.length === 0 && (
+            <Button
+              variant="outline"
+              onClick={() => backfillMutation.mutate()}
+              disabled={backfillMutation.isPending}
+              data-testid="button-run-backfill"
+            >
+              {backfillMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Running Backfill...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Sync Completed Contracts
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {isLoading ? (

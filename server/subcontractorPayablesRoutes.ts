@@ -784,4 +784,149 @@ export async function createAutoPayableFromContract(
   }
 }
 
+// Backfill endpoint to create payables for completed contracts that are missing payments
+router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    // Security: Deny access if multi-tenant filtering requires it
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // Non-super-admins must ALWAYS have an orgId to prevent cross-tenant operations
+    // This is critical for backfill - we don't want ADMINs backfilling across all orgs
+    if (!isSuperAdmin && !orgId) {
+      return res.status(403).json({ error: "Organization context required for backfill" });
+    }
+
+    // Find all COMPLETED contracts that don't have any payments
+    // organizationId comes from projects.gcOrganizationId (the GC organization for this project)
+    const completedContractsWithoutPayments = await db
+      .select({
+        contractId: subcontractorContracts.id,
+        contractNumber: subcontractorContracts.contractNumber,
+        organizationId: projects.gcOrganizationId,
+        projectId: subcontractorContracts.projectId,
+        subcontractorId: subcontractorContracts.subcontractorId,
+        contractAmount: subcontractorContracts.contractAmount,
+        subcontractorName: subcontractors.companyName,
+        projectName: projects.name,
+      })
+      .from(subcontractorContracts)
+      .innerJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+      .innerJoin(projects, eq(subcontractorContracts.projectId, projects.id))
+      .leftJoin(subcontractorPayments, eq(subcontractorContracts.id, subcontractorPayments.contractId))
+      .where(
+        and(
+          eq(subcontractorContracts.status, "COMPLETED"),
+          sql`${subcontractorPayments.id} IS NULL`,
+          // Always filter by org for non-super-admins (orgId guaranteed to exist from earlier check)
+          !isSuperAdmin && orgId ? eq(projects.gcOrganizationId, orgId) : undefined
+        )
+      );
+
+    if (completedContractsWithoutPayments.length === 0) {
+      return res.json({ 
+        message: "No completed contracts without payables found",
+        created: 0,
+        details: []
+      });
+    }
+
+    const results: Array<{ contractNumber: string; payableId: string; amount: string; status: string }> = [];
+
+    for (const contract of completedContractsWithoutPayments) {
+      // Skip contracts without an organization ID
+      if (!contract.organizationId) {
+        console.log(`Backfill: Skipping contract ${contract.contractNumber} - no gcOrganizationId on project`);
+        results.push({
+          contractNumber: contract.contractNumber,
+          payableId: "",
+          amount: contract.contractAmount || "0",
+          status: "skipped_no_org"
+        });
+        continue;
+      }
+
+      try {
+        const paymentNumber = await getNextPaymentNumber(contract.contractId);
+        const amount = contract.contractAmount || "0";
+        const organizationId = contract.organizationId;
+
+        const [newPayment] = await db
+          .insert(subcontractorPayments)
+          .values({
+            contractId: contract.contractId,
+            organizationId,
+            paymentNumber,
+            amount,
+            status: "PENDING",
+            invoiceDate: new Date().toISOString().split('T')[0],
+            dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
+            description: `Final payment for completed contract ${contract.contractNumber}`,
+            notes: `Auto-created by backfill process for completed contract`,
+            autoCreated: true,
+            createdById: userId
+          })
+          .returning();
+
+        await logAudit({
+          userId,
+          action: "CREATE",
+          entityType: "subcontractor_payments",
+          entityId: newPayment.id,
+          oldValue: null,
+          newValue: JSON.stringify({ ...newPayment, backfillCreated: true, triggerReason: "Backfill for completed contract" })
+        });
+
+        await sendPayableNotifications(
+          newPayment.id,
+          organizationId,
+          contract.projectId,
+          "CREATED",
+          amount,
+          contract.subcontractorName,
+          userId
+        );
+
+        results.push({
+          contractNumber: contract.contractNumber,
+          payableId: newPayment.id,
+          amount,
+          status: "created"
+        });
+
+        console.log(`Backfill: Created payable ${newPayment.id} for contract ${contract.contractNumber}`);
+      } catch (err) {
+        console.error(`Backfill: Failed to create payable for contract ${contract.contractNumber}:`, err);
+        results.push({
+          contractNumber: contract.contractNumber,
+          payableId: "",
+          amount: contract.contractAmount || "0",
+          status: "failed"
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.status === "created").length;
+    const failCount = results.filter(r => r.status === "failed").length;
+
+    res.json({
+      message: `Backfill complete: ${successCount} payables created, ${failCount} failed`,
+      created: successCount,
+      failed: failCount,
+      details: results
+    });
+  } catch (error) {
+    console.error("Error running payables backfill:", error);
+    res.status(500).json({ error: "Failed to run payables backfill" });
+  }
+});
+
 export default router;
