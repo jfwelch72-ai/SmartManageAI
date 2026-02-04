@@ -90,7 +90,7 @@ export default function Tasks() {
   });
 
   // Fetch users for assignment dropdown
-  const { data: users = [] } = useQuery<Array<{ id: string; firstName: string; lastName: string }>>({
+  const { data: users = [] } = useQuery<Array<{ id: string; firstName: string; lastName: string; role?: string }>>({
     queryKey: ["/api/users"],
   });
 

@@ -1945,6 +1945,8 @@ export default function ProjectDetailPage() {
     id: string;
     firstName: string;
     lastName: string;
+    role?: string;
+    costRateRegular?: string;
   }>>({
     queryKey: ["/api/users"],
   });

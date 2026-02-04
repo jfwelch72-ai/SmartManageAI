@@ -48,7 +48,7 @@ interface MaterialBudget {
 
 interface DailyNoteFeedProps {
   projectId: string;
-  availableUsers?: Array<{ id: string; firstName: string; lastName: string }>;
+  availableUsers?: Array<{ id: string; firstName: string; lastName: string; role?: string }>;
 }
 
 export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFeedProps) {
