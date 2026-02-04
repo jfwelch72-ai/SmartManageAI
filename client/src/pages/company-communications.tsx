@@ -295,7 +295,7 @@ export default function CompanyCommunicationsPage() {
                       <SelectItem value="all">All Authors</SelectItem>
                       {allUsers.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
-                          {user.firstName} {user.lastName}
+                          {user.firstName} {user.lastName} - {user.role}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -464,7 +464,7 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
                         <SelectItem value="all">All Authors</SelectItem>
                         {availableUsers.map((user) => (
                           <SelectItem key={user.id} value={user.id}>
-                            {user.firstName} {user.lastName}
+                            {user.firstName} {user.lastName} - {user.role}
                           </SelectItem>
                         ))}
                       </SelectContent>

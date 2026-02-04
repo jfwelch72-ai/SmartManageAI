@@ -4890,7 +4890,7 @@ export default function ProjectDetailPage() {
                       <SelectContent>
                         {allUsers.map((u) => (
                           <SelectItem key={u.id} value={u.id}>
-                            {u.firstName} {u.lastName}
+                            {u.firstName} {u.lastName} - {u.costRateRegular ? `$${u.costRateRegular}/hr` : u.role}
                           </SelectItem>
                         ))}
                       </SelectContent>

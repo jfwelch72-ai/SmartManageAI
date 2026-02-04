@@ -844,7 +844,7 @@ export default function CostRatesPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {users.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>
+                        <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} - {u.role}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

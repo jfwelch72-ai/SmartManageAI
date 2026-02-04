@@ -334,7 +334,7 @@ export default function Tasks() {
                           <SelectItem value="none">None</SelectItem>
                           {users.map((user: any) => (
                             <SelectItem key={user.id} value={user.id}>
-                              {user.firstName} {user.lastName}
+                              {user.firstName} {user.lastName} - {user.role}
                             </SelectItem>
                           ))}
                         </SelectContent>
