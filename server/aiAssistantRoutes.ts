@@ -578,49 +578,145 @@ router.get("/uom/list", async (req: AuthRequest, res) => {
   }
 });
 
-// Mutually exclusive work-type nouns - what the item IS (not materials or verbs)
-// Map singular to singular for consistent matching
+// Single-word primary work-type nouns - what the item IS
+// These prevent false positives when comparing items across different work types
 const PRIMARY_WORK_TYPE_NOUNS = new Set([
-  // Flatwork & paving
-  'curb', 'gutter', 'sidewalk', 'slab', 'driveway', 'patio', 'walkway', 'apron', 'pavement', 'paver',
-  // Structural elements
-  'footing', 'foundation', 'wall', 'column', 'beam', 'pier', 'pillar', 'bollard',
-  // Vertical access
-  'stair', 'step', 'ramp',
-  // Outdoor structures
-  'fence', 'gate', 'deck', 'porch', 'retaining',
-  // Infrastructure
-  'drainage', 'pipe', 'conduit', 'manhole', 'catchbasin', 'inlet', 'culvert',
-  // Building trades
-  'framing', 'roofing', 'siding', 'drywall', 'flooring', 'ceiling', 'trim',
-  // Systems
-  'electrical', 'plumbing', 'hvac', 'ductwork',
-  // Striping and misc
-  'striping', 'marking', 'signage',
+  // CONCRETE - Flatwork & structural
+  'curb', 'sidewalk', 'slab', 'driveway', 'patio', 'walkway', 'apron', 'pavement', 'paver',
+  'footing', 'foundation', 'pier', 'pillar', 'bollard', 'retaining',
+  
+  // FRAMING - Structural elements
+  'stud', 'joist', 'rafter', 'truss', 'header', 'sheathing', 'beam', 'column',
+  
+  // ROOFING - Distinct roofing items
+  'shingle', 'ridge', 'eave', 'soffit', 'fascia', 'downspout', 'gutter', 'flashing',
+  
+  // ELECTRICAL - Distinct electrical items
+  'outlet', 'breaker', 'circuit', 'receptacle', 'transformer', 'panel', 'switch',
+  
+  // PLUMBING - Distinct plumbing items
+  'faucet', 'toilet', 'tub', 'septic', 'sewage', 'sink', 'shower', 'drain',
+  
+  // HVAC - Distinct HVAC items
+  'ductwork', 'duct', 'furnace', 'condenser', 'thermostat', 'diffuser', 'register',
+  
+  // DRYWALL - Distinct drywall items
+  'drywall', 'sheetrock', 'wallboard',
+  
+  // PAINTING - Distinct painting items
+  'paint', 'primer', 'stain', 'coating',
+  
+  // FLOORING - Distinct flooring items
+  'hardwood', 'laminate', 'carpet', 'subfloor', 'baseboard', 'flooring', 'vinyl',
+  
+  // TILE - Distinct tile items
+  'tile', 'grout', 'backsplash', 'mosaic', 'ceramic', 'porcelain',
+  
+  // MASONRY - Distinct masonry items
+  'brick', 'block', 'chimney', 'fireplace', 'hearth', 'lintel', 'capstone', 'stone', 'mortar',
+  
+  // INSULATION - Distinct insulation items
+  'insulation', 'batt', 'sprayfoam',
+  
+  // WINDOWS_DOORS - Distinct items
+  'window', 'door', 'skylight', 'casement', 'transom', 'jamb',
+  
+  // SIDING - Distinct siding items
+  'siding', 'cladding', 'housewrap',
+  
+  // CABINETRY - Distinct cabinet items
+  'cabinet', 'millwork', 'pantry', 'vanity', 'closet',
+  
+  // COUNTERTOPS - Distinct countertop items
+  'countertop', 'granite', 'quartz', 'marble',
+  
+  // FENCING - Distinct fencing items
+  'fence', 'picket', 'gate', 'post',
+  
+  // DECKING - Distinct decking items
+  'deck', 'porch', 'railing', 'baluster', 'pergola', 'gazebo', 'tread', 'stringer',
+  
+  // LANDSCAPING - Distinct landscaping items
+  'lawn', 'turf', 'irrigation', 'sprinkler', 'shrub', 'mulch', 'sod', 'tree', 'grading',
+  
+  // DEMOLITION - Distinct demo items
+  'demo', 'demolition', 'tearout',
+  
+  // SOLAR - Distinct solar items
+  'solar', 'inverter', 'array', 'module',
+  
+  // VERTICAL ACCESS - Distinct items
+  'stair', 'ramp', 'handrail', 'guardrail',
+  
+  // INFRASTRUCTURE - Distinct items
+  'manhole', 'catchbasin', 'culvert', 'inlet', 'drainage',
 ]);
+
+// Multi-word primary work-type phrases (normalized, no punctuation)
+const PRIMARY_WORK_TYPE_PHRASES = [
+  'water heater', 'shower pan', 'vapor barrier', 'chain link', 'retaining wall',
+  'catch basin', 'curb and gutter', 'curb gutter', 'air handler', 'heat pump',
+  'exhaust fan', 'floor drain', 'roof drain', 'fire pit', 'hot tub',
+];
 
 // Normalize word to base form (simple stemming for plurals)
 function normalizeWord(word: string): string {
-  // Remove trailing 's' for simple plurals (curbs -> curb, stairs -> stair)
   if (word.endsWith('s') && word.length > 3) {
     return word.slice(0, -1);
   }
   return word;
 }
 
-// Extract and clean words from text (strip punctuation, units, numbers)
-function extractWords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, ' ') // Remove non-letters
-    .split(/\s+/)
-    .filter(w => w.length > 2)
-    .map(normalizeWord);
+// Clean text for matching (remove punctuation, lowercase)
+function cleanText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Find primary work type nouns in word list
-function findPrimaryTypes(words: string[]): string[] {
-  return words.filter(w => PRIMARY_WORK_TYPE_NOUNS.has(w));
+// Extract and clean words from text
+function extractWords(text: string): string[] {
+  return cleanText(text).split(' ').filter(w => w.length > 2).map(normalizeWord);
+}
+
+// Build n-grams (bigrams, trigrams) from word list for phrase matching
+function buildNgrams(words: string[]): string[] {
+  const ngrams: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    // Bigrams
+    if (i + 1 < words.length) {
+      ngrams.push(`${words[i]} ${words[i + 1]}`);
+    }
+    // Trigrams
+    if (i + 2 < words.length) {
+      ngrams.push(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
+    }
+  }
+  return ngrams;
+}
+
+// Convert phrases to Set for O(1) lookup
+const PRIMARY_PHRASE_SET = new Set(PRIMARY_WORK_TYPE_PHRASES);
+
+// Find primary work types (single words + multi-word phrases) in text
+function findPrimaryTypes(text: string): string[] {
+  const words = extractWords(text);
+  const found: string[] = [];
+  
+  // Build n-grams and check for phrase matches (token-boundary safe)
+  const ngrams = buildNgrams(words);
+  for (const ngram of ngrams) {
+    if (PRIMARY_PHRASE_SET.has(ngram)) {
+      found.push(ngram);
+    }
+  }
+  
+  // Check for single-word nouns
+  for (const word of words) {
+    if (PRIMARY_WORK_TYPE_NOUNS.has(word)) {
+      found.push(word);
+    }
+  }
+  
+  return found;
 }
 
 // Helper function to find similar SOW items with improved matching
@@ -629,12 +725,13 @@ function findSimilarItems(
   existingItems: (MasterSowItem | OrganizationSowItem)[]
 ): SimilarItem[] {
   const inputWords = extractWords(userInput);
-  const inputPrimaryTypes = findPrimaryTypes(inputWords);
+  const inputPrimaryTypes = findPrimaryTypes(userInput);
   
   return existingItems
     .map(item => {
-      const itemWords = extractWords(`${item.name} ${item.code}`);
-      const itemPrimaryTypes = findPrimaryTypes(itemWords);
+      const itemText = `${item.name} ${item.code}`;
+      const itemWords = extractWords(itemText);
+      const itemPrimaryTypes = findPrimaryTypes(itemText);
       
       // STRICT RULE: If user input has primary work types, item MUST have at least one matching
       if (inputPrimaryTypes.length > 0) {
