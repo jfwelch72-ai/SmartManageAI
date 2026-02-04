@@ -381,6 +381,7 @@ export default function HierarchicalLineItemBuilder({
               Scope of Work Selection
             </CardTitle>
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={() => {
@@ -451,6 +452,7 @@ export default function HierarchicalLineItemBuilder({
                 <div className="border rounded-md p-3 bg-muted/30">
                   <p className="text-sm text-muted-foreground mb-2">No work types found in this subcategory.</p>
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => {
