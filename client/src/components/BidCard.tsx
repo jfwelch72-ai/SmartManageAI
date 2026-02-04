@@ -11,7 +11,7 @@ interface BidCardProps {
   dueDate?: string;
   location?: string;
   estimator: string;
-  status?: "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED";
+  status?: "DRAFT" | "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED";
   onClick?: () => void;
   onConvertToProject?: () => void;
   onDelete?: () => void;
@@ -51,14 +51,18 @@ export default function BidCard({
               <Badge variant="outline" className="font-mono text-xs shrink-0">
                 {code}
               </Badge>
-              {isAwarded ? (
+              {status === "AWARDED" ? (
                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 gap-1">
                   <Award className="w-3 h-3" />
                   AWARDED
                 </Badge>
+              ) : status === "DRAFT" ? (
+                <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                  DRAFT
+                </Badge>
               ) : (
                 <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                  BID
+                  ACTIVE
                 </Badge>
               )}
             </div>

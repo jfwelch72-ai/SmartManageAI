@@ -512,7 +512,7 @@ export default function BidsPage() {
                 dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
                 location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
                 estimator={bid.estimatorName || "Unassigned"}
-                status={bid.status as "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED"}
+                status={bid.status as "DRAFT" | "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED"}
                 onClick={() => setLocation(`/bids/${bid.code}`)}
                 onConvertToProject={canEditBids(user?.role) ? () => handleConvertToProject(bid.code) : undefined}
                 onDelete={canDeleteBids(user?.role) ? () => handleDeleteBid(bid.code, bid.name) : undefined}
