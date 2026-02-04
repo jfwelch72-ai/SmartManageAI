@@ -4,7 +4,8 @@ import { db } from "./db";
 import { 
   subcontractorPayments,
   subcontractorContracts, 
-  subcontractors, 
+  subcontractors,
+  crmOrganisations,
   projects,
   users,
   notifications
@@ -807,6 +808,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
 
     // Find all COMPLETED contracts that don't have any payments
     // organizationId comes from projects.gcOrganizationId (the GC organization for this project)
+    // NOTE: subcontractorId references crmOrganisations (CRM entities), not the subcontractors table
     const completedContractsWithoutPayments = await db
       .select({
         contractId: subcontractorContracts.id,
@@ -815,11 +817,11 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
         projectId: subcontractorContracts.projectId,
         subcontractorId: subcontractorContracts.subcontractorId,
         contractAmount: subcontractorContracts.contractAmount,
-        subcontractorName: subcontractors.companyName,
+        subcontractorName: crmOrganisations.name,
         projectName: projects.name,
       })
       .from(subcontractorContracts)
-      .innerJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+      .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
       .innerJoin(projects, eq(subcontractorContracts.projectId, projects.id))
       .leftJoin(subcontractorPayments, eq(subcontractorContracts.id, subcontractorPayments.contractId))
       .where(
