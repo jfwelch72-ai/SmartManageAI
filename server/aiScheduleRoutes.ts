@@ -326,7 +326,7 @@ Generate a realistic schedule that:
       dependencies: task.dependencies || [],
       isCriticalPath: task.isCriticalPath || false,
       isMilestone: task.isMilestone || false,
-      tradeType: task.tradeType as any || null,
+      tradeType: normalizeTradeType(task.tradeType) as any,
       sowItemIds: task.sowItemIds || [],
       percentComplete: 0,
       plannedStartDate: calculateTaskStartDate(aiResponse.baseline_start_date, aiResponse.tasks, index),
