@@ -96,6 +96,7 @@ import vendorPricebookRoutes from "./vendorPricebookRoutes";
 import delayClaimsRoutes from "./delayClaimsRoutes";
 import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import marketplaceRoutes from "./marketplaceRoutes";
+import aiScheduleRoutes from "./aiScheduleRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -128,6 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register marketplace routes (vendor scores, material prices, crew marketplace)
   app.use("/api/marketplace", marketplaceRoutes);
+  app.use(aiScheduleRoutes);
 
   // Register inspection scheduling routes
   app.use("/api", inspectionRoutes);

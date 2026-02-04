@@ -66,6 +66,7 @@ interface ProjectSchedule {
 
 interface AiSchedulingPanelProps {
   projectId: string;
+  projectCode: string;
   projectName: string;
   tradeType?: string;
 }
@@ -78,7 +79,7 @@ const STATUS_CONFIG = {
   ON_HOLD: { color: "bg-yellow-100 text-yellow-600", icon: Pause, label: "On Hold" },
 };
 
-export default function AiSchedulingPanel({ projectId, projectName, tradeType }: AiSchedulingPanelProps) {
+export default function AiSchedulingPanel({ projectId, projectCode, projectName, tradeType }: AiSchedulingPanelProps) {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -94,25 +95,22 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
   }
 
   const { data: scheduleData, isLoading, refetch } = useQuery<ScheduleResponse>({
-    queryKey: ["/api/ai-features/schedule", projectId],
+    queryKey: ["/api/projects", projectCode, "schedule"],
   });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/ai-features/schedule/generate", {
-        projectId,
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/ai-schedule`, {
         startDate,
-        workingDays,
-        tradeType,
       });
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/schedule", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
       setGenerateDialogOpen(false);
       toast({
         title: "Schedule Generated",
-        description: `AI created ${data.proposedSchedule.tasks.length} tasks for your ${tradeType || "project"}`,
+        description: `AI created ${data.tasks?.length || 0} tasks based on scope, delays, and change orders`,
       });
     },
     onError: (error: any) => {
@@ -126,11 +124,11 @@ export default function AiSchedulingPanel({ projectId, projectName, tradeType }:
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, updates }: { taskId: string; updates: Partial<ScheduleTask> }) => {
-      const response = await apiRequest("PATCH", `/api/ai-features/schedule/tasks/${taskId}`, updates);
+      const response = await apiRequest("PATCH", `/api/projects/${projectCode}/schedule/tasks/${taskId}`, updates);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/schedule", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
       setTaskDialogOpen(false);
       toast({
         title: "Task Updated",

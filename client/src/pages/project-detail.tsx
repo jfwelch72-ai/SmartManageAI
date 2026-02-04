@@ -3251,6 +3251,7 @@ export default function ProjectDetailPage() {
           <TabsContent value="schedule">
             <AiSchedulingPanel 
               projectId={project.id}
+              projectCode={projectCode}
               projectName={project.name}
               tradeType={(project as { tradeType?: string }).tradeType}
             />
