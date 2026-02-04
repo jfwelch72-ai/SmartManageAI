@@ -206,17 +206,17 @@ export default function BidDetailPage() {
     role: string;
     isActive: boolean;
   }
-  const { data: usersData } = useQuery<{ users: UserOption[] }>({
+  const { data: usersData = [] } = useQuery<UserOption[]>({
     queryKey: ["/api/users"],
   });
   
   // Filter active superintendents and managers for assignment dropdowns
-  const superintendents = usersData?.users?.filter(u => 
+  const superintendents = usersData.filter(u => 
     u.isActive && (u.role === "SUPERINTENDENT" || u.role === "MANAGER" || u.role === "ADMIN")
-  ) || [];
-  const managers = usersData?.users?.filter(u => 
+  );
+  const managers = usersData.filter(u => 
     u.isActive && (u.role === "MANAGER" || u.role === "ADMIN")
-  ) || [];
+  );
 
   // Quote form
   const form = useForm<QuoteFormValues>({
