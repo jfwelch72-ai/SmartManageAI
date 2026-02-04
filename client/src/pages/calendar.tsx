@@ -542,6 +542,25 @@ export default function CalendarPage() {
                     </Badge>
                   </div>
                 </div>
+
+                {(selectedEvent.eventType === "TIME_OFF_REQUEST" || selectedEvent.eventType === "TIME_OFF_APPROVED") && selectedEvent.requesteeName && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Requested By</Label>
+                      <p className="mt-1 text-sm text-muted-foreground" data-testid="text-requestee-name">
+                        {selectedEvent.requesteeName}
+                      </p>
+                    </div>
+                    {selectedEvent.requesteeRole && (
+                      <div>
+                        <Label className="text-sm font-medium">Role</Label>
+                        <p className="mt-1 text-sm text-muted-foreground" data-testid="text-requestee-role">
+                          {selectedEvent.requesteeRole.replace(/_/g, " ")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {selectedEvent.description && (
                   <div>
