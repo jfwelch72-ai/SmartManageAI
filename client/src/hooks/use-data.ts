@@ -506,6 +506,9 @@ export function useCreateSubcontractorPayment() {
 export function useBids() {
   return useQuery<Bid[]>({
     queryKey: ["/api/bids"],
+    refetchInterval: 30000, // Poll every 30 seconds for realtime updates
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    staleTime: 10000, // Consider data stale after 10 seconds
   });
 }
 
