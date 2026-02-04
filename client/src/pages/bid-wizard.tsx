@@ -788,7 +788,7 @@ export default function BidWizardPage() {
                       name="dueDate"
                       render={({ field }) => (
                         <FormItem className="flex flex-col">
-                          <FormLabel>Due Date</FormLabel>
+                          <FormLabel className="mt-[5px] mb-[5px]">Due Date</FormLabel>
                           <Popover>
                             <PopoverTrigger asChild>
                               <FormControl>
