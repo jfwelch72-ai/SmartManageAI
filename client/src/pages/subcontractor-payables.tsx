@@ -118,11 +118,13 @@ export default function SubcontractorPayablesPage() {
   const { data: payables = [], isLoading, refetch } = useQuery<Payable[]>({
     queryKey: ["/api/payables"],
     enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER" || user.role === "OFFICE_MANAGER"),
+    refetchInterval: 15000, // Auto-refresh every 15 seconds for real-time updates
   });
 
   const { data: summary } = useQuery<PayableSummary>({
     queryKey: ["/api/payables/summary"],
     enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER" || user.role === "OFFICE_MANAGER"),
+    refetchInterval: 15000, // Auto-refresh every 15 seconds for real-time updates
   });
 
   const approveMutation = useMutation({
