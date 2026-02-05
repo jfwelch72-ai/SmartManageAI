@@ -162,8 +162,8 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
     enabled: !!selectedMaterialCategory,
   });
 
-  const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
-  const canApprove = ["ADMIN", "MANAGER"].includes(userRole);
+  const canCreate = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(userRole);
+  const canApprove = ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole);
 
   const toggleTicketExpanded = (id: string) => {
     const newSet = new Set(expandedTickets);
@@ -897,6 +897,59 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                     </div>
                   </div>
                 </CollapsibleTrigger>
+                {/* Quick action buttons visible without expanding */}
+                <div className="flex items-center gap-2 px-4 pb-3">
+                  {ticket.status === "DRAFT" && canCreate && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); handleSubmit(ticket.id); }}
+                      disabled={submitMutation.isPending}
+                      data-testid={`button-quick-submit-${ticket.id}`}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Submit for Approval
+                    </Button>
+                  )}
+                  {ticket.status === "SUBMITTED" && canApprove && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handleApprove(ticket.id); }}
+                        disabled={approveMutation.isPending}
+                        data-testid={`button-quick-approve-${ticket.id}`}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setTicketToReject(ticket.id);
+                          setShowRejectDialog(true);
+                        }}
+                        data-testid={`button-quick-reject-${ticket.id}`}
+                      >
+                        <XCircle className="w-4 h-4 mr-2" />
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  {ticket.status === "REJECTED" && canCreate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); handleSubmit(ticket.id); }}
+                      disabled={submitMutation.isPending}
+                      data-testid={`button-quick-resubmit-${ticket.id}`}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Resubmit
+                    </Button>
+                  )}
+                </div>
                 <CollapsibleContent>
                   <div className="px-4 pb-4 pt-0 border-t">
                     <div className="mt-4 space-y-4">
