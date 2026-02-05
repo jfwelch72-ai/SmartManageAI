@@ -22,7 +22,8 @@ import {
   Box,
   MapPin,
   FileText,
-  Zap
+  Zap,
+  AlertTriangle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -216,9 +217,15 @@ export default function AiTakeoffPanel({ projectId, sheetId, onItemsImported }: 
             </Badge>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mb-4">
+        <p className="text-sm text-muted-foreground mb-3">
           Automatically detect measurements from your blueprints using AI
         </p>
+        <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-4">
+          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-amber-700 dark:text-amber-400">
+            <span className="font-semibold">Beta Feature:</span> AI-detected quantities are estimates and should be verified manually before use in final estimates or bids.
+          </div>
+        </div>
         
         {!isAnalyzing && !isComplete && (
           <Button 

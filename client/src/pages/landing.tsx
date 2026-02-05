@@ -157,7 +157,7 @@ const features = [
       { name: "AI Project Manager", description: "Task generation and risk alerts", icon: Brain },
       { name: "AI CFO", description: "Margin tracking and cashflow forecasting", icon: TrendingUp },
       { name: "AI Schedule Generator", description: "Realistic timelines from project data", icon: Calendar },
-      { name: "AI Vision Takeoff", description: "Extract quantities from blueprints", icon: Camera },
+      { name: "AI Vision Takeoff", description: "Extract quantities from blueprints", icon: Camera, comingSoon: true },
       { name: "AI Email Assistant", description: "Categorize emails, extract tasks", icon: Mail },
       { name: "AI Change Detection", description: "Identify scope changes automatically", icon: Sparkles }
     ]
@@ -225,7 +225,8 @@ const aiCapabilities = [
     title: "AI Vision Takeoff",
     description: "Upload blueprints and let AI do the measuring. Automatically extracts quantities for concrete, excavation, materials, and more. Faster, more accurate estimates.",
     features: ["Blueprint Analysis", "Quantity Extraction", "Material Calculations", "Estimate Pre-population"],
-    image: null
+    image: null,
+    comingSoon: true
   },
   {
     title: "AI Schedule Generator",
@@ -323,7 +324,7 @@ const addons = [
   { name: "AI PM Pack", price: 39, description: "Task generation, risk alerts, daily summaries" },
   { name: "AI CFO Pack", price: 59, description: "Margin tracking, cashflow forecasting, financial alerts" },
   { name: "AI Email Pack", price: 29, description: "Email categorization, task extraction, follow-ups" },
-  { name: "AI Vision Pack", price: 79, description: "AI-powered plan takeoff and material estimation" },
+  { name: "AI Vision Pack", price: 79, description: "AI-powered plan takeoff and material estimation", comingSoon: true },
   { name: "Website + SEO Pack", price: 39, description: "Website builder, SEO optimization, blog & gallery" },
   { name: "Bid Network Pack", price: 49, description: "Competitive vendor bidding marketplace" }
 ];
@@ -535,7 +536,14 @@ export default function LandingPage() {
                         <feature.icon className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <h4 className="font-medium">{feature.name}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium">{feature.name}</h4>
+                          {(feature as any).comingSoon && (
+                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                              Coming Soon
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">{feature.description}</p>
                       </div>
                     </div>
@@ -566,7 +574,14 @@ export default function LandingPage() {
             {aiCapabilities.map((capability, index) => (
               <div key={index} className={`flex flex-col ${index % 2 === 0 ? 'lg:flex-row' : 'lg:flex-row-reverse'} gap-8 items-center`}>
                 <div className="flex-1">
-                  <h3 className="text-2xl font-bold mb-4">{capability.title}</h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    <h3 className="text-2xl font-bold">{capability.title}</h3>
+                    {(capability as any).comingSoon && (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                        Coming Soon
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-lg text-muted-foreground mb-6">{capability.description}</p>
                   <div className="flex flex-wrap gap-2">
                     {capability.features.map((feature, featIndex) => (
@@ -715,7 +730,14 @@ export default function LandingPage() {
               {addons.map((addon, index) => (
                 <div key={index} className="flex items-center justify-between p-4 rounded-lg border bg-card">
                   <div>
-                    <h4 className="font-medium">{addon.name}</h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-medium">{addon.name}</h4>
+                      {(addon as any).comingSoon && (
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
+                          Coming Soon
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">{addon.description}</p>
                   </div>
                   <div className="text-right flex-shrink-0 ml-4">
