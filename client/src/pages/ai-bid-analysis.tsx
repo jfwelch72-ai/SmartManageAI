@@ -127,6 +127,7 @@ export default function AIBidAnalysisPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document?archived=true"] });
       toast({ title: "Analysis archived", description: "The analysis has been moved to the archived tab." });
     },
     onError: (error: any) => {
@@ -145,6 +146,7 @@ export default function AIBidAnalysisPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document?archived=true"] });
       toast({ title: "Analysis restored", description: "The analysis has been restored from the archive." });
     },
     onError: (error: any) => {
@@ -163,6 +165,7 @@ export default function AIBidAnalysisPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document?archived=true"] });
       toast({ title: "Analysis deleted", description: "The analysis has been permanently deleted." });
     },
     onError: (error: any) => {
