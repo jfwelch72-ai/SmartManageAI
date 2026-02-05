@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowRight, 
   Check, 
@@ -34,7 +39,9 @@ import {
   ChevronRight,
   Play,
   Star,
-  CheckCircle2
+  CheckCircle2,
+  Bell,
+  Video
 } from "lucide-react";
 import heroImage from "../assets/images/landing/hero-construction.jpg";
 import teamImage from "../assets/images/landing/team-planning.jpg";
@@ -337,6 +344,30 @@ const tradeTypes = [
 ];
 
 export default function LandingPage() {
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  const handleNotifySubmit = async () => {
+    if (!notifyEmail.trim()) {
+      toast({ title: "Please enter your email", variant: "destructive" });
+      return;
+    }
+    
+    setIsSubmitting(true);
+    // Simulate submission - in production this would call an API
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsSubmitting(false);
+    
+    toast({ 
+      title: "You're on the list!", 
+      description: "We'll notify you when the demo video is ready." 
+    });
+    setNotifyEmail("");
+    setShowDemoModal(false);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
@@ -398,7 +429,13 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Button size="lg" variant="secondary" className="w-full sm:w-auto bg-white/10 border-white/30 text-white" data-testid="button-hero-demo">
+              <Button 
+                size="lg" 
+                variant="secondary" 
+                className="w-full sm:w-auto bg-white/10 border-white/30 text-white" 
+                onClick={() => setShowDemoModal(true)}
+                data-testid="button-hero-demo"
+              >
                 <Play className="mr-2 h-5 w-5" />
                 Watch Demo
               </Button>
@@ -830,6 +867,48 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Demo Coming Soon Modal */}
+      <Dialog open={showDemoModal} onOpenChange={setShowDemoModal}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-demo-coming-soon">
+          <DialogHeader>
+            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+              <Video className="w-8 h-8 text-primary" />
+            </div>
+            <DialogTitle className="text-center text-2xl" data-testid="text-demo-modal-title">Demo Coming Soon!</DialogTitle>
+            <DialogDescription className="text-center" data-testid="text-demo-modal-description">
+              We're putting the finishing touches on our product demo video. 
+              Leave your email below and we'll notify you the moment it's ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="notify-email">Email Address</Label>
+              <Input
+                id="notify-email"
+                type="email"
+                placeholder="your@email.com"
+                value={notifyEmail}
+                onChange={(e) => setNotifyEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleNotifySubmit()}
+                data-testid="input-notify-email"
+              />
+            </div>
+            <Button 
+              onClick={handleNotifySubmit} 
+              className="w-full"
+              disabled={isSubmitting}
+              data-testid="button-notify-submit"
+            >
+              <Bell className="mr-2 h-4 w-4" />
+              {isSubmitting ? "Submitting..." : "Notify Me When Ready"}
+            </Button>
+            <p className="text-xs text-muted-foreground text-center" data-testid="text-demo-modal-privacy">
+              We respect your privacy. No spam, just one notification when the demo is live.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
