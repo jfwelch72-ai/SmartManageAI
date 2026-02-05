@@ -315,11 +315,7 @@ function AppContent() {
     route => location === route || (route !== '/' && location.startsWith(route))
   ) || location.startsWith('/site/');
   
-  if (isPublicRoute && !user && !isLoading) {
-    return <Router />;
-  }
-  
-  if (isPublicRoute && location === '/' && !user) {
+  if (isPublicRoute && !user) {
     return <Router />;
   }
   

@@ -392,12 +392,12 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 mb-12">
               <Link href="/register">
-                <Button size="lg" className="w-full sm:w-auto text-lg px-8 py-6" data-testid="button-hero-trial">
+                <Button size="lg" className="w-full sm:w-auto" data-testid="button-hero-trial">
                   Start Free 14-Day Trial
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Button size="lg" variant="outline" className="w-full sm:w-auto text-lg px-8 py-6 bg-white/10 border-white/30 text-white hover:bg-white/20" data-testid="button-hero-demo">
+              <Button size="lg" variant="secondary" className="w-full sm:w-auto bg-white/10 border-white/30 text-white" data-testid="button-hero-demo">
                 <Play className="mr-2 h-5 w-5" />
                 Watch Demo
               </Button>
@@ -748,12 +748,12 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/register">
-              <Button size="lg" className="text-lg px-8 py-6" data-testid="button-cta-trial">
+              <Button size="lg" data-testid="button-cta-trial">
                 Start Your Free Trial
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="text-lg px-8 py-6 bg-white/10 border-white/30 text-white hover:bg-white/20" data-testid="button-cta-demo">
+            <Button size="lg" variant="secondary" className="bg-white/10 border-white/30 text-white" data-testid="button-cta-demo">
               Schedule a Demo
             </Button>
           </div>

@@ -44,6 +44,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Unified Task Model**: Consolidates manual, email-originated, and AI-generated tasks, with email-specific fields for linking.
 *   **Operational Infrastructure**: Structured logging utility, monitoring hooks, health, and readiness probes.
 *   **Subscription & Billing System**: 4-tier membership model (FREE, STARTER, PROFESSIONAL, ENTERPRISE) with 6 add-ons (AI PM, AI CFO, AI Email, Website Builder, Bid Network, AI Vision). Backend feature gating via `requireFeature` middleware, frontend gating via `FeatureGate` component and `useEntitlements` hook. Plan matrix and pricing defined in `shared/billing/plans.ts`. Supports manual billing mode for development/testing.
+*   **Marketing Landing Page**: Comprehensive public landing page (`client/src/pages/landing.tsx`) shown to unauthenticated visitors. Features hero section with real construction imagery, pain points highlighting 8 common industry problems, solutions showcase, complete feature grid (36+ features across 6 categories), AI automation deep dive, pricing section with 4 tiers and 6 add-ons, and CTAs. SEO-optimized with meta tags and Open Graph data. Routing automatically shows landing page for "/" when not logged in, redirects to dashboard when authenticated.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
