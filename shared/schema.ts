@@ -645,6 +645,7 @@ export const tmTickets = pgTable("tm_tickets", {
   workOrderReference: text("work_order_reference"),
   
   // Standardized scope of work (matches estimating sheets for production rate tracking)
+  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
   workTypeId: varchar("work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
   workTypeCode: text("work_type_code"), // Machine-readable code for AI/production tracking
   workTypeName: text("work_type_name"), // Display name e.g. "4\" Sidewalk"
