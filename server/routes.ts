@@ -10819,7 +10819,7 @@ SmartManageAI Construction Management Platform
   // T&M Daily Sheet Routes
   // ====================
 
-  // Get T&M sheets for a project
+  // Get T&M sheets/tickets for a project (uses new tmTickets table)
   app.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest, res) => {
     try {
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
@@ -10829,13 +10829,14 @@ SmartManageAI Construction Management Platform
         return;
       }
 
-      const sheets = await db
+      // Query the new tmTickets table
+      const tickets = await db
         .select()
-        .from(tmDailySheets)
-        .where(eq(tmDailySheets.projectId, project.id))
-        .orderBy(desc(tmDailySheets.date));
+        .from(tmTickets)
+        .where(eq(tmTickets.projectId, project.id))
+        .orderBy(desc(tmTickets.workDate));
 
-      res.json(sheets);
+      res.json(tickets);
     } catch (error) {
       console.error("Get T&M sheets error:", error);
       res.status(500).json({ error: "Internal server error" });
