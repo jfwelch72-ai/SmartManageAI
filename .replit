@@ -50,4 +50,4 @@ defaultBucketID = "replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d"
 [userenv.shared]
 PRIVATE_OBJECT_DIR = "/replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d/private"
 PUBLIC_OBJECT_SEARCH_PATHS = "/replit-objstore-149fa3f8-8eee-49f6-9921-87aa25622d0d/public"
-EMAIL_FROM_ADDRESS = "SmartManageAI <noreply@smartmanageai.com>"
+EMAIL_FROM_ADDRESS = "SmartManageAI <noreply@mail.smartmanageai.com>"
