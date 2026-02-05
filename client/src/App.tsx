@@ -10,6 +10,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
 import NotFound from "@/pages/not-found";
+import LandingPage from "@/pages/landing";
 import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
@@ -152,9 +153,20 @@ function ProtectedRoute({
 }
 
 function Router() {
+  const { user, isLoading } = useAuth();
+  
   return (
     <Switch>
-      <Route path="/" component={() => <Redirect to="/dashboard" />} />
+      <Route path="/" component={() => {
+        if (isLoading) {
+          return (
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="text-muted-foreground">Loading...</div>
+            </div>
+          );
+        }
+        return user ? <Redirect to="/dashboard" /> : <LandingPage />;
+      }} />
       <Route path="/login" component={LoginPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
@@ -297,11 +309,17 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const [location] = useLocation();
-  const isPublicRoute = ['/login', '/register', '/forgot-password', '/reset-password'].some(
-    route => location.startsWith(route)
-  );
+  const { user, isLoading } = useAuth();
   
-  if (isPublicRoute) {
+  const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password'].some(
+    route => location === route || (route !== '/' && location.startsWith(route))
+  ) || location.startsWith('/site/');
+  
+  if (isPublicRoute && !user && !isLoading) {
+    return <Router />;
+  }
+  
+  if (isPublicRoute && location === '/' && !user) {
     return <Router />;
   }
   
