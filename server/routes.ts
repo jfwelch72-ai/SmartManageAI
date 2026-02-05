@@ -12954,7 +12954,7 @@ SmartManageAI Construction Management Platform
   app.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { userId, role } = req.body;
+      const { userId, role, skillIds } = req.body;
 
       if (!userId) {
         res.status(400).json({ error: "userId is required" });
@@ -12982,11 +12982,43 @@ SmartManageAI Construction Management Platform
         .values({ crewId: id, userId, role })
         .returning();
 
+      // Handle skill assignments if provided
+      if (skillIds && Array.isArray(skillIds) && skillIds.length > 0) {
+        // Get existing skills for this user to avoid duplicates
+        const existingUserSkills = await db
+          .select({ skillId: userSkills.skillId })
+          .from(userSkills)
+          .where(eq(userSkills.userId, userId));
+        
+        const existingSkillIds = new Set(existingUserSkills.map(s => s.skillId));
+        
+        // Filter out skills that are already assigned
+        const newSkillIds = skillIds.filter((skillId: string) => !existingSkillIds.has(skillId));
+        
+        // Insert new skill assignments
+        if (newSkillIds.length > 0) {
+          await db.insert(userSkills).values(
+            newSkillIds.map((skillId: string) => ({
+              userId,
+              skillId,
+            }))
+          );
+          
+          // Audit log for skill assignments
+          await logCreate(req.user!.id, "user_skills", `${userId}-skills`, {
+            userId,
+            skillIds: newSkillIds,
+            action: "bulk_assign",
+          }, req);
+        }
+      }
+
       // Audit log (pass raw object, not JSON.stringify)
       await logCreate(req.user!.id, "crew_members", newMember.id, {
         crewId: id,
         userId,
         role,
+        skillIds: skillIds || [],
       }, req);
 
       res.status(201).json(newMember);

@@ -83,6 +83,7 @@ export default function CrewsPage() {
   const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [memberRole, setMemberRole] = useState("");
+  const [memberSkillAssignments, setMemberSkillAssignments] = useState<{ category: string; skillId: string }[]>([]);
 
   // Data queries
   const { data: crews = [], isLoading: crewsLoading, refetch: refetchCrews } = useQuery<Crew[]>({
@@ -243,8 +244,8 @@ export default function CrewsPage() {
 
   // Crew member mutations
   const addMemberMutation = useMutation({
-    mutationFn: async ({ crewId, userId, role }: { crewId: string; userId: string; role: string }) =>
-      apiRequest("POST", `/api/crews/${crewId}/members`, { userId, role: role || null }),
+    mutationFn: async ({ crewId, userId, role, skillIds }: { crewId: string; userId: string; role: string; skillIds: string[] }) =>
+      apiRequest("POST", `/api/crews/${crewId}/members`, { userId, role: role || null, skillIds }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crews"] });
       refetchMembers();
@@ -252,11 +253,44 @@ export default function CrewsPage() {
       setShowAddMemberDialog(false);
       setSelectedUserId("");
       setMemberRole("");
+      setMemberSkillAssignments([]);
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to add member", variant: "destructive" });
     },
   });
+
+  // Get unique skill categories for the repeater dropdown
+  const skillCategories = useMemo(() => {
+    const categories = new Set<string>();
+    skills.forEach((skill) => {
+      if (skill.category) categories.add(skill.category);
+    });
+    return Array.from(categories).sort();
+  }, [skills]);
+
+  // Filter skills by category for the skill name dropdown
+  const getSkillsByCategory = (category: string) => {
+    return skills.filter((skill) => skill.category === category);
+  };
+
+  // Skill assignment repeater handlers
+  const addSkillRow = () => {
+    setMemberSkillAssignments([...memberSkillAssignments, { category: "", skillId: "" }]);
+  };
+
+  const removeSkillRow = (index: number) => {
+    setMemberSkillAssignments(memberSkillAssignments.filter((_, i) => i !== index));
+  };
+
+  const updateSkillRow = (index: number, field: "category" | "skillId", value: string) => {
+    const updated = [...memberSkillAssignments];
+    updated[index] = { ...updated[index], [field]: value };
+    if (field === "category") {
+      updated[index].skillId = "";
+    }
+    setMemberSkillAssignments(updated);
+  };
 
   const removeMemberMutation = useMutation({
     mutationFn: async ({ crewId, userId }: { crewId: string; userId: string }) =>
@@ -340,10 +374,15 @@ export default function CrewsPage() {
 
     if (!selectedCrewForMembers) return;
 
+    const skillIds = memberSkillAssignments
+      .filter((s) => s.skillId)
+      .map((s) => s.skillId);
+
     addMemberMutation.mutate({
       crewId: selectedCrewForMembers.id,
       userId: selectedUserId,
       role: memberRole || "",
+      skillIds,
     });
   };
 
@@ -940,6 +979,73 @@ export default function CrewsPage() {
                 placeholder="e.g., Foreman, Laborer"
                 data-testid="input-member-role"
               />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Skill Assignments (Optional)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addSkillRow}
+                  data-testid="button-add-skill-row"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Skill
+                </Button>
+              </div>
+
+              {memberSkillAssignments.length > 0 && (
+                <div className="space-y-2">
+                  {memberSkillAssignments.map((row, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Select
+                        value={row.category}
+                        onValueChange={(value) => updateSkillRow(index, "category", value)}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-skill-category-${index}`}>
+                          <SelectValue placeholder="Select Category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {skillCategories.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={row.skillId}
+                        onValueChange={(value) => updateSkillRow(index, "skillId", value)}
+                        disabled={!row.category}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-skill-name-${index}`}>
+                          <SelectValue placeholder="Select Skill" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getSkillsByCategory(row.category).map((skill) => (
+                            <SelectItem key={skill.id} value={skill.id}>
+                              {skill.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeSkillRow(index)}
+                        data-testid={`button-remove-skill-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
