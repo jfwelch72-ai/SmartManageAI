@@ -257,6 +257,7 @@ export const RoutePermissions = {
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
+  TM_BILLING: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   CRM: (role?: string) => hasManagementAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
@@ -424,6 +425,12 @@ export const NavigationConfig = {
       label: "T&M Daily Sheets",
       testId: "nav-tm-daily",
       visible: (role?: string) => hasManagementAccess(role),
+    },
+    {
+      href: "/tm-billing",
+      label: "T&M Billing",
+      testId: "nav-tm-billing",
+      visible: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
     },
   ],
 

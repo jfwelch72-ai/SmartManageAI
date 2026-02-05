@@ -931,7 +931,8 @@ export function registerTMTicketRoutes(app: Express) {
       });
 
       // Filter by organization if needed
-      const projectIds = [...new Set(tickets.map(t => t.projectId))];
+      const projectIdSet = new Set(tickets.map(t => t.projectId));
+      const projectIds = Array.from(projectIdSet);
       const projectsData = projectIds.length > 0 
         ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
         : [];
@@ -1003,10 +1004,10 @@ export function registerTMTicketRoutes(app: Express) {
       // Create audit log
       await db.insert(auditLog).values({
         userId: req.user!.id,
-        action: "TM_TICKET_BILLING_APPROVED",
-        resourceType: "tm_ticket",
-        resourceId: ticketId,
-        details: JSON.stringify({ billingNotes }),
+        action: "UPDATE",
+        entityType: "tm_ticket",
+        entityId: ticketId,
+        newValue: JSON.stringify({ billingStatus: "APPROVED_FOR_BILLING", billingNotes }),
         ipAddress: req.ip || "unknown",
       });
 
@@ -1033,7 +1034,8 @@ export function registerTMTicketRoutes(app: Express) {
       });
 
       // Filter by organization
-      const projectIds = [...new Set(tickets.map(t => t.projectId))];
+      const projectIdSet = new Set(tickets.map(t => t.projectId));
+      const projectIds = Array.from(projectIdSet);
       const projectsData = projectIds.length > 0 
         ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
         : [];
@@ -1140,10 +1142,10 @@ export function registerTMTicketRoutes(app: Express) {
       // Create audit log
       await db.insert(auditLog).values({
         userId: req.user!.id,
-        action: "TM_INVOICE_CREATED",
-        resourceType: "tm_invoice",
-        resourceId: invoice.id,
-        details: JSON.stringify({ ticketIds, invoiceNumber, total }),
+        action: "CREATE",
+        entityType: "tm_invoice",
+        entityId: invoice.id,
+        newValue: JSON.stringify({ ticketIds, invoiceNumber, total }),
         ipAddress: req.ip || "unknown",
       });
 
@@ -1291,10 +1293,10 @@ export function registerTMTicketRoutes(app: Express) {
       // Create audit log
       await db.insert(auditLog).values({
         userId: req.user!.id,
-        action: "TM_INVOICE_PAID",
-        resourceType: "tm_invoice",
-        resourceId: invoiceId,
-        details: JSON.stringify({ invoiceNumber: invoice.invoiceNumber, total: invoice.total }),
+        action: "UPDATE",
+        entityType: "tm_invoice",
+        entityId: invoiceId,
+        newValue: JSON.stringify({ status: "PAID", invoiceNumber: invoice.invoiceNumber, total: invoice.total }),
         ipAddress: req.ip || "unknown",
       });
 
@@ -1323,7 +1325,8 @@ export function registerTMTicketRoutes(app: Express) {
       // Filter by org if needed
       let filteredTickets = allTickets;
       if (shouldFilter && orgId) {
-        const projectIds = [...new Set(allTickets.map(t => t.projectId))];
+        const projectIdSet = new Set(allTickets.map(t => t.projectId));
+        const projectIds = Array.from(projectIdSet);
         const projectsData = projectIds.length > 0 
           ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
           : [];
