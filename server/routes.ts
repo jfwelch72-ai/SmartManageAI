@@ -10819,7 +10819,7 @@ SmartManageAI Construction Management Platform
   // T&M Daily Sheet Routes
   // ====================
 
-  // Get T&M sheets/tickets for a project (uses new tmTickets table)
+  // Get T&M sheets/tickets for a project (uses new tmTickets table, mapped to legacy format)
   app.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest, res) => {
     try {
       const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
@@ -10829,14 +10829,51 @@ SmartManageAI Construction Management Platform
         return;
       }
 
-      // Query the new tmTickets table
+      // Query the new tmTickets table with user info for rep name
       const tickets = await db
-        .select()
+        .select({
+          ticket: tmTickets,
+          repFirstName: users.firstName,
+          repLastName: users.lastName,
+        })
         .from(tmTickets)
+        .leftJoin(users, eq(tmTickets.tfrRepresentativeId, users.id))
         .where(eq(tmTickets.projectId, project.id))
         .orderBy(desc(tmTickets.workDate));
 
-      res.json(tickets);
+      // Map tmTickets fields to the format the frontend expects (compatible with legacy TMDailySheet format)
+      const mappedSheets = tickets.map(row => ({
+        id: row.ticket.id,
+        projectId: row.ticket.projectId,
+        date: row.ticket.workDate, // Map workDate to date for frontend compatibility
+        tfrRepName: row.repFirstName && row.repLastName 
+          ? `${row.repFirstName} ${row.repLastName}` 
+          : "Unknown",
+        clientRepName: null,
+        weather: null,
+        descriptionOfWork: row.ticket.scopeDescription,
+        crewSize: null,
+        laborSummaryJson: null,
+        equipmentUsedJson: null,
+        materialsUsedJson: null,
+        attachmentsJson: null,
+        clientSignatureName: null,
+        clientSignatureDate: null,
+        createdById: row.ticket.createdById,
+        createdAt: row.ticket.createdAt,
+        updatedAt: row.ticket.updatedAt,
+        // Also include tmTickets-specific fields for enhanced display
+        ticketNumber: row.ticket.ticketNumber,
+        status: row.ticket.status,
+        billingStatus: row.ticket.billingStatus,
+        grandTotal: row.ticket.grandTotal,
+        workTypeName: row.ticket.workTypeName,
+        categoryName: row.ticket.categoryName,
+        scopeQuantity: row.ticket.scopeQuantity,
+        scopeUnit: row.ticket.scopeUnit,
+      }));
+
+      res.json(mappedSheets);
     } catch (error) {
       console.error("Get T&M sheets error:", error);
       res.status(500).json({ error: "Internal server error" });
