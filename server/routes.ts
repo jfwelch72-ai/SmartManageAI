@@ -16311,8 +16311,8 @@ SmartManageAI Construction Management Platform
         endingHours,
         hoursUsed,
         submittedById: req.user!.id,
-        notes,
-        fuelUsed,
+        notes: notes || null,
+        fuelUsed: fuelUsed && fuelUsed !== "" ? fuelUsed : null,
       }).returning();
       
       // Update equipment current hours
