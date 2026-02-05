@@ -895,11 +895,12 @@ export default function CrewsPage() {
                 <SelectContent>
                   {users
                     .filter((u) => 
+                      u.role === "HOURLY_EMPLOYEE" &&
                       !crewMembers.some((cm) => cm.user.id === u.id)
                     )
                     .map((u) => (
                       <SelectItem key={u.id} value={u.id}>
-                        {u.firstName} {u.lastName} ({u.role})
+                        {u.firstName} {u.lastName}
                       </SelectItem>
                     ))}
                 </SelectContent>
