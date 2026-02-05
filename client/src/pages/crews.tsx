@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter } from "lucide-react";
+import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter, Sparkles } from "lucide-react";
 
 interface Crew {
   id: string;
@@ -222,6 +222,22 @@ export default function CrewsPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to delete skill", variant: "destructive" });
+    },
+  });
+
+  const generateSkillsMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/skills/generate"),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/skills"] });
+      toast({ 
+        title: "Skills Generated", 
+        description: data.created > 0 
+          ? `${data.created} new construction skills have been added` 
+          : "All skills already exist in the system"
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to generate skills", variant: "destructive" });
     },
   });
 
@@ -562,6 +578,15 @@ export default function CrewsPage() {
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Create Skill
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => generateSkillsMutation.mutate()}
+                  disabled={generateSkillsMutation.isPending}
+                  data-testid="button-generate-skills"
+                >
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {generateSkillsMutation.isPending ? "Generating..." : "Generate Skills"}
                 </Button>
               </div>
             </div>

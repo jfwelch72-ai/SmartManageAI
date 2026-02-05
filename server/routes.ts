@@ -13200,6 +13200,98 @@ SmartManageAI Construction Management Platform
     }
   });
 
+  // Generate predefined construction skills
+  app.post("/api/skills/generate", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const predefinedSkills = [
+        // Safety & Compliance
+        { name: "OSHA 10 Certified", category: "Safety", description: "Completed OSHA 10-hour construction safety training" },
+        { name: "OSHA 30 Certified", category: "Safety", description: "Completed OSHA 30-hour construction safety training" },
+        { name: "First Aid/CPR Certified", category: "Safety", description: "Current first aid and CPR certification" },
+        { name: "Confined Space Entry", category: "Safety", description: "Trained in confined space entry procedures" },
+        { name: "Fall Protection", category: "Safety", description: "Trained in fall protection and prevention" },
+        
+        // Equipment Operation
+        { name: "Forklift Operator", category: "Equipment", description: "Licensed to operate forklifts and material handlers" },
+        { name: "Crane Operator", category: "Equipment", description: "Certified crane operator" },
+        { name: "Excavator Operator", category: "Equipment", description: "Skilled in operating excavators and backhoes" },
+        { name: "Skid Steer Operator", category: "Equipment", description: "Proficient in skid steer loader operation" },
+        { name: "Boom Lift Operator", category: "Equipment", description: "Certified to operate aerial boom lifts" },
+        { name: "Scissor Lift Operator", category: "Equipment", description: "Certified to operate scissor lifts" },
+        
+        // Trade Skills - Concrete
+        { name: "Concrete Finishing", category: "Concrete", description: "Skilled in concrete finishing and troweling" },
+        { name: "Concrete Forming", category: "Concrete", description: "Experienced in building concrete forms" },
+        { name: "Concrete Pouring", category: "Concrete", description: "Skilled in concrete placement and pouring" },
+        { name: "Rebar Tying", category: "Concrete", description: "Proficient in rebar installation and tying" },
+        
+        // Trade Skills - Carpentry
+        { name: "Rough Carpentry", category: "Carpentry", description: "Skilled in framing and structural carpentry" },
+        { name: "Finish Carpentry", category: "Carpentry", description: "Skilled in trim, molding, and finish work" },
+        { name: "Cabinet Installation", category: "Carpentry", description: "Experienced in cabinet and countertop installation" },
+        { name: "Drywall Installation", category: "Carpentry", description: "Skilled in drywall hanging and finishing" },
+        
+        // Trade Skills - Electrical
+        { name: "Electrical Wiring", category: "Electrical", description: "Skilled in electrical wiring and connections" },
+        { name: "Conduit Bending", category: "Electrical", description: "Proficient in conduit bending and installation" },
+        { name: "Panel Installation", category: "Electrical", description: "Experienced in electrical panel installation" },
+        
+        // Trade Skills - Plumbing
+        { name: "Pipe Fitting", category: "Plumbing", description: "Skilled in pipe fitting and installation" },
+        { name: "Copper Soldering", category: "Plumbing", description: "Proficient in copper pipe soldering" },
+        { name: "PVC Installation", category: "Plumbing", description: "Experienced in PVC pipe systems" },
+        
+        // Trade Skills - General
+        { name: "Blueprint Reading", category: "General", description: "Able to read and interpret construction blueprints" },
+        { name: "Surveying/Layout", category: "General", description: "Skilled in site layout and surveying" },
+        { name: "Welding", category: "General", description: "Certified welder for structural and pipe welding" },
+        { name: "Painting", category: "General", description: "Skilled in commercial and industrial painting" },
+        { name: "Roofing", category: "General", description: "Experienced in roofing installation and repair" },
+        { name: "Masonry", category: "General", description: "Skilled in brick, block, and stone work" },
+        
+        // Leadership
+        { name: "Crew Leadership", category: "Leadership", description: "Experience leading construction crews" },
+        { name: "Project Coordination", category: "Leadership", description: "Able to coordinate multiple trades and tasks" },
+        { name: "Quality Control", category: "Leadership", description: "Trained in construction quality control procedures" },
+      ];
+
+      // Get existing skills to avoid duplicates
+      const existingSkills = await db.select({ name: skills.name }).from(skills);
+      const existingNames = new Set(existingSkills.map(s => s.name.toLowerCase()));
+
+      // Filter out skills that already exist
+      const newSkills = predefinedSkills.filter(
+        skill => !existingNames.has(skill.name.toLowerCase())
+      );
+
+      if (newSkills.length === 0) {
+        res.status(200).json({ message: "All skills already exist", created: 0 });
+        return;
+      }
+
+      // Insert new skills
+      const createdSkills = await db.insert(skills).values(newSkills).returning();
+
+      // Audit log for each created skill
+      for (const skill of createdSkills) {
+        await logCreate(req.user!.id, "skills", skill.id, {
+          name: skill.name,
+          category: skill.category,
+          generated: true,
+        }, req);
+      }
+
+      res.status(201).json({ 
+        message: `Generated ${createdSkills.length} new skills`,
+        created: createdSkills.length,
+        skills: createdSkills 
+      });
+    } catch (error) {
+      console.error("Error generating skills:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Delete skill (admin only)
   app.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
