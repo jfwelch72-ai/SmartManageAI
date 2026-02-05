@@ -635,6 +635,52 @@ export const tmDailySheets = pgTable("tm_daily_sheets", {
 // T&M Ticket Status Enum
 export const tmTicketStatusEnum = pgEnum("tm_ticket_status", ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]);
 
+// T&M Billing Status Enum
+export const tmBillingStatusEnum = pgEnum("tm_billing_status", ["PENDING", "APPROVED_FOR_BILLING", "INVOICED", "BILLED"]);
+
+// T&M Invoice Status Enum
+export const tmInvoiceStatusEnum = pgEnum("tm_invoice_status", ["DRAFT", "SENT", "PAID", "CANCELLED"]);
+
+// T&M Invoices table - generated invoices for T&M tickets
+export const tmInvoices = pgTable("tm_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  invoiceNumber: text("invoice_number").notNull(),
+  invoiceDate: date("invoice_date").notNull(),
+  dueDate: date("due_date"),
+  
+  // Client/billing info
+  clientName: text("client_name").notNull(),
+  clientAddress: text("client_address"),
+  clientEmail: text("client_email"),
+  
+  // Totals
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull().default("0"),
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0"),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 12, scale: 2 }).notNull().default("0"),
+  
+  // Status and workflow
+  status: tmInvoiceStatusEnum("status").notNull().default("DRAFT"),
+  sentAt: timestamp("sent_at"),
+  paidAt: timestamp("paid_at"),
+  notes: text("notes"),
+  
+  // PDF generation
+  pdfUrl: text("pdf_url"),
+  pdfObjectKey: text("pdf_object_key"),
+  
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  organizationIdIdx: index("tm_invoices_organization_id_idx").on(table.organizationId),
+  projectIdIdx: index("tm_invoices_project_id_idx").on(table.projectId),
+  statusIdx: index("tm_invoices_status_idx").on(table.status),
+  invoiceDateIdx: index("tm_invoices_invoice_date_idx").on(table.invoiceDate),
+}));
+
 // T&M Work Tickets table - comprehensive tracking for time & material work
 export const tmTickets = pgTable("tm_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -683,6 +729,14 @@ export const tmTickets = pgTable("tm_tickets", {
   signedDocumentObjectKey: text("signed_document_object_key"),
   signedDocumentUploadedAt: timestamp("signed_document_uploaded_at"),
   
+  // Billing workflow (Office Manager approval for invoicing)
+  billingStatus: tmBillingStatusEnum("billing_status").notNull().default("PENDING"),
+  billingApprovedAt: timestamp("billing_approved_at"),
+  billingApprovedById: varchar("billing_approved_by_id").references(() => users.id),
+  invoiceId: varchar("invoice_id").references(() => tmInvoices.id, { onDelete: "set null" }),
+  billedAt: timestamp("billed_at"),
+  billingNotes: text("billing_notes"),
+  
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -691,6 +745,7 @@ export const tmTickets = pgTable("tm_tickets", {
   statusIdx: index("tm_tickets_status_idx").on(table.status),
   workDateIdx: index("tm_tickets_work_date_idx").on(table.workDate),
   workTypeCodeIdx: index("tm_tickets_work_type_code_idx").on(table.workTypeCode),
+  billingStatusIdx: index("tm_tickets_billing_status_idx").on(table.billingStatus),
 }));
 
 // T&M Ticket Labor Entries
@@ -2151,6 +2206,18 @@ export type PrevailingWageRate = typeof prevailingWageRates.$inferSelect;
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
 
+// T&M Invoice schemas and types
+export const insertTMInvoiceSchema = createInsertSchema(tmInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentAt: true,
+  paidAt: true,
+});
+
+export type InsertTMInvoice = z.infer<typeof insertTMInvoiceSchema>;
+export type TMInvoice = typeof tmInvoices.$inferSelect;
+
 // T&M Ticket schemas and types
 export const insertTMTicketSchema = createInsertSchema(tmTickets).omit({
   id: true,
@@ -2160,6 +2227,8 @@ export const insertTMTicketSchema = createInsertSchema(tmTickets).omit({
   approvedAt: true,
   rejectedAt: true,
   signedDocumentUploadedAt: true,
+  billingApprovedAt: true,
+  billedAt: true,
 });
 
 export const insertTMTicketLaborEntrySchema = createInsertSchema(tmTicketLaborEntries).omit({
