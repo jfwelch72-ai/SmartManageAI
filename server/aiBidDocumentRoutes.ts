@@ -232,12 +232,19 @@ router.get("/ai-bid-document/bids", requireAuth, async (req: AuthRequest, res: R
 router.get("/ai-bid-document", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    const archived = req.query.archived === "true";
     
     if (mustDenyAccess) {
       return res.json([]);
     }
 
-    let query = db
+    const conditions = [eq(aiBidDocumentAnalysis.isArchived, archived)];
+    
+    if (shouldFilter && orgId) {
+      conditions.push(eq(aiBidDocumentAnalysis.organizationId, orgId));
+    }
+
+    const analyses = await db
       .select({
         id: aiBidDocumentAnalysis.id,
         bidId: aiBidDocumentAnalysis.bidId,
@@ -251,16 +258,13 @@ router.get("/ai-bid-document", requireAuth, async (req: AuthRequest, res: Respon
         projectName: aiBidDocumentAnalysis.projectName,
         clientName: aiBidDocumentAnalysis.clientName,
         scopeSummary: aiBidDocumentAnalysis.scopeSummary,
+        isArchived: aiBidDocumentAnalysis.isArchived,
+        archivedAt: aiBidDocumentAnalysis.archivedAt,
       })
       .from(aiBidDocumentAnalysis)
+      .where(and(...conditions))
       .orderBy(desc(aiBidDocumentAnalysis.createdAt))
       .limit(100);
-
-    if (shouldFilter && orgId) {
-      query = query.where(eq(aiBidDocumentAnalysis.organizationId, orgId)) as typeof query;
-    }
-
-    const analyses = await query;
     
     // Enrich with bid info
     const enrichedAnalyses = await Promise.all(analyses.map(async (analysis) => {
@@ -472,6 +476,121 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
 
   } catch (error) {
     console.error("Reanalyze AI bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/ai-bid-document/:id/archive - Soft delete (archive) an analysis
+router.patch("/ai-bid-document/:id/archive", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await db
+      .update(aiBidDocumentAnalysis)
+      .set({ 
+        isArchived: true, 
+        archivedAt: new Date(),
+        updatedAt: new Date() 
+      })
+      .where(eq(aiBidDocumentAnalysis.id, id));
+
+    res.json({ success: true, message: "Analysis archived successfully" });
+  } catch (error) {
+    console.error("Archive AI bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/ai-bid-document/:id/restore - Restore an archived analysis
+router.patch("/ai-bid-document/:id/restore", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await db
+      .update(aiBidDocumentAnalysis)
+      .set({ 
+        isArchived: false, 
+        archivedAt: null,
+        updatedAt: new Date() 
+      })
+      .where(eq(aiBidDocumentAnalysis.id, id));
+
+    res.json({ success: true, message: "Analysis restored successfully" });
+  } catch (error) {
+    console.error("Restore AI bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /api/ai-bid-document/:id - Hard delete (permanent) an analysis
+router.delete("/ai-bid-document/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "ESTIMATOR", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    if (shouldFilter && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await db
+      .delete(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id));
+
+    res.json({ success: true, message: "Analysis permanently deleted" });
+  } catch (error) {
+    console.error("Delete AI bid document error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

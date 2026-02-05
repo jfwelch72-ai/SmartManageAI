@@ -1620,12 +1620,18 @@ export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
   analyzedById: varchar("analyzed_by_id").references(() => users.id),
   analyzedAt: timestamp("analyzed_at"),
   errorMessage: text("error_message"),
+  
+  // Soft delete / Archive fields
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   bidIdx: index("ai_bid_document_analysis_bid_idx").on(table.bidId),
   orgIdx: index("ai_bid_document_analysis_org_idx").on(table.organizationId),
   statusIdx: index("ai_bid_document_analysis_status_idx").on(table.status),
+  archivedIdx: index("ai_bid_document_analysis_archived_idx").on(table.isArchived),
 }));
 
 // AI Contract/Award Document Analysis (AI-powered award/contract document review)

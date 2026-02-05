@@ -26,8 +26,12 @@ import {
   DollarSign,
   Target,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Trash2,
+  Archive,
+  RotateCcw
 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format, formatDistanceToNow } from "date-fns";
 
 interface BidForAnalysis {
@@ -51,6 +55,8 @@ interface BidDocumentAnalysis {
   createdAt: string;
   analyzedAt: string | null;
   analyzedByName: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
 }
 
 export default function AIBidAnalysisPage() {
@@ -103,6 +109,66 @@ export default function AIBidAnalysisPage() {
       toast({ 
         title: "Re-analysis failed", 
         description: error.message || "Failed to re-analyze document", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Query for archived analyses
+  const { data: archivedAnalyses = [], isLoading: loadingArchived } = useQuery<BidDocumentAnalysis[]>({
+    queryKey: ["/api/ai-bid-document?archived=true"],
+    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER", "ESTIMATOR"].includes(user.role)
+  });
+
+  // Archive (soft delete) mutation
+  const archiveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("PATCH", `/api/ai-bid-document/${id}/archive`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      toast({ title: "Analysis archived", description: "The analysis has been moved to the archived tab." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Archive failed", 
+        description: error.message || "Failed to archive analysis", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Restore from archive mutation
+  const restoreMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("PATCH", `/api/ai-bid-document/${id}/restore`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      toast({ title: "Analysis restored", description: "The analysis has been restored from the archive." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Restore failed", 
+        description: error.message || "Failed to restore analysis", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Permanent delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/ai-bid-document/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-bid-document"] });
+      toast({ title: "Analysis deleted", description: "The analysis has been permanently deleted." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Delete failed", 
+        description: error.message || "Failed to delete analysis", 
         variant: "destructive" 
       });
     }
@@ -258,6 +324,10 @@ export default function AIBidAnalysisPage() {
               Failed ({failedAnalyses.length})
             </TabsTrigger>
           )}
+          <TabsTrigger value="archived" data-testid="tab-bid-archived">
+            <Archive className="h-4 w-4 mr-2" />
+            Archived ({archivedAnalyses.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="new" className="mt-6">
@@ -282,10 +352,10 @@ export default function AIBidAnalysisPage() {
           ) : (
             <div className="space-y-4">
               {analyses.slice(0, 10).map(analysis => (
-                <Card key={analysis.id} className="hover-elevate cursor-pointer" onClick={() => openResultDialog(analysis)}>
+                <Card key={analysis.id} className="hover-elevate">
                   <CardContent className="py-4">
                     <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex items-center gap-4 min-w-0">
+                      <div className="flex items-center gap-4 min-w-0 cursor-pointer" onClick={() => openResultDialog(analysis)}>
                         <div className="p-2 bg-primary/10 rounded-lg">
                           <FileText className="h-5 w-5 text-primary" />
                         </div>
@@ -301,10 +371,34 @@ export default function AIBidAnalysisPage() {
                         <span className="text-sm text-muted-foreground">
                           {formatDistanceToNow(new Date(analysis.createdAt), { addSuffix: true })}
                         </span>
-                        <Button size="sm" variant="outline" data-testid={`button-view-${analysis.id}`}>
+                        <Button size="sm" variant="outline" onClick={() => openResultDialog(analysis)} data-testid={`button-view-${analysis.id}`}>
                           <Eye className="h-4 w-4 mr-1" />
                           View
                         </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" className="text-destructive" data-testid={`button-delete-${analysis.id}`}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Archive this analysis?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will move the analysis to the Archived tab. You can restore it later or permanently delete it from there.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => archiveMutation.mutate(analysis.id)}
+                                className="bg-destructive text-destructive-foreground"
+                              >
+                                Archive
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                   </CardContent>
@@ -388,6 +482,90 @@ export default function AIBidAnalysisPage() {
               </CardContent>
             </Card>
           ))}
+        </TabsContent>
+
+        <TabsContent value="archived" className="mt-6">
+          {loadingArchived ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}
+            </div>
+          ) : archivedAnalyses.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Archive className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No archived analyses</h3>
+                <p className="text-sm">Deleted analyses will appear here</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {archivedAnalyses.map(analysis => (
+                <Card key={analysis.id} className="opacity-75">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="p-2 bg-muted rounded-lg">
+                          <FileText className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-medium truncate">{analysis.fileName}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {analysis.bidCode} - {analysis.bidName}
+                          </p>
+                          {analysis.archivedAt && (
+                            <p className="text-xs text-muted-foreground">
+                              Archived {formatDistanceToNow(new Date(analysis.archivedAt), { addSuffix: true })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => restoreMutation.mutate(analysis.id)}
+                          disabled={restoreMutation.isPending}
+                          data-testid={`button-restore-${analysis.id}`}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-1" />
+                          Restore
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="destructive"
+                              data-testid={`button-permanent-delete-${analysis.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete Forever
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Permanently delete this analysis?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. The analysis and all associated data will be permanently removed from the database.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => deleteMutation.mutate(analysis.id)}
+                                className="bg-destructive text-destructive-foreground"
+                              >
+                                Delete Permanently
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
