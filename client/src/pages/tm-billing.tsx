@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -518,11 +519,13 @@ export default function TMBillingPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="dueDate">Due Date</Label>
-                <Input 
-                  id="dueDate" 
-                  type="date"
-                  value={invoiceFormData.dueDate}
-                  onChange={(e) => setInvoiceFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                <DatePicker
+                  value={invoiceFormData.dueDate || undefined}
+                  onChange={(date) => setInvoiceFormData(prev => ({ 
+                    ...prev, 
+                    dueDate: date ? format(date, "yyyy-MM-dd") : "" 
+                  }))}
+                  placeholder="Select due date"
                   data-testid="input-due-date"
                 />
               </div>
