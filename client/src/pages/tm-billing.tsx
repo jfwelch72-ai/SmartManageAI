@@ -100,7 +100,9 @@ export default function TMBillingPage() {
       return apiRequest("POST", `/api/tm-tickets/${ticketId}/approve-for-billing`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/approved"] });
       toast({ title: "Ticket approved for billing" });
     },
     onError: () => {
@@ -113,7 +115,9 @@ export default function TMBillingPage() {
       return apiRequest("POST", "/api/tm-invoices", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/approved"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tm-invoices"] });
       setShowInvoiceDialog(false);
       setSelectedTickets(new Set());
@@ -130,7 +134,7 @@ export default function TMBillingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tm-invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
       toast({ title: "Invoice marked as paid" });
     },
     onError: () => {
@@ -144,6 +148,7 @@ export default function TMBillingPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tm-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
       toast({ title: "Invoice marked as sent" });
     },
     onError: () => {
