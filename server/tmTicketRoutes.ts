@@ -25,7 +25,7 @@ function hasTMCreateAccess(role: string): boolean {
 }
 
 function hasTMApprovalAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER"].includes(role);
+  return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
 }
 
 function hasBillingApprovalAccess(role: string): boolean {
@@ -453,6 +453,7 @@ export function registerTMTicketRoutes(app: Express) {
       const [updatedTicket] = await db.update(tmTickets)
         .set({
           status: "APPROVED",
+          billingStatus: "PENDING",
           approvedAt: new Date(),
           approvedById: userId,
           updatedAt: new Date(),
