@@ -148,7 +148,8 @@ export function registerTMTicketRoutes(app: Express) {
         materialEntries, 
         description,
         // Standardized scope fields
-        workTypeId,
+        workTypeId, // Frontend sends organizationSowItemId here
+        organizationSowItemId, // Direct field if sent
         workTypeCode,
         workTypeName,
         categoryName,
@@ -160,6 +161,9 @@ export function registerTMTicketRoutes(app: Express) {
         ...restTicketData 
       } = req.body;
       
+      // Use organizationSowItemId if provided, otherwise use workTypeId (frontend compatibility)
+      const sowItemId = organizationSowItemId || workTypeId || null;
+      
       // Create the ticket with standardized scope data
       const [newTicket] = await db.insert(tmTickets).values({
         ...restTicketData,
@@ -168,8 +172,10 @@ export function registerTMTicketRoutes(app: Express) {
         createdById: userId,
         tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
         scopeDescription: description || restTicketData.scopeDescription || "Work performed",
-        // Standardized scope of work (matches estimating sheets for production rate tracking)
-        workTypeId: workTypeId || null,
+        // Link to organization SOW item for unified tracking (Estimate → Project → T&M → Production Rates)
+        organizationSowItemId: sowItemId,
+        // workTypeId is for scope_work_types category reference, not org SOW items
+        workTypeId: null,
         workTypeCode: workTypeCode || null,
         workTypeName: workTypeName || null,
         categoryName: categoryName || null,
