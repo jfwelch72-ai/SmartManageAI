@@ -192,7 +192,7 @@ export default function EquipmentPage() {
     return typeOption ? typeOption.label : type;
   };
   
-  const canManageEquipment = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT";
+  const canManageEquipment = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "MAINTENANCE_MANAGER";
   const canDeleteEquipment = user?.role === "ADMIN" || user?.role === "MANAGER";
   
   if (!user) return null;
