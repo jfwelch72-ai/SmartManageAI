@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
+import { Loader2 } from "lucide-react";
 
 interface RegisterFormProps {
   onRegister: (data: {
@@ -23,6 +24,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,11 +35,12 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await onRegister({
         firstName,
@@ -47,15 +50,18 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
         password,
       });
     } catch (err: any) {
-      setError(err.message || "Registration failed");
+      const message = parseErrorMessage(err.message);
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-2 text-center">
-        <CardTitle className="text-2xl font-bold">Join SmartManageAI</CardTitle>
-        <CardDescription className="text-base">
+        <CardTitle className="text-2xl font-bold" data-testid="text-register-title">Join SmartManageAI</CardTitle>
+        <CardDescription className="text-base" data-testid="text-register-description">
           Great to have you here! Let's set up your account in just a few steps.
         </CardDescription>
       </CardHeader>
@@ -71,6 +77,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 required
+                disabled={isSubmitting}
                 data-testid="input-firstName"
               />
             </div>
@@ -83,6 +90,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 required
+                disabled={isSubmitting}
                 data-testid="input-lastName"
               />
             </div>
@@ -96,6 +104,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={isSubmitting}
               data-testid="input-email"
             />
           </div>
@@ -107,6 +116,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
               placeholder="(555) 123-4567"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              disabled={isSubmitting}
               data-testid="input-phone"
             />
           </div>
@@ -115,11 +125,15 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
             <Input
               id="password"
               type="password"
+              placeholder="Min. 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              minLength={8}
+              disabled={isSubmitting}
               data-testid="input-password"
             />
+            <p className="text-xs text-muted-foreground" data-testid="text-password-hint">Must be at least 8 characters</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">Confirm Password</Label>
@@ -129,6 +143,7 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
+              disabled={isSubmitting}
               data-testid="input-confirmPassword"
             />
           </div>
@@ -137,8 +152,15 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
               {error}
             </div>
           )}
-          <Button type="submit" className="w-full" data-testid="button-register">
-            Create Account
+          <Button type="submit" className="w-full" disabled={isSubmitting} data-testid="button-register">
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating Account...
+              </>
+            ) : (
+              "Create Account"
+            )}
           </Button>
           <div className="text-center text-sm text-muted-foreground">
             Already have an account?{" "}
@@ -150,4 +172,36 @@ export default function RegisterForm({ onRegister }: RegisterFormProps) {
       </CardContent>
     </Card>
   );
+}
+
+function parseErrorMessage(raw: string): string {
+  if (!raw) return "Registration failed. Please try again.";
+
+  if (raw.includes("Too many")) {
+    return "Too many attempts. Please wait a few minutes and try again.";
+  }
+
+  if (raw.includes("already exists")) {
+    return "An account with this email already exists. Try signing in instead.";
+  }
+
+  try {
+    const jsonMatch = raw.match(/\d+:\s*(.*)/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      if (parsed.error) return parsed.error;
+      if (parsed.details && Array.isArray(parsed.details)) {
+        const messages = parsed.details.map((d: any) => d.message).filter(Boolean);
+        if (messages.length > 0) return messages.join(". ");
+      }
+    }
+  } catch {
+    // Fall through
+  }
+
+  if (raw.includes("Invalid input")) return "Please check your information and try again.";
+  if (raw.includes("500")) return "Something went wrong on our end. Please try again in a moment.";
+  if (raw.includes("Failed to fetch") || raw.includes("NetworkError")) return "Connection issue. Please check your internet and try again.";
+
+  return "Registration failed. Please try again.";
 }

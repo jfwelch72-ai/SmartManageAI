@@ -1,13 +1,12 @@
 import rateLimit from "express-rate-limit";
 
-// Strict rate limiter for auth endpoints
+// Rate limiter for auth endpoints
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
+  max: 15, // 15 requests per window
   message: { error: "Too many authentication attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
-  // Use default keyGenerator which properly handles IPv4 and IPv6
 });
 
 // Moderate rate limiter for sensitive endpoints
