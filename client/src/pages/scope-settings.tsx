@@ -849,21 +849,27 @@ export default function ScopeSettings() {
           <div className="space-y-4">
             <div>
               <Label>Category</Label>
-              <Select
-                value={modifierForm.categoryId}
-                onValueChange={(value) => setModifierForm({ ...modifierForm, categoryId: value })}
-              >
-                <SelectTrigger data-testid="select-modifier-category">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {modifierCategories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {modifierCategories.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2" data-testid="text-no-modifier-categories">
+                  No modifier categories available for your trade type. Please create a category first from the Modifiers tab.
+                </p>
+              ) : (
+                <Select
+                  value={modifierForm.categoryId}
+                  onValueChange={(value) => setModifierForm({ ...modifierForm, categoryId: value })}
+                >
+                  <SelectTrigger data-testid="select-modifier-category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modifierCategories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id} data-testid={`select-item-category-${cat.id}`}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div>
               <Label>Name</Label>

@@ -1384,6 +1384,133 @@ async function seedNewTradeModifiers() {
   return { categoriesInserted, categoriesSkipped, modifiersInserted, modifiersSkipped };
 }
 
+const coreTradeModifierCategories: Array<{ tradeType: string; name: string; description: string; displayOrder: number }> = [
+  { tradeType: "CONCRETE", name: "Additives", description: "Chemical additives and admixtures for concrete", displayOrder: 1 },
+  { tradeType: "CONCRETE", name: "Finishes", description: "Surface finish types and treatments", displayOrder: 2 },
+  { tradeType: "CONCRETE", name: "Reinforcement", description: "Reinforcement materials and methods", displayOrder: 3 },
+  { tradeType: "CONCRETE", name: "Thickness", description: "Slab and wall thickness options", displayOrder: 4 },
+  { tradeType: "CONCRETE", name: "Grade/Strength", description: "Concrete mix strength and grade specifications", displayOrder: 5 },
+  { tradeType: "CONCRETE", name: "Curing", description: "Curing methods and materials", displayOrder: 6 },
+  { tradeType: "GENERAL_CONTRACTOR", name: "Complexity", description: "Project complexity levels", displayOrder: 1 },
+  { tradeType: "GENERAL_CONTRACTOR", name: "Access", description: "Site access conditions", displayOrder: 2 },
+  { tradeType: "GENERAL_CONTRACTOR", name: "Timeline", description: "Schedule and timeline modifiers", displayOrder: 3 },
+  { tradeType: "GENERAL_CONTRACTOR", name: "Quality Level", description: "Material and finish quality tiers", displayOrder: 4 },
+  { tradeType: "GENERAL_CONTRACTOR", name: "Conditions", description: "Site and environmental conditions", displayOrder: 5 },
+  { tradeType: "ELECTRICAL", name: "Wire Type", description: "Wire and cable types", displayOrder: 1 },
+  { tradeType: "ELECTRICAL", name: "Conduit", description: "Conduit types and sizes", displayOrder: 2 },
+  { tradeType: "ELECTRICAL", name: "Voltage", description: "Voltage classifications", displayOrder: 3 },
+  { tradeType: "ELECTRICAL", name: "Installation Method", description: "Installation methods and mounting", displayOrder: 4 },
+  { tradeType: "PLUMBING", name: "Pipe Material", description: "Pipe material types", displayOrder: 1 },
+  { tradeType: "PLUMBING", name: "Pipe Size", description: "Pipe diameter sizes", displayOrder: 2 },
+  { tradeType: "PLUMBING", name: "Fixture Grade", description: "Fixture quality grades", displayOrder: 3 },
+  { tradeType: "PLUMBING", name: "Connection Type", description: "Connection and fitting types", displayOrder: 4 },
+  { tradeType: "HVAC", name: "System Type", description: "HVAC system types", displayOrder: 1 },
+  { tradeType: "HVAC", name: "Duct Material", description: "Ductwork material types", displayOrder: 2 },
+  { tradeType: "HVAC", name: "Capacity", description: "System capacity/tonnage", displayOrder: 3 },
+  { tradeType: "HVAC", name: "Efficiency Rating", description: "Energy efficiency ratings", displayOrder: 4 },
+  { tradeType: "ROOFING", name: "Material Type", description: "Roofing material types", displayOrder: 1 },
+  { tradeType: "ROOFING", name: "Slope", description: "Roof slope/pitch categories", displayOrder: 2 },
+  { tradeType: "ROOFING", name: "Insulation", description: "Insulation types and R-values", displayOrder: 3 },
+  { tradeType: "ROOFING", name: "Warranty", description: "Warranty levels and terms", displayOrder: 4 },
+  { tradeType: "PAINTING", name: "Paint Type", description: "Paint and coating types", displayOrder: 1 },
+  { tradeType: "PAINTING", name: "Finish", description: "Surface finish levels", displayOrder: 2 },
+  { tradeType: "PAINTING", name: "Surface Prep", description: "Surface preparation levels", displayOrder: 3 },
+  { tradeType: "PAINTING", name: "Coats", description: "Number of coats", displayOrder: 4 },
+  { tradeType: "MASONRY", name: "Material", description: "Masonry material types", displayOrder: 1 },
+  { tradeType: "MASONRY", name: "Pattern", description: "Laying patterns and bonds", displayOrder: 2 },
+  { tradeType: "MASONRY", name: "Mortar Type", description: "Mortar mix types", displayOrder: 3 },
+  { tradeType: "MASONRY", name: "Wall Type", description: "Wall construction types", displayOrder: 4 },
+  { tradeType: "LANDSCAPING", name: "Plant Size", description: "Plant size categories", displayOrder: 1 },
+  { tradeType: "LANDSCAPING", name: "Soil Type", description: "Soil and fill types", displayOrder: 2 },
+  { tradeType: "LANDSCAPING", name: "Hardscape Material", description: "Hardscape material types", displayOrder: 3 },
+  { tradeType: "LANDSCAPING", name: "Irrigation", description: "Irrigation system types", displayOrder: 4 },
+  { tradeType: "FLOORING", name: "Material", description: "Flooring material types", displayOrder: 1 },
+  { tradeType: "FLOORING", name: "Grade", description: "Material grade/quality levels", displayOrder: 2 },
+  { tradeType: "FLOORING", name: "Subfloor Prep", description: "Subfloor preparation levels", displayOrder: 3 },
+  { tradeType: "FLOORING", name: "Pattern", description: "Installation patterns", displayOrder: 4 },
+  { tradeType: "DEMOLITION", name: "Structure Type", description: "Structure types for demolition", displayOrder: 1 },
+  { tradeType: "DEMOLITION", name: "Method", description: "Demolition methods", displayOrder: 2 },
+  { tradeType: "DEMOLITION", name: "Hazmat", description: "Hazardous material handling levels", displayOrder: 3 },
+  { tradeType: "DEMOLITION", name: "Disposal", description: "Disposal and hauling methods", displayOrder: 4 },
+  { tradeType: "STEEL_ERECTION", name: "Steel Grade", description: "Steel grade specifications", displayOrder: 1 },
+  { tradeType: "STEEL_ERECTION", name: "Connection Type", description: "Connection types (bolted, welded)", displayOrder: 2 },
+  { tradeType: "STEEL_ERECTION", name: "Coating", description: "Protective coating types", displayOrder: 3 },
+  { tradeType: "STEEL_ERECTION", name: "Height", description: "Erection height categories", displayOrder: 4 },
+  { tradeType: "GLAZING", name: "Glass Type", description: "Glass types and specifications", displayOrder: 1 },
+  { tradeType: "GLAZING", name: "Frame Material", description: "Frame material types", displayOrder: 2 },
+  { tradeType: "GLAZING", name: "Performance", description: "Performance ratings (thermal, acoustic)", displayOrder: 3 },
+  { tradeType: "GLAZING", name: "Installation", description: "Installation method types", displayOrder: 4 },
+  { tradeType: "INSULATION", name: "Material Type", description: "Insulation material types", displayOrder: 1 },
+  { tradeType: "INSULATION", name: "R-Value", description: "R-value ratings", displayOrder: 2 },
+  { tradeType: "INSULATION", name: "Application", description: "Application methods", displayOrder: 3 },
+  { tradeType: "INSULATION", name: "Location", description: "Installation locations", displayOrder: 4 },
+  { tradeType: "FIRE_PROTECTION", name: "System Type", description: "Fire protection system types", displayOrder: 1 },
+  { tradeType: "FIRE_PROTECTION", name: "Hazard Class", description: "Occupancy hazard classifications", displayOrder: 2 },
+  { tradeType: "FIRE_PROTECTION", name: "Pipe Material", description: "Sprinkler pipe material types", displayOrder: 3 },
+  { tradeType: "FIRE_PROTECTION", name: "Coverage", description: "Coverage density requirements", displayOrder: 4 },
+  { tradeType: "DRYWALL", name: "Board Type", description: "Drywall board types", displayOrder: 1 },
+  { tradeType: "DRYWALL", name: "Finish Level", description: "Drywall finish levels (1-5)", displayOrder: 2 },
+  { tradeType: "DRYWALL", name: "Thickness", description: "Board thickness options", displayOrder: 3 },
+  { tradeType: "DRYWALL", name: "Fire Rating", description: "Fire resistance ratings", displayOrder: 4 },
+  { tradeType: "CARPENTRY", name: "Material", description: "Lumber and material types", displayOrder: 1 },
+  { tradeType: "CARPENTRY", name: "Lumber Grade", description: "Lumber grade and dimension", displayOrder: 2 },
+  { tradeType: "CARPENTRY", name: "Wall Type", description: "Wall type classifications", displayOrder: 3 },
+  { tradeType: "CARPENTRY", name: "Spacing", description: "Stud/joist spacing", displayOrder: 4 },
+  { tradeType: "LOW_VOLTAGE", name: "Cable Type", description: "Cable and wire types", displayOrder: 1 },
+  { tradeType: "LOW_VOLTAGE", name: "System", description: "System categories (data, security, AV)", displayOrder: 2 },
+  { tradeType: "LOW_VOLTAGE", name: "Pathway", description: "Pathway and raceway types", displayOrder: 3 },
+  { tradeType: "LOW_VOLTAGE", name: "Termination", description: "Termination and connector types", displayOrder: 4 },
+  { tradeType: "SOLAR", name: "Panel Type", description: "Solar panel types", displayOrder: 1 },
+  { tradeType: "SOLAR", name: "Mounting", description: "Mounting system types", displayOrder: 2 },
+  { tradeType: "SOLAR", name: "Inverter", description: "Inverter types", displayOrder: 3 },
+  { tradeType: "SOLAR", name: "System Size", description: "System capacity categories", displayOrder: 4 },
+  { tradeType: "WATERPROOFING", name: "Material", description: "Waterproofing material types", displayOrder: 1 },
+  { tradeType: "WATERPROOFING", name: "Application", description: "Application methods", displayOrder: 2 },
+  { tradeType: "WATERPROOFING", name: "Location", description: "Installation locations (below/above grade)", displayOrder: 3 },
+  { tradeType: "WATERPROOFING", name: "Drainage", description: "Drainage system types", displayOrder: 4 },
+  { tradeType: "EARTHWORK", name: "Soil Classification", description: "Soil type classifications", displayOrder: 1 },
+  { tradeType: "EARTHWORK", name: "Depth", description: "Excavation depth categories", displayOrder: 2 },
+  { tradeType: "EARTHWORK", name: "Equipment", description: "Equipment types required", displayOrder: 3 },
+  { tradeType: "EARTHWORK", name: "Shoring", description: "Shoring and support requirements", displayOrder: 4 },
+  { tradeType: "ASPHALT_PAVING", name: "Mix Type", description: "Asphalt mix types", displayOrder: 1 },
+  { tradeType: "ASPHALT_PAVING", name: "Thickness", description: "Paving thickness specs", displayOrder: 2 },
+  { tradeType: "ASPHALT_PAVING", name: "Base Prep", description: "Base preparation levels", displayOrder: 3 },
+  { tradeType: "ASPHALT_PAVING", name: "Traffic Load", description: "Traffic load classifications", displayOrder: 4 },
+];
+
+async function seedCoreTradeModifierCategories() {
+  console.log("Seeding core trade modifier categories...");
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const cat of coreTradeModifierCategories) {
+    const existing = await db.select()
+      .from(masterModifierCategories)
+      .where(and(
+        eq(masterModifierCategories.tradeType, cat.tradeType as any),
+        eq(masterModifierCategories.name, cat.name)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      skipped++;
+      continue;
+    }
+
+    await db.insert(masterModifierCategories).values({
+      tradeType: cat.tradeType as any,
+      name: cat.name,
+      description: cat.description,
+      displayOrder: cat.displayOrder,
+      isActive: true,
+    });
+    inserted++;
+  }
+
+  console.log(`Core modifier categories: ${inserted} inserted, ${skipped} skipped`);
+  return { inserted, skipped };
+}
+
 export { 
   seedConcreteSowItems, concreteSowItems,
   seedCivilSiteSowItems, civilSiteSowItems, 
@@ -1391,5 +1518,6 @@ export {
   seedMepSpecialtySowItems, mepSpecialtySowItems,
   seedSupportServicesSowItems, supportServicesSowItems,
   seedAllNewTradeSowItems,
-  seedNewTradeModifiers, newTradeModifierCategories
+  seedNewTradeModifiers, newTradeModifierCategories,
+  seedCoreTradeModifierCategories, coreTradeModifierCategories
 };

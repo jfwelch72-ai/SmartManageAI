@@ -98,6 +98,7 @@ import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import marketplaceRoutes from "./marketplaceRoutes";
 import aiScheduleRoutes from "./aiScheduleRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
+import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -17949,6 +17950,10 @@ If the make/model is unknown, provide general best practices for the equipment t
       console.error("Get equipment for selection error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
+  });
+
+  seedCoreTradeModifierCategories().catch(err => {
+    console.error("Failed to seed core modifier categories:", err);
   });
 
   const httpServer = createServer(app);
