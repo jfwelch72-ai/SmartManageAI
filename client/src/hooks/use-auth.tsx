@@ -3,42 +3,50 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SelectUser } from "@shared/schema";
 
+type AuthUser = SelectUser & {
+  effectiveRole?: string;
+  isHustlerOwner?: boolean;
+};
+
 interface AuthContextType {
-  user: SelectUser | null;
+  user: AuthUser | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<SelectUser | null>;
   logout: () => Promise<void>;
   organizationName: string | null;
   organizationOnboardingStatus: string | null;
+  /** The role to use for permission checks. For HUSTLER users with an effectiveRole, returns effectiveRole. Otherwise returns user.role. */
+  permissionRole: string | undefined;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Fetch current user
-  const { data: userData, isLoading } = useQuery<{ user: SelectUser; organizationName: string | null; organizationOnboardingStatus: string | null }>({
+  const { data: userData, isLoading } = useQuery<{ user: AuthUser; organizationName: string | null; organizationOnboardingStatus: string | null }>({
     queryKey: ["/api/auth/me"],
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const user = userData?.user || null;
   const organizationName = userData?.organizationName || null;
   const organizationOnboardingStatus = userData?.organizationOnboardingStatus || null;
 
-  // Login mutation
+  const permissionRole = user ? (user.effectiveRole || user.role) : undefined;
+
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
       return apiRequest("POST", "/api/auth/login", credentials);
     },
   });
 
-  // Logout mutation
   const logoutMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
-      // Clear welcome modal dismissal keys so new users see the welcome modal
       const keysToRemove: string[] = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
@@ -56,7 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<SelectUser | null> => {
     const response = await loginMutation.mutateAsync({ email, password });
     const data = await response.json();
-    // Invalidate and refetch to get fresh user data
     await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     return data?.user || null;
   };
@@ -66,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, organizationName, organizationOnboardingStatus }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, organizationName, organizationOnboardingStatus, permissionRole }}>
       {children}
     </AuthContext.Provider>
   );

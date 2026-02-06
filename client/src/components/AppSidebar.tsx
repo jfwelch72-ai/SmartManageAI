@@ -101,7 +101,8 @@ export function AppSidebar() {
 
   if (!user) return null;
 
-  const userRole = user.role;
+  const userRole = user.effectiveRole || user.role;
+  const isHustlerUser = user.role === "HUSTLER";
   const displayName = organizationName || "SmartManageAI";
   const unreadMessageCount = messageCountData.unreadCount || 0;
 
@@ -230,7 +231,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {isHustler(userRole) && (
+              {isHustlerUser && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={isActive("/hustler")} tooltip="Portfolio">
                     <Link href="/hustler" data-testid="sidebar-portfolio">

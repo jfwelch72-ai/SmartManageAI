@@ -7,6 +7,18 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+function handleGlobal401(url: string) {
+  if (url.includes("/api/auth/me")) return;
+  queryClient.setQueryData(["/api/auth/me"], null);
+  if (!window.location.pathname.startsWith("/login") &&
+      !window.location.pathname.startsWith("/register") &&
+      !window.location.pathname.startsWith("/forgot-password") &&
+      !window.location.pathname.startsWith("/reset-password") &&
+      !window.location.pathname.startsWith("/portal/")) {
+    window.location.href = "/login";
+  }
+}
+
 export async function apiRequest(
   method: string,
   url: string,
@@ -18,6 +30,10 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
+
+  if (res.status === 401) {
+    handleGlobal401(url);
+  }
 
   await throwIfResNotOk(res);
   return res;
@@ -37,12 +53,14 @@ export const getQueryFn: <T>(options: {
       return null;
     }
 
+    if (res.status === 401) {
+      handleGlobal401(queryKey.join("/"));
+    }
+
     await throwIfResNotOk(res);
     return await res.json();
   };
 
-// Cache key helpers to prevent malformed URLs
-// NOTE: Avoid leading/trailing slashes in segments - the queryFn joins with '/'
 export const bidEstimateKey = (bidId?: string) => 
   bidId ? ["/api/bids", bidId, "estimate"] : ["/api/bids"];
 
@@ -55,16 +73,19 @@ export const queryClient = new QueryClient({
           credentials: "include",
         });
 
-        // For /api/auth/me, return null on 401 instead of throwing
         if (res.status === 401 && url.includes("/api/auth/me")) {
           return null;
+        }
+
+        if (res.status === 401) {
+          handleGlobal401(url);
         }
 
         await throwIfResNotOk(res);
         return await res.json();
       },
       refetchInterval: false,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
       staleTime: Infinity,
       retry: false,
     },

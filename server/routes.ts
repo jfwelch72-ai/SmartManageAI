@@ -3169,9 +3169,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Build filter conditions
       const conditions: SQL[] = [];
-      if (status) {
+      
+      // SECURITY: HOURLY_EMPLOYEE can only see ACTIVE projects
+      const userRole = req.user!.effectiveRole || req.user!.role;
+      if (userRole === "HOURLY_EMPLOYEE") {
+        if (status && status !== "ACTIVE") {
+          return res.json({
+            data: [],
+            pagination: { page: 1, limit: 50, totalCount: 0, totalPages: 0 }
+          });
+        }
+        conditions.push(eq(projects.status, "ACTIVE" as any));
+      } else if (status) {
         conditions.push(eq(projects.status, status as any));
       }
+      
       if (shouldFilter && orgId) {
         conditions.push(eq(projects.gcOrganizationId, orgId));
       }
@@ -12302,7 +12314,7 @@ SmartManageAI Construction Management Platform
           approvedAt: calendarEvents.approvedAt,
           createdById: calendarEvents.createdById,
           createdAt: calendarEvents.createdAt,
-          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username})`.as('requestee_name'),
+          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.email})`.as('requestee_name'),
           requesteeRole: users.role,
         })
         .from(calendarEvents)
@@ -12335,7 +12347,7 @@ SmartManageAI Construction Management Platform
           approvedAt: calendarEvents.approvedAt,
           createdById: calendarEvents.createdById,
           createdAt: calendarEvents.createdAt,
-          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.username})`.as('requestee_name'),
+          requesteeName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.email})`.as('requestee_name'),
           requesteeRole: users.role,
         })
         .from(calendarEvents)
