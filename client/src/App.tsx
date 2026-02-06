@@ -85,6 +85,7 @@ import VendorScoresPage from "@/pages/vendor-scores";
 import MaterialPriceIndexPage from "@/pages/material-price-index";
 import CrewMarketplacePage from "@/pages/crew-marketplace";
 import PricebookImportPage from "@/pages/pricebook-import";
+import ClientPortalPublic from "@/pages/client-portal-public";
 import CompanyHealthPage from "@/pages/company-health";
 import ExecutiveDigestPage from "@/pages/executive-digest";
 import WhatIfSimulatorPage from "@/pages/what-if-simulator";
@@ -174,6 +175,7 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/impersonate" component={ImpersonatePage} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
+      <Route path="/portal/:projectId" component={ClientPortalPublic} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
       {/* Routes accessible to all authenticated users */}

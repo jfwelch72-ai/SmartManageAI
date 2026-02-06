@@ -1920,4 +1920,202 @@ router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
+// ============================================================================
+// PUBLIC CLIENT PORTAL (no auth required - for invited external users)
+// ============================================================================
+
+// POST /api/ai-features/client-portal/public/verify - Verify email access
+router.post("/client-portal/public/verify", async (req, res) => {
+  try {
+    const { projectId, email } = req.body;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Project ID and email are required" });
+    }
+
+    const [access] = await db
+      .select({
+        access: clientPortalAccess,
+        projectName: projects.name,
+        projectStatus: projects.status,
+        orgName: organizations.name,
+      })
+      .from(clientPortalAccess)
+      .leftJoin(projects, eq(clientPortalAccess.projectId, projects.id))
+      .leftJoin(organizations, eq(clientPortalAccess.organizationId, organizations.id))
+      .where(
+        and(
+          eq(clientPortalAccess.projectId, projectId),
+          eq(clientPortalAccess.email, email.trim().toLowerCase()),
+          eq(clientPortalAccess.isActive, true)
+        )
+      )
+      .limit(1);
+
+    if (!access) {
+      return res.status(403).json({ error: "No portal access found for this email" });
+    }
+
+    let permissions = {
+      viewProgress: true,
+      viewPhotos: true,
+      viewSchedule: true,
+      viewDocuments: false,
+      viewInvoices: false,
+      submitRequests: false,
+    };
+    try {
+      if (access.access.permissionsJson) {
+        permissions = JSON.parse(access.access.permissionsJson);
+      }
+    } catch {}
+
+    await db
+      .update(clientPortalAccess)
+      .set({ lastAccessedAt: new Date() })
+      .where(eq(clientPortalAccess.id, access.access.id));
+
+    res.json({
+      verified: true,
+      accessId: access.access.id,
+      projectName: access.projectName || "Unknown Project",
+      projectStatus: access.projectStatus || "ACTIVE",
+      organizationName: access.orgName || "",
+      accessType: access.access.accessType || "STAKEHOLDER",
+      name: access.access.name || "",
+      permissions,
+    });
+  } catch (error) {
+    console.error("Error verifying portal access:", error);
+    res.status(500).json({ error: "Failed to verify portal access" });
+  }
+});
+
+// POST /api/ai-features/client-portal/public/data - Get portal data after verification
+router.post("/client-portal/public/data", async (req, res) => {
+  try {
+    const { projectId, email } = req.body;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Project ID and email are required" });
+    }
+
+    const [access] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(
+        and(
+          eq(clientPortalAccess.projectId, projectId),
+          eq(clientPortalAccess.email, email.trim().toLowerCase()),
+          eq(clientPortalAccess.isActive, true)
+        )
+      )
+      .limit(1);
+
+    if (!access) {
+      return res.status(403).json({ error: "No portal access" });
+    }
+
+    let permissions = {
+      viewProgress: true,
+      viewPhotos: true,
+      viewSchedule: true,
+      viewDocuments: false,
+      viewInvoices: false,
+      submitRequests: false,
+    };
+    try {
+      if (access.permissionsJson) {
+        permissions = JSON.parse(access.permissionsJson);
+      }
+    } catch {}
+
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const result: Record<string, any> = {
+      project: {
+        name: project.name,
+        status: project.status,
+        startDate: project.startDate,
+        endDate: project.endDate,
+        address: project.locationAddress,
+        city: project.city,
+        state: project.state,
+      },
+    };
+
+    if (permissions.viewProgress) {
+      const progressItems = await db
+        .select()
+        .from(scopeItems)
+        .where(eq(scopeItems.projectId, projectId))
+        .orderBy(desc(scopeItems.updatedAt));
+
+      result.progress = progressItems.map((item) => ({
+        description: item.description,
+        status: item.billingStatus || "NOT_STARTED",
+        completionPercentage: item.completedQuantity && item.totalQuantity
+          ? Math.round((parseFloat(item.completedQuantity) / parseFloat(item.totalQuantity)) * 100)
+          : 0,
+        updatedAt: item.updatedAt,
+      }));
+    }
+
+    if (permissions.viewPhotos) {
+      const photos = await db
+        .select()
+        .from(media)
+        .where(eq(media.projectId, projectId))
+        .orderBy(desc(media.uploadedAt))
+        .limit(50);
+
+      result.photos = photos.map((p) => ({
+        id: p.id,
+        fileName: p.fileName,
+        fileUrl: p.fileUrl,
+        fileType: p.mimeType,
+        description: p.caption,
+        createdAt: p.uploadedAt,
+      }));
+    }
+
+    if (permissions.viewSchedule) {
+      const schedules = await db
+        .select()
+        .from(projectSchedules)
+        .where(eq(projectSchedules.projectId, projectId))
+        .limit(1);
+
+      if (schedules.length > 0) {
+        const tasks = await db
+          .select()
+          .from(projectScheduleTasks)
+          .where(eq(projectScheduleTasks.scheduleId, schedules[0].id))
+          .orderBy(projectScheduleTasks.plannedStartDate);
+
+        result.schedule = tasks.map((t) => ({
+          name: t.name,
+          startDate: t.plannedStartDate,
+          endDate: t.plannedEndDate,
+          status: t.status,
+          progress: t.percentComplete,
+        }));
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching portal data:", error);
+    res.status(500).json({ error: "Failed to fetch portal data" });
+  }
+});
+
 export default router;
