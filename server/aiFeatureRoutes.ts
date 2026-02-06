@@ -51,6 +51,7 @@ import { z } from "zod";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import crypto from "crypto";
 import { sendEmail } from "./email";
+import { authLimiter } from "./rateLimiter";
 
 const router = Router();
 
@@ -1925,7 +1926,7 @@ router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MA
 // ============================================================================
 
 // POST /api/ai-features/client-portal/public/verify - Verify email access
-router.post("/client-portal/public/verify", async (req, res) => {
+router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
   try {
     const { projectId, email } = req.body;
 
@@ -1992,7 +1993,7 @@ router.post("/client-portal/public/verify", async (req, res) => {
 });
 
 // POST /api/ai-features/client-portal/public/data - Get portal data after verification
-router.post("/client-portal/public/data", async (req, res) => {
+router.post("/client-portal/public/data", authLimiter, async (req, res) => {
   try {
     const { projectId, email } = req.body;
 
