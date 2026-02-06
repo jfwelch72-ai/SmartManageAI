@@ -2556,7 +2556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sanitizedBody = {
         ...req.body,
         materialName: sanitizeShortText(req.body.materialName),
-        description: sanitizeText(req.body.description),
+        description: req.body.description ? sanitizeText(req.body.description) : "",
         specs: req.body.specs ? sanitizeText(req.body.specs) : undefined,
         leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
         supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
