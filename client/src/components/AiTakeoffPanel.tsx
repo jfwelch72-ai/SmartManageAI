@@ -264,6 +264,22 @@ export default function AiTakeoffPanel({ projectId, sheetId, onItemsImported }: 
 
       {isComplete && detectedItems.length > 0 && (
         <>
+          {analysisResults?.metadata?.analysisSource === "openai_vision" && (
+            <div className="flex items-center gap-2 p-2 mx-4 mt-4 bg-green-500/10 border border-green-500/30 rounded-lg mb-3">
+              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+              <span className="text-xs text-green-700 dark:text-green-400 font-medium">
+                AI Vision Analysis - Results based on your blueprint
+              </span>
+            </div>
+          )}
+          {analysisResults?.metadata?.analysisSource && analysisResults.metadata.analysisSource !== "openai_vision" && (
+            <div className="flex items-center gap-2 p-2 mx-4 mt-4 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-3">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span className="text-xs text-amber-700 dark:text-amber-400">
+                Demo Data - Upload a blueprint image to get real AI-detected quantities
+              </span>
+            </div>
+          )}
           <div className="p-4 border-b bg-muted/30">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

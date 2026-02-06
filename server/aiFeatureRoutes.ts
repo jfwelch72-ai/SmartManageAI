@@ -52,6 +52,7 @@ import { sanitizeText, sanitizeShortText } from "./sanitization";
 import crypto from "crypto";
 import { sendEmail } from "./email";
 import { authLimiter } from "./rateLimiter";
+import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 
 const router = Router();
 
@@ -161,6 +162,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
       .where(eq(aiTakeoffAnalyses.id, analysisId));
 
     let imageUrl: string | null = null;
+    let sheetIndex = 0;
     
     // Try to get image from takeoff sheet if provided
     if (analysis?.takeoffSheetId) {
@@ -169,6 +171,72 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
         .where(eq(takeoffSheets.id, analysis.takeoffSheetId));
       if (sheet?.imageUrl) {
         imageUrl = sheet.imageUrl;
+      }
+      if (sheet) {
+        sheetIndex = sheet.sheetIndex || 0;
+      }
+    }
+
+    if (imageUrl) {
+      try {
+        let buffer: Buffer | null = null;
+
+        if (imageUrl.startsWith("https://storage.googleapis.com/")) {
+          const url = new URL(imageUrl);
+          const pathParts = url.pathname.slice(1).split("/");
+          const bucketName = pathParts[0];
+          const objectName = pathParts.slice(1).join("/");
+          const bucket = objectStorageClient.bucket(bucketName);
+          const file = bucket.file(objectName);
+          [buffer] = await file.download();
+        } else if (imageUrl.startsWith("/objects/")) {
+          const objectStorageService = new ObjectStorageService();
+          const objectFile = await objectStorageService.getObjectEntityFile(imageUrl);
+          [buffer] = await objectFile.download();
+        }
+
+        if (buffer) {
+          const isPdf = buffer[0] === 0x25 && buffer[1] === 0x50; // %P (PDF magic bytes)
+          
+          if (isPdf && sheetIndex >= 0) {
+            try {
+              const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+              const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer), useSystemFonts: true });
+              const pdfDoc = await loadingTask.promise;
+              const pageNum = Math.min(sheetIndex + 1, pdfDoc.numPages);
+              const page = await pdfDoc.getPage(pageNum);
+              
+              const scale = 2.0;
+              const viewport = page.getViewport({ scale });
+              
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const { createCanvas } = require('canvas') as { createCanvas: (w: number, h: number) => any };
+              const canvas = createCanvas(viewport.width, viewport.height);
+              const context = canvas.getContext('2d');
+              
+              await page.render({ canvasContext: context, viewport, canvas } as any).promise;
+              
+              const pngBuffer = canvas.toBuffer('image/png') as Buffer;
+              const base64Data = pngBuffer.toString("base64");
+              imageUrl = `data:image/png;base64,${base64Data}`;
+              
+              pdfDoc.destroy();
+            } catch (pdfRenderError) {
+              console.error("PDF page render failed, sending full PDF:", pdfRenderError);
+              const base64Data = buffer.toString("base64");
+              imageUrl = `data:application/pdf;base64,${base64Data}`;
+            }
+          } else if (isPdf) {
+            const base64Data = buffer.toString("base64");
+            imageUrl = `data:application/pdf;base64,${base64Data}`;
+          } else {
+            const base64Data = buffer.toString("base64");
+            imageUrl = `data:image/png;base64,${base64Data}`;
+          }
+        }
+      } catch (downloadError) {
+        console.error("Failed to download image for AI takeoff:", downloadError);
+        imageUrl = null;
       }
     }
 
@@ -222,13 +290,14 @@ Return your analysis as JSON with this exact structure:
                 },
                 {
                   type: "text",
-                  text: `Analyze this construction drawing for ${tradeType} trade takeoff. Extract all measurable quantities.`
+                  text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities.`
                 }
               ]
             }
           ],
           max_tokens: 4096,
           temperature: 0.3,
+          response_format: { type: "json_object" },
         });
 
         const responseContent = visionResponse.choices[0]?.message?.content || "";
@@ -253,6 +322,7 @@ Return your analysis as JSON with this exact structure:
             drawingType: parsed.metadata?.drawingType,
             tradeType,
             analysisMethod: "OpenAI Vision",
+            analysisSource: "openai_vision",
           };
           aiNotes = parsed.summary || `AI Vision detected ${detectedItems.length} items for ${tradeType} trade.`;
         } else {
@@ -260,7 +330,6 @@ Return your analysis as JSON with this exact structure:
         }
       } catch (visionError) {
         console.error("OpenAI Vision error, falling back to mock data:", visionError);
-        // Fall back to mock data if Vision fails
         const tradeItems = generateTradeSpecificItems(tradeType);
         detectedItems = tradeItems.map((item, index) => ({
           id: `item-${index + 1}`,
@@ -271,7 +340,7 @@ Return your analysis as JSON with this exact structure:
           confidence: 70 + Math.floor(Math.random() * 25),
           suggestedSowItem: item.sowItem,
         }));
-        metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Fallback (mock)" };
+        metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Fallback (mock)", analysisSource: "demo_fallback" };
         aiNotes = `Fallback: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
       }
     } else {
@@ -286,7 +355,7 @@ Return your analysis as JSON with this exact structure:
         confidence: 70 + Math.floor(Math.random() * 25),
         suggestedSowItem: item.sowItem,
       }));
-      metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Demo (no image)" };
+      metadata = { drawingScale: "1/4\" = 1'-0\"", pageSize: "24x36", tradeType, analysisMethod: "Demo (no image)", analysisSource: "demo_no_image" };
       aiNotes = `Demo mode: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
     }
 
@@ -332,6 +401,114 @@ function generateTradeSpecificItems(tradeType: string) {
       { type: "footing", description: "Continuous Footing", quantity: 18, unit: "CY", sowItem: { name: "Foundation Footing", code: "CONC-FTG-01" } },
       { type: "rebar", description: "#4 Rebar Grid", quantity: 2.5, unit: "TON", sowItem: { name: "Rebar #4", code: "CONC-RBR-01" } },
       { type: "formwork", description: "Foundation Forms", quantity: 320, unit: "SF", sowItem: { name: "Formwork", code: "CONC-FRM-01" } },
+    ],
+    PLUMBING: [
+      { type: "fixture", description: "Lavatory Sink", quantity: 8, unit: "EA", sowItem: { name: "Lavatory Sink", code: "PLMB-FIX-01" } },
+      { type: "pipe_run", description: "2\" PVC Drain Line", quantity: 120, unit: "LF", sowItem: { name: "PVC Drain Pipe 2\"", code: "PLMB-DRN-01" } },
+      { type: "fixture", description: "Water Closet", quantity: 6, unit: "EA", sowItem: { name: "Water Closet", code: "PLMB-FIX-02" } },
+      { type: "valve", description: "Ball Valve 3/4\"", quantity: 12, unit: "EA", sowItem: { name: "Ball Valve", code: "PLMB-VLV-01" } },
+    ],
+    HVAC: [
+      { type: "ductwork", description: "Supply Ductwork - Rectangular", quantity: 450, unit: "LF", sowItem: { name: "Supply Duct", code: "HVAC-DCT-01" } },
+      { type: "register", description: "Supply Register 12x6", quantity: 18, unit: "EA", sowItem: { name: "Supply Register", code: "HVAC-REG-01" } },
+      { type: "equipment", description: "RTU 5-Ton", quantity: 1, unit: "EA", sowItem: { name: "Rooftop Unit", code: "HVAC-EQP-01" } },
+      { type: "return", description: "Return Air Grille", quantity: 6, unit: "EA", sowItem: { name: "Return Grille", code: "HVAC-RET-01" } },
+    ],
+    CARPENTRY: [
+      { type: "framing", description: "2x4 Wall Studs 16\" OC", quantity: 2800, unit: "LF", sowItem: { name: "Wall Framing 2x4", code: "CARP-FRM-01" } },
+      { type: "sheathing", description: "7/16\" OSB Sheathing", quantity: 3200, unit: "SF", sowItem: { name: "OSB Wall Sheathing", code: "CARP-SHT-01" } },
+      { type: "door", description: "Interior Door - 3/0 x 6/8", quantity: 14, unit: "EA", sowItem: { name: "Interior Door", code: "CARP-DR-01" } },
+      { type: "trim", description: "Base Trim - MDF", quantity: 480, unit: "LF", sowItem: { name: "Base Trim", code: "CARP-TRM-01" } },
+    ],
+    MASONRY: [
+      { type: "wall", description: "8\" CMU Block Wall", quantity: 1800, unit: "SF", sowItem: { name: "CMU Block Wall", code: "MASN-BLK-01" } },
+      { type: "mortar", description: "Type S Mortar", quantity: 45, unit: "CF", sowItem: { name: "Type S Mortar", code: "MASN-MRT-01" } },
+      { type: "rebar", description: "Vertical #5 Rebar", quantity: 0.8, unit: "TON", sowItem: { name: "Vertical Rebar", code: "MASN-RBR-01" } },
+      { type: "lintel", description: "Steel Lintel", quantity: 12, unit: "EA", sowItem: { name: "Steel Lintel", code: "MASN-LNT-01" } },
+    ],
+    DRYWALL: [
+      { type: "board", description: "5/8\" Type X Drywall", quantity: 4200, unit: "SF", sowItem: { name: "Drywall 5/8\" Type X", code: "DW-BRD-01" } },
+      { type: "framing", description: "Metal Studs 3-5/8\" 20ga", quantity: 1600, unit: "LF", sowItem: { name: "Metal Studs", code: "DW-FRM-01" } },
+      { type: "finishing", description: "Level 4 Finish", quantity: 4200, unit: "SF", sowItem: { name: "Level 4 Finish", code: "DW-FIN-01" } },
+      { type: "insulation", description: "R-13 Batt Insulation", quantity: 2400, unit: "SF", sowItem: { name: "Batt Insulation R-13", code: "DW-INS-01" } },
+    ],
+    PAINTING: [
+      { type: "wall_paint", description: "Interior Latex Paint - Walls", quantity: 4800, unit: "SF", sowItem: { name: "Interior Wall Paint", code: "PAINT-WL-01" } },
+      { type: "ceiling_paint", description: "Ceiling Paint - Flat", quantity: 2200, unit: "SF", sowItem: { name: "Ceiling Paint", code: "PAINT-CL-01" } },
+      { type: "trim_paint", description: "Trim Paint - Semi-Gloss", quantity: 600, unit: "LF", sowItem: { name: "Trim Paint", code: "PAINT-TR-01" } },
+      { type: "primer", description: "Primer - PVA", quantity: 7000, unit: "SF", sowItem: { name: "PVA Primer", code: "PAINT-PR-01" } },
+    ],
+    FLOORING: [
+      { type: "tile", description: "Porcelain Tile 12x24", quantity: 1200, unit: "SF", sowItem: { name: "Porcelain Floor Tile", code: "FLR-TIL-01" } },
+      { type: "carpet", description: "Commercial Carpet Tile", quantity: 800, unit: "SF", sowItem: { name: "Carpet Tile", code: "FLR-CPT-01" } },
+      { type: "lvp", description: "Luxury Vinyl Plank", quantity: 1500, unit: "SF", sowItem: { name: "LVP Flooring", code: "FLR-LVP-01" } },
+      { type: "base", description: "Rubber Wall Base", quantity: 450, unit: "LF", sowItem: { name: "Rubber Wall Base", code: "FLR-BAS-01" } },
+    ],
+    LANDSCAPING: [
+      { type: "sod", description: "Bermuda Sod", quantity: 5000, unit: "SF", sowItem: { name: "Bermuda Sod", code: "LAND-SOD-01" } },
+      { type: "mulch", description: "Hardwood Mulch 3\" Deep", quantity: 25, unit: "CY", sowItem: { name: "Hardwood Mulch", code: "LAND-MLC-01" } },
+      { type: "tree", description: "Shade Trees - 2\" Cal", quantity: 8, unit: "EA", sowItem: { name: "Shade Tree 2\" Cal", code: "LAND-TRE-01" } },
+      { type: "irrigation", description: "Drip Irrigation Zone", quantity: 4, unit: "EA", sowItem: { name: "Drip Irrigation Zone", code: "LAND-IRR-01" } },
+    ],
+    DEMOLITION: [
+      { type: "interior_demo", description: "Interior Selective Demo", quantity: 3500, unit: "SF", sowItem: { name: "Interior Demo", code: "DEMO-INT-01" } },
+      { type: "concrete_demo", description: "Concrete Slab Removal 4\"", quantity: 800, unit: "SF", sowItem: { name: "Concrete Slab Demo", code: "DEMO-CON-01" } },
+      { type: "hauling", description: "Debris Hauling", quantity: 12, unit: "EA", sowItem: { name: "Debris Hauling Load", code: "DEMO-HAL-01" } },
+      { type: "abatement", description: "Asbestos Abatement", quantity: 200, unit: "SF", sowItem: { name: "Asbestos Abatement", code: "DEMO-ABT-01" } },
+    ],
+    STEEL_ERECTION: [
+      { type: "column", description: "W10x49 Steel Column", quantity: 12, unit: "EA", sowItem: { name: "Steel Column W10", code: "STL-COL-01" } },
+      { type: "beam", description: "W18x35 Steel Beam", quantity: 680, unit: "LF", sowItem: { name: "Steel Beam W18", code: "STL-BM-01" } },
+      { type: "joist", description: "Open Web Steel Joist 24K", quantity: 42, unit: "EA", sowItem: { name: "Steel Joist 24K", code: "STL-JST-01" } },
+      { type: "decking", description: "1.5\" Metal Deck", quantity: 4800, unit: "SF", sowItem: { name: "Metal Deck 1.5\"", code: "STL-DCK-01" } },
+    ],
+    GLAZING: [
+      { type: "storefront", description: "Aluminum Storefront System", quantity: 320, unit: "SF", sowItem: { name: "Storefront System", code: "GLZ-STR-01" } },
+      { type: "window", description: "Fixed Window 4x5", quantity: 16, unit: "EA", sowItem: { name: "Fixed Window", code: "GLZ-WIN-01" } },
+      { type: "curtainwall", description: "Curtain Wall System", quantity: 800, unit: "SF", sowItem: { name: "Curtain Wall", code: "GLZ-CW-01" } },
+      { type: "door", description: "Aluminum Glass Door", quantity: 4, unit: "EA", sowItem: { name: "Glass Door", code: "GLZ-DR-01" } },
+    ],
+    INSULATION: [
+      { type: "batt", description: "R-19 Fiberglass Batt", quantity: 3200, unit: "SF", sowItem: { name: "R-19 Batt", code: "INS-BAT-01" } },
+      { type: "rigid", description: "2\" XPS Rigid Board", quantity: 1800, unit: "SF", sowItem: { name: "XPS Rigid 2\"", code: "INS-RGD-01" } },
+      { type: "spray_foam", description: "Closed Cell Spray Foam 2\"", quantity: 2400, unit: "SF", sowItem: { name: "Spray Foam 2\"", code: "INS-SPF-01" } },
+      { type: "vapor_barrier", description: "6 mil Poly Vapor Barrier", quantity: 3200, unit: "SF", sowItem: { name: "Vapor Barrier", code: "INS-VB-01" } },
+    ],
+    FIRE_PROTECTION: [
+      { type: "sprinkler_head", description: "Pendant Sprinkler Head", quantity: 48, unit: "EA", sowItem: { name: "Pendant Sprinkler", code: "FP-SPR-01" } },
+      { type: "pipe", description: "1\" Black Steel Pipe", quantity: 850, unit: "LF", sowItem: { name: "Fire Sprinkler Pipe", code: "FP-PIP-01" } },
+      { type: "riser", description: "Fire Sprinkler Riser", quantity: 2, unit: "EA", sowItem: { name: "Sprinkler Riser", code: "FP-RSR-01" } },
+      { type: "alarm", description: "Fire Alarm Pull Station", quantity: 8, unit: "EA", sowItem: { name: "Pull Station", code: "FP-ALM-01" } },
+    ],
+    LOW_VOLTAGE: [
+      { type: "data_drop", description: "Cat6A Data Drop", quantity: 36, unit: "EA", sowItem: { name: "Cat6A Data Drop", code: "LV-DAT-01" } },
+      { type: "cable", description: "Cat6A Plenum Cable", quantity: 3600, unit: "LF", sowItem: { name: "Cat6A Cable", code: "LV-CBL-01" } },
+      { type: "camera", description: "IP Security Camera", quantity: 12, unit: "EA", sowItem: { name: "IP Camera", code: "LV-CAM-01" } },
+      { type: "rack", description: "Network Rack 42U", quantity: 1, unit: "EA", sowItem: { name: "Network Rack", code: "LV-RCK-01" } },
+    ],
+    SOLAR: [
+      { type: "panel", description: "400W Solar Panel", quantity: 48, unit: "EA", sowItem: { name: "Solar Panel 400W", code: "SOL-PNL-01" } },
+      { type: "inverter", description: "String Inverter 10kW", quantity: 2, unit: "EA", sowItem: { name: "String Inverter", code: "SOL-INV-01" } },
+      { type: "racking", description: "Roof Mount Racking", quantity: 960, unit: "SF", sowItem: { name: "Solar Racking", code: "SOL-RCK-01" } },
+      { type: "conduit", description: "PV Conduit Run", quantity: 200, unit: "LF", sowItem: { name: "PV Conduit", code: "SOL-CND-01" } },
+    ],
+    WATERPROOFING: [
+      { type: "membrane", description: "Modified Bitumen Membrane", quantity: 2400, unit: "SF", sowItem: { name: "Bitumen Membrane", code: "WP-MEM-01" } },
+      { type: "coating", description: "Elastomeric Coating", quantity: 1800, unit: "SF", sowItem: { name: "Elastomeric Coating", code: "WP-COT-01" } },
+      { type: "flashing", description: "Sheet Metal Flashing", quantity: 240, unit: "LF", sowItem: { name: "Metal Flashing", code: "WP-FLS-01" } },
+      { type: "drain", description: "Interior Floor Drain", quantity: 6, unit: "EA", sowItem: { name: "Floor Drain", code: "WP-DRN-01" } },
+    ],
+    EARTHWORK: [
+      { type: "excavation", description: "Mass Excavation", quantity: 1200, unit: "CY", sowItem: { name: "Mass Excavation", code: "ERTH-EXC-01" } },
+      { type: "backfill", description: "Structural Backfill", quantity: 600, unit: "CY", sowItem: { name: "Structural Backfill", code: "ERTH-BKF-01" } },
+      { type: "grading", description: "Fine Grading", quantity: 8000, unit: "SF", sowItem: { name: "Fine Grading", code: "ERTH-GRD-01" } },
+      { type: "compaction", description: "Soil Compaction Testing", quantity: 20, unit: "EA", sowItem: { name: "Compaction Test", code: "ERTH-CMP-01" } },
+    ],
+    ASPHALT_PAVING: [
+      { type: "paving", description: "2\" HMA Surface Course", quantity: 12000, unit: "SF", sowItem: { name: "HMA Surface Course", code: "ASP-PAV-01" } },
+      { type: "base", description: "6\" Aggregate Base", quantity: 12000, unit: "SF", sowItem: { name: "Aggregate Base", code: "ASP-BAS-01" } },
+      { type: "striping", description: "Parking Lot Striping", quantity: 2400, unit: "LF", sowItem: { name: "Lot Striping", code: "ASP-STR-01" } },
+      { type: "curb", description: "Concrete Curb & Gutter", quantity: 480, unit: "LF", sowItem: { name: "Curb and Gutter", code: "ASP-CRB-01" } },
     ],
     GENERAL_CONTRACTOR: [
       { type: "roof_plane", description: "Main Roof - Shingles", quantity: 28.5, unit: "SQ" },
