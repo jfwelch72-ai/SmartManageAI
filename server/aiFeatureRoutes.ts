@@ -50,6 +50,7 @@ import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { z } from "zod";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import crypto from "crypto";
+import { sendEmail } from "./email";
 
 const router = Router();
 
@@ -1718,6 +1719,101 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
       parsedPermissions = JSON.parse(newAccess.permissionsJson || "{}");
     } catch {
       parsedPermissions = {};
+    }
+
+    const host = req.get("host") || "";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const portalLink = `${protocol}://${host}/portal/${projectId}`;
+
+    const [invitingUser] = await db
+      .select({ firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const [org] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    const inviterName = invitingUser
+      ? `${invitingUser.firstName || ""} ${invitingUser.lastName || ""}`.trim()
+      : "Your project team";
+    const orgName = org?.name || "your contractor";
+
+    const accessTypeLabels: Record<string, string> = {
+      OWNER_REP: "Owner Representative",
+      GC_REP: "GC Representative",
+      STAKEHOLDER: "Stakeholder",
+      VIEWER: "Viewer",
+    };
+    const accessLabel = accessTypeLabels[resolvedAccessType] || "Stakeholder";
+
+    const permissionsList = [];
+    if (parsedPermissions.viewProgress) permissionsList.push("Progress Updates");
+    if (parsedPermissions.viewPhotos) permissionsList.push("Photos & Media");
+    if (parsedPermissions.viewSchedule) permissionsList.push("Schedule");
+    if (parsedPermissions.viewDocuments) permissionsList.push("Documents");
+    if (parsedPermissions.viewInvoices) permissionsList.push("Invoices");
+    if (parsedPermissions.submitRequests) permissionsList.push("Submit Requests");
+
+    const permissionsHtml = permissionsList.length > 0
+      ? `<ul style="margin: 8px 0; padding-left: 20px; color: #333333;">${permissionsList.map(p => `<li style="margin: 4px 0;">${p}</li>`).join("")}</ul>`
+      : `<p style="color: #666666;">View access to project information</p>`;
+
+    const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Portal Invitation</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="background-color: #1a365d; padding: 24px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Client Portal Invitation</h1>
+    </div>
+    <div style="padding: 32px 24px;">
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        Hi ${name.trim()},
+      </p>
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        ${inviterName} from <strong>${orgName}</strong> has invited you to access the client portal for project <strong>${existingProject.name}</strong>.
+      </p>
+      <div style="background-color: #f8f9fa; border-radius: 6px; padding: 16px; margin: 16px 0;">
+        <p style="color: #333333; font-size: 14px; margin: 0 0 8px;"><strong>Access Level:</strong> ${accessLabel}</p>
+        <p style="color: #333333; font-size: 14px; margin: 0 0 4px;"><strong>You can view:</strong></p>
+        ${permissionsHtml}
+      </div>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${portalLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+          View Project Portal
+        </a>
+      </div>
+      <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+        If you have questions, please reach out to your project team directly.
+      </p>
+    </div>
+    <div style="background-color: #f8f9fa; padding: 16px 24px; text-align: center; border-top: 1px solid #e5e7eb;">
+      <p style="color: #999999; font-size: 12px; margin: 0;">
+        Sent via SmartManageAI Construction Management Platform
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    try {
+      await sendEmail({
+        to: email.trim().toLowerCase(),
+        subject: `Client Portal Invitation - ${existingProject.name}`,
+        html: emailHtml,
+        text: `Hi ${name.trim()}, ${inviterName} from ${orgName} has invited you to access the client portal for project "${existingProject.name}". Your access level: ${accessLabel}. Visit: ${portalLink}`,
+      });
+    } catch (emailErr) {
+      console.error("Failed to send portal invitation email:", emailErr);
     }
 
     res.status(201).json({
