@@ -4621,6 +4621,8 @@ export const clientPortalAccess = pgTable("client_portal_access", {
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   name: text("name"),
+  accessType: text("access_type").notNull().default("STAKEHOLDER"),
+  permissionsJson: text("permissions_json"),
   accessTokenHash: text("access_token_hash"),
   tokenExpiresAt: timestamp("token_expires_at"),
   lastAccessedAt: timestamp("last_accessed_at"),

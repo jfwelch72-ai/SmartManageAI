@@ -1558,4 +1558,270 @@ router.get("/mobile/devices", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+// ============================================================================
+// FEATURE E: CLIENT PORTAL
+// ============================================================================
+
+// GET /api/ai-features/client-portal/:projectId - List portal access for a project
+router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const orgId = req.user?.organizationId;
+    if (!userId || !orgId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const projectId = req.params.projectId;
+
+    const accessList = await db
+      .select({
+        access: clientPortalAccess,
+        projectName: projects.name,
+      })
+      .from(clientPortalAccess)
+      .leftJoin(projects, eq(clientPortalAccess.projectId, projects.id))
+      .where(
+        and(
+          eq(clientPortalAccess.projectId, projectId),
+          eq(clientPortalAccess.organizationId, orgId)
+        )
+      )
+      .orderBy(desc(clientPortalAccess.createdAt));
+
+    const formatted = accessList.map((row) => {
+      let permissions = {
+        viewProgress: true,
+        viewPhotos: true,
+        viewSchedule: true,
+        viewDocuments: false,
+        viewInvoices: false,
+        submitRequests: false,
+      };
+      try {
+        if (row.access.permissionsJson) {
+          permissions = JSON.parse(row.access.permissionsJson);
+        }
+      } catch {}
+
+      return {
+        id: row.access.id,
+        projectId: row.access.projectId,
+        projectName: row.projectName || "Unknown Project",
+        email: row.access.email,
+        name: row.access.name || "",
+        accessType: row.access.accessType || "STAKEHOLDER",
+        permissions,
+        isActive: row.access.isActive,
+        lastAccessedAt: row.access.lastAccessedAt?.toISOString(),
+        expiresAt: row.access.tokenExpiresAt?.toISOString(),
+        createdAt: row.access.createdAt.toISOString(),
+      };
+    });
+
+    const activeCount = formatted.filter((a) => a.isActive).length;
+    const lastActivity = formatted.reduce((latest: string | null, a) => {
+      if (!a.lastAccessedAt) return latest;
+      if (!latest) return a.lastAccessedAt;
+      return a.lastAccessedAt > latest ? a.lastAccessedAt : latest;
+    }, null);
+
+    const host = req.get("host") || "";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const portalUrl = `${protocol}://${host}/portal/${projectId}`;
+
+    res.json({
+      accessList: formatted,
+      stats: {
+        totalAccess: formatted.length,
+        activeUsers: activeCount,
+        lastActivity,
+      },
+      portalUrl,
+    });
+  } catch (error) {
+    console.error("Error fetching client portal access:", error);
+    res.status(500).json({ error: "Failed to fetch portal access" });
+  }
+});
+
+// POST /api/ai-features/client-portal/invite - Send portal invitation
+router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const orgId = req.user?.organizationId;
+    if (!userId || !orgId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { projectId, email, name, accessType, permissions } = req.body;
+
+    if (!projectId || !email || !name) {
+      return res.status(400).json({ error: "Project ID, email, and name are required" });
+    }
+
+    const validAccessTypes = ["OWNER_REP", "GC_REP", "STAKEHOLDER", "VIEWER"];
+    const resolvedAccessType = validAccessTypes.includes(accessType) ? accessType : "STAKEHOLDER";
+
+    const [existingProject] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)))
+      .limit(1);
+
+    if (!existingProject) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(
+        and(
+          eq(clientPortalAccess.projectId, projectId),
+          eq(clientPortalAccess.organizationId, orgId),
+          eq(clientPortalAccess.email, email.trim().toLowerCase())
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      return res.status(409).json({ error: "This email already has portal access for this project" });
+    }
+
+    const permissionsJson = permissions
+      ? JSON.stringify(permissions)
+      : JSON.stringify({
+          viewProgress: true,
+          viewPhotos: true,
+          viewSchedule: true,
+          viewDocuments: false,
+          viewInvoices: false,
+          submitRequests: false,
+        });
+
+    const [newAccess] = await db
+      .insert(clientPortalAccess)
+      .values({
+        organizationId: orgId,
+        projectId,
+        email: email.trim().toLowerCase(),
+        name: name.trim(),
+        accessType: resolvedAccessType,
+        permissionsJson,
+        isActive: true,
+        createdByUserId: userId,
+      })
+      .returning();
+
+    let parsedPermissions;
+    try {
+      parsedPermissions = JSON.parse(newAccess.permissionsJson || "{}");
+    } catch {
+      parsedPermissions = {};
+    }
+
+    res.status(201).json({
+      id: newAccess.id,
+      projectId: newAccess.projectId,
+      projectName: existingProject.name,
+      email: newAccess.email,
+      name: newAccess.name,
+      accessType: newAccess.accessType,
+      permissions: parsedPermissions,
+      isActive: newAccess.isActive,
+      createdAt: newAccess.createdAt.toISOString(),
+    });
+  } catch (error) {
+    console.error("Error creating portal invitation:", error);
+    res.status(500).json({ error: "Failed to send invitation" });
+  }
+});
+
+// PATCH /api/ai-features/client-portal/access/:id - Update portal access
+router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const orgId = req.user?.organizationId;
+    if (!userId || !orgId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const accessId = req.params.id;
+
+    const [existing] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(
+        and(
+          eq(clientPortalAccess.id, accessId),
+          eq(clientPortalAccess.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Portal access not found" });
+    }
+
+    const updates: Record<string, any> = {};
+    if (req.body.accessType) updates.accessType = req.body.accessType;
+    if (req.body.permissions) updates.permissionsJson = JSON.stringify(req.body.permissions);
+    if (typeof req.body.isActive === "boolean") updates.isActive = req.body.isActive;
+    if (req.body.name) updates.name = req.body.name;
+
+    const [updated] = await db
+      .update(clientPortalAccess)
+      .set(updates)
+      .where(eq(clientPortalAccess.id, accessId))
+      .returning();
+
+    res.json({
+      id: updated.id,
+      accessType: updated.accessType,
+      isActive: updated.isActive,
+      name: updated.name,
+    });
+  } catch (error) {
+    console.error("Error updating portal access:", error);
+    res.status(500).json({ error: "Failed to update portal access" });
+  }
+});
+
+// DELETE /api/ai-features/client-portal/access/:id - Revoke portal access
+router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const orgId = req.user?.organizationId;
+    if (!userId || !orgId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const accessId = req.params.id;
+
+    const [existing] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(
+        and(
+          eq(clientPortalAccess.id, accessId),
+          eq(clientPortalAccess.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Portal access not found" });
+    }
+
+    await db
+      .delete(clientPortalAccess)
+      .where(eq(clientPortalAccess.id, accessId));
+
+    res.json({ success: true, message: "Portal access revoked" });
+  } catch (error) {
+    console.error("Error revoking portal access:", error);
+    res.status(500).json({ error: "Failed to revoke portal access" });
+  }
+});
+
 export default router;
