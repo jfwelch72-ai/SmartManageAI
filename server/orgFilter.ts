@@ -6,9 +6,10 @@ import {
   vendorPricebooks, vendorPricingCatalogs, organizationCalculators,
   organizationWorkTypes, organizationSowItems, aiTakeoffAnalyses,
   projectSchedules, jobsiteAnalysisBatches, aiCoDrafts, mobileDevices,
-  clientPortalAccess
+  clientPortalAccess, users
 } from "@shared/schema";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import type { Response } from "express";
 
 /**
  * Check if the user is a SUPER_ADMIN (platform-level admin who can see all organizations)
@@ -122,4 +123,44 @@ export function getOrgIdForFilter(req: AuthRequest): {
     isSuperAdmin: false,
     mustDenyAccess: false
   };
+}
+
+/**
+ * Verifies that a resource belongs to the authenticated user's organization.
+ * SUPER_ADMIN bypasses this check. Returns true if access is allowed.
+ * If access is denied, sends a 403 response and returns false.
+ * 
+ * @param req - The authenticated request
+ * @param res - Express response (used to send 403 if denied)
+ * @param resourceOrgId - The organizationId of the resource being accessed (e.g., project.gcOrganizationId)
+ * @returns true if the user can access the resource, false if denied (response already sent)
+ */
+export function verifyOrgAccess(req: AuthRequest, res: Response, resourceOrgId: string | null | undefined): boolean {
+  const user = req.user;
+  if (!user) {
+    res.status(401).json({ error: "Not authenticated" });
+    return false;
+  }
+
+  if (isSuperAdmin(user)) return true;
+
+  if (!user.organizationId) {
+    res.status(403).json({ error: "No organization access" });
+    return false;
+  }
+
+  if (!resourceOrgId || resourceOrgId !== user.organizationId) {
+    res.status(403).json({ error: "Access denied" });
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Verifies that a user belongs to the authenticated user's organization.
+ * SUPER_ADMIN bypasses this check.
+ */
+export function verifyUserOrgAccess(req: AuthRequest, res: Response, targetUser: { organizationId: string | null }): boolean {
+  return verifyOrgAccess(req, res, targetUser.organizationId);
 }

@@ -100,7 +100,7 @@ import aiScheduleRoutes from "./aiScheduleRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
-import { getOrgIdForFilter } from "./orgFilter";
+import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin } from "./orgFilter";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -996,6 +996,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyUserOrgAccess(req, res, user)) return;
+
       const { passwordHash, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error) {
@@ -1065,6 +1067,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update user (Admin only)
   app.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
     try {
+      const [targetUser] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, req.params.id)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "User not found" }); return; }
+      if (!verifyUserOrgAccess(req, res, targetUser)) return;
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
@@ -1148,6 +1154,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyUserOrgAccess(req, res, user)) return;
+
       const [updated] = await db
         .update(users)
         .set({ 
@@ -1175,6 +1183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "User not found" });
         return;
       }
+
+      if (!verifyUserOrgAccess(req, res, user)) return;
 
       await revokeUserTokens(req.params.id);
 
@@ -1473,6 +1483,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       res.json(bid);
     } catch (error) {
       console.error("Get bid error:", error);
@@ -1613,6 +1625,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, existingBid.gcOrganizationId)) return;
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
         ...req.body,
@@ -1675,6 +1689,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       // Check if bid has been converted to a project
       const [existingProject] = await db
         .select()
@@ -1735,6 +1751,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       // Find active estimate (APPROVED or latest DRAFT)
       const bidEstimates = await db
@@ -1799,6 +1817,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       // Check if estimate already exists for this bid
       const existingEstimates = await db
@@ -1871,6 +1891,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // Check if bid has already been awarded/converted
       if (bid.status === "AWARDED") {
@@ -3248,10 +3270,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get list of project IDs with pending (SUBMITTED) change orders
   app.get("/api/projects/with-pending-change-orders", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json([]);
+
+      const conditions: SQL[] = [eq(changeOrders.status, "SUBMITTED")];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(projects.gcOrganizationId, orgId));
+      }
+
       const result = await db
         .selectDistinct({ projectId: changeOrders.projectId })
         .from(changeOrders)
-        .where(eq(changeOrders.status, "SUBMITTED"));
+        .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+        .where(and(...conditions));
       
       const projectIds = result.map(r => r.projectId);
       res.json(projectIds);
@@ -3270,6 +3301,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // Get scope items for this project
       const projectScopeItems = await db
@@ -3298,6 +3331,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const [laborRates] = await db
         .select()
         .from(projectLaborRates)
@@ -3320,6 +3355,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       const laborRateSchema = z.object({
         defaultRegularRate: z.string().or(z.number()).transform(v => String(v)),
@@ -3389,6 +3426,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const employeeRates = await db
         .select({
           id: projectEmployeeRates.id,
@@ -3427,6 +3466,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       const employeeRateSchema = z.object({
         userId: z.string().min(1, "Employee ID is required"),
@@ -3511,6 +3552,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const [rateOverride] = await db
         .select()
         .from(projectEmployeeRates)
@@ -3554,6 +3597,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // Get change orders for adjusted contract calculation
       const projectChangeOrders = await db
@@ -3911,6 +3956,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, existingProject.gcOrganizationId)) return;
+
       // OWNERSHIP CHECK: ESTIMATOR can only edit projects they are assigned to
       const userRole = req.user!.effectiveRole || req.user!.role;
       if (userRole === "ESTIMATOR" && existingProject.estimatorId !== req.user!.id) {
@@ -3979,6 +4026,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // Delete related records in dependency order (most dependent first)
       // Note: Most tables have ON DELETE CASCADE, but we explicitly delete for audit clarity
@@ -4084,6 +4133,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       // Build update object with only provided fields
       const updateData: any = { updatedAt: new Date() };
       if (budget !== undefined) updateData.budget = budget;
@@ -4137,6 +4188,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // Get scope items - simple query without nested objects to avoid Drizzle null handling issues
       const items = await db
@@ -4194,6 +4247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -10323,6 +10378,8 @@ SmartManageAI Construction Management Platform
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const notes = await db
         .select()
         .from(projectNotes)
@@ -10345,6 +10402,8 @@ SmartManageAI Construction Management Platform
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // SECURITY: Sanitize note content for data integrity
       const sanitizedBody = {
@@ -10595,6 +10654,8 @@ SmartManageAI Construction Management Platform
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       const entries = await db
         .select()
@@ -10984,6 +11045,8 @@ SmartManageAI Construction Management Platform
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       const projectEstimates = await db
         .select()
@@ -11501,6 +11564,8 @@ SmartManageAI Construction Management Platform
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       // Get all receipts for this project
       const allReceipts = await db
         .select()
@@ -11600,6 +11665,8 @@ SmartManageAI Construction Management Platform
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // Get all documents for this project
       const allDocs = await db
@@ -11966,6 +12033,8 @@ SmartManageAI Construction Management Platform
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const orders = await db
         .select()
         .from(changeOrders)
@@ -11998,6 +12067,16 @@ SmartManageAI Construction Management Platform
       if (!validationResult.success) {
         res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
         return;
+      }
+
+      // SECURITY: Verify org access via the parent project
+      if (validationResult.data.projectId) {
+        const [coProject] = await db.select().from(projects).where(eq(projects.id, validationResult.data.projectId)).limit(1);
+        if (!coProject) {
+          res.status(404).json({ error: "Project not found" });
+          return;
+        }
+        if (!verifyOrgAccess(req, res, coProject.gcOrganizationId)) return;
       }
 
       // BUSINESS VALIDATION: Validate change order amount (allows positive additions or negative deductions)
@@ -12288,7 +12367,10 @@ SmartManageAI Construction Management Platform
     try {
       const { startDate, endDate, eventType } = req.query;
       
-      const conditions = [];
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json([]);
+
+      const conditions: SQL[] = [];
       if (startDate) {
         conditions.push(sql`${calendarEvents.startDate} >= ${startDate as string}`);
       }
@@ -12297,6 +12379,9 @@ SmartManageAI Construction Management Platform
       }
       if (eventType) {
         conditions.push(eq(calendarEvents.eventType, eventType as any));
+      }
+      if (shouldFilter && orgId) {
+        conditions.push(eq(users.organizationId, orgId));
       }
       
       const eventsWithUser = await db
@@ -12643,14 +12728,26 @@ SmartManageAI Construction Management Platform
         return;
       }
 
-      let query = db.select().from(auditLog);
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json([]);
 
-      const conditions = [];
+      const conditions: SQL[] = [];
       if (entityType) conditions.push(eq(auditLog.entityType, entityType as string));
       if (entityId) conditions.push(eq(auditLog.entityId, entityId as string));
       if (userId) conditions.push(eq(auditLog.userId, userId as string));
       if (action) conditions.push(eq(auditLog.action, action as any));
 
+      if (shouldFilter && orgId) {
+        const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.organizationId, orgId));
+        const orgUserIds = orgUsers.map(u => u.id);
+        if (orgUserIds.length > 0) {
+          conditions.push(inArray(auditLog.userId, orgUserIds));
+        } else {
+          return res.json([]);
+        }
+      }
+
+      let query = db.select().from(auditLog);
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
