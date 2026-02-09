@@ -89,6 +89,7 @@ import ClientPortalPublic from "@/pages/client-portal-public";
 import CompanyHealthPage from "@/pages/company-health";
 import ExecutiveDigestPage from "@/pages/executive-digest";
 import WhatIfSimulatorPage from "@/pages/what-if-simulator";
+import CalculatorPage from "@/pages/calculator";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -248,6 +249,7 @@ function Router() {
       <Route path="/bid-inbox" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
       
       {/* Tools routes */}
+      <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} />} />

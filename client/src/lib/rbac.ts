@@ -526,6 +526,12 @@ export const NavigationConfig = {
 
   toolsMenu: [
     {
+      href: "/calculator",
+      label: "Calculator",
+      testId: "nav-calculator",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
       href: "/mobile-sync",
       label: "Mobile Sync Status",
       testId: "nav-mobile-sync",
