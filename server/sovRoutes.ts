@@ -690,15 +690,15 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
 const validStatusTransitions: Record<string, { nextStates: string[]; allowedRoles: string[] }> = {
   DRAFT: { 
     nextStates: ["PENDING"], 
-    allowedRoles: ["SUPER_ADMIN", "ADMIN"]
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"]
   },
   PENDING: { 
     nextStates: ["APPROVED", "DRAFT"], 
-    allowedRoles: ["SUPER_ADMIN", "ADMIN"]
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"]
   },
   APPROVED: { 
     nextStates: ["SUBMITTED", "PENDING"], 
-    allowedRoles: ["SUPER_ADMIN", "ADMIN"] 
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"] 
   },
   SUBMITTED: { 
     nextStates: ["PAID", "APPROVED"], 
