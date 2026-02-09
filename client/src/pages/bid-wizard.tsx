@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { canEditBids } from "@/lib/rbac";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -121,6 +122,7 @@ export default function BidWizardPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
+  const hasEditAccess = canEditBids(user?.role);
   
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([]);
@@ -404,6 +406,26 @@ export default function BidWizardPage() {
   });
 
   const progressPercent = (currentStep / WIZARD_STEPS.length) * 100;
+
+  if (!hasEditAccess) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Access Restricted</CardTitle>
+            <CardDescription>
+              You do not have permission to create new bids. Please contact your administrator if you need this access.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => setLocation("/bids")} data-testid="button-back-to-bids">
+              Back to Bids
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

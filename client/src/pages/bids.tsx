@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2 } from "lucide-react";
+import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2, UserCog } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canDeleteBids } from "@/lib/rbac";
@@ -98,6 +98,10 @@ export default function BidsPage() {
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
   const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showAwardDialog, setShowAwardDialog] = useState(false);
+  const [awardBidCode, setAwardBidCode] = useState<string | null>(null);
+  const [selectedSuperintendentId, setSelectedSuperintendentId] = useState<string>("");
+  const [selectedProjectManagerId, setSelectedProjectManagerId] = useState<string>("");
   
   const { data: bidsData = [], isLoading } = useBids();
   
@@ -109,6 +113,14 @@ export default function BidsPage() {
   const createBid = useCreateBid();
   const deleteBid = useDeleteBid();
   
+  // Filter active superintendents and managers for team assignment
+  const superintendents = users.filter((u: SelectUser) => 
+    u.isActive && (u.role === "SUPERINTENDENT" || u.role === "MANAGER" || u.role === "ADMIN")
+  );
+  const managers = users.filter((u: SelectUser) => 
+    u.isActive && (u.role === "MANAGER" || u.role === "ADMIN")
+  );
+
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [bidToDelete, setBidToDelete] = useState<{ code: string; name: string } | null>(null);
@@ -274,27 +286,32 @@ export default function BidsPage() {
   }, [bids, searchTerm, dueDateFilter, statusFilter, estimatorFilter]);
 
   const handleConvertToProject = async (bidCode: string) => {
-    // Check if bid has budget data
     const bid = bids.find(b => b.code === bidCode);
     if (bid && (!bid.bidAmount || parseFloat(bid.bidAmount) === 0)) {
-      // Show warning dialog for missing budget
       setPendingConversionBidCode(bidCode);
       setShowBudgetWarning(true);
       return;
     }
 
-    // Proceed with conversion
-    await performConversion(bidCode);
+    setAwardBidCode(bidCode);
+    setSelectedSuperintendentId("");
+    setSelectedProjectManagerId("");
+    setShowAwardDialog(true);
   };
 
   const performConversion = async (bidCode: string) => {
     try {
-      await convertBid.mutateAsync({ code: bidCode });
+      await convertBid.mutateAsync({
+        code: bidCode,
+        superintendentId: selectedSuperintendentId || undefined,
+        projectManagerId: selectedProjectManagerId || undefined,
+      });
       toast({
         title: "Bid Awarded!",
         description: `Bid ${bidCode} has been marked as awarded and converted to an active project.`,
       });
-      // Stay on bids page to show the awarded status - don't navigate away
+      setShowAwardDialog(false);
+      setAwardBidCode(null);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -523,6 +540,94 @@ export default function BidsPage() {
         )}
       </main>
 
+      {/* Award & Assign Team Dialog */}
+      <Dialog open={showAwardDialog} onOpenChange={setShowAwardDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="h-5 w-5" />
+              Award Bid & Assign Team
+            </DialogTitle>
+            <DialogDescription>
+              Convert this bid to an active project and assign the team members who will be responsible for it.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {awardBidCode && (
+              <div className="p-3 bg-muted rounded-md">
+                <p className="text-sm font-medium">
+                  Bid: {bids.find(b => b.code === awardBidCode)?.name}
+                </p>
+                <p className="text-xs text-muted-foreground">Code: {awardBidCode}</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="list-superintendent">Superintendent</Label>
+              <Select 
+                value={selectedSuperintendentId} 
+                onValueChange={(val) => setSelectedSuperintendentId(val === "none" ? "" : val)}
+              >
+                <SelectTrigger id="list-superintendent" data-testid="select-list-superintendent">
+                  <SelectValue placeholder="Select superintendent (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {superintendents.map((u: SelectUser) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="list-project-manager">Project Manager</Label>
+              <Select 
+                value={selectedProjectManagerId} 
+                onValueChange={(val) => setSelectedProjectManagerId(val === "none" ? "" : val)}
+              >
+                <SelectTrigger id="list-project-manager" data-testid="select-list-project-manager">
+                  <SelectValue placeholder="Select project manager (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {managers.map((u: SelectUser) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setShowAwardDialog(false)} 
+              data-testid="button-cancel-list-award"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                if (awardBidCode) {
+                  await performConversion(awardBidCode);
+                }
+              }}
+              disabled={convertBid.isPending}
+              data-testid="button-confirm-list-award"
+            >
+              {convertBid.isPending ? "Converting..." : "Award & Convert to Project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Budget Warning Dialog */}
       <AlertDialog open={showBudgetWarning} onOpenChange={setShowBudgetWarning}>
         <AlertDialogContent data-testid="dialog-budget-warning">
@@ -551,9 +656,12 @@ export default function BidsPage() {
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={async () => {
+              onClick={() => {
                 if (pendingConversionBidCode) {
-                  await performConversion(pendingConversionBidCode);
+                  setAwardBidCode(pendingConversionBidCode);
+                  setSelectedSuperintendentId("");
+                  setSelectedProjectManagerId("");
+                  setShowAwardDialog(true);
                   setPendingConversionBidCode(null);
                 }
                 setShowBudgetWarning(false);

@@ -297,14 +297,8 @@ export default function BidDetailPage() {
         ...data,
         quoteAmount: data.quoteAmount,
       };
-      const response = await fetch(`/api/bids/${bidCode}/quotes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error("Failed to create quote");
-      return response.json();
+      const res = await apiRequest("POST", `/api/bids/${bidCode}/quotes`, payload);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "quotes"] });
@@ -326,14 +320,8 @@ export default function BidDetailPage() {
   // Update quote mutation
   const updateQuote = useMutation({
     mutationFn: async ({ quoteId, data }: { quoteId: string; data: Partial<QuoteFormValues> }) => {
-      const response = await fetch(`/api/bids/${bidCode}/quotes/${quoteId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to update quote");
-      return response.json();
+      const res = await apiRequest("PATCH", `/api/bids/${bidCode}/quotes/${quoteId}`, data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "quotes"] });
@@ -356,12 +344,8 @@ export default function BidDetailPage() {
   // Delete quote mutation
   const deleteQuote = useMutation({
     mutationFn: async (quoteId: string) => {
-      const response = await fetch(`/api/bids/${bidCode}/quotes/${quoteId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to delete quote");
-      return response.json();
+      const res = await apiRequest("DELETE", `/api/bids/${bidCode}/quotes/${quoteId}`);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "quotes"] });
@@ -383,14 +367,8 @@ export default function BidDetailPage() {
         ...data,
         cost: data.cost,
       };
-      const response = await fetch(`/api/bids/${bidCode}/material-quotes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error("Failed to create material quote");
-      return response.json();
+      const res = await apiRequest("POST", `/api/bids/${bidCode}/material-quotes`, payload);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
@@ -411,14 +389,8 @@ export default function BidDetailPage() {
   // Update material quote mutation
   const updateMaterialQuote = useMutation({
     mutationFn: async ({ quoteId, data }: { quoteId: string; data: Partial<MaterialQuoteFormValues> }) => {
-      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to update material quote");
-      return response.json();
+      const res = await apiRequest("PATCH", `/api/bids/${bidCode}/material-quotes/${quoteId}`, data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
@@ -440,12 +412,8 @@ export default function BidDetailPage() {
   // Delete material quote mutation
   const deleteMaterialQuote = useMutation({
     mutationFn: async (quoteId: string) => {
-      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to delete material quote");
-      return response.json();
+      const res = await apiRequest("DELETE", `/api/bids/${bidCode}/material-quotes/${quoteId}`);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
@@ -554,14 +522,8 @@ export default function BidDetailPage() {
   // Toggle subcontractor quote selection
   const toggleQuoteSelection = useMutation({
     mutationFn: async ({ quoteId, isSelected }: { quoteId: string; isSelected: boolean }) => {
-      const response = await fetch(`/api/bids/${bidCode}/quotes/${quoteId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isSelected }),
-      });
-      if (!response.ok) throw new Error("Failed to update quote selection");
-      return response.json();
+      const res = await apiRequest("PATCH", `/api/bids/${bidCode}/quotes/${quoteId}`, { isSelected });
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "quotes"] });
@@ -578,14 +540,8 @@ export default function BidDetailPage() {
   // Toggle material quote selection
   const toggleMaterialQuoteSelection = useMutation({
     mutationFn: async ({ quoteId, isSelected }: { quoteId: string; isSelected: boolean }) => {
-      const response = await fetch(`/api/bids/${bidCode}/material-quotes/${quoteId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isSelected }),
-      });
-      if (!response.ok) throw new Error("Failed to update material quote selection");
-      return response.json();
+      const res = await apiRequest("PATCH", `/api/bids/${bidCode}/material-quotes/${quoteId}`, { isSelected });
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "material-quotes"] });
