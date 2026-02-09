@@ -20,7 +20,12 @@ function parseGcsUrl(url: string): { bucketName: string; objectName: string } | 
   }
 }
 
-async function downloadFromGcs(url: string): Promise<Buffer> {
+interface GcsDownloadResult {
+  buffer: Buffer;
+  contentType: string | null;
+}
+
+async function downloadFromGcs(url: string): Promise<GcsDownloadResult> {
   const gcsInfo = parseGcsUrl(url);
   if (!gcsInfo) {
     throw new Error(`Not a valid GCS URL: ${url}`);
@@ -28,27 +33,59 @@ async function downloadFromGcs(url: string): Promise<Buffer> {
 
   const bucket = objectStorageClient.bucket(gcsInfo.bucketName);
   const file = bucket.file(gcsInfo.objectName);
+
+  let contentType: string | null = null;
+  try {
+    const [metadata] = await file.getMetadata();
+    contentType = metadata.contentType || null;
+  } catch {
+  }
+
   const [contents] = await file.download();
-  return contents;
+  return { buffer: contents, contentType };
 }
 
-function isImageFile(url: string): boolean {
-  const cleanUrl = url.split("?")[0].toLowerCase();
-  return /\.(jpg|jpeg|png|webp|gif)$/.test(cleanUrl);
-}
+type FileType = "pdf" | "image" | "unknown";
 
-function isPdfFile(url: string): boolean {
-  const cleanUrl = url.split("?")[0].toLowerCase();
-  return cleanUrl.endsWith(".pdf");
-}
+function detectFileType(buffer: Buffer, contentType: string | null, url: string): { type: FileType; mime: string } {
+  if (buffer.length >= 5 && buffer.subarray(0, 5).toString("ascii") === "%PDF-") {
+    return { type: "pdf", mime: "application/pdf" };
+  }
 
-function getMimeType(url: string): string {
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return { type: "image", mime: "image/png" };
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return { type: "image", mime: "image/jpeg" };
+  }
+
+  if (buffer.length >= 4 && buffer.subarray(0, 4).toString("ascii") === "RIFF") {
+    return { type: "image", mime: "image/webp" };
+  }
+
+  if (buffer.length >= 4 && (buffer.subarray(0, 4).toString("ascii") === "GIF8")) {
+    return { type: "image", mime: "image/gif" };
+  }
+
+  if (contentType) {
+    const ct = contentType.toLowerCase();
+    if (ct.includes("pdf")) return { type: "pdf", mime: "application/pdf" };
+    if (ct.includes("image/png")) return { type: "image", mime: "image/png" };
+    if (ct.includes("image/jpeg") || ct.includes("image/jpg")) return { type: "image", mime: "image/jpeg" };
+    if (ct.includes("image/webp")) return { type: "image", mime: "image/webp" };
+    if (ct.includes("image/gif")) return { type: "image", mime: "image/gif" };
+    if (ct.startsWith("image/")) return { type: "image", mime: ct };
+  }
+
   const cleanUrl = url.split("?")[0].toLowerCase();
-  if (cleanUrl.endsWith(".png")) return "image/png";
-  if (cleanUrl.endsWith(".jpg") || cleanUrl.endsWith(".jpeg")) return "image/jpeg";
-  if (cleanUrl.endsWith(".webp")) return "image/webp";
-  if (cleanUrl.endsWith(".gif")) return "image/gif";
-  return "image/png";
+  if (cleanUrl.endsWith(".pdf")) return { type: "pdf", mime: "application/pdf" };
+  if (cleanUrl.endsWith(".png")) return { type: "image", mime: "image/png" };
+  if (cleanUrl.endsWith(".jpg") || cleanUrl.endsWith(".jpeg")) return { type: "image", mime: "image/jpeg" };
+  if (cleanUrl.endsWith(".webp")) return { type: "image", mime: "image/webp" };
+  if (cleanUrl.endsWith(".gif")) return { type: "image", mime: "image/gif" };
+
+  return { type: "unknown", mime: "application/octet-stream" };
 }
 
 type ImageContentBlock = {
@@ -110,31 +147,43 @@ export async function extractDocumentContent(
   try {
     console.log(`[DocumentExtractor] Processing: ${documentUrl.substring(0, 100)}...`);
 
-    const buffer = await downloadFromGcs(documentUrl);
+    const { buffer, contentType } = await downloadFromGcs(documentUrl);
+    const detected = detectFileType(buffer, contentType, documentUrl);
 
-    if (isPdfFile(documentUrl)) {
-      console.log(`[DocumentExtractor] Rendering PDF (${(buffer.length / 1024).toFixed(0)} KB)`);
+    console.log(`[DocumentExtractor] Detected type: ${detected.type} (${detected.mime}), content-type header: ${contentType || 'none'}, size: ${(buffer.length / 1024).toFixed(0)} KB`);
+
+    if (detected.type === "pdf") {
+      console.log(`[DocumentExtractor] Rendering PDF...`);
       const images = await renderPdfToImages(buffer);
       console.log(`[DocumentExtractor] Rendered ${images.length} PDF pages`);
       return images;
     }
 
-    if (isImageFile(documentUrl)) {
-      const mime = getMimeType(documentUrl);
+    if (detected.type === "image") {
       const base64 = buffer.toString("base64");
-      console.log(`[DocumentExtractor] Encoded image (${(buffer.length / 1024).toFixed(0)} KB)`);
+      console.log(`[DocumentExtractor] Encoded image as ${detected.mime}`);
       return [
         {
           type: "image_url",
           image_url: {
-            url: `data:${mime};base64,${base64}`,
+            url: `data:${detected.mime};base64,${base64}`,
             detail: "high",
           },
         },
       ];
     }
 
-    console.log(`[DocumentExtractor] Unsupported file type, skipping: ${documentUrl}`);
+    console.warn(`[DocumentExtractor] Could not determine file type for: ${documentUrl}. Content-type: ${contentType}. Trying as PDF...`);
+    try {
+      const images = await renderPdfToImages(buffer);
+      if (images.length > 0) {
+        console.log(`[DocumentExtractor] Successfully rendered as PDF (${images.length} pages)`);
+        return images;
+      }
+    } catch {
+    }
+
+    console.warn(`[DocumentExtractor] Unable to process file, skipping`);
     return [];
   } catch (error) {
     console.error(`[DocumentExtractor] Error processing ${documentUrl}:`, error);
