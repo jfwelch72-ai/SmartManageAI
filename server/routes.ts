@@ -4305,6 +4305,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Verify org access via the parent project
+      const [parentProject] = await db.select().from(projects).where(eq(projects.id, oldItem.projectId)).limit(1);
+      if (!parentProject || !verifyOrgAccess(req, res, parentProject.gcOrganizationId)) return;
+
       const updateData: any = { ...validationResult.data, updatedAt: new Date() };
       
       const [updatedItem] = await db
@@ -4320,10 +4324,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create notification for office administrators if billing status changed to READY_TO_BILL
       if (updatedItem.billingStatus === "READY_TO_BILL" && oldItem.billingStatus !== "READY_TO_BILL") {
+        const orgConditions: SQL[] = [eq(users.role, "ADMIN")];
+        if (parentProject.gcOrganizationId) {
+          orgConditions.push(eq(users.organizationId, parentProject.gcOrganizationId));
+        }
         const admins = await db
           .select()
           .from(users)
-          .where(eq(users.role, "ADMIN"));
+          .where(and(...orgConditions));
         
         const notificationsToCreate = admins.map(admin => ({
           userId: admin.id,
@@ -4361,19 +4369,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // SECURITY: Verify org access via the parent project
+      const [parentProject] = await db.select().from(projects).where(eq(projects.id, scopeItem.projectId)).limit(1);
+      if (!parentProject || !verifyOrgAccess(req, res, parentProject.gcOrganizationId)) return;
+
       // OWNERSHIP CHECK: SUPERINTENDENT can only delete scope items from projects they are assigned to
       const userRole = req.user!.effectiveRole || req.user!.role;
-      if (userRole === "SUPERINTENDENT") {
-        const [project] = await db
-          .select()
-          .from(projects)
-          .where(eq(projects.id, scopeItem.projectId))
-          .limit(1);
-
-        if (!project || project.superintendentId !== req.user!.id) {
-          res.status(403).json({ error: "You can only delete scope items from projects where you are the assigned superintendent" });
-          return;
-        }
+      if (userRole === "SUPERINTENDENT" && parentProject.superintendentId !== req.user!.id) {
+        res.status(403).json({ error: "You can only delete scope items from projects where you are the assigned superintendent" });
+        return;
       }
 
       const [deletedItem] = await db
@@ -4416,6 +4420,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Scope item not found" });
         return;
       }
+
+      // SECURITY: Verify org access via the parent project
+      const [parentProject] = await db.select().from(projects).where(eq(projects.id, scopeItem.projectId)).limit(1);
+      if (!parentProject || !verifyOrgAccess(req, res, parentProject.gcOrganizationId)) return;
 
       // Calculate if there's an overage
       const data = validationResult.data;
@@ -4463,10 +4471,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create notification for managers if a new overage is detected
       if (hasAnyOverage && scopeItem.overageActionStatus === "NONE") {
+        const managerConditions: SQL[] = [sql`${users.role} IN ('ADMIN', 'MANAGER')`];
+        if (parentProject.gcOrganizationId) {
+          managerConditions.push(eq(users.organizationId, parentProject.gcOrganizationId));
+        }
         const managers = await db
           .select()
           .from(users)
-          .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+          .where(and(...managerConditions));
         
         const overageDetails: string[] = [];
         if (hasConcreteOverage) {
@@ -4512,6 +4524,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projectId = req.params.projectId;
       
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       // Get all scope items for the project that have material estimates
       const items = await db
         .select()
@@ -4946,6 +4963,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get material budgets for a project (with usage summaries)
   app.get("/api/projects/:projectId/material-budgets", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialBudgets, projectMaterialUsage, scopeItems: scopeItemsTable } = await import("@shared/schema");
       
       const budgets = await db
@@ -4974,6 +4996,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get material budget summary for a project (aggregated stats)
   app.get("/api/projects/:projectId/material-budgets/summary", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialBudgets } = await import("@shared/schema");
       
       const budgets = await db
@@ -5004,6 +5031,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get material usage entries for a project
   app.get("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialUsage, scopeItems: scopeItemsTable } = await import("@shared/schema");
       
       const usage = await db
@@ -5036,6 +5068,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create material usage entry (and update budget tracking)
   app.post("/api/projects/:projectId/material-usage", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialUsage, projectMaterialBudgets, insertProjectMaterialUsageSchema } = await import("@shared/schema");
       
       // Validate input
@@ -5103,9 +5140,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId));
               if (project) {
                 // Notify admins and managers about material overage
-                const managers = await db.select().from(users).where(
-                  sql`${users.role} IN ('ADMIN', 'MANAGER', 'OFFICE_MANAGER')`
-                );
+                const mgrConditions: SQL[] = [sql`${users.role} IN ('ADMIN', 'MANAGER', 'OFFICE_MANAGER')`];
+                if (project.gcOrganizationId) {
+                  mgrConditions.push(eq(users.organizationId, project.gcOrganizationId));
+                }
+                const managers = await db.select().from(users).where(and(...mgrConditions));
                 
                 for (const manager of managers) {
                   await db.insert(notifications).values({
@@ -5135,6 +5174,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update material usage entry
   app.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialUsage, projectMaterialBudgets } = await import("@shared/schema");
       
       const [existing] = await db
@@ -5144,6 +5188,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!existing) {
         res.status(404).json({ error: "Usage entry not found" });
+        return;
+      }
+
+      // SECURITY: Verify usage entry belongs to the project in the URL (prevent parameter spoofing)
+      if (existing.projectId !== req.params.projectId) {
+        res.status(403).json({ error: "Access denied" });
         return;
       }
 
@@ -5211,6 +5261,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete material usage entry
   app.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, async (req: AuthRequest, res) => {
     try {
+      // SECURITY: Verify org access
+      const [project] = await db.select().from(projects).where(eq(projects.id, req.params.projectId)).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const { projectMaterialUsage, projectMaterialBudgets } = await import("@shared/schema");
       
       const [existing] = await db
@@ -5220,6 +5275,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!existing) {
         res.status(404).json({ error: "Usage entry not found" });
+        return;
+      }
+
+      // SECURITY: Verify usage entry belongs to the project in the URL (prevent parameter spoofing)
+      if (existing.projectId !== req.params.projectId) {
+        res.status(403).json({ error: "Access denied" });
         return;
       }
 

@@ -1,0 +1,86 @@
+Please test and verify the Projects Feature for complete end-to-end functionality, role-based access, and cross-module communication.
+Scope of Testing
+1. Project List
+•	Verify users can view all projects they are permitted to access
+•	Ensure:
+o	Role-based visibility (Admin, PM, Estimator, Superintendent, Vendor, Viewer, etc.)
+o	Organization isolation (no cross-org projects visible)
+o	Correct project status display (Draft, Active, On Hold, Completed, Archived)
+•	Confirm filters, search, and sorting work correctly
+________________________________________
+2. Project Detail (Full Project Management View)
+•	Validate project detail page loads correctly with:
+o	Overview & metadata
+o	Assigned users & roles
+o	Scope items
+o	Schedules
+o	Material budgets
+o	Documents
+o	Activity logs
+•	Ensure updates made in sub-modules reflect immediately in the project view
+________________________________________
+3. Project Creation
+•	Test creation flow:
+o	Required fields validation
+o	Default values (status, owner, org, dates)
+o	Role-based permissions for who can create projects
+•	Verify newly created projects:
+o	Appear in Project List immediately
+o	Are correctly linked to organization
+o	Inherit organization configurations (trades, branding, defaults)
+________________________________________
+4. Scope Tracking
+•	Validate ability to:
+o	Create, edit, delete scope items
+o	Assign scope items to users or trades
+o	Track progress (% complete, status, notes)
+•	Confirm:
+o	Progress updates reflect in project summary
+o	Scope changes update related modules (schedule, budgets, reports)
+o	Role permissions prevent unauthorized edits
+________________________________________
+5. Material Budgets
+•	Verify material budget features:
+o	Create and assign material budgets per project
+o	Track usage vs planned budget
+o	Update quantities and costs
+•	Ensure:
+o	Budget updates reflect in real-time on project dashboards
+o	Over-budget warnings or indicators trigger correctly
+o	Data is scoped correctly to the project and organization
+________________________________________
+Role & Permission Validation
+•	Confirm each role can only:
+o	View allowed projects
+o	Edit permitted fields/modules
+o	Perform authorized actions (create, update, delete)
+•	Validate restricted roles cannot:
+o	Modify budgets
+o	Change scope ownership
+o	Delete projects
+________________________________________
+End-to-End Communication
+•	Test data flow between:
+o	Project creation → Project list
+o	Scope tracking → Schedules & reports
+o	Material budgets → Cost tracking & dashboards
+o	Role updates → Access permissions
+•	Verify notifications trigger on:
+o	Project creation
+o	Scope changes
+o	Budget thresholds
+________________________________________
+Issues to Identify
+•	Missing or delayed data updates
+•	Incorrect role permissions
+•	Broken module synchronization
+•	Cross-project or cross-org data exposure
+•	UI inconsistencies between project list and detail views
+________________________________________
+Expected Outcome
+•	Projects feature works seamlessly end-to-end
+•	Accurate role-based access control
+•	Real-time synchronization across modules
+•	Clean, predictable project lifecycle management
+Please investigate, fix any issues found, and confirm the Projects feature is stable, secure, and production-ready.
+
