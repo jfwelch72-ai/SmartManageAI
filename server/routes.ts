@@ -2351,6 +2351,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       const quotes = await db
         .select()
         .from(bidSubcontractorQuotes)
@@ -2372,6 +2374,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -2420,6 +2424,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody: any = {
         subcontractorName: req.body.subcontractorName ? sanitizeShortText(req.body.subcontractorName) : undefined,
@@ -2449,16 +2455,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validated = sanitizedBody;
 
+      // SECURITY: Verify quote belongs to this bid (prevent parameter spoofing)
+      const [existing] = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Quote not found" });
+        return;
+      }
+
+      if (existing.bidId !== bid.id) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
       const [updated] = await db
         .update(bidSubcontractorQuotes)
         .set({ ...validated, updatedAt: new Date() })
         .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
         .returning();
-
-      if (!updated) {
-        res.status(404).json({ error: "Quote not found" });
-        return;
-      }
 
       // Log audit
       await logAudit({
@@ -2489,15 +2507,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+      // SECURITY: Verify quote belongs to this bid (prevent parameter spoofing)
+      const [existing] = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
+        .limit(1);
+
+      if (!existing) {
+        res.status(404).json({ error: "Quote not found" });
+        return;
+      }
+
+      if (existing.bidId !== bid.id) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
       const [deleted] = await db
         .delete(bidSubcontractorQuotes)
         .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
         .returning();
-
-      if (!deleted) {
-        res.status(404).json({ error: "Quote not found" });
-        return;
-      }
 
       // Log audit
       await logAudit({
@@ -2530,6 +2562,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       const materialQuotes = await db
         .select()
         .from(bidMaterialQuotes)
@@ -2551,6 +2585,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -2599,6 +2635,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody: any = {
         materialName: req.body.materialName ? sanitizeShortText(req.body.materialName) : undefined,
@@ -2626,16 +2664,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validated = sanitizedBody;
 
+      // SECURITY: Verify quote belongs to this bid (prevent parameter spoofing)
+      const [existingMQ] = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.id, req.params.quoteId))
+        .limit(1);
+
+      if (!existingMQ) {
+        res.status(404).json({ error: "Material quote not found" });
+        return;
+      }
+
+      if (existingMQ.bidId !== bid.id) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
       const [updated] = await db
         .update(bidMaterialQuotes)
         .set({ ...validated, updatedAt: new Date() })
         .where(eq(bidMaterialQuotes.id, req.params.quoteId))
         .returning();
-
-      if (!updated) {
-        res.status(404).json({ error: "Material quote not found" });
-        return;
-      }
 
       // Log audit
       await logAudit({
@@ -2666,15 +2716,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+      // SECURITY: Verify quote belongs to this bid (prevent parameter spoofing)
+      const [existingMQ] = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.id, req.params.quoteId))
+        .limit(1);
+
+      if (!existingMQ) {
+        res.status(404).json({ error: "Material quote not found" });
+        return;
+      }
+
+      if (existingMQ.bidId !== bid.id) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
       const [deleted] = await db
         .delete(bidMaterialQuotes)
         .where(eq(bidMaterialQuotes.id, req.params.quoteId))
         .returning();
-
-      if (!deleted) {
-        res.status(404).json({ error: "Material quote not found" });
-        return;
-      }
 
       // Log audit
       await logAudit({
@@ -2706,6 +2770,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
       const [packet] = await db
         .select()
         .from(handoffPackets)
@@ -2727,6 +2793,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // Check if packet already exists
       const [existing] = await db
@@ -2818,6 +2886,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
       const [packet] = await db
         .select()
         .from(handoffPackets)
@@ -2839,6 +2909,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
       // OWNERSHIP CHECK: SUPERINTENDENT can only edit handoff for projects they are assigned to
       const userRole = req.user!.effectiveRole || req.user!.role;
@@ -2935,6 +3007,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // Get estimate and line items
       const [estimate] = await db
@@ -3065,6 +3139,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Bid not found" });
         return;
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
       // Get estimate and line items
       const [estimate] = await db
@@ -17884,6 +17960,8 @@ If the make/model is unknown, provide general best practices for the equipment t
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       const selections = await db
         .select()
@@ -17909,6 +17987,8 @@ If the make/model is unknown, provide general best practices for the equipment t
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       // Validate required fields
       const { source, equipmentName, equipmentType } = req.body;
@@ -17958,6 +18038,8 @@ If the make/model is unknown, provide general best practices for the equipment t
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       // SECURITY: Define conditions for both SELECT and UPDATE to prevent TOCTOU
       const selectionConditions = and(
@@ -18016,6 +18098,8 @@ If the make/model is unknown, provide general best practices for the equipment t
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
+
+      if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
       
       // SECURITY: Define conditions for both SELECT and DELETE to prevent TOCTOU
       const selectionConditions = and(
