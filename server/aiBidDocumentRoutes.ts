@@ -12,6 +12,7 @@ import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { extractDocumentContent } from "./ai/documentExtractor";
 
 const router = Router();
 
@@ -70,7 +71,6 @@ async function analyzeDocumentWithAI(documentUrl: string, documentName: string, 
 ${tradeContext}
 
 Document Name: ${documentName}
-Document URL: ${documentUrl}
 
 Respond with JSON in this format:
 {
@@ -110,30 +110,24 @@ Respond with JSON in this format:
 }`;
 
   try {
-    const isImageUrl = documentUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const documentImages = await extractDocumentContent(documentUrl);
     
     let messages: any[] = [
       { role: 'system', content: BID_DOCUMENT_ANALYSIS_SYSTEM_PROMPT },
     ];
 
-    if (isImageUrl) {
+    if (documentImages.length > 0) {
       messages.push({
         role: 'user',
         content: [
           { type: 'text', text: userPrompt },
-          { 
-            type: 'image_url', 
-            image_url: { 
-              url: documentUrl,
-              detail: 'high'
-            } 
-          }
+          ...documentImages,
         ]
       });
     } else {
       messages.push({
         role: 'user',
-        content: `${userPrompt}\n\nNote: This is a PDF document. Analyze based on the provided URL and extract any information you can infer from the document name and context.`
+        content: `${userPrompt}\n\nNote: The document could not be visually rendered. Analyze based on the document name and any available context.`
       });
     }
 
@@ -950,7 +944,21 @@ const wizardAnalyzeSchema = z.object({
   })).min(1, "At least one document is required"),
 });
 
-// Helper to validate document URLs are from our object storage
+const BID_WIZARD_SYSTEM_PROMPT = `You are an expert construction estimator AI assistant. You are analyzing actual bid invitation documents, construction drawings, and specifications that have been uploaded as images.
+
+Your task is to carefully read the document content shown in the images and extract structured project information and scope of work items for a construction bid.
+
+IMPORTANT INSTRUCTIONS:
+- Read ALL text visible in the document images carefully
+- Extract REAL information from the documents - do NOT guess or make up data
+- If a field is not found in the documents, return null for that field
+- For scope items, only use these categories: CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
+- Extract quantities and units accurately from the documents
+- Parse dates in YYYY-MM-DD format
+- For estimatedValue, provide a numeric value (no currency symbols or text)
+
+Respond with valid JSON matching the required structure.`;
+
 function isValidObjectStorageUrl(url: string): boolean {
   try {
     const parsedUrl = new URL(url);
@@ -976,7 +984,6 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
     const { documents } = validationResult.data;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
-    // Multi-tenant access control
     if (mustDenyAccess) {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -985,12 +992,6 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
       return res.status(403).json({ error: "Organization context required" });
     }
 
-    // Validate all document URLs are from trusted object storage
-    // NOTE: For enhanced security, could add full ACL verification by:
-    // 1. Parsing object key from URL
-    // 2. Calling objectStorage.getObjectMetadata
-    // 3. Verifying metadata.owner belongs to requesting org
-    // Current hostname whitelist provides defense-in-depth since uploads are org-scoped
     const invalidUrls = documents.filter(doc => !isValidObjectStorageUrl(doc.url));
     if (invalidUrls.length > 0) {
       return res.status(400).json({ 
@@ -999,7 +1000,6 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
       });
     }
 
-    // Get organization trade type for context
     let tradeType: string | undefined;
     if (orgId) {
       const [org] = await db
@@ -1010,51 +1010,87 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
       tradeType = org?.tradeType || undefined;
     }
 
-    console.log(`🔮 [AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
+    console.log(`[AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
 
-    // Analyze documents with AI
-    const documentDescriptions = documents.map(d => `- ${d.name}: ${d.url}`).join('\n');
-    
+    const allDocumentImages: Array<{type: 'image_url', image_url: {url: string, detail: string}}> = [];
+    for (const doc of documents) {
+      try {
+        const images = await extractDocumentContent(doc.url);
+        allDocumentImages.push(...images);
+      } catch (extractError) {
+        console.error(`[AI Bid Wizard] Failed to extract content from ${doc.name}:`, extractError);
+      }
+    }
+
+    console.log(`[AI Bid Wizard] Extracted ${allDocumentImages.length} page images from ${documents.length} documents`);
+
     const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
+    const documentNames = documents.map(d => `- ${d.name}`).join('\n');
 
     const userPrompt = `Analyze these bid documents and extract project information and scope of work items.
 
 ${tradeContext}
 
-Documents:
-${documentDescriptions}
+Document names:
+${documentNames}
 
-Extract and respond with JSON in this format:
+Extract and respond with JSON in this exact format:
 {
   "projectName": "Extracted project name or null",
-  "clientName": "Client/GC name or null",
+  "clientName": "Client/GC/Owner company name or null",
+  "clientContactName": "Contact person name or null",
+  "clientContactEmail": "Contact email or null",
+  "clientContactPhone": "Contact phone or null",
   "dueDate": "YYYY-MM-DD format or null",
-  "location": "Project location/address or null",
+  "locationAddress": "Street address or null",
+  "city": "City name or null",
+  "state": "Two-letter state abbreviation or null",
+  "description": "Project description/overview or null",
+  "estimatedValue": null,
   "scopeItems": [
     {
-      "description": "Scope item description",
+      "description": "Specific scope item description",
       "quantity": 100,
       "unit": "SF",
-      "category": "CONCRETE|ELECTRICAL|PLUMBING|GENERAL|etc",
+      "category": "CONCRETE",
       "notes": "Any relevant notes"
     }
   ],
   "keyRequirements": ["Requirement 1", "Requirement 2"],
   "specialConditions": ["Condition 1", "Condition 2"],
-  "estimatedValue": "Estimated project value range if mentioned"
+  "insuranceRequirements": "Insurance requirements text or null",
+  "bondingRequirements": "Bonding requirements text or null"
 }
 
-Be thorough in extracting scope items. Include quantities and units when available.`;
+CATEGORY VALUES (use only these): CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
+
+Be thorough in extracting scope items. Include quantities and units when available. If estimatedValue is mentioned or can be inferred from the documents, provide it as a number (no currency symbols).`;
 
     try {
+      let messages: any[] = [
+        { role: 'system', content: BID_WIZARD_SYSTEM_PROMPT },
+      ];
+
+      if (allDocumentImages.length > 0) {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: userPrompt },
+            ...allDocumentImages,
+          ]
+        });
+      } else {
+        messages.push({
+          role: 'user',
+          content: `${userPrompt}\n\nNote: The documents could not be visually rendered. Analyze based on the document names and any available context.`
+        });
+      }
+
       const completion = await openai.chat.completions.create({
         model: AI_MODEL_GPT4O,
-        messages: [
-          { role: 'system', content: BID_DOCUMENT_ANALYSIS_SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
+        messages,
         temperature: 0.3,
-        max_tokens: 4000,
+        max_tokens: 4096,
         response_format: { type: "json_object" },
       });
 
@@ -1065,22 +1101,29 @@ Be thorough in extracting scope items. Include quantities and units when availab
 
       const result = JSON.parse(content);
       
-      console.log(`✅ [AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
+      console.log(`[AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
       
       res.json(result);
     } catch (aiError) {
       console.error('[AI Bid Wizard] AI analysis error:', aiError instanceof Error ? aiError.message : 'Unknown');
       
-      // Return partial success with empty data - frontend can handle manual entry
       return res.status(200).json({
         projectName: null,
         clientName: null,
+        clientContactName: null,
+        clientContactEmail: null,
+        clientContactPhone: null,
         dueDate: null,
-        location: null,
+        locationAddress: null,
+        city: null,
+        state: null,
+        description: null,
+        estimatedValue: null,
         scopeItems: [],
         keyRequirements: [],
         specialConditions: [],
-        estimatedValue: null,
+        insuranceRequirements: null,
+        bondingRequirements: null,
         aiError: true,
         message: "AI analysis could not complete. Please enter information manually.",
       });

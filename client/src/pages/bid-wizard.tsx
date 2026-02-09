@@ -86,12 +86,20 @@ interface AIExtractedItem {
 interface AIAnalysisResult {
   projectName?: string;
   clientName?: string;
+  clientContactName?: string;
+  clientContactEmail?: string;
+  clientContactPhone?: string;
   dueDate?: string;
-  location?: string;
+  locationAddress?: string;
+  city?: string;
+  state?: string;
+  description?: string;
+  estimatedValue?: number;
   scopeItems: AIExtractedItem[];
   keyRequirements?: string[];
   specialConditions?: string[];
-  estimatedValue?: string;
+  insuranceRequirements?: string;
+  bondingRequirements?: string;
 }
 
 const WIZARD_STEPS = [
@@ -213,11 +221,16 @@ export default function BidWizardPage() {
       }));
       setScopeItems(items);
       
-      // Apply AI-extracted project info to form
       if (data.projectName) form.setValue("name", data.projectName);
       if (data.clientName) form.setValue("clientName", data.clientName);
+      if (data.clientContactName) form.setValue("clientContactName", data.clientContactName);
+      if (data.clientContactEmail) form.setValue("clientContactEmail", data.clientContactEmail);
+      if (data.clientContactPhone) form.setValue("clientContactPhone", data.clientContactPhone);
       if (data.dueDate) form.setValue("dueDate", data.dueDate);
-      if (data.location) form.setValue("locationAddress", data.location);
+      if (data.locationAddress) form.setValue("locationAddress", data.locationAddress);
+      if (data.city) form.setValue("city", data.city);
+      if (data.state) form.setValue("state", data.state);
+      if (data.description) form.setValue("description", data.description);
       
       // Show warning if AI had an error
       if (data.aiError) {
