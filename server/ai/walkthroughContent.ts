@@ -385,7 +385,7 @@ export const ROLE_WALKTHROUGHS: Record<string, RoleWalkthrough> = {
         title: "Calculator Magic",
         description: "Why do the math yourself when we've got calculators, {{firstName}}? Built-in calculators for your trade that already include waste factors.",
         action: "Try the material calculators. Punch in dimensions and watch the quantities appear.",
-        targetPage: "/calculators",
+        targetPage: "/calculator",
         tips: [
           "Just enter dimensions — the calculator handles the rest",
           "Waste factors are already built in",
