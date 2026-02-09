@@ -309,8 +309,9 @@ export function AIAssistantWidget() {
   };
 
   const navigateToStep = () => {
-    if (walkthroughStatus?.walkthrough?.currentStep?.targetPage) {
-      navigate(walkthroughStatus.walkthrough.currentStep.targetPage);
+    const targetPage = walkthroughStatus?.walkthrough?.currentStep?.targetPage;
+    if (targetPage) {
+      navigate(targetPage);
     }
   };
 
@@ -537,16 +538,18 @@ export function AIAssistantWidget() {
                           {currentStep.action}
                         </p>
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={navigateToStep}
-                        className="w-full"
-                        data-testid="button-navigate-step"
-                      >
-                        <MapPin className="h-3 w-3 mr-2" />
-                        Go to {currentStep.targetPage}
-                      </Button>
+                      {location !== currentStep.targetPage && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={navigateToStep}
+                          className="w-full"
+                          data-testid="button-navigate-step"
+                        >
+                          <MapPin className="h-3 w-3 mr-2" />
+                          Go to {currentStep.targetPage.replace(/^\//, '').split('/').map(s => s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).join(' / ')}
+                        </Button>
+                      )}
                     </div>
 
                     {currentStep.tips.length > 0 && (
