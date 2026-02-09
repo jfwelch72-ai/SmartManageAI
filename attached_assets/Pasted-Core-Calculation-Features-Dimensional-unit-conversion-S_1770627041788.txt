@@ -1,0 +1,29 @@
+Core Calculation Features
+•	Dimensional & unit conversion — Seamlessly switch between and mix imperial (feet, inches, fractions, yards) and metric (meters, cm, mm) units. Convert lengths, areas, volumes instantly.
+•	Basic geometry calculations — Area, perimeter, volume, right triangles, circles/arcs, slopes/grades.
+•	Material-specific quantity estimators — Compute how much is needed for:
+o	Concrete — Volume for slabs, footings, columns, piers (includes rebar or bag/cubic yard estimates).
+o	Bricks / blocks / masonry — Number of bricks/blocks, mortar volume, for walls (with or without openings).
+o	Tiles / flooring — Square footage coverage, number of tiles, waste allowance.
+o	Lumber / framing — Studs, joists, rafters, boards (board feet, linear feet, piece count).
+o	Roofing — Shingles, bundles, underlayment, nails (based on pitch, overhang, gable/hip/valley).
+o	Drywall / sheathing — Panels/sheets needed, including cut waste.
+o	Paint / coating — Gallons/liters based on surface area and coats.
+o	Aggregates — Gravel, sand, fill for driveways, base layers.
+o	Other — Fencing (posts, rails), insulation, siding, decking, etc.
+Advanced / Project-Level Features (especially in apps & software)
+•	Waste factor adjustment — Automatically add 5–15% (or custom %) for cuts, breakage, and errors.
+•	Cost estimation — Multiply quantities by unit prices → total material cost (often with regional price databases or user-entered prices).
+•	Labor + subtotal breakdowns — Some include labor hours/rates, overhead, profit margins → full project bid/quote.
+•	Takeoff support — Input dimensions from plans (manual or digital import from PDF/2D/3D models in advanced tools like Autodesk Takeoff).
+•	Roof & stair specialized functions — Pitch/slope, rise/run, stringers, hip/valley rafters, jack rafters.
+•	Memory & history — Store/recall values, save multiple projects or scenarios.
+•	Export & sharing — Generate PDF reports, email quotes, export to spreadsheets or integrate with project management/accounting software.
+•	Real-time price updates (in premium apps) — Pull current material prices (regional), tax calculation, currency conversion.
+User Experience & Practical Features
+•	Intuitive interface (especially mobile-friendly for on-site use).
+•	Built-in examples or presets for common jobs (e.g., "standard 4-inch slab", "8-ft stud wall").
+•	Support for complex shapes (irregular rooms, sloped sites, multi-level structures in advanced versions).
+•	Offline capability (critical for job sites with poor internet).
+If you're building/planning to use one, the "must-have" minimum for most users is accurate volume/area calcs + waste factor + basic cost multiplication for the main trades (concrete, masonry, framing, roofing, tiling).
+
