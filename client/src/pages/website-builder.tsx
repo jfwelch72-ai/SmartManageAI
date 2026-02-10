@@ -1008,7 +1008,7 @@ export default function WebsiteBuilderPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="flex flex-wrap gap-1 w-full max-w-5xl h-auto" data-testid="tabs-website-sections">
+        <TabsList className="flex overflow-x-auto gap-1 w-full h-auto" data-testid="tabs-website-sections">
           <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">Setup</span>
