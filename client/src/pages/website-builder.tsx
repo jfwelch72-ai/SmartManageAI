@@ -31,6 +31,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Globe,
+  Home,
   FileText,
   Layout,
   Palette,
@@ -1813,15 +1814,24 @@ export default function WebsiteBuilderPage() {
             </Card>
           ) : (
             <div className="grid gap-4">
-              {pages.map((page) => (
+              {pages.map((page) => {
+                const isHomePage = page.pageType === "HOME";
+                return (
                 <Card key={page.id} className="hover-elevate" data-testid={`card-page-${page.id}`}>
                   <CardContent className="p-4 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="p-2 rounded bg-muted flex-shrink-0">
-                        <FileText className="h-5 w-5" />
+                        {isHomePage ? <Home className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
                       </div>
                       <div className="min-w-0">
-                        <h3 className="font-medium truncate">{page.pageTitle}</h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-medium truncate">{page.pageTitle}</h3>
+                          {isHomePage && (
+                            <Badge variant="outline" data-testid={`badge-front-page-${page.id}`}>
+                              Front Page
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground truncate">/{page.pageSlug}</p>
                       </div>
                     </div>
@@ -1848,18 +1858,21 @@ export default function WebsiteBuilderPage() {
                       <Button variant="ghost" size="icon" onClick={() => handleEditPage(page)} data-testid={`button-edit-page-${page.id}`}>
                         <Edit />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => { setDeletePageId(page.id); setDeletePageTitle(page.pageTitle); }}
-                        data-testid={`button-delete-page-${page.id}`}
-                      >
-                        <Trash2 className="text-destructive" />
-                      </Button>
+                      {!isHomePage && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => { setDeletePageId(page.id); setDeletePageTitle(page.pageTitle); }}
+                          data-testid={`button-delete-page-${page.id}`}
+                        >
+                          <Trash2 className="text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>

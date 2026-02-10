@@ -285,10 +285,52 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
 
-    const pages = await db.query.organizationWebsitePages.findMany({
+    let pages = await db.query.organizationWebsitePages.findMany({
       where: orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined,
       orderBy: [asc(organizationWebsitePages.navigationOrder)],
     });
+
+    if (orgId && pages.length === 0) {
+      const website = await db.query.organizationWebsites.findFirst({
+        where: eq(organizationWebsites.organizationId, orgId),
+      });
+      if (website) {
+        const [homePage] = await db.insert(organizationWebsitePages)
+          .values({
+            websiteId: website.id,
+            organizationId: orgId,
+            pageType: "HOME",
+            pageSlug: "home",
+            pageTitle: "Homepage",
+            navigationLabel: "Home",
+            showInNavigation: true,
+            navigationOrder: 0,
+            isPublished: true,
+          })
+          .returning();
+        pages = [homePage];
+      }
+    } else if (orgId && !pages.some(p => p.pageType === "HOME")) {
+      const website = await db.query.organizationWebsites.findFirst({
+        where: eq(organizationWebsites.organizationId, orgId),
+      });
+      if (website) {
+        const [homePage] = await db.insert(organizationWebsitePages)
+          .values({
+            websiteId: website.id,
+            organizationId: orgId,
+            pageType: "HOME",
+            pageSlug: "home",
+            pageTitle: "Homepage",
+            navigationLabel: "Home",
+            showInNavigation: true,
+            navigationOrder: 0,
+            isPublished: true,
+          })
+          .returning();
+        pages = [homePage, ...pages];
+      }
+    }
 
     res.json(pages);
   } catch (error) {
@@ -476,6 +518,10 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     if (!existing) {
       return res.status(404).json({ error: "Page not found" });
+    }
+
+    if (existing.pageType === "HOME") {
+      return res.status(400).json({ error: "Cannot delete the homepage. Set another page as the front page first." });
     }
 
     await db.delete(organizationWebsitePages)
