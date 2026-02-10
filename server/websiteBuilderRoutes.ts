@@ -38,7 +38,7 @@ import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
-import { ObjectStorageService, objectStorageClient } from "./objectStorage";
+import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 // import { requireFeature } from "./middleware/requireFeature"; // Re-enable for production billing
 
 const router = express.Router();
@@ -73,16 +73,46 @@ function validateOrgAccess(req: AuthRequest, res: Response): string | null {
   return user.organizationId;
 }
 
-// Helper: Convert GCS private URLs to local proxy paths so the browser can access them
-function gcsUrlToProxy(url: string | null | undefined): string | null {
+// Helper: Convert org logo GCS URL to the dedicated logo endpoint path
+function orgLogoProxyUrl(orgId: string, url: string | null | undefined): string | null {
   if (!url) return null;
-  const gcsPrefix = "https://storage.googleapis.com/";
-  if (url.startsWith(gcsPrefix)) {
-    const objectPath = url.substring(gcsPrefix.length);
-    return `/objects/${objectPath}`;
+  if (url.startsWith("https://storage.googleapis.com/")) {
+    return `/api/website/org-logo/${orgId}`;
   }
   return url;
 }
+
+// GET /api/website/org-logo/:orgId - Serve organization logo directly from GCS
+// This bypasses the /objects/ proxy which requires file tracking in media/documents tables
+router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
+  try {
+    const { orgId } = req.params;
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { logoUrl: true },
+    });
+
+    if (!org?.logoUrl) {
+      return res.status(404).json({ error: "Logo not found" });
+    }
+
+    const objectStorageService = new ObjectStorageService();
+    const normalizedPath = objectStorageService.normalizeObjectEntityPath(org.logoUrl);
+
+    if (!normalizedPath.startsWith("/objects/")) {
+      return res.redirect(org.logoUrl);
+    }
+
+    const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
+    objectStorageService.downloadObject(objectFile, res);
+  } catch (error: any) {
+    console.error("Error serving org logo:", error);
+    if (error instanceof ObjectNotFoundError) {
+      return res.status(404).json({ error: "Logo file not found" });
+    }
+    res.status(500).json({ error: "Failed to serve logo" });
+  }
+});
 
 // ============================================
 // WEBSITE SETUP & CONFIGURATION
@@ -1949,13 +1979,13 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
     res.json({
       website: {
         ...website,
-        logoUrl: gcsUrlToProxy(website.logoUrl),
+        logoUrl: orgLogoProxyUrl(orgId, website.logoUrl),
       },
       organization: org ? {
         name: org.name,
         tradeType: org.tradeType,
         region: org.region,
-        logoUrl: gcsUrlToProxy(org.logoUrl),
+        logoUrl: orgLogoProxyUrl(orgId, org.logoUrl),
       } : null,
       pages: allPages,
       blogPosts,
@@ -2047,13 +2077,13 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
     res.json({
       website: {
         ...website,
-        logoUrl: gcsUrlToProxy(website.logoUrl),
+        logoUrl: orgLogoProxyUrl(orgId, website.logoUrl),
       },
       organization: org ? {
         name: org.name,
         tradeType: org.tradeType,
         region: org.region,
-        logoUrl: gcsUrlToProxy(org.logoUrl),
+        logoUrl: orgLogoProxyUrl(orgId, org.logoUrl),
       } : null,
       pages: pages.filter(p => p.showInNavigation),
       blogPosts,
