@@ -88,6 +88,7 @@ const upload = multer({
 
 // Initialize object storage service
 const objectStorage = new ObjectStorageService();
+const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024; // 3GB media library limit
 
 // Helper: Validate organization access
 function validateOrgAccess(req: AuthRequest, res: Response): string | null {
@@ -1035,23 +1036,36 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
     }
 
     const orgId = user.organizationId;
-    if (!orgId && user.role !== "SUPER_ADMIN") {
+    if (!orgId) {
       return res.status(403).json({ error: "Organization access required" });
     }
 
-    // Generate unique filename with extension
-    const ext = file.originalname.split('.').pop() || 'jpg';
-    const uniqueId = randomUUID();
-    const fileName = `gallery/${orgId}/${uniqueId}.${ext}`;
-
-    // Get public search paths for storage
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
       return res.status(500).json({ error: "Object storage not configured" });
     }
 
-    // Use the first public path
     const basePath = publicPaths[0];
+
+    const prefix = `gallery/${orgId}/`;
+    const basePathParts = basePath.split('/').filter(p => p.length > 0);
+    const checkBucketName = basePathParts[0];
+    const bucketPrefix = basePathParts.length > 1 ? basePathParts.slice(1).join('/') + '/' + prefix : prefix;
+    const checkBucket = objectStorageClient.bucket(checkBucketName);
+    const [existingFiles] = await checkBucket.getFiles({ prefix: bucketPrefix });
+    let currentTotalSize = 0;
+    for (const f of existingFiles) {
+      const [meta] = await f.getMetadata();
+      currentTotalSize += parseInt(meta.size as string) || 0;
+    }
+    if (currentTotalSize + file.size > STORAGE_LIMIT_BYTES) {
+      return res.status(413).json({ error: "Storage limit exceeded. You have used " + (currentTotalSize / (1024 * 1024 * 1024)).toFixed(2) + " GB of 3 GB." });
+    }
+
+    const ext = file.originalname.split('.').pop() || 'jpg';
+    const uniqueId = randomUUID();
+    const fileName = `gallery/${orgId}/${uniqueId}.${ext}`;
+
     const fullPath = `${basePath}/${fileName}`;
 
     // Parse path to get bucket and object name
@@ -1059,13 +1073,15 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
     const bucketName = pathParts[0];
     const objectName = pathParts.slice(1).join('/');
 
-    // Upload to object storage
     const bucket = objectStorageClient.bucket(bucketName);
     const blob = bucket.file(objectName);
 
     await blob.save(file.buffer, {
       metadata: {
         contentType: file.mimetype,
+        metadata: {
+          originalName: file.originalname,
+        },
       },
     });
 
@@ -1101,6 +1117,108 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Image not found" });
     }
     res.status(500).json({ error: "Failed to serve image" });
+  }
+});
+
+// GET /api/website/media - List all media files for the organization
+
+router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.json({ files: [], totalSize: 0, storageLimit: STORAGE_LIMIT_BYTES });
+    }
+
+    const basePath = publicPaths[0];
+    const prefix = `gallery/${orgId}/`;
+    const pathParts = basePath.split('/').filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const bucketPrefix = pathParts.length > 1 ? pathParts.slice(1).join('/') + '/' + prefix : prefix;
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const [gcsFiles] = await bucket.getFiles({ prefix: bucketPrefix });
+
+    let totalSize = 0;
+    const files = await Promise.all(
+      gcsFiles.map(async (f) => {
+        const [metadata] = await f.getMetadata();
+        const size = parseInt(metadata.size as string) || 0;
+        totalSize += size;
+        const fileName = f.name.split('/').pop() || '';
+        return {
+          name: fileName,
+          originalName: metadata.metadata?.originalName || fileName,
+          url: `/api/website/image/${orgId}/${fileName}`,
+          size,
+          contentType: metadata.contentType || 'application/octet-stream',
+          createdAt: metadata.timeCreated || new Date().toISOString(),
+          updatedAt: metadata.updated || new Date().toISOString(),
+        };
+      })
+    );
+
+    files.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json({ files, totalSize, storageLimit: STORAGE_LIMIT_BYTES });
+  } catch (error) {
+    console.error("Error listing media files:", error);
+    res.status(500).json({ error: "Failed to list media files" });
+  }
+});
+
+// DELETE /api/website/media/:fileName - Delete a media file
+router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const { fileName } = req.params;
+    if (!fileName || fileName.includes('/') || fileName.includes('..')) {
+      return res.status(400).json({ error: "Invalid file name" });
+    }
+    const filePath = `gallery/${orgId}/${fileName}`;
+
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.status(500).json({ error: "Object storage not configured" });
+    }
+
+    const basePath = publicPaths[0];
+    const fullPath = `${basePath}/${filePath}`;
+    const pathParts = fullPath.split('/').filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const objectName = pathParts.slice(1).join('/');
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const blob = bucket.file(objectName);
+    const [exists] = await blob.exists();
+
+    if (!exists) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    await blob.delete();
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting media file:", error);
+    res.status(500).json({ error: "Failed to delete file" });
   }
 });
 

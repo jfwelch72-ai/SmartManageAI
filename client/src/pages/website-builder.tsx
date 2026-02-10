@@ -73,6 +73,7 @@ import {
   LayoutTemplate
 } from "lucide-react";
 import { format } from "date-fns";
+import { MediaLibraryTab } from "@/components/media-library";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
 
 interface Website {
@@ -1028,6 +1029,10 @@ export default function WebsiteBuilderPage() {
             <BookOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Blog</span>
           </TabsTrigger>
+          <TabsTrigger value="media" className="flex items-center gap-1" data-testid="tab-media">
+            <Image className="h-4 w-4" />
+            <span className="hidden sm:inline">Media</span>
+          </TabsTrigger>
           <TabsTrigger value="gallery" className="flex items-center gap-1" data-testid="tab-gallery">
             <FolderOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Gallery</span>
@@ -1950,6 +1955,16 @@ export default function WebsiteBuilderPage() {
               </TableBody>
             </Table>
           )}
+        </TabsContent>
+
+        <TabsContent value="media" className="space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h2 className="text-lg font-semibold">Media Library</h2>
+              <p className="text-sm text-muted-foreground">Manage all uploaded images and files</p>
+            </div>
+          </div>
+          <MediaLibraryTab />
         </TabsContent>
 
         <TabsContent value="gallery" className="space-y-4">

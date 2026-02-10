@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { MediaLibraryPicker } from "@/components/media-library";
 import {
   GripVertical,
   Plus,
@@ -34,6 +36,8 @@ import {
   Copy,
   Upload,
   Loader2,
+  FolderOpen,
+  HardDrive,
 } from "lucide-react";
 
 export type BodyComponentType =
@@ -325,6 +329,8 @@ export function getDefaultBodyConfig(): BodyComponentsConfig {
 
 export function ImageUploadField({ value, onChange, label, placeholder, testId }: { value: string; onChange: (url: string) => void; label?: string; placeholder?: string; testId?: string }) {
   const [uploading, setUploading] = useState(false);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -356,6 +362,20 @@ export function ImageUploadField({ value, onChange, label, placeholder, testId }
     }
   }, [onChange, toast]);
 
+  const handleUploadClick = () => {
+    setShowSourcePicker(true);
+  };
+
+  const handleChooseLocal = () => {
+    setShowSourcePicker(false);
+    fileRef.current?.click();
+  };
+
+  const handleChooseMediaLibrary = () => {
+    setShowSourcePicker(false);
+    setShowMediaLibrary(true);
+  };
+
   return (
     <div>
       {label && <Label className="text-xs">{label}</Label>}
@@ -377,7 +397,7 @@ export function ImageUploadField({ value, onChange, label, placeholder, testId }
         <Button
           variant="outline"
           size="icon"
-          onClick={() => fileRef.current?.click()}
+          onClick={handleUploadClick}
           disabled={uploading}
           data-testid={testId ? `${testId}-upload` : undefined}
         >
@@ -389,6 +409,46 @@ export function ImageUploadField({ value, onChange, label, placeholder, testId }
           <img src={value} alt="Preview" className="w-full h-20 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         </div>
       )}
+
+      <Dialog open={showSourcePicker} onOpenChange={setShowSourcePicker}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Choose Image Source</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <button
+              className="flex flex-col items-center gap-2 p-4 rounded-md border hover-elevate cursor-pointer"
+              onClick={handleChooseMediaLibrary}
+              data-testid="button-source-media-library"
+            >
+              <HardDrive className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium">Media Library</span>
+              <span className="text-xs text-muted-foreground text-center">Choose from uploaded files</span>
+            </button>
+            <button
+              className="flex flex-col items-center gap-2 p-4 rounded-md border hover-elevate cursor-pointer"
+              onClick={handleChooseLocal}
+              data-testid="button-source-local-file"
+            >
+              <FolderOpen className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium">Local File</span>
+              <span className="text-xs text-muted-foreground text-center">Upload from your device</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMediaLibrary} onOpenChange={setShowMediaLibrary}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Select from Media Library</DialogTitle>
+          </DialogHeader>
+          <MediaLibraryPicker
+            onSelect={(url) => { onChange(url); }}
+            onClose={() => setShowMediaLibrary(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
