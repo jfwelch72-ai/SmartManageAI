@@ -4932,6 +4932,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   // Component Configurations (JSON)
   headerComponentsConfig: json("header_components_config"),
   footerComponentsConfig: json("footer_components_config"),
+  bodyComponentsConfig: json("body_components_config"),
   
   // Features Toggle
   blogEnabled: boolean("blog_enabled").default(true),

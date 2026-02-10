@@ -1,0 +1,246 @@
+Please update the Components tab to include a new section called “Body Components.”
+
+All Body Components must support global style controls using Tailwind CSS utilities, including:
+
+Font family, size, weight, color, and line height
+
+Padding and margin
+
+Background options: image upload, solid color, or gradient
+
+Responsive support (desktop / mobile)
+
+Body Components
+1. Banner Section
+
+Support background types:
+
+Video
+
+Image
+
+Solid color
+
+Gradient
+
+Configurable content:
+
+Banner title
+
+Banner content text
+
+One or more buttons
+
+Content alignment options:
+
+Left
+
+Center
+
+Right
+
+For left and right alignment:
+
+Provide toggle to enable image upload
+
+All styles and spacing configurable via Tailwind CSS options
+
+2. Hero Sections
+
+Allow image enable/disable
+
+Image position options:
+
+Top
+
+Left
+
+Bottom
+
+Right
+
+Configurable spacing:
+
+Padding
+
+Margin
+
+Background options:
+
+Image upload (toggle enable)
+
+Solid color
+
+Gradient
+
+All styles applied using Tailwind CSS utilities
+
+3. Content Sections
+
+Editable text content
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS for all style configurations
+
+4. Forms
+
+Fully editable form layout and fields
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS utility classes for styling
+
+5. Grids & Layouts
+
+Configurable column layouts
+
+Editable content per grid item
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS for layout and styling options
+
+6. CTAs (Call-to-Action Sections)
+
+Editable CTA text and buttons
+
+Background options (toggle enable):
+
+Image upload
+
+Solid color
+
+Gradient
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS for all styles
+
+7. Testimonials
+
+Carousel / slider layout
+
+Column support:
+
+1 to 4 columns
+
+Toggle option to enable profile image upload
+
+Responsive behavior for mobile and desktop
+
+8. Feature Highlights
+
+Editable feature items
+
+Background options (toggle enable):
+
+Image upload
+
+Solid color
+
+Gradient
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS utilities for styling
+
+9. Galleries
+
+Dynamically fetch images from the Galleries tab
+
+Layout options:
+
+Carousel
+
+Masonry
+
+Grid
+
+Responsive support
+
+10. Stats / KPIs
+
+Editable numeric and text values
+
+Background options (toggle enable):
+
+Image upload
+
+Solid color
+
+Gradient
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS for styling
+
+11. FAQ Sections
+
+Accordion-style layout
+
+Editable questions and answers
+
+Background options (toggle enable):
+
+Image upload
+
+Solid color
+
+Gradient
+
+Style controls:
+
+Font family, size, weight, color, line height
+
+Padding and margin
+
+Use Tailwind CSS utility classes
+
+General Requirements
+
+All Body Components must be:
+
+Draggable and reorderable
+
+Fully editable after insertion
+
+Responsive
+
+Compatible with global undo/redo
+
+Styling must rely on Tailwind CSS utility classes only
+
+Components must integrate seamlessly with:
+
+Layout tab
+
+Global Components
+
+AI “Suggest Components” feature
+
+Please implement and validate end-to-end behavior for all Body Components.
