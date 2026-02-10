@@ -2479,7 +2479,23 @@ export default function WebsiteBuilderPage() {
                     style={{ height: "600px" }}
                   >
                     <WebsitePreviewRenderer 
-                      data={previewData} 
+                      data={{
+                        ...previewData,
+                        website: {
+                          ...previewData.website,
+                          siteTitle: websiteForm.siteTitle || previewData.website?.siteTitle,
+                          siteTagline: websiteForm.siteTagline || previewData.website?.siteTagline,
+                          primaryColor: websiteForm.primaryColor || previewData.website?.primaryColor,
+                          secondaryColor: websiteForm.secondaryColor || previewData.website?.secondaryColor,
+                          accentColor: websiteForm.accentColor || previewData.website?.accentColor,
+                          fontFamily: websiteForm.fontFamily || previewData.website?.fontFamily,
+                          contactEmail: websiteForm.contactEmail || previewData.website?.contactEmail,
+                          contactPhone: websiteForm.contactPhone || previewData.website?.contactPhone,
+                        },
+                        headerConfig: headerComponentsConfig,
+                        footerConfig: footerComponentsConfig,
+                        bodyConfig: bodyComponentsConfig,
+                      }} 
                       deviceType={previewDevice}
                     />
                   </div>

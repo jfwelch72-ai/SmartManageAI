@@ -13,12 +13,16 @@ import {
   X,
   Calendar,
   User,
-  Send
+  Send,
+  Search,
+  ArrowUp
 } from "lucide-react";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { HeaderComponentsConfig, FooterComponentsConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
+import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } from "@/components/website-body-components";
 
 interface PreviewData {
   website: {
@@ -53,6 +57,7 @@ interface PreviewData {
     navigationOrder: number;
     metaDescription?: string | null;
     content?: string | null;
+    contentJson?: string | null;
     parentPageId?: string | null;
   }>;
   blogPosts: Array<{
@@ -91,6 +96,9 @@ interface PreviewData {
     youtubeUrl: string | null;
     tiktokUrl: string | null;
   } | null;
+  headerConfig?: HeaderComponentsConfig | null;
+  footerConfig?: FooterComponentsConfig | null;
+  bodyConfig?: BodyComponentsConfig | null;
 }
 
 type PageView = "home" | "about" | "services" | "blog" | "gallery" | "contact" | "blog-post" | "project-detail" | string;
@@ -115,6 +123,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   const [contactFormSubmitted, setContactFormSubmitted] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [expandedMobileMenus, setExpandedMobileMenus] = useState<Set<string>>(new Set());
+  const [faqOpenItems, setFaqOpenItems] = useState<Set<string>>(new Set());
   
   const siteName = website.siteTitle || organization?.name || "Your Company";
   const tagline = website.siteTagline || "Building Excellence";
@@ -232,8 +241,593 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
   const navItems = getNavItems();
 
+  const getBodyComponentStyles = (styles: SharedStyles): React.CSSProperties => {
+    const s: React.CSSProperties = {};
+    const spacingMap: Record<string, string> = { '0': '0', '1': '0.25rem', '2': '0.5rem', '3': '0.75rem', '4': '1rem', '5': '1.25rem', '6': '1.5rem', '8': '2rem', '10': '2.5rem', '12': '3rem', '16': '4rem', '20': '5rem', '24': '6rem' };
+    if (styles.spacing) {
+      const resolve = (val: string | undefined) => val && val !== '' ? (spacingMap[val] || `${val}rem`) : undefined;
+      s.paddingTop = resolve(styles.spacing.paddingTop);
+      s.paddingBottom = resolve(styles.spacing.paddingBottom);
+      s.paddingLeft = resolve(styles.spacing.paddingLeft);
+      s.paddingRight = resolve(styles.spacing.paddingRight);
+    }
+    if (styles.background) {
+      if ((styles.background.type === 'color' || styles.background.type === 'solid') && styles.background.color) {
+        s.backgroundColor = styles.background.color;
+      } else if (styles.background.type === 'gradient') {
+        const dir = styles.background.gradientDirection?.replace('to-', 'to ').replace('br', 'bottom right').replace('bl', 'bottom left').replace('tr', 'top right').replace('tl', 'top left').replace('b', 'bottom').replace('t', 'top').replace('r', 'right').replace('l', 'left') || 'to bottom';
+        s.background = `linear-gradient(${dir}, ${styles.background.gradientFrom || primaryColor}, ${styles.background.gradientTo || secondaryColor})`;
+      } else if (styles.background.type === 'image' && styles.background.imageUrl) {
+        s.backgroundImage = `url(${styles.background.imageUrl})`;
+        s.backgroundSize = 'cover';
+        s.backgroundPosition = 'center';
+      }
+    }
+    if (styles.typography) {
+      if (styles.typography.color) s.color = styles.typography.color;
+      const fwMap: Record<string, number> = { light: 300, normal: 400, medium: 500, semibold: 600, bold: 700 };
+      if (styles.typography.fontWeight) s.fontWeight = fwMap[styles.typography.fontWeight] || 400;
+      const fsMap: Record<string, string> = { xs: '0.75rem', sm: '0.875rem', base: '1rem', lg: '1.125rem', xl: '1.25rem', '2xl': '1.5rem', '3xl': '1.875rem', '4xl': '2.25rem' };
+      if (styles.typography.fontSize) s.fontSize = fsMap[styles.typography.fontSize] || styles.typography.fontSize;
+    }
+    if (styles.alignment) s.textAlign = styles.alignment as React.CSSProperties['textAlign'];
+    return s;
+  };
+
+  const renderBodyButton = (btn: ButtonConfig, idx: number) => {
+    const variant = btn.variant || 'primary';
+    const btnStyle: React.CSSProperties = variant === 'primary'
+      ? { backgroundColor: primaryColor, color: '#fff', border: 'none' }
+      : variant === 'outline' || variant === 'secondary'
+      ? { backgroundColor: 'transparent', color: primaryColor, border: `2px solid ${primaryColor}` }
+      : { backgroundColor: 'transparent', color: primaryColor, border: 'none', textDecoration: 'underline' };
+    return (
+      <button
+        key={idx}
+        data-testid={`body-button-${idx}`}
+        style={{ ...btnStyle, padding: '0.6rem 1.5rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
+      >
+        {btn.text || 'Click Here'}
+      </button>
+    );
+  };
+
+  const shouldShowComponent = (comp: BodyComponent): boolean => {
+    if (!comp.enabled) return false;
+    if (isMobile && !comp.visibleMobile) return false;
+    if (!isMobile && !comp.visibleDesktop) return false;
+    return true;
+  };
+
+  const renderSocialIconsFromData = () => {
+    if (!socialLinks) return null;
+    const icons = [];
+    if (socialLinks.facebookUrl) icons.push(<a key="fb" href="#" style={{ color: 'inherit' }}><SiFacebook size={18} /></a>);
+    if (socialLinks.instagramUrl) icons.push(<a key="ig" href="#" style={{ color: 'inherit' }}><SiInstagram size={18} /></a>);
+    if (socialLinks.linkedinUrl) icons.push(<a key="li" href="#" style={{ color: 'inherit' }}><SiLinkedin size={18} /></a>);
+    if (socialLinks.youtubeUrl) icons.push(<a key="yt" href="#" style={{ color: 'inherit' }}><SiYoutube size={18} /></a>);
+    if (socialLinks.tiktokUrl) icons.push(<a key="tt" href="#" style={{ color: 'inherit' }}><SiTiktok size={18} /></a>);
+    return icons.length > 0 ? <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>{icons}</div> : null;
+  };
+
+  const renderHeaderElement = (el: HeaderElement) => {
+    switch (el.type) {
+      case 'logo':
+        return (
+          <button
+            key={el.id}
+            data-testid="header-config-logo"
+            onClick={() => navigateTo("home")}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            {website.logoUrl ? (
+              <img src={website.logoUrl} alt={siteName} style={{ height: '32px', objectFit: 'contain' }} />
+            ) : (
+              <span style={{ fontWeight: 700, fontSize: '1.25rem', color: primaryColor }}>{siteName}</span>
+            )}
+          </button>
+        );
+      case 'navigation':
+        return (
+          <nav key={el.id} data-testid="header-config-nav" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            {navItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => navigateTo(item.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: currentPage === item.id ? primaryColor : '#374151' }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        );
+      case 'cta_button':
+        return (
+          <button
+            key={el.id}
+            data-testid="header-config-cta"
+            style={{ backgroundColor: primaryColor, color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
+          >
+            {el.content?.text || 'Get Started'}
+          </button>
+        );
+      case 'search_icon':
+        return (
+          <button key={el.id} data-testid="header-config-search" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
+            <Search size={20} />
+          </button>
+        );
+      case 'login_button':
+        return (
+          <button
+            key={el.id}
+            data-testid="header-config-login"
+            style={{ backgroundColor: 'transparent', color: primaryColor, border: `1px solid ${primaryColor}`, padding: '0.4rem 0.875rem', borderRadius: '0.375rem', fontWeight: 500, fontSize: '0.875rem', cursor: 'pointer' }}
+          >
+            {el.content?.text || 'Login'}
+          </button>
+        );
+      case 'social_icons':
+        return <div key={el.id} data-testid="header-config-social">{renderSocialIconsFromData()}</div>;
+      case 'announcement_bar':
+        return (
+          <div
+            key={el.id}
+            data-testid="header-config-announcement"
+            style={{ width: '100%', backgroundColor: primaryColor, color: '#fff', textAlign: 'center', padding: '0.375rem 1rem', fontSize: '0.8125rem' }}
+          >
+            {el.content?.text || 'Welcome to our site!'}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderConfiguredHeader = () => {
+    const config = data.headerConfig!;
+    if (isMobile) {
+      const mobileElements = config.mobile.elements.filter(e => e.enabled && e.visibleMobile).sort((a, b) => a.order - b.order);
+      const hasAnnouncement = mobileElements.find(e => e.type === 'announcement_bar');
+      const otherElements = mobileElements.filter(e => e.type !== 'announcement_bar' && e.type !== 'navigation');
+      return (
+        <header data-testid="configured-header" style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff' }}>
+          {hasAnnouncement && renderHeaderElement(hasAnnouncement)}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {otherElements.filter(e => e.type === 'logo').map(e => renderHeaderElement(e))}
+            </div>
+            <button
+              data-testid="header-mobile-menu-toggle"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151' }}
+            >
+              {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
+          {mobileMenuOpen && (
+            <div style={{ padding: '0.5rem 1rem 1rem', borderTop: '1px solid #e5e7eb' }}>
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { navigateTo(item.id); setMobileMenuOpen(false); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '0.5rem 0', fontSize: '0.9375rem', cursor: 'pointer', color: currentPage === item.id ? primaryColor : '#374151' }}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                {otherElements.filter(e => e.type === 'cta_button' || e.type === 'login_button').map(e => renderHeaderElement(e))}
+              </div>
+            </div>
+          )}
+        </header>
+      );
+    }
+
+    const sections = ['top', 'middle', 'bottom'] as const;
+    return (
+      <header data-testid="configured-header" style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff' }}>
+        {sections.map(sectionKey => {
+          const section = config.desktop.sections[sectionKey];
+          const elements = section.elements.filter(e => e.enabled && e.visibleDesktop).sort((a, b) => a.order - b.order);
+          if (elements.length === 0) return null;
+          const hasAnnouncement = elements.find(e => e.type === 'announcement_bar');
+          if (hasAnnouncement && elements.length === 1) {
+            return <div key={sectionKey}>{renderHeaderElement(hasAnnouncement)}</div>;
+          }
+          const leftEls = elements.filter(e => e.alignment === 'left' && e.type !== 'announcement_bar');
+          const centerEls = elements.filter(e => e.alignment === 'center' && e.type !== 'announcement_bar');
+          const rightEls = elements.filter(e => e.alignment === 'right' && e.type !== 'announcement_bar');
+          return (
+            <div key={sectionKey}>
+              {hasAnnouncement && renderHeaderElement(hasAnnouncement)}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: sectionKey === 'top' ? '0.25rem 1.5rem' : '0.5rem 1.5rem', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {leftEls.map(e => renderHeaderElement(e))}
+                </div>
+                {centerEls.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center' }}>
+                    {centerEls.map(e => renderHeaderElement(e))}
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {rightEls.map(e => renderHeaderElement(e))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </header>
+    );
+  };
+
+  const renderFooterElement = (el: FooterElement) => {
+    switch (el.type) {
+      case 'footer_logo':
+        return (
+          <div key={el.id} data-testid="footer-config-logo" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {website.logoUrl ? (
+              <img src={website.logoUrl} alt={siteName} style={{ height: '28px', objectFit: 'contain' }} />
+            ) : (
+              <span style={{ fontWeight: 700, fontSize: '1.125rem', color: '#fff' }}>{siteName}</span>
+            )}
+          </div>
+        );
+      case 'social_icons':
+        return <div key={el.id} data-testid="footer-config-social" style={{ color: '#d1d5db' }}>{renderSocialIconsFromData()}</div>;
+      case 'copyright':
+        return (
+          <div key={el.id} data-testid="footer-config-copyright" style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
+            {el.content?.text || `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`}
+          </div>
+        );
+      case 'back_to_top':
+        return (
+          <button
+            key={el.id}
+            data-testid="footer-config-back-to-top"
+            onClick={() => { const container = document.querySelector('[data-testid="preview-container"]'); container?.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '0.4rem 0.875rem', borderRadius: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+          >
+            <ArrowUp size={14} /> Back to Top
+          </button>
+        );
+      case 'link_list':
+        return (
+          <div key={el.id} data-testid="footer-config-links" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            {navItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => navigateTo(item.id)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db', fontSize: '0.8125rem' }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        );
+      case 'footer_title':
+        return (
+          <div key={el.id} data-testid="footer-config-title" style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#fff' }}>
+            {el.content?.text || siteName}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderConfiguredFooter = () => {
+    const config = data.footerConfig!;
+    if (isMobile) {
+      const mobileElements = config.mobile.elements.filter(e => e.enabled && e.visibleMobile).sort((a, b) => a.order - b.order);
+      return (
+        <footer data-testid="configured-footer" style={{ backgroundColor: '#1f2937', color: '#fff', padding: '2rem 1rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', alignItems: 'center', textAlign: 'center' }}>
+            {mobileElements.map(el => renderFooterElement(el))}
+          </div>
+        </footer>
+      );
+    }
+    const sections = ['top', 'middle', 'bottom'] as const;
+    return (
+      <footer data-testid="configured-footer" style={{ backgroundColor: '#1f2937', color: '#fff' }}>
+        {sections.map(sectionKey => {
+          const section = config.desktop.sections[sectionKey];
+          const elements = section.elements.filter(e => e.enabled && e.visibleDesktop).sort((a, b) => a.order - b.order);
+          if (elements.length === 0) return null;
+          const leftEls = elements.filter(e => e.alignment === 'left');
+          const centerEls = elements.filter(e => e.alignment === 'center');
+          const rightEls = elements.filter(e => e.alignment === 'right');
+          return (
+            <div key={sectionKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem', borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {leftEls.map(el => renderFooterElement(el))}
+              </div>
+              {centerEls.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center' }}>
+                  {centerEls.map(el => renderFooterElement(el))}
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {rightEls.map(el => renderFooterElement(el))}
+              </div>
+            </div>
+          );
+        })}
+      </footer>
+    );
+  };
+
+  const renderBodyComponents = (config: BodyComponentsConfig) => {
+    const components = [...config.components].filter(shouldShowComponent).sort((a, b) => a.order - b.order);
+    if (components.length === 0) return null;
+
+    const renderSingleComponent = (comp: BodyComponent) => {
+      const containerStyle = getBodyComponentStyles(comp.styles);
+      const align = comp.styles.alignment || 'center';
+      const cfg = comp.config as any;
+
+      switch (comp.type) {
+        case 'banner': {
+          const { title, content: text, buttons = [], sideImageUrl } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-banner-${comp.id}`} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: '2rem' }}>
+                <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
+                  {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.75rem' }}>{title}</h2>}
+                  {text && <p style={{ fontSize: '1rem', opacity: 0.9, marginBottom: '1rem' }}>{text}</p>}
+                  {buttons.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>{buttons.map((b: ButtonConfig, i: number) => renderBodyButton(b, i))}</div>}
+                </div>
+                {sideImageUrl && <img src={sideImageUrl} alt="" style={{ maxWidth: isMobile ? '100%' : '40%', borderRadius: '0.5rem', objectFit: 'cover' }} />}
+              </div>
+            </section>
+          );
+        }
+        case 'hero': {
+          const { title, subtitle, content: text, imageUrl, imagePosition = 'right', buttons = [] } = cfg;
+          const hasImage = !!imageUrl;
+          return (
+            <section key={comp.id} data-testid={`body-hero-${comp.id}`} style={{ ...containerStyle, position: 'relative' }}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : imagePosition === 'left' ? 'row-reverse' : 'row', alignItems: 'center', gap: '2rem' }}>
+                <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
+                  {subtitle && <p style={{ color: primaryColor, fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{subtitle}</p>}
+                  {title && <h1 style={{ fontSize: isMobile ? '2rem' : '2.75rem', fontWeight: 800, lineHeight: 1.15, marginBottom: '1rem' }}>{title}</h1>}
+                  {text && <p style={{ fontSize: '1.125rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.6 }}>{text}</p>}
+                  {buttons.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>{buttons.map((b: ButtonConfig, i: number) => renderBodyButton(b, i))}</div>}
+                </div>
+                {hasImage && imagePosition !== 'background' && (
+                  <div style={{ flex: 1 }}>
+                    <img src={imageUrl} alt="" style={{ width: '100%', borderRadius: '0.75rem', objectFit: 'cover', maxHeight: '400px' }} />
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        }
+        case 'content': {
+          const { title, content: text } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-content-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', textAlign: align as React.CSSProperties['textAlign'] }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' }}>{title}</h2>}
+                {text && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, color: '#4b5563' }}>{text}</div>}
+              </div>
+            </section>
+          );
+        }
+        case 'form': {
+          const { title, submitButtonText, fields = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-form-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '40rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {fields.filter((f: any) => f.enabled).map((field: any) => (
+                    <div key={field.id}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>
+                        {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
+                      </label>
+                      {field.type === 'textarea' ? (
+                        <textarea placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', minHeight: '80px', fontSize: '0.875rem' }} />
+                      ) : field.type === 'select' ? (
+                        <select style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }}>
+                          <option value="">{field.placeholder || 'Select...'}</option>
+                          {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                        </select>
+                      ) : (
+                        <input type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'} placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }} />
+                      )}
+                    </div>
+                  ))}
+                  <button type="submit" style={{ backgroundColor: primaryColor, color: '#fff', border: 'none', padding: '0.625rem 1.5rem', borderRadius: '0.375rem', fontWeight: 600, cursor: 'pointer', alignSelf: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+                    {submitButtonText || 'Submit'}
+                  </button>
+                </form>
+              </div>
+            </section>
+          );
+        }
+        case 'grid': {
+          const { columns = 3, items = [], title } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-grid-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`grid-item-${i}`} style={{ backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                      {item.title && <h3 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>{item.title}</h3>}
+                      {item.content && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.content}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'cta': {
+          const { title, content: text, buttons = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-cta-${comp.id}`} style={{ ...containerStyle, background: containerStyle.background || `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, color: '#fff' }}>
+              <div style={{ maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', textAlign: 'center' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 800, marginBottom: '0.75rem' }}>{title}</h2>}
+                {text && <p style={{ fontSize: '1.125rem', opacity: 0.9, marginBottom: '1.5rem' }}>{text}</p>}
+                {buttons.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {buttons.map((b: ButtonConfig, i: number) => (
+                      <button key={i} data-testid={`cta-button-${i}`} style={{ backgroundColor: b.variant === 'secondary' ? 'transparent' : '#fff', color: b.variant === 'secondary' ? '#fff' : primaryColor, border: b.variant === 'secondary' ? '2px solid #fff' : 'none', padding: '0.75rem 2rem', borderRadius: '0.375rem', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>
+                        {b.text || 'Get Started'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        }
+        case 'testimonial': {
+          const { layout = 'grid', columns = 3, items = [], title } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-testimonial-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: layout === 'carousel' ? 'flex' : 'grid', gridTemplateColumns: layout !== 'carousel' ? `repeat(${isMobile ? 1 : columns}, 1fr)` : undefined, gap: '1.25rem', overflowX: layout === 'carousel' ? 'auto' : undefined }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`testimonial-item-${i}`} style={{ backgroundColor: '#fff', padding: '1.5rem', borderRadius: '0.75rem', border: '1px solid #e5e7eb', minWidth: layout === 'carousel' ? '280px' : undefined }}>
+                      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.75rem' }}>
+                        {[1,2,3,4,5].map(s => <Star key={s} size={14} style={{ fill: '#fbbf24', color: '#fbbf24' }} />)}
+                      </div>
+                      {item.quote && <p style={{ fontSize: '0.9375rem', fontStyle: 'italic', color: '#374151', lineHeight: 1.6, marginBottom: '1rem' }}>"{item.quote}"</p>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
+                            {(item.name || 'A').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          {item.name && <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{item.name}</div>}
+                          {item.role && <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{item.role}</div>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'feature_highlight': {
+          const { columns = 3, items = [], title } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-feature-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.5rem', marginTop: '1.5rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`feature-item-${i}`} style={{ textAlign: 'center', padding: '1.5rem' }}>
+                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: `${primaryColor}20`, color: primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', fontWeight: 700, fontSize: '1.25rem' }}>
+                        {(item.icon || item.title || 'F').charAt(0).toUpperCase()}
+                      </div>
+                      {item.title && <h3 style={{ fontWeight: 600, fontSize: '1.0625rem', marginBottom: '0.5rem' }}>{item.title}</h3>}
+                      {item.description && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.description}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'gallery': {
+          const { title, columns = 3 } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-gallery-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', textAlign: align as React.CSSProperties['textAlign'] }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`, gap: '0.75rem' }}>
+                  {[0,1,2,3,4,5].map(i => (
+                    <div key={i} data-testid={`gallery-item-${i}`} style={{ aspectRatio: '1', backgroundColor: '#f3f4f6', borderRadius: '0.5rem', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>Gallery Image</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'stats': {
+          const { columns = 4, items = [], title } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-stats-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`, gap: '1.25rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`stat-item-${i}`} style={{ textAlign: 'center', padding: '1.25rem' }}>
+                      <div style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, color: primaryColor, lineHeight: 1 }}>
+                        {item.prefix || ''}{item.value || '0'}{item.suffix || ''}
+                      </div>
+                      {item.label && <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.375rem', fontWeight: 500 }}>{item.label}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'faq': {
+          const { items = [], title } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-faq-${comp.id}`} style={containerStyle}>
+              <div style={{ maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {items.map((item: any, i: number) => {
+                    const faqKey = `${comp.id}-${i}`;
+                    const isOpen = faqOpenItems.has(faqKey);
+                    return (
+                      <div key={i} data-testid={`faq-item-${i}`} style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', overflow: 'hidden' }}>
+                        <button
+                          onClick={() => {
+                            setFaqOpenItems(prev => {
+                              const next = new Set(prev);
+                              if (next.has(faqKey)) next.delete(faqKey); else next.add(faqKey);
+                              return next;
+                            });
+                          }}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1rem', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: 600, fontSize: '0.9375rem' }}
+                        >
+                          {item.question || `Question ${i + 1}`}
+                          <ChevronDown size={18} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
+                        </button>
+                        {isOpen && (
+                          <div style={{ padding: '0 1rem 0.875rem', fontSize: '0.875rem', color: '#4b5563', lineHeight: 1.6 }}>
+                            {item.answer || 'Answer goes here.'}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        default:
+          return null;
+      }
+    };
+
+    return <div data-testid="body-components-container">{components.map(renderSingleComponent)}</div>;
+  };
+
   // Render navigation header (shared across all pages)
-  const renderHeader = () => (
+  const renderHeader = () => {
+    if (data.headerConfig) return renderConfiguredHeader();
+    return (
     <header 
       className="sticky top-0 z-50 shadow-sm"
       style={{ backgroundColor: bgColor, borderBottom: `1px solid ${primaryColor}20` }}
@@ -404,9 +998,12 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       </div>
     </header>
   );
+  };
 
   // Render footer (shared across all pages)
-  const renderFooter = () => (
+  const renderFooter = () => {
+    if (data.footerConfig) return renderConfiguredFooter();
+    return (
     <footer 
       className={`${isMobile ? 'py-8' : 'py-16'}`}
       style={{ backgroundColor: secondaryColor, color: 'white' }}
@@ -506,9 +1103,14 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       </div>
     </footer>
   );
+  };
 
   // HOME PAGE
-  const renderHomePage = () => (
+  const renderHomePage = () => {
+    if (data.bodyConfig && data.bodyConfig.components && data.bodyConfig.components.filter(c => c.enabled).length > 0) {
+      return renderBodyComponents(data.bodyConfig);
+    }
+    return (
     <>
       {/* Hero Section */}
       <section 
@@ -744,12 +1346,22 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       </section>
     </>
   );
+  };
 
   // ABOUT PAGE
   // Render custom page from database content
   const renderCustomPage = (pageId: string) => {
     const page = pages.find(p => p.id === pageId);
     if (!page) return renderHomePage();
+
+    if (page.contentJson) {
+      try {
+        const parsedConfig = JSON.parse(page.contentJson) as BodyComponentsConfig;
+        if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
+          return renderBodyComponents(parsedConfig);
+        }
+      } catch {}
+    }
     
     return (
       <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
