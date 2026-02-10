@@ -453,7 +453,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         >
           <div
             onClick={() => setMobileMenuOpen(false)}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100vh', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 998 }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '5000px', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 998 }}
             data-testid="mobile-nav-overlay"
           />
           <div
@@ -463,8 +463,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               [isLeft ? 'left' : 'right']: 0,
               width: '280px',
               maxWidth: '80%',
-              height: '100vh',
-              maxHeight: '600px',
+              height: '600px',
               backgroundColor: menuBg,
               boxShadow: isLeft ? '4px 0 16px rgba(0,0,0,0.15)' : '-4px 0 16px rgba(0,0,0,0.15)',
               zIndex: 999,
@@ -2027,12 +2026,12 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       data-testid="preview-container"
     >
       {renderHeader()}
-      {renderCurrentPage()}
-      {renderFooter()}
       {isMobile && mobileNavStyle !== 'dropdown' && renderMobileMenu(
         data.headerConfig ? '#fff' : bgColor,
         data.headerConfig ? '#374151' : textColor
       )}
+      {renderCurrentPage()}
+      {renderFooter()}
     </div>
   );
 }
