@@ -41,6 +41,7 @@ interface PreviewData {
     contactAddress: string | null;
     blogEnabled: boolean | null;
     galleryEnabled: boolean | null;
+    mobileNavStyle?: string | null;
   };
   organization: {
     name: string;
@@ -385,14 +386,132 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     }
   };
 
+  const mobileNavStyle = (website.mobileNavStyle as string) || 'dropdown';
+
+  const renderMobileNavContent = (menuBg: string, menuText: string, extraElements?: React.ReactNode) => {
+    return (
+      <div style={{ padding: '1rem' }}>
+        {navItems.map(item => (
+          <div key={item.id}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={() => { navigateTo(item.slug as PageView || item.id); setMobileMenuOpen(false); }}
+                style={{ flex: 1, display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '0.625rem 0', fontSize: '0.9375rem', cursor: 'pointer', color: currentPage === item.slug || currentPage === item.id ? primaryColor : menuText, fontWeight: currentPage === item.slug || currentPage === item.id ? 600 : 400 }}
+                data-testid={`preview-nav-mobile-${item.slug || item.id}`}
+              >
+                {item.label}
+              </button>
+              {item.children && item.children.length > 0 && (
+                <button
+                  onClick={() => {
+                    setExpandedMobileMenus(prev => {
+                      const next = new Set(prev);
+                      if (next.has(item.id)) next.delete(item.id);
+                      else next.add(item.id);
+                      return next;
+                    });
+                  }}
+                  style={{ background: 'none', border: 'none', padding: '0.625rem 0.25rem', cursor: 'pointer', color: menuText }}
+                >
+                  <ChevronDown className={`h-4 w-4 transition-transform ${expandedMobileMenus.has(item.id) ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+            </div>
+            {item.children && item.children.length > 0 && expandedMobileMenus.has(item.id) && (
+              <div style={{ paddingLeft: '1rem', borderLeft: `2px solid ${primaryColor}30` }}>
+                {item.children.map(child => (
+                  <button
+                    key={child.id}
+                    onClick={() => { navigateTo(child.slug as PageView); setMobileMenuOpen(false); }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '0.5rem 0', fontSize: '0.875rem', cursor: 'pointer', color: currentPage === child.slug ? primaryColor : menuText }}
+                    data-testid={`preview-nav-mobile-${child.slug}`}
+                  >
+                    {child.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {extraElements && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+            {extraElements}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMobileMenu = (menuBg: string, menuText: string, extraElements?: React.ReactNode) => {
+    if (!mobileMenuOpen) return null;
+
+    if (mobileNavStyle === 'slide-left' || mobileNavStyle === 'slide-right') {
+      const isLeft = mobileNavStyle === 'slide-left';
+      return (
+        <>
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 998 }}
+            data-testid="mobile-nav-overlay"
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              [isLeft ? 'left' : 'right']: 0,
+              width: '280px',
+              maxWidth: '80vw',
+              height: '100%',
+              backgroundColor: menuBg,
+              boxShadow: isLeft ? '4px 0 16px rgba(0,0,0,0.15)' : '-4px 0 16px rgba(0,0,0,0.15)',
+              zIndex: 999,
+              display: 'flex',
+              flexDirection: 'column',
+              animation: `slideIn${isLeft ? 'Left' : 'Right'} 0.25s ease-out`,
+            }}
+            data-testid={`mobile-nav-panel-${isLeft ? 'left' : 'right'}`}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: `1px solid ${primaryColor}15` }}>
+              <span style={{ fontWeight: 700, fontSize: '1rem', color: primaryColor }}>{siteName}</span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: menuText, padding: '0.25rem' }}
+                data-testid="mobile-nav-close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {renderMobileNavContent(menuBg, menuText, extraElements)}
+            </div>
+          </div>
+          <style>{`
+            @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+            @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+          `}</style>
+        </>
+      );
+    }
+
+    return (
+      <div
+        style={{ backgroundColor: menuBg, borderTop: `1px solid ${primaryColor}15`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+        data-testid="mobile-nav-dropdown"
+      >
+        {renderMobileNavContent(menuBg, menuText, extraElements)}
+      </div>
+    );
+  };
+
   const renderConfiguredHeader = () => {
     const config = data.headerConfig!;
     if (isMobile) {
       const mobileElements = config.mobile.elements.filter(e => e.enabled && e.visibleMobile).sort((a, b) => a.order - b.order);
       const hasAnnouncement = mobileElements.find(e => e.type === 'announcement_bar');
       const otherElements = mobileElements.filter(e => e.type !== 'announcement_bar' && e.type !== 'navigation');
+      const extraButtons = otherElements.filter(e => e.type === 'cta_button' || e.type === 'login_button');
       return (
-        <header data-testid="configured-header" style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff' }}>
+        <header data-testid="configured-header" style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff', position: 'relative' }}>
           {hasAnnouncement && renderHeaderElement(hasAnnouncement)}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -406,22 +525,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
-          {mobileMenuOpen && (
-            <div style={{ padding: '0.5rem 1rem 1rem', borderTop: '1px solid #e5e7eb' }}>
-              {navItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { navigateTo(item.id); setMobileMenuOpen(false); }}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '0.5rem 0', fontSize: '0.9375rem', cursor: 'pointer', color: currentPage === item.id ? primaryColor : '#374151' }}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-                {otherElements.filter(e => e.type === 'cta_button' || e.type === 'login_button').map(e => renderHeaderElement(e))}
-              </div>
-            </div>
-          )}
+          {renderMobileMenu('#fff', '#374151', extraButtons.length > 0 ? <>{extraButtons.map(e => renderHeaderElement(e))}</> : undefined)}
         </header>
       );
     }
@@ -859,81 +963,18 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
           {/* Navigation */}
           {isMobile ? (
-            <>
-              <button 
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded"
-                style={{ backgroundColor: `${primaryColor}10` }}
-                data-testid="preview-mobile-menu-toggle"
-              >
-                {mobileMenuOpen ? (
-                  <X className="h-5 w-5" style={{ color: primaryColor }} />
-                ) : (
-                  <Menu className="h-5 w-5" style={{ color: primaryColor }} />
-                )}
-              </button>
-              
-              {/* Mobile menu dropdown */}
-              {mobileMenuOpen && (
-                <div 
-                  className="absolute top-full left-0 right-0 shadow-lg py-2 z-50"
-                  style={{ backgroundColor: bgColor }}
-                >
-                  {navItems.map(item => (
-                    <div key={item.id}>
-                      <div className="flex items-center">
-                        <button
-                          onClick={() => navigateTo(item.slug as PageView)}
-                          className="flex-1 text-left px-4 py-3 hover:opacity-80"
-                          style={{ 
-                            color: currentPage === item.slug ? primaryColor : textColor,
-                            backgroundColor: currentPage === item.slug ? `${primaryColor}10` : 'transparent'
-                          }}
-                          data-testid={`preview-nav-mobile-${item.slug}`}
-                        >
-                          {item.label}
-                        </button>
-                        {item.children && item.children.length > 0 && (
-                          <button
-                            onClick={() => {
-                              setExpandedMobileMenus(prev => {
-                                const next = new Set(prev);
-                                if (next.has(item.id)) next.delete(item.id);
-                                else next.add(item.id);
-                                return next;
-                              });
-                            }}
-                            className="px-4 py-3"
-                            style={{ color: textColor }}
-                            data-testid={`preview-nav-mobile-expand-${item.slug}`}
-                          >
-                            <ChevronDown className={`h-4 w-4 transition-transform ${expandedMobileMenus.has(item.id) ? 'rotate-180' : ''}`} />
-                          </button>
-                        )}
-                      </div>
-                      {item.children && item.children.length > 0 && expandedMobileMenus.has(item.id) && (
-                        <div style={{ backgroundColor: `${primaryColor}05` }}>
-                          {item.children.map(child => (
-                            <button
-                              key={child.id}
-                              onClick={() => navigateTo(child.slug as PageView)}
-                              className="w-full text-left pl-8 pr-4 py-2.5 text-sm hover:opacity-80"
-                              style={{
-                                color: currentPage === child.slug ? primaryColor : textColor,
-                                backgroundColor: currentPage === child.slug ? `${primaryColor}10` : 'transparent'
-                              }}
-                              data-testid={`preview-nav-mobile-${child.slug}`}
-                            >
-                              {child.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            <button 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded"
+              style={{ backgroundColor: `${primaryColor}10` }}
+              data-testid="preview-mobile-menu-toggle"
+            >
+              {mobileMenuOpen ? (
+                <X className="h-5 w-5" style={{ color: primaryColor }} />
+              ) : (
+                <Menu className="h-5 w-5" style={{ color: primaryColor }} />
               )}
-            </>
+            </button>
           ) : (
             <nav className="flex items-center gap-6">
               {navItems.map(item => (
@@ -996,6 +1037,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             </nav>
           )}
         </div>
+        {isMobile && renderMobileMenu(bgColor, textColor)}
       </div>
     </header>
   );

@@ -71,7 +71,11 @@ import {
   X,
   Loader2,
   Smartphone,
-  LayoutTemplate
+  LayoutTemplate,
+  PanelLeft,
+  PanelRight,
+  ChevronDown,
+  Menu
 } from "lucide-react";
 import { format } from "date-fns";
 import { MediaLibraryTab } from "@/components/media-library";
@@ -109,6 +113,7 @@ interface Website {
   headerHeight: number | null;
   logoPosition: string | null;
   navigationLayout: string | null;
+  mobileNavStyle: string | null;
   showOnScroll: boolean | null;
   pageLayout: string | null;
   sidebarWidth: number | null;
@@ -393,6 +398,7 @@ export default function WebsiteBuilderPage() {
     headerHeight: 80,
     logoPosition: "left",
     navigationLayout: "horizontal",
+    mobileNavStyle: "dropdown",
     showOnScroll: true,
     pageLayout: "boxed",
     sidebarWidth: 300,
@@ -891,6 +897,7 @@ export default function WebsiteBuilderPage() {
         headerHeight: websiteRef.headerHeight ?? prev.headerHeight,
         logoPosition: websiteRef.logoPosition || prev.logoPosition,
         navigationLayout: websiteRef.navigationLayout || prev.navigationLayout,
+        mobileNavStyle: websiteRef.mobileNavStyle || prev.mobileNavStyle,
         showOnScroll: websiteRef.showOnScroll ?? prev.showOnScroll,
         pageLayout: websiteRef.pageLayout || prev.pageLayout,
         sidebarWidth: websiteRef.sidebarWidth ?? prev.sidebarWidth,
@@ -1341,6 +1348,7 @@ export default function WebsiteBuilderPage() {
                     headerHeight: 80,
                     logoPosition: "left",
                     navigationLayout: "horizontal",
+                    mobileNavStyle: "dropdown",
                     showOnScroll: true,
                     pageLayout: "boxed",
                     sidebarWidth: 300,
@@ -1582,6 +1590,68 @@ export default function WebsiteBuilderPage() {
                     {websiteForm.navigationLayout === "hamburger" && "Navigation hidden behind a hamburger menu icon"}
                     {websiteForm.navigationLayout === "split" && "Logo centered with navigation links on both sides"}
                   </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label data-testid="label-mobile-nav-style" className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-muted-foreground" />
+                  Mobile Navigation Style
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Choose how the mobile menu appears when visitors tap the burger menu icon
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "dropdown" }))}
+                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "dropdown" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                    data-testid="button-mobile-nav-dropdown"
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="w-12 h-8 rounded border border-border flex flex-col items-center justify-center">
+                        <Menu className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                      <div className="w-12 flex flex-col gap-0.5">
+                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                      </div>
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </div>
+                    <span className="text-xs font-medium">Dropdown</span>
+                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Menu drops down below the header</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "slide-left" }))}
+                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "slide-left" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                    data-testid="button-mobile-nav-slide-left"
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
+                      <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                      <div className="w-8 h-10 rounded border border-border opacity-50" />
+                    </div>
+                    <span className="text-xs font-medium">Left Panel</span>
+                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the left side</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "slide-right" }))}
+                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "slide-right" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                    data-testid="button-mobile-nav-slide-right"
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className="w-8 h-10 rounded border border-border opacity-50" />
+                      <PanelRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
+                    </div>
+                    <span className="text-xs font-medium">Right Panel</span>
+                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the right side</p>
+                  </button>
                 </div>
               </div>
 

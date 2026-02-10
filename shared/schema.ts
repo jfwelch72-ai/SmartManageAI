@@ -4915,6 +4915,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   headerHeight: integer("header_height").default(80),
   logoPosition: text("logo_position").default("left"),
   navigationLayout: text("navigation_layout").default("horizontal"),
+  mobileNavStyle: text("mobile_nav_style").default("dropdown"),
   showOnScroll: boolean("show_on_scroll").default(true),
   
   // Inner Page Layout Settings
