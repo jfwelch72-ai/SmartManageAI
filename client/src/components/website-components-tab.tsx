@@ -30,6 +30,14 @@ import {
   Link,
   Type,
   Copyright,
+  Zap,
+  Briefcase,
+  TrendingUp,
+  LayoutDashboard,
+  Minus,
+  Award,
+  Shield,
+  Check,
 } from "lucide-react";
 
 export interface HeaderElement {
@@ -139,6 +147,147 @@ export function getDefaultFooterConfig(): FooterComponentsConfig {
   };
 }
 
+interface HeaderPreset {
+  id: string;
+  name: string;
+  description: string;
+  bestFor: string;
+  elements: HeaderElement[];
+}
+
+interface FooterPreset {
+  id: string;
+  name: string;
+  description: string;
+  bestFor: string;
+  elements: FooterElement[];
+}
+
+const HEADER_PRESETS: HeaderPreset[] = [
+  {
+    id: "simple-business",
+    name: "Simple Business Header",
+    description: "Logo (left), Navigation (center), CTA (right)",
+    bestFor: "Best for service businesses",
+    elements: [
+      { id: "h-logo", type: "logo", label: "Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "middle", column: 0 },
+      { id: "h-nav", type: "navigation", label: "Main Navigation", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: false, content: {}, order: 1, section: "middle", column: 1 },
+      { id: "h-cta", type: "cta_button", label: "Primary CTA Button", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: { text: "Get Started", url: "#" }, order: 2, section: "middle", column: 2 },
+      { id: "h-search", type: "search_icon", label: "Search Icon", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: {}, order: 3, section: "middle", column: 2 },
+      { id: "h-login", type: "login_button", label: "Login / Account", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: { text: "Login" }, order: 4, section: "middle", column: 2 },
+      { id: "h-social", type: "social_icons", label: "Social Icons", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: {}, order: 0, section: "top", column: 1 },
+      { id: "h-announce", type: "announcement_bar", label: "Announcement Bar", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: { text: "Welcome to our site!" }, order: 0, section: "top", column: 0 },
+    ],
+  },
+  {
+    id: "marketing",
+    name: "Marketing Header",
+    description: "Top: Announcement bar. Middle: Logo, Nav, CTA. Bottom: Search",
+    bestFor: "Conversion-focused",
+    elements: [
+      { id: "h-announce", type: "announcement_bar", label: "Announcement Bar", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "Limited time offer - 20% off!" }, order: 0, section: "top", column: 0 },
+      { id: "h-logo", type: "logo", label: "Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "middle", column: 0 },
+      { id: "h-nav", type: "navigation", label: "Main Navigation", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: false, content: {}, order: 1, section: "middle", column: 1 },
+      { id: "h-cta", type: "cta_button", label: "Primary CTA Button", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: { text: "Get Started", url: "#" }, order: 2, section: "middle", column: 2 },
+      { id: "h-search", type: "search_icon", label: "Search Icon", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "bottom", column: 1 },
+      { id: "h-login", type: "login_button", label: "Login / Account", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: { text: "Login" }, order: 4, section: "middle", column: 2 },
+      { id: "h-social", type: "social_icons", label: "Social Icons", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "top", column: 1 },
+    ],
+  },
+  {
+    id: "app-portal",
+    name: "App / Portal Header",
+    description: "Logo, Nav, Search, Login / Account",
+    bestFor: "Perfect for dashboards",
+    elements: [
+      { id: "h-logo", type: "logo", label: "Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "middle", column: 0 },
+      { id: "h-nav", type: "navigation", label: "Main Navigation", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: false, content: {}, order: 1, section: "middle", column: 1 },
+      { id: "h-search", type: "search_icon", label: "Search Icon", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: {}, order: 2, section: "middle", column: 2 },
+      { id: "h-login", type: "login_button", label: "Login / Account", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: { text: "Login" }, order: 3, section: "middle", column: 2 },
+      { id: "h-cta", type: "cta_button", label: "Primary CTA Button", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: { text: "Get Started", url: "#" }, order: 4, section: "middle", column: 2 },
+      { id: "h-social", type: "social_icons", label: "Social Icons", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: {}, order: 0, section: "top", column: 1 },
+      { id: "h-announce", type: "announcement_bar", label: "Announcement Bar", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: { text: "Welcome to our site!" }, order: 0, section: "top", column: 0 },
+    ],
+  },
+];
+
+const FOOTER_PRESETS: FooterPreset[] = [
+  {
+    id: "simple",
+    name: "Simple Footer",
+    description: "Logo and Copyright",
+    bestFor: "Clean. Minimal. Polite.",
+    elements: [
+      { id: "f-logo", type: "footer_logo", label: "Footer Logo", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 1 },
+      { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved." }, order: 0, section: "bottom", column: 1 },
+      { id: "f-social", type: "social_icons", label: "Social Media Icons", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "middle", column: 1 },
+      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "bottom", column: 3 },
+      { id: "f-links", type: "link_list", label: "Link List", enabled: false, alignment: "left", visibleDesktop: false, visibleMobile: false, content: { orientation: "vertical" }, order: 0, section: "middle", column: 0 },
+      { id: "f-title", type: "footer_title", label: "Footer Title", enabled: false, alignment: "left", visibleDesktop: false, visibleMobile: false, content: { text: "Quick Links" }, order: 0, section: "top", column: 0 },
+    ],
+  },
+  {
+    id: "standard",
+    name: "Standard Footer",
+    description: "Col 1: Logo + description. Col 2: Links. Col 3: Links. Col 4: Social",
+    bestFor: "The crowd favorite",
+    elements: [
+      { id: "f-logo", type: "footer_logo", label: "Footer Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 0 },
+      { id: "f-title", type: "footer_title", label: "Company Description", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { text: "Building better projects, together." }, order: 1, section: "top", column: 0 },
+      { id: "f-links", type: "link_list", label: "Quick Links", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { orientation: "vertical" }, order: 0, section: "top", column: 1 },
+      { id: "f-social", type: "social_icons", label: "Social Media Icons", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 3 },
+      { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved." }, order: 0, section: "bottom", column: 0 },
+      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "bottom", column: 3 },
+    ],
+  },
+  {
+    id: "compliance-corporate",
+    name: "Compliance / Corporate Footer",
+    description: "Policies, compliance docs, contact info, back-to-top",
+    bestFor: "Very enterprise. Very serious.",
+    elements: [
+      { id: "f-title", type: "footer_title", label: "Legal & Compliance", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { text: "Legal & Compliance" }, order: 0, section: "top", column: 0 },
+      { id: "f-links", type: "link_list", label: "Policy Links", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { orientation: "vertical" }, order: 0, section: "top", column: 1 },
+      { id: "f-logo", type: "footer_logo", label: "Company Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 2 },
+      { id: "f-social", type: "social_icons", label: "Contact & Social", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 3 },
+      { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved. All trademarks are property of their respective owners." }, order: 0, section: "bottom", column: 0 },
+      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: {}, order: 1, section: "bottom", column: 3 },
+    ],
+  },
+];
+
+function buildConfigFromPresetElements(elements: HeaderElement[]): HeaderComponentsConfig {
+  return {
+    desktop: {
+      sections: {
+        top: { columns: 3, elements: elements.filter(e => e.section === "top") },
+        middle: { columns: 3, elements: elements.filter(e => e.section === "middle") },
+        bottom: { columns: 3, elements: elements.filter(e => e.section === "bottom") },
+      },
+    },
+    mobile: {
+      columns: 2,
+      elements: elements.map(e => ({ ...e })),
+    },
+  };
+}
+
+function buildFooterConfigFromPresetElements(elements: FooterElement[]): FooterComponentsConfig {
+  return {
+    desktop: {
+      sections: {
+        top: { columns: 4, elements: elements.filter(e => e.section === "top") },
+        middle: { columns: 4, elements: elements.filter(e => e.section === "middle") },
+        bottom: { columns: 4, elements: elements.filter(e => e.section === "bottom") },
+      },
+    },
+    mobile: {
+      columns: 2,
+      elements: elements.map(e => ({ ...e })),
+    },
+  };
+}
+
 const ELEMENT_ICONS: Record<string, typeof Image> = {
   logo: Image,
   navigation: Navigation,
@@ -174,6 +323,9 @@ export default function WebsiteComponentsTab({
   const [deviceView, setDeviceView] = useState<"desktop" | "mobile">("desktop");
   const [expandedElement, setExpandedElement] = useState<string | null>(null);
   const [activeGlobal, setActiveGlobal] = useState<"header" | "footer">("header");
+  const [showPresets, setShowPresets] = useState(false);
+  const [activeHeaderPreset, setActiveHeaderPreset] = useState<string | null>(null);
+  const [activeFooterPreset, setActiveFooterPreset] = useState<string | null>(null);
 
   const dragItem = useRef<{ id: string; sourceSection: string; sourceColumn: number } | null>(null);
   const dragOverItem = useRef<{ id: string; targetSection: string; targetColumn: number } | null>(null);
@@ -181,7 +333,21 @@ export default function WebsiteComponentsTab({
   const handleResetComponents = () => {
     onHeaderConfigChange(getDefaultHeaderConfig());
     onFooterConfigChange(getDefaultFooterConfig());
+    setActiveHeaderPreset(null);
+    setActiveFooterPreset(null);
   };
+
+  const applyHeaderPreset = useCallback((preset: HeaderPreset) => {
+    const config = buildConfigFromPresetElements(preset.elements.map(e => ({ ...e })));
+    onHeaderConfigChange(config);
+    setActiveHeaderPreset(preset.id);
+  }, [onHeaderConfigChange]);
+
+  const applyFooterPreset = useCallback((preset: FooterPreset) => {
+    const config = buildFooterConfigFromPresetElements(preset.elements.map(e => ({ ...e })));
+    onFooterConfigChange(config);
+    setActiveFooterPreset(preset.id);
+  }, [onFooterConfigChange]);
 
   const updateHeaderElement = useCallback((elementId: string, updates: Partial<HeaderElement>) => {
     const newConfig = JSON.parse(JSON.stringify(headerConfig)) as HeaderComponentsConfig;
@@ -750,6 +916,113 @@ export default function WebsiteComponentsTab({
           </Button>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              Preset Templates
+            </CardTitle>
+            <CardDescription>Apply a pre-built layout to get started fast. Fully editable after insertion.</CardDescription>
+          </div>
+          <Button
+            variant={showPresets ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowPresets(!showPresets)}
+            data-testid="button-toggle-presets"
+          >
+            {showPresets ? "Hide Presets" : "Show Presets"}
+          </Button>
+        </CardHeader>
+        {showPresets && (
+          <CardContent className="space-y-6 pt-0">
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Navigation className="h-4 w-4" />
+                Header Presets
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {HEADER_PRESETS.map((preset) => {
+                  const isActive = activeHeaderPreset === preset.id;
+                  const PresetIcon = preset.id === "simple-business" ? Briefcase
+                    : preset.id === "marketing" ? TrendingUp
+                    : LayoutDashboard;
+                  return (
+                    <div
+                      key={preset.id}
+                      className={`border rounded-md p-4 space-y-2 transition-colors ${isActive ? "border-primary bg-primary/5" : ""}`}
+                      data-testid={`preset-header-${preset.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <PresetIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <h5 className="text-sm font-medium leading-tight">{preset.name}</h5>
+                        </div>
+                        {isActive && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{preset.description}</p>
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[11px] text-muted-foreground italic">{preset.bestFor}</span>
+                        <Button
+                          size="sm"
+                          variant={isActive ? "secondary" : "outline"}
+                          onClick={() => applyHeaderPreset(preset)}
+                          data-testid={`button-apply-header-${preset.id}`}
+                        >
+                          {isActive ? "Applied" : "Apply"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Minus className="h-4 w-4" />
+                Footer Presets
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {FOOTER_PRESETS.map((preset) => {
+                  const isActive = activeFooterPreset === preset.id;
+                  const PresetIcon = preset.id === "simple" ? Minus
+                    : preset.id === "standard" ? Award
+                    : Shield;
+                  return (
+                    <div
+                      key={preset.id}
+                      className={`border rounded-md p-4 space-y-2 transition-colors ${isActive ? "border-primary bg-primary/5" : ""}`}
+                      data-testid={`preset-footer-${preset.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <PresetIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <h5 className="text-sm font-medium leading-tight">{preset.name}</h5>
+                        </div>
+                        {isActive && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{preset.description}</p>
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[11px] text-muted-foreground italic">{preset.bestFor}</span>
+                        <Button
+                          size="sm"
+                          variant={isActive ? "secondary" : "outline"}
+                          onClick={() => applyFooterPreset(preset)}
+                          data-testid={`button-apply-footer-${preset.id}`}
+                        >
+                          {isActive ? "Applied" : "Apply"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       {activeGlobal === "header" && (
         <Card>
