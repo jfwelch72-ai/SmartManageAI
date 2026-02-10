@@ -1726,6 +1726,10 @@ export default function WebsiteBuilderPage() {
                           AI
                         </Badge>
                       )}
+                      <Button variant="outline" size="sm" onClick={() => handleEditPage(page)} data-testid={`button-edit-content-${page.id}`}>
+                        <FileText className="h-4 w-4 mr-1" />
+                        Edit Content
+                      </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEditPage(page)} data-testid={`button-edit-page-${page.id}`}>
                         <Edit className="h-4 w-4" />
                       </Button>
