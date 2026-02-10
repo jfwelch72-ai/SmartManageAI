@@ -100,6 +100,10 @@ interface Website {
   sidebarWidth: number | null;
   pagePadding: number | null;
   showBreadcrumb: boolean | null;
+  footerVisibility: boolean | null;
+  footerColumns: number | null;
+  footerWidth: string | null;
+  footerPadding: number | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -337,6 +341,10 @@ export default function WebsiteBuilderPage() {
     sidebarWidth: 300,
     pagePadding: 32,
     showBreadcrumb: true,
+    footerVisibility: true,
+    footerColumns: 3,
+    footerWidth: "boxed",
+    footerPadding: 40,
   });
 
   const [pageForm, setPageForm] = useState({
@@ -787,6 +795,10 @@ export default function WebsiteBuilderPage() {
         sidebarWidth: websiteRef.sidebarWidth ?? prev.sidebarWidth,
         pagePadding: websiteRef.pagePadding ?? prev.pagePadding,
         showBreadcrumb: websiteRef.showBreadcrumb ?? prev.showBreadcrumb,
+        footerVisibility: websiteRef.footerVisibility ?? prev.footerVisibility,
+        footerColumns: websiteRef.footerColumns ?? prev.footerColumns,
+        footerWidth: websiteRef.footerWidth || prev.footerWidth,
+        footerPadding: websiteRef.footerPadding ?? prev.footerPadding,
       }));
     }
   }, [websiteRef]);
@@ -1504,6 +1516,88 @@ export default function WebsiteBuilderPage() {
                   data-testid="switch-breadcrumb"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Layout className="h-4 w-4" />
+                Footer Setup
+              </CardTitle>
+              <CardDescription>Configure footer layout, columns, and visibility</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="footer-visibility" data-testid="label-footer-visibility">Footer Visibility</Label>
+                  <p className="text-xs text-muted-foreground">Show or hide the footer across your website</p>
+                </div>
+                <Switch
+                  id="footer-visibility"
+                  checked={websiteForm.footerVisibility}
+                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, footerVisibility: checked }))}
+                  data-testid="switch-footer-visibility"
+                />
+              </div>
+
+              {websiteForm.footerVisibility && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <Label data-testid="label-footer-columns">Footer Columns</Label>
+                    <Select
+                      value={String(websiteForm.footerColumns)}
+                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerColumns: parseInt(val) }))}
+                    >
+                      <SelectTrigger data-testid="select-footer-columns">
+                        <SelectValue placeholder="Select columns" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 Column</SelectItem>
+                        <SelectItem value="2">2 Columns</SelectItem>
+                        <SelectItem value="3">3 Columns</SelectItem>
+                        <SelectItem value="4">4 Columns</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Number of content columns in the footer</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label data-testid="label-footer-width">Footer Width</Label>
+                    <Select
+                      value={websiteForm.footerWidth}
+                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerWidth: val }))}
+                    >
+                      <SelectTrigger data-testid="select-footer-width">
+                        <SelectValue placeholder="Select width" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="boxed">Boxed</SelectItem>
+                        <SelectItem value="full-width">Full Width</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {websiteForm.footerWidth === "boxed" ? "Footer content stays within the max width" : "Footer spans the full browser width"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label data-testid="label-footer-padding">Footer Padding (px)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={websiteForm.footerPadding}
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, footerPadding: parseInt(e.target.value) || 40 }))}
+                        min={0}
+                        max={120}
+                        data-testid="input-footer-padding"
+                      />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Internal spacing within the footer area</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

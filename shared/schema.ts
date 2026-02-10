@@ -4922,6 +4922,12 @@ export const organizationWebsites = pgTable("organization_websites", {
   sidebarWidth: integer("sidebar_width").default(300),
   pagePadding: integer("page_padding").default(32),
   showBreadcrumb: boolean("show_breadcrumb").default(true),
+
+  // Footer Layout Settings
+  footerVisibility: boolean("footer_visibility").default(true),
+  footerColumns: integer("footer_columns").default(3),
+  footerWidth: text("footer_width").default("boxed"),
+  footerPadding: integer("footer_padding").default(40),
   
   // Features Toggle
   blogEnabled: boolean("blog_enabled").default(true),
