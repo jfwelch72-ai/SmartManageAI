@@ -73,6 +73,17 @@ function validateOrgAccess(req: AuthRequest, res: Response): string | null {
   return user.organizationId;
 }
 
+// Helper: Convert GCS private URLs to local proxy paths so the browser can access them
+function gcsUrlToProxy(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const gcsPrefix = "https://storage.googleapis.com/";
+  if (url.startsWith(gcsPrefix)) {
+    const objectPath = url.substring(gcsPrefix.length);
+    return `/objects/${objectPath}`;
+  }
+  return url;
+}
+
 // ============================================
 // WEBSITE SETUP & CONFIGURATION
 // ============================================
@@ -1936,12 +1947,15 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
     });
 
     res.json({
-      website,
+      website: {
+        ...website,
+        logoUrl: gcsUrlToProxy(website.logoUrl),
+      },
       organization: org ? {
         name: org.name,
         tradeType: org.tradeType,
         region: org.region,
-        logoUrl: org.logoUrl,
+        logoUrl: gcsUrlToProxy(org.logoUrl),
       } : null,
       pages: allPages,
       blogPosts,
@@ -2031,12 +2045,15 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
     });
 
     res.json({
-      website,
+      website: {
+        ...website,
+        logoUrl: gcsUrlToProxy(website.logoUrl),
+      },
       organization: org ? {
         name: org.name,
         tradeType: org.tradeType,
         region: org.region,
-        logoUrl: org.logoUrl,
+        logoUrl: gcsUrlToProxy(org.logoUrl),
       } : null,
       pages: pages.filter(p => p.showInNavigation),
       blogPosts,
