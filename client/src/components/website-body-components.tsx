@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 import {
   GripVertical,
   Plus,
@@ -31,6 +32,8 @@ import {
   Columns,
   Sparkles,
   Copy,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 export type BodyComponentType =
@@ -320,6 +323,76 @@ export function getDefaultBodyConfig(): BodyComponentsConfig {
   return { components: [] };
 }
 
+export function ImageUploadField({ value, onChange, label, placeholder, testId }: { value: string; onChange: (url: string) => void; label?: string; placeholder?: string; testId?: string }) {
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Invalid file", description: "Please select an image file.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/website/upload-image", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      onChange(data.url);
+      toast({ title: "Image uploaded", description: file.name });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }, [onChange, toast]);
+
+  return (
+    <div>
+      {label && <Label className="text-xs">{label}</Label>}
+      <div className="flex items-center gap-1">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder || "https://..."}
+          data-testid={testId}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => { if (e.target.files?.[0]) { handleUpload(e.target.files[0]); e.target.value = ""; } }}
+          data-testid={testId ? `${testId}-file` : undefined}
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          data-testid={testId ? `${testId}-upload` : undefined}
+        >
+          {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+        </Button>
+      </div>
+      {value && (
+        <div className="mt-1.5 rounded-md border overflow-hidden">
+          <img src={value} alt="Preview" className="w-full h-20 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
   const updateTypography = (key: keyof TypographyStyles, value: string) => {
     onChange({ ...styles, typography: { ...styles.typography, [key]: value } });
@@ -477,8 +550,7 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
           )}
           {styles.background.type === "image" && (
             <div className="col-span-2">
-              <Label className="text-xs">Image URL</Label>
-              <Input value={styles.background.imageUrl} onChange={(e) => updateBackground("imageUrl", e.target.value)} placeholder="https://..." data-testid="input-bg-image" />
+              <ImageUploadField value={styles.background.imageUrl} onChange={(url) => updateBackground("imageUrl", url)} label="Image URL" testId="input-bg-image" />
             </div>
           )}
           {styles.background.type === "video" && (
@@ -559,8 +631,7 @@ function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banne
       </div>
       {comp.config.sideImageEnabled && (
         <div>
-          <Label className="text-xs">Side Image URL</Label>
-          <Input value={comp.config.sideImageUrl} onChange={(e) => onChange({ ...comp.config, sideImageUrl: e.target.value })} placeholder="https://..." data-testid="input-side-image" />
+          <ImageUploadField value={comp.config.sideImageUrl} onChange={(url) => onChange({ ...comp.config, sideImageUrl: url })} label="Side Image URL" testId="input-side-image" />
         </div>
       )}
     </div>
@@ -589,8 +660,7 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
       {comp.config.imageEnabled && (
         <>
           <div>
-            <Label className="text-xs">Image URL</Label>
-            <Input value={comp.config.imageUrl} onChange={(e) => onChange({ ...comp.config, imageUrl: e.target.value })} placeholder="https://..." data-testid="input-hero-image" />
+            <ImageUploadField value={comp.config.imageUrl} onChange={(url) => onChange({ ...comp.config, imageUrl: url })} label="Image URL" testId="input-hero-image" />
           </div>
           <div>
             <Label className="text-xs">Image Position</Label>
@@ -802,7 +872,7 @@ function TestimonialEditor({ comp, onChange }: { comp: BodyComponent & { type: "
               <Label className="text-[10px]">Profile Image</Label>
             </div>
             {item.imageEnabled && (
-              <Input value={item.imageUrl} onChange={(e) => updateItem(i, { imageUrl: e.target.value })} placeholder="Image URL" className="text-xs" data-testid={`input-testimonial-img-${i}`} />
+              <ImageUploadField value={item.imageUrl} onChange={(url) => updateItem(i, { imageUrl: url })} label="Profile Image" testId={`input-testimonial-img-${i}`} />
             )}
           </div>
         ))}
