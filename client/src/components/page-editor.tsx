@@ -1309,32 +1309,73 @@ const CanvasComponentPreview = memo(function CanvasComponentPreview({ component,
   } else if (component.styles.background.type === "gradient") {
     const dir = component.styles.background.gradientDirection.replace("to-", "to ");
     bgStyle.background = `linear-gradient(${dir}, ${component.styles.background.gradientFrom || "#000"}, ${component.styles.background.gradientTo || "#fff"})`;
+  } else if (component.styles.background.type === "image" && component.styles.background.imageUrl) {
+    bgStyle.backgroundImage = `url(${component.styles.background.imageUrl})`;
+    bgStyle.backgroundSize = "cover";
+    bgStyle.backgroundPosition = "center";
   }
+
+  const renderImage = (url: string, alt: string, testIdSuffix: string, className?: string) => {
+    if (!url) return null;
+    return (
+      <img
+        src={url}
+        alt={alt}
+        className={className || "w-full h-24 object-cover rounded"}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        data-testid={`preview-image-${testIdSuffix}-${component.id}`}
+      />
+    );
+  };
 
   const getPreviewContent = () => {
     switch (component.type) {
-      case "banner":
+      case "banner": {
+        const hasSideImage = component.config.sideImageEnabled && component.config.sideImageUrl;
         return (
-          <div className="space-y-1">
-            <h3 className="text-lg font-bold">{component.config.title || "Banner Title"}</h3>
-            <p className="text-sm text-muted-foreground">{component.config.content || "Banner content"}</p>
-            {component.config.buttons.length > 0 && (
-              <div className="flex gap-2 pt-1 flex-wrap">
-                {component.config.buttons.map((btn, i) => (
-                  <Badge key={i} variant={btn.variant === "primary" ? "default" : "secondary"}>{btn.text}</Badge>
-                ))}
+          <div className={hasSideImage ? "flex items-center gap-3" : "space-y-1"}>
+            <div className="flex-1 space-y-1">
+              <h3 className="text-lg font-bold">{component.config.title || "Banner Title"}</h3>
+              <p className="text-sm text-muted-foreground">{component.config.content || "Banner content"}</p>
+              {component.config.buttons.length > 0 && (
+                <div className="flex gap-2 pt-1 flex-wrap">
+                  {component.config.buttons.map((btn, i) => (
+                    <Badge key={i} variant={btn.variant === "primary" ? "default" : "secondary"}>{btn.text}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+            {hasSideImage && (
+              <div className="w-24 flex-shrink-0">
+                {renderImage(component.config.sideImageUrl, "Banner side image", "banner-side", "w-full h-20 object-cover rounded")}
               </div>
             )}
           </div>
         );
-      case "hero":
+      }
+      case "hero": {
+        const hasImage = component.config.imageEnabled && component.config.imageUrl;
+        const isRight = component.config.imagePosition === "right";
         return (
-          <div className="space-y-1">
-            <h2 className="text-xl font-bold">{component.config.title || "Hero Title"}</h2>
-            <p className="text-sm font-medium text-muted-foreground">{component.config.subtitle || "Subtitle"}</p>
-            <p className="text-xs text-muted-foreground">{component.config.content || "Hero description"}</p>
+          <div className={hasImage ? "flex items-center gap-3" : "space-y-1"}>
+            {hasImage && !isRight && (
+              <div className="w-28 flex-shrink-0">
+                {renderImage(component.config.imageUrl, "Hero image", "hero", "w-full h-24 object-cover rounded")}
+              </div>
+            )}
+            <div className="flex-1 space-y-1">
+              <h2 className="text-xl font-bold">{component.config.title || "Hero Title"}</h2>
+              <p className="text-sm font-medium text-muted-foreground">{component.config.subtitle || "Subtitle"}</p>
+              <p className="text-xs text-muted-foreground">{component.config.content || "Hero description"}</p>
+            </div>
+            {hasImage && isRight && (
+              <div className="w-28 flex-shrink-0">
+                {renderImage(component.config.imageUrl, "Hero image", "hero", "w-full h-24 object-cover rounded")}
+              </div>
+            )}
           </div>
         );
+      }
       case "content":
         return (
           <div className="space-y-1">
@@ -1388,8 +1429,11 @@ const CanvasComponentPreview = memo(function CanvasComponentPreview({ component,
             <div className="flex gap-2 flex-wrap">
               {component.config.items.slice(0, 3).map((t) => (
                 <div key={t.id} className="text-xs p-2 border rounded flex-1 min-w-[100px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    {t.imageEnabled && t.imageUrl && renderImage(t.imageUrl, t.name, `testimonial-${t.id}`, "w-6 h-6 rounded-full object-cover flex-shrink-0")}
+                    <p className="font-medium">{t.name}</p>
+                  </div>
                   <p className="italic line-clamp-2">"{t.quote}"</p>
-                  <p className="font-medium mt-1">{t.name}</p>
                 </div>
               ))}
             </div>
