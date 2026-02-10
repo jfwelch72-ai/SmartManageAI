@@ -1069,11 +1069,10 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
       },
     });
 
-    // Generate public URL
-    const publicUrl = `https://storage.googleapis.com/${bucketName}/${objectName}`;
+    const proxyUrl = `/api/website/image/${orgId}/${uniqueId}.${ext}`;
 
     res.json({ 
-      url: publicUrl,
+      url: proxyUrl,
       fileName: file.originalname,
       size: file.size,
       mimeType: file.mimetype,
@@ -1081,6 +1080,27 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
   } catch (error) {
     console.error("Error uploading image:", error);
     res.status(500).json({ error: "Failed to upload image" });
+  }
+});
+
+// GET /api/website/image/:orgId/:fileName - Serve uploaded website images from GCS
+router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
+  try {
+    const { orgId, fileName } = req.params;
+    const filePath = `gallery/${orgId}/${fileName}`;
+
+    const file = await objectStorage.searchPublicObject(filePath);
+    if (!file) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+
+    objectStorage.downloadObject(file, res, 86400);
+  } catch (error: any) {
+    console.error("Error serving website image:", error);
+    if (error instanceof ObjectNotFoundError) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+    res.status(500).json({ error: "Failed to serve image" });
   }
 });
 

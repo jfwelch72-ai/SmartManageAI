@@ -1303,6 +1303,15 @@ const CanvasComponentPreview = memo(function CanvasComponentPreview({ component,
   const meta = COMPONENT_TYPE_META[component.type];
   const Icon = meta.icon;
 
+  const normalizeImageUrl = (url: string): string => {
+    if (!url) return url;
+    const gcsMatch = url.match(/https:\/\/storage\.googleapis\.com\/[^/]+\/gallery\/([^/]+\/.+)$/);
+    if (gcsMatch) {
+      return `/api/website/image/${gcsMatch[1]}`;
+    }
+    return url;
+  };
+
   const bgStyle: Record<string, string> = {};
   if (component.styles.background.type === "solid" && component.styles.background.color) {
     bgStyle.backgroundColor = component.styles.background.color;
@@ -1310,16 +1319,17 @@ const CanvasComponentPreview = memo(function CanvasComponentPreview({ component,
     const dir = component.styles.background.gradientDirection.replace("to-", "to ");
     bgStyle.background = `linear-gradient(${dir}, ${component.styles.background.gradientFrom || "#000"}, ${component.styles.background.gradientTo || "#fff"})`;
   } else if (component.styles.background.type === "image" && component.styles.background.imageUrl) {
-    bgStyle.backgroundImage = `url(${component.styles.background.imageUrl})`;
+    bgStyle.backgroundImage = `url(${normalizeImageUrl(component.styles.background.imageUrl)})`;
     bgStyle.backgroundSize = "cover";
     bgStyle.backgroundPosition = "center";
   }
 
   const renderImage = (url: string, alt: string, testIdSuffix: string, className?: string) => {
     if (!url) return null;
+    const src = normalizeImageUrl(url);
     return (
       <img
-        src={url}
+        src={src}
         alt={alt}
         className={className || "w-full h-24 object-cover rounded"}
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
