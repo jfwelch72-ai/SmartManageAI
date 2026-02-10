@@ -890,7 +890,7 @@ function SharePreviewDialog({ pageId, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share2 className="h-4 w-4" />
@@ -904,7 +904,7 @@ function SharePreviewDialog({ pageId, open, onOpenChange }: {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Select value={String(expiresInHours)} onValueChange={(v) => setExpiresInHours(Number(v))}>
-              <SelectTrigger className="flex-1" data-testid="select-preview-expiry">
+              <SelectTrigger className="w-[140px] flex-shrink-0" data-testid="select-preview-expiry">
                 <SelectValue placeholder="Expiration" />
               </SelectTrigger>
               <SelectContent>
@@ -917,6 +917,7 @@ function SharePreviewDialog({ pageId, open, onOpenChange }: {
             <Button
               onClick={() => createLinkMutation.mutate()}
               disabled={createLinkMutation.isPending}
+              className="flex-shrink-0"
               data-testid="button-generate-preview-link"
             >
               {createLinkMutation.isPending ? (
@@ -936,41 +937,41 @@ function SharePreviewDialog({ pageId, open, onOpenChange }: {
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Active Preview Links</Label>
               {previewLinks.map((link: any) => (
-                <div key={link.id} className="flex items-center gap-2 p-2 border rounded-md">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-mono truncate">{getPreviewUrl(link.token)}</p>
-                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatExpiry(link.expiresAt)}
-                    </p>
+                <div key={link.id} className="p-2 border rounded-md space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <p className="flex-1 min-w-0 text-xs font-mono truncate">{getPreviewUrl(link.token)}</p>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => copyToClipboard(getPreviewUrl(link.token))}
+                        data-testid={`button-copy-preview-${link.id}`}
+                      >
+                        <ClipboardCopy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.open(getPreviewUrl(link.token), "_blank")}
+                        data-testid={`button-open-preview-${link.id}`}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => revokeLinkMutation.mutate(link.id)}
+                        disabled={revokeLinkMutation.isPending}
+                        data-testid={`button-revoke-preview-${link.id}`}
+                      >
+                        <XCircle className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => copyToClipboard(getPreviewUrl(link.token))}
-                      data-testid={`button-copy-preview-${link.id}`}
-                    >
-                      <ClipboardCopy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => window.open(getPreviewUrl(link.token), "_blank")}
-                      data-testid={`button-open-preview-${link.id}`}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => revokeLinkMutation.mutate(link.id)}
-                      disabled={revokeLinkMutation.isPending}
-                      data-testid={`button-revoke-preview-${link.id}`}
-                    >
-                      <XCircle className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  </div>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {formatExpiry(link.expiresAt)}
+                  </p>
                 </div>
               ))}
             </div>
