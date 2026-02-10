@@ -85,13 +85,21 @@ interface Website {
   showTestimonials: boolean;
   contactEmail: string | null;
   contactPhone: string | null;
-  headerStyle: string | null;
-  footerStyle: string | null;
-  navPosition: string | null;
-  pageWidth: string | null;
-  showHero: boolean | null;
-  heroStyle: string | null;
-  sidebarPosition: string | null;
+  contentWidth: string | null;
+  maxWidth: number | null;
+  sectionPadding: number | null;
+  breakpointDesktop: number | null;
+  breakpointTablet: number | null;
+  breakpointMobile: number | null;
+  headerType: string | null;
+  headerHeight: number | null;
+  logoPosition: string | null;
+  navigationLayout: string | null;
+  showOnScroll: boolean | null;
+  pageLayout: string | null;
+  sidebarWidth: number | null;
+  pagePadding: number | null;
+  showBreadcrumb: boolean | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -314,13 +322,21 @@ export default function WebsiteBuilderPage() {
     showBlog: true,
     showProjects: true,
     showTestimonials: true,
-    headerStyle: "standard",
-    footerStyle: "standard",
-    navPosition: "top",
-    pageWidth: "contained",
-    showHero: true,
-    heroStyle: "full-width",
-    sidebarPosition: "none",
+    contentWidth: "full-width",
+    maxWidth: 1200,
+    sectionPadding: 24,
+    breakpointDesktop: 1280,
+    breakpointTablet: 768,
+    breakpointMobile: 480,
+    headerType: "static",
+    headerHeight: 80,
+    logoPosition: "left",
+    navigationLayout: "horizontal",
+    showOnScroll: true,
+    pageLayout: "boxed",
+    sidebarWidth: 300,
+    pagePadding: 32,
+    showBreadcrumb: true,
   });
 
   const [pageForm, setPageForm] = useState({
@@ -756,13 +772,21 @@ export default function WebsiteBuilderPage() {
         metaDescription: websiteRef.metaDescription || prev.metaDescription,
         contactEmail: websiteRef.contactEmail || prev.contactEmail,
         contactPhone: websiteRef.contactPhone || prev.contactPhone,
-        headerStyle: websiteRef.headerStyle || prev.headerStyle,
-        footerStyle: websiteRef.footerStyle || prev.footerStyle,
-        navPosition: websiteRef.navPosition || prev.navPosition,
-        pageWidth: websiteRef.pageWidth || prev.pageWidth,
-        showHero: websiteRef.showHero ?? prev.showHero,
-        heroStyle: websiteRef.heroStyle || prev.heroStyle,
-        sidebarPosition: websiteRef.sidebarPosition || prev.sidebarPosition,
+        contentWidth: websiteRef.contentWidth || prev.contentWidth,
+        maxWidth: websiteRef.maxWidth ?? prev.maxWidth,
+        sectionPadding: websiteRef.sectionPadding ?? prev.sectionPadding,
+        breakpointDesktop: websiteRef.breakpointDesktop ?? prev.breakpointDesktop,
+        breakpointTablet: websiteRef.breakpointTablet ?? prev.breakpointTablet,
+        breakpointMobile: websiteRef.breakpointMobile ?? prev.breakpointMobile,
+        headerType: websiteRef.headerType || prev.headerType,
+        headerHeight: websiteRef.headerHeight ?? prev.headerHeight,
+        logoPosition: websiteRef.logoPosition || prev.logoPosition,
+        navigationLayout: websiteRef.navigationLayout || prev.navigationLayout,
+        showOnScroll: websiteRef.showOnScroll ?? prev.showOnScroll,
+        pageLayout: websiteRef.pageLayout || prev.pageLayout,
+        sidebarWidth: websiteRef.sidebarWidth ?? prev.sidebarWidth,
+        pagePadding: websiteRef.pagePadding ?? prev.pagePadding,
+        showBreadcrumb: websiteRef.showBreadcrumb ?? prev.showBreadcrumb,
       }));
     }
   }, [websiteRef]);
@@ -1151,11 +1175,11 @@ export default function WebsiteBuilderPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="layout" className="space-y-4">
+        <TabsContent value="layout" className="space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-lg font-semibold">Site Layout</h2>
-              <p className="text-sm text-muted-foreground">Configure the overall structure and layout of your website</p>
+              <p className="text-sm text-muted-foreground">Configure site-wide layout rules, header behavior, and inner page defaults</p>
             </div>
             <Button
               onClick={handleSaveWebsite}
@@ -1171,173 +1195,317 @@ export default function WebsiteBuilderPage() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Header & Navigation</CardTitle>
-                <CardDescription>Configure how your header and navigation appear</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                Global Layout Setup
+              </CardTitle>
+              <CardDescription>Configure site-wide layout rules such as width, spacing, and breakpoints</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label data-testid="label-header-style">Header Style</Label>
+                  <Label data-testid="label-content-width">Content Width</Label>
                   <Select
-                    value={websiteForm.headerStyle}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, headerStyle: val }))}
+                    value={websiteForm.contentWidth}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, contentWidth: val }))}
                   >
-                    <SelectTrigger data-testid="select-header-style">
-                      <SelectValue placeholder="Select header style" />
+                    <SelectTrigger data-testid="select-content-width">
+                      <SelectValue placeholder="Select content width" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="centered">Centered Logo</SelectItem>
-                      <SelectItem value="minimal">Minimal</SelectItem>
-                      <SelectItem value="transparent">Transparent Overlay</SelectItem>
+                      <SelectItem value="boxed">Boxed</SelectItem>
+                      <SelectItem value="full-width">Full Width</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    {websiteForm.headerStyle === "standard" && "Logo on the left, navigation on the right"}
-                    {websiteForm.headerStyle === "centered" && "Logo centered above navigation links"}
-                    {websiteForm.headerStyle === "minimal" && "Compact header with hamburger menu"}
-                    {websiteForm.headerStyle === "transparent" && "Header overlays the hero section with transparent background"}
+                    {websiteForm.contentWidth === "boxed" ? "Content is centered within a maximum width container" : "Content spans the full browser width"}
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label data-testid="label-nav-position">Navigation Position</Label>
-                  <Select
-                    value={websiteForm.navPosition}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, navPosition: val }))}
-                  >
-                    <SelectTrigger data-testid="select-nav-position">
-                      <SelectValue placeholder="Select nav position" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="top">Top (Horizontal)</SelectItem>
-                      <SelectItem value="side-left">Side Left</SelectItem>
-                      <SelectItem value="side-right">Side Right</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Page Structure</CardTitle>
-                <CardDescription>Set the overall page width and content area</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label data-testid="label-page-width">Page Width</Label>
-                  <Select
-                    value={websiteForm.pageWidth}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, pageWidth: val }))}
-                  >
-                    <SelectTrigger data-testid="select-page-width">
-                      <SelectValue placeholder="Select page width" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="contained">Contained (max-width 1280px)</SelectItem>
-                      <SelectItem value="wide">Wide (max-width 1536px)</SelectItem>
-                      <SelectItem value="full">Full Width</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label data-testid="label-max-width">Max Width (px)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={websiteForm.maxWidth}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, maxWidth: parseInt(e.target.value) || 1200 }))}
+                      min={800}
+                      max={2400}
+                      data-testid="input-max-width"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Maximum container width (800 - 2400px)</p>
                 </div>
-                <div className="space-y-2">
-                  <Label data-testid="label-sidebar-position">Content Sidebar</Label>
-                  <Select
-                    value={websiteForm.sidebarPosition}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, sidebarPosition: val }))}
-                  >
-                    <SelectTrigger data-testid="select-sidebar-position">
-                      <SelectValue placeholder="Select sidebar position" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No Sidebar</SelectItem>
-                      <SelectItem value="left">Left Sidebar</SelectItem>
-                      <SelectItem value="right">Right Sidebar</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Hero Section</CardTitle>
-                <CardDescription>Configure the hero area displayed on the homepage</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="show-hero" data-testid="label-show-hero">Show Hero Section</Label>
-                  <Switch
-                    id="show-hero"
-                    checked={websiteForm.showHero}
-                    onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showHero: checked }))}
-                    data-testid="switch-show-hero"
-                  />
+                <div className="space-y-2">
+                  <Label data-testid="label-section-padding">Section Padding (px)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={websiteForm.sectionPadding}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, sectionPadding: parseInt(e.target.value) || 24 }))}
+                      min={0}
+                      max={120}
+                      data-testid="input-section-padding"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Vertical spacing between page sections</p>
                 </div>
-                {websiteForm.showHero && (
+              </div>
+
+              <div className="space-y-3">
+                <Label data-testid="label-breakpoints">Responsive Breakpoints</Label>
+                <p className="text-xs text-muted-foreground">Define the screen widths where layout adapts for different devices</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex items-center gap-3 p-3 rounded-md border">
+                    <Monitor className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Desktop</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={websiteForm.breakpointDesktop}
+                          onChange={(e) => setWebsiteForm(prev => ({ ...prev, breakpointDesktop: parseInt(e.target.value) || 1280 }))}
+                          min={1024}
+                          max={2560}
+                          className="h-8"
+                          data-testid="input-breakpoint-desktop"
+                        />
+                        <span className="text-xs text-muted-foreground">px</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-md border">
+                    <Tablet className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Tablet</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={websiteForm.breakpointTablet}
+                          onChange={(e) => setWebsiteForm(prev => ({ ...prev, breakpointTablet: parseInt(e.target.value) || 768 }))}
+                          min={600}
+                          max={1200}
+                          className="h-8"
+                          data-testid="input-breakpoint-tablet"
+                        />
+                        <span className="text-xs text-muted-foreground">px</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-md border">
+                    <Smartphone className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">Mobile</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={websiteForm.breakpointMobile}
+                          onChange={(e) => setWebsiteForm(prev => ({ ...prev, breakpointMobile: parseInt(e.target.value) || 480 }))}
+                          min={320}
+                          max={768}
+                          className="h-8"
+                          data-testid="input-breakpoint-mobile"
+                        />
+                        <span className="text-xs text-muted-foreground">px</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Header Layout Setup
+              </CardTitle>
+              <CardDescription>Configure header layout, position, and navigation behavior</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label data-testid="label-header-type">Header Type</Label>
+                  <Select
+                    value={websiteForm.headerType}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, headerType: val }))}
+                  >
+                    <SelectTrigger data-testid="select-header-type">
+                      <SelectValue placeholder="Select header type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="static">Static</SelectItem>
+                      <SelectItem value="sticky">Sticky</SelectItem>
+                      <SelectItem value="fixed">Fixed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {websiteForm.headerType === "static" && "Header scrolls with the page content"}
+                    {websiteForm.headerType === "sticky" && "Header stays at the top when scrolling down"}
+                    {websiteForm.headerType === "fixed" && "Header is always fixed at the top of the viewport"}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label data-testid="label-header-height">Header Height (px)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={websiteForm.headerHeight}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, headerHeight: parseInt(e.target.value) || 80 }))}
+                      min={40}
+                      max={200}
+                      data-testid="input-header-height"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Height of the header bar (40 - 200px)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label data-testid="label-logo-position">Logo Position</Label>
+                  <Select
+                    value={websiteForm.logoPosition}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, logoPosition: val }))}
+                  >
+                    <SelectTrigger data-testid="select-logo-position">
+                      <SelectValue placeholder="Select logo position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="left">Left</SelectItem>
+                      <SelectItem value="center">Center</SelectItem>
+                      <SelectItem value="right">Right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label data-testid="label-navigation-layout">Navigation Layout</Label>
+                  <Select
+                    value={websiteForm.navigationLayout}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, navigationLayout: val }))}
+                  >
+                    <SelectTrigger data-testid="select-navigation-layout">
+                      <SelectValue placeholder="Select navigation layout" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="horizontal">Horizontal</SelectItem>
+                      <SelectItem value="hamburger">Hamburger Menu</SelectItem>
+                      <SelectItem value="split">Split (Logo center, nav sides)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {websiteForm.navigationLayout === "horizontal" && "Navigation links displayed in a horizontal row"}
+                    {websiteForm.navigationLayout === "hamburger" && "Navigation hidden behind a hamburger menu icon"}
+                    {websiteForm.navigationLayout === "split" && "Logo centered with navigation links on both sides"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="show-on-scroll" data-testid="label-show-on-scroll">Show on Scroll</Label>
+                  <p className="text-xs text-muted-foreground">Reveal the header when user scrolls up</p>
+                </div>
+                <Switch
+                  id="show-on-scroll"
+                  checked={websiteForm.showOnScroll}
+                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showOnScroll: checked }))}
+                  data-testid="switch-show-on-scroll"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Inner Page Setup
+              </CardTitle>
+              <CardDescription>Define default layout behavior for inner pages</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label data-testid="label-page-layout">Page Layout</Label>
+                  <Select
+                    value={websiteForm.pageLayout}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, pageLayout: val }))}
+                  >
+                    <SelectTrigger data-testid="select-page-layout">
+                      <SelectValue placeholder="Select page layout" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full-width">Full Width</SelectItem>
+                      <SelectItem value="boxed">Boxed</SelectItem>
+                      <SelectItem value="sidebar-left">Sidebar Left</SelectItem>
+                      <SelectItem value="sidebar-right">Sidebar Right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {websiteForm.pageLayout === "full-width" && "Content spans the full page width"}
+                    {websiteForm.pageLayout === "boxed" && "Content is centered in a contained box"}
+                    {websiteForm.pageLayout === "sidebar-left" && "Main content with a sidebar on the left"}
+                    {websiteForm.pageLayout === "sidebar-right" && "Main content with a sidebar on the right"}
+                  </p>
+                </div>
+
+                {(websiteForm.pageLayout === "sidebar-left" || websiteForm.pageLayout === "sidebar-right") && (
                   <div className="space-y-2">
-                    <Label data-testid="label-hero-style">Hero Style</Label>
-                    <Select
-                      value={websiteForm.heroStyle}
-                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, heroStyle: val }))}
-                    >
-                      <SelectTrigger data-testid="select-hero-style">
-                        <SelectValue placeholder="Select hero style" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="full-width">Full Width Banner</SelectItem>
-                        <SelectItem value="split">Split (Text + Image)</SelectItem>
-                        <SelectItem value="centered">Centered Content</SelectItem>
-                        <SelectItem value="video-bg">Video Background</SelectItem>
-                        <SelectItem value="slideshow">Image Slideshow</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {websiteForm.heroStyle === "full-width" && "A full-width banner with background image and overlay text"}
-                      {websiteForm.heroStyle === "split" && "Content on one side with an image on the other"}
-                      {websiteForm.heroStyle === "centered" && "Centered headline and call-to-action over a background"}
-                      {websiteForm.heroStyle === "video-bg" && "Background video with overlay content"}
-                      {websiteForm.heroStyle === "slideshow" && "Rotating images with content overlay"}
-                    </p>
+                    <Label data-testid="label-sidebar-width">Sidebar Width (px)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={websiteForm.sidebarWidth}
+                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, sidebarWidth: parseInt(e.target.value) || 300 }))}
+                        min={200}
+                        max={500}
+                        data-testid="input-sidebar-width"
+                      />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Width of the sidebar (200 - 500px)</p>
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Footer</CardTitle>
-                <CardDescription>Choose how the footer is displayed</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label data-testid="label-footer-style">Footer Style</Label>
-                  <Select
-                    value={websiteForm.footerStyle}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerStyle: val }))}
-                  >
-                    <SelectTrigger data-testid="select-footer-style">
-                      <SelectValue placeholder="Select footer style" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="minimal">Minimal</SelectItem>
-                      <SelectItem value="columns">Multi-Column</SelectItem>
-                      <SelectItem value="centered">Centered</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {websiteForm.footerStyle === "standard" && "Logo, links, and contact info in a structured layout"}
-                    {websiteForm.footerStyle === "minimal" && "Simple copyright and essential links only"}
-                    {websiteForm.footerStyle === "columns" && "Multiple columns for links, about, and contact sections"}
-                    {websiteForm.footerStyle === "centered" && "Centered layout with stacked content"}
-                  </p>
+                  <Label data-testid="label-page-padding">Page Padding (px)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={websiteForm.pagePadding}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, pagePadding: parseInt(e.target.value) || 32 }))}
+                      min={0}
+                      max={120}
+                      data-testid="input-page-padding"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Internal padding around the page content area</p>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="show-breadcrumb" data-testid="label-breadcrumb">Breadcrumb Navigation</Label>
+                  <p className="text-xs text-muted-foreground">Show breadcrumb trail on inner pages for easier navigation</p>
+                </div>
+                <Switch
+                  id="show-breadcrumb"
+                  checked={websiteForm.showBreadcrumb}
+                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showBreadcrumb: checked }))}
+                  data-testid="switch-breadcrumb"
+                />
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="pages" className="space-y-4">
