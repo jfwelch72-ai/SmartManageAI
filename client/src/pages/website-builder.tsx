@@ -124,6 +124,28 @@ interface Website {
   updatedAt: string | null;
 }
 
+interface WebsitePageRaw {
+  id: string;
+  websiteId: string;
+  pageType: string;
+  pageSlug: string;
+  pageTitle: string;
+  page_slug?: string;
+  page_title?: string;
+  navigationLabel: string | null;
+  navigation_label?: string | null;
+  navigationOrder: number;
+  navigation_order?: number;
+  showInNavigation: boolean;
+  show_in_navigation?: boolean;
+  isPublished: boolean;
+  is_published?: boolean;
+  aiGenerated: boolean;
+  ai_generated?: boolean;
+  parentPageId: string | null;
+  parent_page_id?: string | null;
+}
+
 interface WebsitePage {
   id: string;
   websiteId: string;
@@ -133,11 +155,28 @@ interface WebsitePage {
   navigationLabel: string | null;
   navigationOrder: number;
   showInNavigation: boolean;
-  isHomepage: boolean;
-  status: string;
-  publishedAt: string | null;
+  status: "DRAFT" | "PUBLISHED";
+  isPublished: boolean;
   aiGenerated: boolean;
   parentPageId: string | null;
+}
+
+function mapPageFromApi(raw: WebsitePageRaw): WebsitePage {
+  const isPublished = raw.isPublished ?? raw.is_published ?? false;
+  return {
+    id: raw.id,
+    websiteId: raw.websiteId,
+    pageType: raw.pageType,
+    pageSlug: raw.pageSlug || raw.page_slug || "",
+    pageTitle: raw.pageTitle || raw.page_title || "",
+    navigationLabel: raw.navigationLabel ?? raw.navigation_label ?? null,
+    navigationOrder: raw.navigationOrder ?? raw.navigation_order ?? 0,
+    showInNavigation: raw.showInNavigation ?? raw.show_in_navigation ?? true,
+    status: isPublished ? "PUBLISHED" : "DRAFT",
+    isPublished,
+    aiGenerated: raw.aiGenerated ?? raw.ai_generated ?? false,
+    parentPageId: raw.parentPageId ?? raw.parent_page_id ?? null,
+  };
 }
 
 interface BlogPost {
@@ -431,10 +470,11 @@ export default function WebsiteBuilderPage() {
     enabled: !!user && isAdmin
   });
 
-  const { data: pages = [], isLoading: loadingPages } = useQuery<WebsitePage[]>({
+  const { data: pagesRaw = [], isLoading: loadingPages } = useQuery<WebsitePageRaw[]>({
     queryKey: ["/api/website/pages"],
     enabled: !!user && isAdmin && !!websiteData?.hasWebsite
   });
+  const pages: WebsitePage[] = pagesRaw.map(mapPageFromApi);
 
   const { data: blogPosts = [], isLoading: loadingBlog } = useQuery<BlogPost[]>({
     queryKey: ["/api/website/blog/posts"],
@@ -590,7 +630,11 @@ export default function WebsiteBuilderPage() {
 
   const editPageMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof editPageForm }) => {
-      return await apiRequest("PATCH", `/api/website/pages/${id}`, data);
+      const { status, ...rest } = data;
+      return await apiRequest("PATCH", `/api/website/pages/${id}`, {
+        ...rest,
+        isPublished: status === "PUBLISHED",
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
@@ -600,6 +644,36 @@ export default function WebsiteBuilderPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error updating page", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const togglePageStatusMutation = useMutation({
+    mutationFn: async ({ id, isPublished }: { id: string; isPublished: boolean }) => {
+      return await apiRequest("PATCH", `/api/website/pages/${id}`, { isPublished });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      toast({ title: "Page status updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error updating status", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const [deletePageId, setDeletePageId] = useState<string | null>(null);
+  const [deletePageTitle, setDeletePageTitle] = useState("");
+
+  const deletePageMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/website/pages/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      toast({ title: "Page deleted successfully" });
+      setDeletePageId(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error deleting page", description: error.message, variant: "destructive" });
     }
   });
 
@@ -1736,18 +1810,24 @@ export default function WebsiteBuilderPage() {
             <div className="grid gap-4">
               {pages.map((page) => (
                 <Card key={page.id} className="hover-elevate" data-testid={`card-page-${page.id}`}>
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-2 rounded bg-muted">
+                  <CardContent className="p-4 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="p-2 rounded bg-muted flex-shrink-0">
                         <FileText className="h-5 w-5" />
                       </div>
-                      <div>
-                        <h3 className="font-medium">{page.pageTitle}</h3>
-                        <p className="text-sm text-muted-foreground">/{page.pageSlug}</p>
+                      <div className="min-w-0">
+                        <h3 className="font-medium truncate">{page.pageTitle}</h3>
+                        <p className="text-sm text-muted-foreground truncate">/{page.pageSlug}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={page.status === "PUBLISHED" ? "default" : "secondary"}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant={page.status === "PUBLISHED" ? "default" : "secondary"}
+                        className={togglePageStatusMutation.isPending ? "opacity-50 pointer-events-none" : "cursor-pointer"}
+                        onClick={() => togglePageStatusMutation.mutate({ id: page.id, isPublished: !page.isPublished })}
+                        data-testid={`badge-page-status-${page.id}`}
+                      >
+                        {page.status === "PUBLISHED" ? <Check className="h-3 w-3 mr-1" /> : <Clock className="h-3 w-3 mr-1" />}
                         {page.status}
                       </Badge>
                       {page.aiGenerated && (
@@ -1761,7 +1841,15 @@ export default function WebsiteBuilderPage() {
                         Edit Content
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEditPage(page)} data-testid={`button-edit-page-${page.id}`}>
-                        <Edit className="h-4 w-4" />
+                        <Edit />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => { setDeletePageId(page.id); setDeletePageTitle(page.pageTitle); }}
+                        data-testid={`button-delete-page-${page.id}`}
+                      >
+                        <Trash2 className="text-destructive" />
                       </Button>
                     </div>
                   </CardContent>
@@ -3121,6 +3209,30 @@ export default function WebsiteBuilderPage() {
             >
               {editPageMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Page Confirmation Dialog */}
+      <Dialog open={!!deletePageId} onOpenChange={(open) => { if (!open) setDeletePageId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Page</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deletePageTitle}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletePageId(null)} data-testid="button-cancel-delete-page">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletePageId && deletePageMutation.mutate(deletePageId)}
+              disabled={deletePageMutation.isPending}
+              data-testid="button-confirm-delete-page"
+            >
+              {deletePageMutation.isPending ? <Loader2 className="animate-spin mr-1" /> : <Trash2 className="mr-1" />}
+              Delete Page
             </Button>
           </DialogFooter>
         </DialogContent>

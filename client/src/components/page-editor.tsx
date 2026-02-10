@@ -124,9 +124,11 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const contentJson = JSON.stringify({ components } as BodyComponentsConfig);
+      const { status, ...rest } = pageSettings;
       const body = {
-        ...pageSettings,
+        ...rest,
         contentJson,
+        isPublished: status === "PUBLISHED",
       };
       return await apiRequest("PATCH", `/api/website/pages/${pageId}`, body);
     },

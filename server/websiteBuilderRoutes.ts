@@ -1973,9 +1973,12 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
       where: eq(organizations.id, orgId),
     });
 
-    // Get all pages for rendering content
+    // Get only published pages for rendering content
     const allPages = await db.query.organizationWebsitePages.findMany({
-      where: eq(organizationWebsitePages.organizationId, orgId),
+      where: and(
+        eq(organizationWebsitePages.organizationId, orgId),
+        eq(organizationWebsitePages.isPublished, true)
+      ),
       orderBy: [asc(organizationWebsitePages.navigationOrder)],
     });
 
