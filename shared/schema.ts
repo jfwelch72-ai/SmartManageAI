@@ -4887,6 +4887,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   backgroundColor: text("background_color"),
   textColor: text("text_color"),
   fontFamily: text("font_family"),
+  templateId: text("template_id"),
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),
   

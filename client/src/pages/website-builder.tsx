@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -57,7 +57,8 @@ import {
   Upload,
   X,
   Loader2,
-  Smartphone
+  Smartphone,
+  LayoutTemplate
 } from "lucide-react";
 import { format } from "date-fns";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
@@ -75,6 +76,8 @@ interface Website {
   primaryColor: string | null;
   secondaryColor: string | null;
   accentColor: string | null;
+  fontFamily: string | null;
+  templateId: string | null;
   metaTitle: string | null;
   metaDescription: string | null;
   showBlog: boolean;
@@ -187,6 +190,53 @@ interface AIResponse {
   response: string;
 }
 
+const WEBSITE_TEMPLATES = [
+  {
+    id: "modern-professional",
+    name: "Modern Professional",
+    description: "Clean, minimal layout with bold hero and neutral tones",
+    primaryColor: "#2563EB",
+    secondaryColor: "#1E3A5F",
+    accentColor: "#06B6D4",
+    fontFamily: "Inter, sans-serif",
+    previewColors: ["#2563EB", "#1E3A5F", "#06B6D4", "#F8FAFC", "#0F172A"],
+    layoutHint: "Spacious sections, centered content, modern typography",
+  },
+  {
+    id: "bold-industrial",
+    name: "Bold & Industrial",
+    description: "Dark, high-contrast design suited for heavy construction",
+    primaryColor: "#DC2626",
+    secondaryColor: "#1C1917",
+    accentColor: "#F59E0B",
+    fontFamily: "Roboto, sans-serif",
+    previewColors: ["#DC2626", "#1C1917", "#F59E0B", "#292524", "#FAFAF9"],
+    layoutHint: "Strong headers, angular elements, impactful imagery",
+  },
+  {
+    id: "classic-corporate",
+    name: "Classic Corporate",
+    description: "Traditional business layout with structured sections",
+    primaryColor: "#1D4ED8",
+    secondaryColor: "#1E3A8A",
+    accentColor: "#059669",
+    fontFamily: "Georgia, serif",
+    previewColors: ["#1D4ED8", "#1E3A8A", "#059669", "#F0F9FF", "#0C2461"],
+    layoutHint: "Formal grid layout, trust badges, professional tone",
+  },
+  {
+    id: "fresh-creative",
+    name: "Fresh & Creative",
+    description: "Light, airy design with vibrant accents for specialty trades",
+    primaryColor: "#7C3AED",
+    secondaryColor: "#4338CA",
+    accentColor: "#F97316",
+    fontFamily: "Poppins, sans-serif",
+    previewColors: ["#7C3AED", "#4338CA", "#F97316", "#FEFCE8", "#1E1B4B"],
+    layoutHint: "Rounded corners, gradient accents, playful spacing",
+  },
+];
+
 export default function WebsiteBuilderPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -241,12 +291,15 @@ export default function WebsiteBuilderPage() {
   const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
   const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [websiteForm, setWebsiteForm] = useState({
     siteTitle: "",
     siteTagline: "",
     primaryColor: "#3B82F6",
     secondaryColor: "#1E40AF",
     accentColor: "#F59E0B",
+    fontFamily: "",
+    templateId: "",
     metaTitle: "",
     metaDescription: "",
     contactEmail: "",
@@ -595,6 +648,21 @@ export default function WebsiteBuilderPage() {
     saveWebsiteMutation.mutate(websiteForm);
   };
 
+  const handleTemplateSelect = (templateId: string) => {
+    const template = WEBSITE_TEMPLATES.find(t => t.id === templateId);
+    if (!template) return;
+    setSelectedTemplateId(templateId);
+    setWebsiteForm(prev => ({
+      ...prev,
+      primaryColor: template.primaryColor,
+      secondaryColor: template.secondaryColor,
+      accentColor: template.accentColor,
+      fontFamily: template.fontFamily,
+      templateId: template.id,
+    }));
+    toast({ title: `"${template.name}" template applied`, description: "Colors and font updated. Click Save to keep changes." });
+  };
+
   const handlePublish = () => {
     publishWebsiteMutation.mutate();
   };
@@ -684,6 +752,28 @@ export default function WebsiteBuilderPage() {
 
   const website = websiteData?.website;
   const hasWebsite = websiteData?.hasWebsite;
+
+  useEffect(() => {
+    if (website) {
+      if (website.templateId && !selectedTemplateId) {
+        setSelectedTemplateId(website.templateId);
+      }
+      setWebsiteForm(prev => ({
+        ...prev,
+        siteTitle: website.siteTitle || prev.siteTitle,
+        siteTagline: website.siteTagline || prev.siteTagline,
+        primaryColor: website.primaryColor || prev.primaryColor,
+        secondaryColor: website.secondaryColor || prev.secondaryColor,
+        accentColor: website.accentColor || prev.accentColor,
+        fontFamily: website.fontFamily || prev.fontFamily,
+        templateId: website.templateId || prev.templateId,
+        metaTitle: website.metaTitle || prev.metaTitle,
+        metaDescription: website.metaDescription || prev.metaDescription,
+        contactEmail: website.contactEmail || prev.contactEmail,
+        contactPhone: website.contactPhone || prev.contactPhone,
+      }));
+    }
+  }, [website]);
 
   return (
     <div className="p-6 space-y-6" data-testid="page-website-builder">
@@ -836,59 +926,110 @@ export default function WebsiteBuilderPage() {
                 <CardDescription>Customize your website's look and feel</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="primaryColor">Primary</Label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        id="primaryColor"
-                        value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"}
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value }))}
-                        className="w-10 h-10 rounded border cursor-pointer"
-                        data-testid="input-primary-color"
-                      />
-                      <Input 
-                        value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"} 
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value }))}
-                        className="flex-1"
-                      />
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <LayoutTemplate className="h-4 w-4 text-muted-foreground" />
+                    <h4 className="font-medium text-sm">Choose Template</h4>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="secondaryColor">Secondary</Label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        id="secondaryColor"
-                        value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"}
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
-                        className="w-10 h-10 rounded border cursor-pointer"
-                        data-testid="input-secondary-color"
-                      />
-                      <Input 
-                        value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"} 
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
-                        className="flex-1"
-                      />
-                    </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {WEBSITE_TEMPLATES.map((template) => {
+                      const isSelected = selectedTemplateId === template.id;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => handleTemplateSelect(template.id)}
+                          className={`relative text-left rounded-md border-2 p-3 transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                          data-testid={`template-${template.id}`}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-2 right-2">
+                              <Check className="h-4 w-4 text-primary" />
+                            </div>
+                          )}
+                          <div className="mb-2 h-16 rounded-sm overflow-hidden relative" style={{ background: template.previewColors[3] }}>
+                            <div className="absolute top-0 left-0 right-0 h-4 flex items-center px-2 gap-1" style={{ background: template.previewColors[1] }}>
+                              <div className="w-1 h-1 rounded-full" style={{ background: template.previewColors[4] }} />
+                              <div className="w-1 h-1 rounded-full" style={{ background: template.previewColors[4] }} />
+                              <div className="w-1 h-1 rounded-full" style={{ background: template.previewColors[4] }} />
+                            </div>
+                            <div className="absolute top-5 left-2 right-2 h-5 rounded-sm" style={{ background: template.previewColors[0], opacity: 0.9 }} />
+                            <div className="absolute bottom-1 left-2 flex gap-1">
+                              <div className="w-6 h-2 rounded-sm" style={{ background: template.previewColors[2] }} />
+                              <div className="w-4 h-2 rounded-sm" style={{ background: template.previewColors[1], opacity: 0.5 }} />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium">{template.name}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-snug">{template.description}</p>
+                          <div className="flex gap-1 mt-2">
+                            {template.previewColors.slice(0, 3).map((color, i) => (
+                              <div key={i} className="w-4 h-4 rounded-full border border-border/50" style={{ background: color }} />
+                            ))}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="accentColor">Accent</Label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        id="accentColor"
-                        value={websiteForm.accentColor || website?.accentColor || "#F59E0B"}
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value }))}
-                        className="w-10 h-10 rounded border cursor-pointer"
-                        data-testid="input-accent-color"
-                      />
-                      <Input 
-                        value={websiteForm.accentColor || website?.accentColor || "#F59E0B"} 
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value }))}
-                        className="flex-1"
-                      />
+                </div>
+
+                <div className="pt-3 border-t">
+                  <h4 className="font-medium text-sm mb-3">Custom Colors</h4>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="primaryColor">Primary</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          id="primaryColor"
+                          value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"}
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="w-10 h-10 rounded border cursor-pointer"
+                          data-testid="input-primary-color"
+                        />
+                        <Input 
+                          value={websiteForm.primaryColor || website?.primaryColor || "#3B82F6"} 
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, primaryColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="flex-1"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="secondaryColor">Secondary</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          id="secondaryColor"
+                          value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"}
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="w-10 h-10 rounded border cursor-pointer"
+                          data-testid="input-secondary-color"
+                        />
+                        <Input 
+                          value={websiteForm.secondaryColor || website?.secondaryColor || "#1E40AF"} 
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, secondaryColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="flex-1"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="accentColor">Accent</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          id="accentColor"
+                          value={websiteForm.accentColor || website?.accentColor || "#F59E0B"}
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="w-10 h-10 rounded border cursor-pointer"
+                          data-testid="input-accent-color"
+                        />
+                        <Input 
+                          value={websiteForm.accentColor || website?.accentColor || "#F59E0B"} 
+                          onChange={(e) => { setWebsiteForm(prev => ({ ...prev, accentColor: e.target.value, templateId: "" })); setSelectedTemplateId(null); }}
+                          className="flex-1"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
