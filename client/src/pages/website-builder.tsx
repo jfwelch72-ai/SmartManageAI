@@ -723,6 +723,29 @@ export default function WebsiteBuilderPage() {
     }
   };
 
+  const websiteRef = websiteData?.website;
+  useEffect(() => {
+    if (websiteRef) {
+      if (websiteRef.templateId && !selectedTemplateId) {
+        setSelectedTemplateId(websiteRef.templateId);
+      }
+      setWebsiteForm(prev => ({
+        ...prev,
+        siteTitle: websiteRef.siteTitle || prev.siteTitle,
+        siteTagline: websiteRef.siteTagline || prev.siteTagline,
+        primaryColor: websiteRef.primaryColor || prev.primaryColor,
+        secondaryColor: websiteRef.secondaryColor || prev.secondaryColor,
+        accentColor: websiteRef.accentColor || prev.accentColor,
+        fontFamily: websiteRef.fontFamily || prev.fontFamily,
+        templateId: websiteRef.templateId || prev.templateId,
+        metaTitle: websiteRef.metaTitle || prev.metaTitle,
+        metaDescription: websiteRef.metaDescription || prev.metaDescription,
+        contactEmail: websiteRef.contactEmail || prev.contactEmail,
+        contactPhone: websiteRef.contactPhone || prev.contactPhone,
+      }));
+    }
+  }, [websiteRef]);
+
   if (!isAdmin && !canEdit) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -752,28 +775,6 @@ export default function WebsiteBuilderPage() {
 
   const website = websiteData?.website;
   const hasWebsite = websiteData?.hasWebsite;
-
-  useEffect(() => {
-    if (website) {
-      if (website.templateId && !selectedTemplateId) {
-        setSelectedTemplateId(website.templateId);
-      }
-      setWebsiteForm(prev => ({
-        ...prev,
-        siteTitle: website.siteTitle || prev.siteTitle,
-        siteTagline: website.siteTagline || prev.siteTagline,
-        primaryColor: website.primaryColor || prev.primaryColor,
-        secondaryColor: website.secondaryColor || prev.secondaryColor,
-        accentColor: website.accentColor || prev.accentColor,
-        fontFamily: website.fontFamily || prev.fontFamily,
-        templateId: website.templateId || prev.templateId,
-        metaTitle: website.metaTitle || prev.metaTitle,
-        metaDescription: website.metaDescription || prev.metaDescription,
-        contactEmail: website.contactEmail || prev.contactEmail,
-        contactPhone: website.contactPhone || prev.contactPhone,
-      }));
-    }
-  }, [website]);
 
   return (
     <div className="p-6 space-y-6" data-testid="page-website-builder">
