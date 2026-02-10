@@ -448,25 +448,28 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     if (mobileNavStyle === 'slide-left' || mobileNavStyle === 'slide-right') {
       const isLeft = mobileNavStyle === 'slide-left';
       return (
-        <>
+        <div
+          style={{ position: 'sticky', top: 0, left: 0, width: '100%', height: 0, zIndex: 998, marginTop: 0 }}
+        >
           <div
             onClick={() => setMobileMenuOpen(false)}
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 998 }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100vh', backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 998 }}
             data-testid="mobile-nav-overlay"
           />
           <div
             style={{
-              position: 'fixed',
+              position: 'absolute',
               top: 0,
               [isLeft ? 'left' : 'right']: 0,
               width: '280px',
-              maxWidth: '80vw',
-              height: '100%',
+              maxWidth: '80%',
+              height: '100vh',
+              maxHeight: '600px',
               backgroundColor: menuBg,
               boxShadow: isLeft ? '4px 0 16px rgba(0,0,0,0.15)' : '-4px 0 16px rgba(0,0,0,0.15)',
               zIndex: 999,
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection: 'column' as const,
               animation: `slideIn${isLeft ? 'Left' : 'Right'} 0.25s ease-out`,
             }}
             data-testid={`mobile-nav-panel-${isLeft ? 'left' : 'right'}`}
@@ -489,7 +492,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
             @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
           `}</style>
-        </>
+        </div>
       );
     }
 
@@ -525,7 +528,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
-          {renderMobileMenu('#fff', '#374151', extraButtons.length > 0 ? <>{extraButtons.map(e => renderHeaderElement(e))}</> : undefined)}
+          {mobileNavStyle === 'dropdown' && renderMobileMenu('#fff', '#374151', extraButtons.length > 0 ? <>{extraButtons.map(e => renderHeaderElement(e))}</> : undefined)}
         </header>
       );
     }
@@ -1037,7 +1040,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             </nav>
           )}
         </div>
-        {isMobile && renderMobileMenu(bgColor, textColor)}
+        {isMobile && mobileNavStyle === 'dropdown' && renderMobileMenu(bgColor, textColor)}
       </div>
     </header>
   );
@@ -2019,12 +2022,17 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         fontFamily,
         backgroundColor: bgColor,
         color: textColor,
+        position: 'relative',
       }}
       data-testid="preview-container"
     >
       {renderHeader()}
       {renderCurrentPage()}
       {renderFooter()}
+      {isMobile && mobileNavStyle !== 'dropdown' && renderMobileMenu(
+        data.headerConfig ? '#fff' : bgColor,
+        data.headerConfig ? '#374151' : textColor
+      )}
     </div>
   );
 }
