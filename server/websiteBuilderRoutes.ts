@@ -39,6 +39,7 @@ import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
+import { requireFeature } from "./middleware/requireFeature";
 
 const router = express.Router();
 
@@ -76,8 +77,11 @@ function validateOrgAccess(req: AuthRequest, res: Response): string | null {
 // WEBSITE SETUP & CONFIGURATION
 // ============================================
 
+// Feature gate: All authenticated website builder endpoints require WEBSITE_SEO feature
+const websiteFeatureGate = requireFeature("WEBSITE_SEO");
+
 // GET /api/website - Get organization's website
-router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -98,7 +102,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website - Create or update website configuration
-router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -156,7 +160,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website/publish - Publish the website
-router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/publish", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -205,7 +209,7 @@ router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => 
 // ============================================
 
 // GET /api/website/pages - List all pages
-router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -223,7 +227,7 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website/pages - Create a new page
-router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/pages", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -275,7 +279,7 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // GET /api/website/pages/:id - Get a specific page
-router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/pages/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -300,7 +304,7 @@ router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) =>
 });
 
 // PATCH /api/website/pages/:id - Update a page
-router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/pages/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -336,7 +340,7 @@ router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) 
 });
 
 // DELETE /api/website/pages/:id - Delete a page
-router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/pages/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -374,7 +378,7 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 // ============================================
 
 // POST /api/website/assistant/ask - General AI conversation
-router.post("/assistant/ask", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/ask", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -436,7 +440,7 @@ Be helpful, professional, and focused on helping contractors present themselves 
 });
 
 // POST /api/website/assistant/generate-page - Generate a complete page
-router.post("/assistant/generate-page", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/generate-page", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -516,7 +520,7 @@ Return a JSON object with:
 });
 
 // POST /api/website/assistant/suggest-colors - AI color scheme suggestions
-router.post("/assistant/suggest-colors", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/assistant/suggest-colors", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -563,7 +567,7 @@ Return a JSON object with:
 // ============================================
 
 // GET /api/website/blog/posts - List blog posts
-router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/blog/posts", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -612,7 +616,7 @@ router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) =
 });
 
 // POST /api/website/blog/posts - Create a blog post
-router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -676,7 +680,7 @@ router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) 
 });
 
 // GET /api/website/blog/posts/:id - Get a blog post
-router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/blog/posts/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -701,7 +705,7 @@ router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respons
 });
 
 // PATCH /api/website/blog/posts/:id - Update a blog post
-router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/blog/posts/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -771,7 +775,7 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
 });
 
 // POST /api/website/blog/posts/:id/publish - Publish a blog post
-router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts/:id/publish", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -812,7 +816,7 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
 });
 
 // POST /api/website/blog/posts/generate - AI-generate a blog post
-router.post("/blog/posts/generate", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/blog/posts/generate", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -902,7 +906,7 @@ Return a JSON object with:
 // ============================================
 
 // POST /api/website/upload-image - Upload an image to object storage
-router.post("/upload-image", requireAuth, upload.single("image"), async (req: AuthRequest, res: Response) => {
+router.post("/upload-image", requireAuth, websiteFeatureGate, upload.single("image"), async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -965,7 +969,7 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
 });
 
 // GET /api/website/projects - List gallery projects
-router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -995,7 +999,7 @@ router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => 
 });
 
 // POST /api/website/projects - Create a gallery project
-router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1054,7 +1058,7 @@ router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) =>
 });
 
 // GET /api/website/projects/:id - Get a gallery project
-router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/projects/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = validateOrgAccess(req, res);
@@ -1085,7 +1089,7 @@ router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response)
 });
 
 // PATCH /api/website/projects/:id - Update a gallery project
-router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/projects/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -1161,7 +1165,7 @@ router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Respons
 });
 
 // POST /api/website/projects/:id/images - Add image to project
-router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/:id/images", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -1202,7 +1206,7 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
 });
 
 // POST /api/website/projects/generate-description - AI generate project description
-router.post("/projects/generate-description", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/projects/generate-description", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1251,7 +1255,7 @@ Return a JSON object with:
 // ============================================
 
 // GET /api/website/social - Get social media links
-router.get("/social", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/social", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1268,7 +1272,7 @@ router.get("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website/social - Save social media links
-router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/social", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1309,7 +1313,7 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/website/social/generate-post - AI generate social media post
-router.post("/social/generate-post", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/social/generate-post", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1402,7 +1406,7 @@ Return a JSON object with:
 });
 
 // GET /api/website/social/history - Get social post history
-router.get("/social/history", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/social/history", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1425,7 +1429,7 @@ router.get("/social/history", requireAuth, async (req: AuthRequest, res: Respons
 // ============================================
 
 // POST /api/website/seo/scan - Scan website for SEO issues
-router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/seo/scan", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
@@ -1515,7 +1519,7 @@ router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) =>
 });
 
 // POST /api/website/seo/optimize/:pageId - AI optimize page SEO
-router.post("/seo/optimize/:pageId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/seo/optimize/:pageId", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { pageId } = req.params;
     const user = req.user!;
@@ -1620,7 +1624,7 @@ router.post("/analytics/track", async (req: Request, res: Response) => {
 });
 
 // GET /api/website/analytics/summary - Get analytics summary
-router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/analytics/summary", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1721,7 +1725,7 @@ router.post("/contact", async (req: Request, res: Response) => {
 });
 
 // GET /api/website/contact/submissions - Get contact form submissions
-router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/contact/submissions", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
@@ -1739,10 +1743,26 @@ router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Re
 });
 
 // PATCH /api/website/contact/submissions/:id - Update submission (mark read, responded)
-router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.patch("/contact/submissions/:id", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
+    const orgId = user.organizationId;
+
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const existing = await db.query.websiteContactSubmissions.findFirst({
+      where: and(
+        eq(websiteContactSubmissions.id, id),
+        orgId ? eq(websiteContactSubmissions.organizationId, orgId) : undefined
+      ),
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Submission not found" });
+    }
 
     const updateData: any = {};
     if (req.body.read !== undefined) {
@@ -1756,7 +1776,10 @@ router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, r
 
     const [updated] = await db.update(websiteContactSubmissions)
       .set(updateData)
-      .where(eq(websiteContactSubmissions.id, id))
+      .where(and(
+        eq(websiteContactSubmissions.id, id),
+        orgId ? eq(websiteContactSubmissions.organizationId, orgId) : undefined
+      ))
       .returning();
 
     res.json(updated);
@@ -1767,7 +1790,7 @@ router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, r
 });
 
 // POST /api/website/contact/submissions/:id/convert-to-crm - Convert to CRM lead
-router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/contact/submissions/:id/convert-to-crm", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -1778,7 +1801,10 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
     }
 
     const submission = await db.query.websiteContactSubmissions.findFirst({
-      where: eq(websiteContactSubmissions.id, id),
+      where: and(
+        eq(websiteContactSubmissions.id, id),
+        eq(websiteContactSubmissions.organizationId, orgId)
+      ),
     });
 
     if (!submission) {
@@ -1929,7 +1955,7 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
 });
 
 // GET /api/website/preview - Get all data needed for website preview
-router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/preview", requireAuth, websiteFeatureGate, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     
