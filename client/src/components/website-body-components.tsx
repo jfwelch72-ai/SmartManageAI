@@ -263,7 +263,7 @@ const DEFAULT_STYLES: SharedStyles = {
   alignment: "center",
 };
 
-const COMPONENT_TYPE_META: Record<BodyComponentType, { label: string; icon: typeof ImageIcon; description: string }> = {
+export const COMPONENT_TYPE_META: Record<BodyComponentType, { label: string; icon: typeof ImageIcon; description: string }> = {
   banner: { label: "Banner Section", icon: ImageIcon, description: "Full-width banner with background options" },
   hero: { label: "Hero Section", icon: Sparkles, description: "Hero area with image positioning" },
   content: { label: "Content Section", icon: FileText, description: "Rich text content area" },
@@ -277,7 +277,7 @@ const COMPONENT_TYPE_META: Record<BodyComponentType, { label: string; icon: type
   faq: { label: "FAQ Section", icon: HelpCircle, description: "Accordion Q&A section" },
 };
 
-function createDefaultComponent(type: BodyComponentType, order: number): BodyComponent {
+export function createDefaultComponent(type: BodyComponentType, order: number): BodyComponent {
   const id = `body-${type}-${Date.now()}`;
   const meta = COMPONENT_TYPE_META[type];
   const base = {
@@ -320,7 +320,7 @@ export function getDefaultBodyConfig(): BodyComponentsConfig {
   return { components: [] };
 }
 
-function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
+export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
   const updateTypography = (key: keyof TypographyStyles, value: string) => {
     onChange({ ...styles, typography: { ...styles.typography, [key]: value } });
   };
@@ -993,7 +993,7 @@ function FaqEditor({ comp, onChange }: { comp: BodyComponent & { type: "faq" }; 
   );
 }
 
-function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComponent; onConfigChange: (config: any) => void }) {
+export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComponent; onConfigChange: (config: any) => void }) {
   switch (comp.type) {
     case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} />;
     case "hero": return <HeroEditor comp={comp as BodyComponent & { type: "hero" }} onChange={onConfigChange} />;

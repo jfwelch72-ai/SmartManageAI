@@ -11,6 +11,7 @@ import WebsiteBodyComponents, {
   type BodyComponentsConfig,
   getDefaultBodyConfig,
 } from "@/components/website-body-components";
+import PageEditor from "@/components/page-editor";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -283,6 +284,7 @@ export default function WebsiteBuilderPage() {
   const [showGenerateBlogDialog, setShowGenerateBlogDialog] = useState(false);
   const [generatedBlogContent, setGeneratedBlogContent] = useState<any>(null);
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
   
   // Edit states
   const [showEditBlogDialog, setShowEditBlogDialog] = useState(false);
@@ -864,6 +866,20 @@ export default function WebsiteBuilderPage() {
 
   const website = websiteData?.website;
   const hasWebsite = websiteData?.hasWebsite;
+
+  if (editingPageId) {
+    return (
+      <div className="h-[calc(100vh-64px)]" data-testid="page-editor-container">
+        <PageEditor
+          pageId={editingPageId}
+          onBack={() => {
+            setEditingPageId(null);
+            setActiveTab("pages");
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6" data-testid="page-website-builder">
@@ -1740,7 +1756,7 @@ export default function WebsiteBuilderPage() {
                           AI
                         </Badge>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => handleEditPage(page)} data-testid={`button-edit-content-${page.id}`}>
+                      <Button variant="outline" size="sm" onClick={() => setEditingPageId(page.id)} data-testid={`button-edit-content-${page.id}`}>
                         <FileText className="h-4 w-4 mr-1" />
                         Edit Content
                       </Button>

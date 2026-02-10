@@ -1,0 +1,978 @@
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ArrowLeft,
+  Save,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Plus,
+  Trash2,
+  GripVertical,
+  Eye,
+  EyeOff,
+  Copy,
+  ChevronRight,
+  Settings,
+  Palette,
+  Search,
+  Loader2,
+  LayoutGrid,
+  X,
+} from "lucide-react";
+import {
+  type BodyComponentType,
+  type BodyComponent,
+  type BodyComponentsConfig,
+  type SharedStyles,
+  COMPONENT_TYPE_META,
+  createDefaultComponent,
+  ComponentConfigEditor,
+  StyleEditor,
+} from "@/components/website-body-components";
+
+interface PageData {
+  id: string;
+  websiteId: string;
+  organizationId: string;
+  pageType: string;
+  pageSlug: string;
+  pageTitle: string;
+  contentJson: string | null;
+  heroImageUrl: string | null;
+  aiGenerated: boolean;
+  metaTitle: string | null;
+  metaDescription: string | null;
+  keywords: string[] | null;
+  showInNavigation: boolean;
+  navigationOrder: number;
+  navigationLabel: string | null;
+  parentPageId: string | null;
+  isPublished: boolean;
+  noIndex: boolean;
+  status?: string;
+}
+
+interface PageEditorProps {
+  pageId: string;
+  onBack: () => void;
+}
+
+export default function PageEditor({ pageId, onBack }: PageEditorProps) {
+  const { toast } = useToast();
+  const [components, setComponents] = useState<BodyComponent[]>([]);
+  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
+  const [rightPanel, setRightPanel] = useState<"component" | "page-settings">("component");
+  const [devicePreview, setDevicePreview] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showComponentLibrary, setShowComponentLibrary] = useState(true);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pageSettings, setPageSettings] = useState({
+    pageTitle: "",
+    pageSlug: "",
+    pageType: "CUSTOM",
+    navigationLabel: "",
+    showInNavigation: true,
+    status: "DRAFT",
+    metaTitle: "",
+    metaDescription: "",
+  });
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+  const initialized = useRef(false);
+
+  const { data: pageData, isLoading } = useQuery<PageData>({
+    queryKey: [`/api/website/pages/${pageId}`],
+  });
+
+  useEffect(() => {
+    if (pageData && !initialized.current) {
+      initialized.current = true;
+      if (pageData.contentJson) {
+        try {
+          const parsed = JSON.parse(pageData.contentJson) as BodyComponentsConfig;
+          setComponents(parsed.components || []);
+        } catch {
+          setComponents([]);
+        }
+      }
+      setPageSettings({
+        pageTitle: pageData.pageTitle || "",
+        pageSlug: pageData.pageSlug || "",
+        pageType: pageData.pageType || "CUSTOM",
+        navigationLabel: pageData.navigationLabel || "",
+        showInNavigation: pageData.showInNavigation ?? true,
+        status: pageData.status || (pageData.isPublished ? "PUBLISHED" : "DRAFT"),
+        metaTitle: pageData.metaTitle || "",
+        metaDescription: pageData.metaDescription || "",
+      });
+    }
+  }, [pageData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const contentJson = JSON.stringify({ components } as BodyComponentsConfig);
+      const body = {
+        ...pageSettings,
+        contentJson,
+      };
+      return await apiRequest("PATCH", `/api/website/pages/${pageId}`, body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      setHasUnsavedChanges(false);
+      toast({ title: "Page saved successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error saving page", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const markChanged = useCallback(() => {
+    setHasUnsavedChanges(true);
+  }, []);
+
+  const updateComponents = useCallback((newComps: BodyComponent[]) => {
+    setComponents(newComps);
+    markChanged();
+  }, [markChanged]);
+
+  const addComponent = useCallback((type: BodyComponentType) => {
+    const newComp = createDefaultComponent(type, components.length);
+    updateComponents([...components, newComp]);
+    setSelectedComponentId(newComp.id);
+    setRightPanel("component");
+  }, [components, updateComponents]);
+
+  const addComponentAtIndex = useCallback((type: BodyComponentType, index: number) => {
+    const newComp = createDefaultComponent(type, index);
+    const newComps = [...components];
+    newComps.splice(index, 0, newComp);
+    newComps.forEach((c, i) => { c.order = i; });
+    updateComponents(newComps);
+    setSelectedComponentId(newComp.id);
+    setRightPanel("component");
+  }, [components, updateComponents]);
+
+  const removeComponent = useCallback((id: string) => {
+    const newComps = components.filter(c => c.id !== id);
+    newComps.forEach((c, i) => { c.order = i; });
+    updateComponents(newComps);
+    if (selectedComponentId === id) setSelectedComponentId(null);
+  }, [components, updateComponents, selectedComponentId]);
+
+  const duplicateComponent = useCallback((id: string) => {
+    const comp = components.find(c => c.id === id);
+    if (!comp) return;
+    const newComp = JSON.parse(JSON.stringify(comp)) as BodyComponent;
+    newComp.id = `body-${comp.type}-${Date.now()}`;
+    newComp.label = `${comp.label} (Copy)`;
+    newComp.order = components.length;
+    updateComponents([...components, newComp]);
+  }, [components, updateComponents]);
+
+  const updateComponent = useCallback((id: string, updates: Partial<BodyComponent>) => {
+    const newComps = components.map(c =>
+      c.id === id ? { ...c, ...updates } as BodyComponent : c
+    );
+    updateComponents(newComps);
+  }, [components, updateComponents]);
+
+  const updateComponentConfig = useCallback((id: string, newConfig: any) => {
+    const newComps = components.map(c =>
+      c.id === id ? { ...c, config: newConfig } as BodyComponent : c
+    );
+    updateComponents(newComps);
+  }, [components, updateComponents]);
+
+  const updateComponentStyles = useCallback((id: string, styles: SharedStyles) => {
+    const newComps = components.map(c =>
+      c.id === id ? { ...c, styles } as BodyComponent : c
+    );
+    updateComponents(newComps);
+  }, [components, updateComponents]);
+
+  const handleDragEnd = useCallback(() => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) return;
+    const sorted = [...components].sort((a, b) => a.order - b.order);
+    const [moved] = sorted.splice(dragItem.current, 1);
+    sorted.splice(dragOverItem.current, 0, moved);
+    sorted.forEach((c, i) => { c.order = i; });
+    updateComponents(sorted);
+    dragItem.current = null;
+    dragOverItem.current = null;
+  }, [components, updateComponents]);
+
+  const sortedComponents = [...components].sort((a, b) => a.order - b.order);
+  const selectedComponent = selectedComponentId
+    ? components.find(c => c.id === selectedComponentId) || null
+    : null;
+
+  const filteredComponentTypes = Object.entries(COMPONENT_TYPE_META).filter(
+    ([_, meta]) =>
+      !searchQuery ||
+      meta.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      meta.description.toLowerCase().includes(searchQuery.toLowerCase())
+  ) as [BodyComponentType, typeof COMPONENT_TYPE_META["banner"]][];
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 p-3 border-b">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-5 w-48" />
+        </div>
+        <div className="flex flex-1">
+          <Skeleton className="w-64 h-full" />
+          <Skeleton className="flex-1 h-full" />
+          <Skeleton className="w-80 h-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!pageData) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <p className="text-muted-foreground">Page not found</p>
+        <Button onClick={onBack} data-testid="button-back-not-found">
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back to Pages
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full" data-testid="page-editor">
+      {/* Top Toolbar */}
+      <div className="flex items-center justify-between gap-2 p-2 border-b bg-background z-50 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onBack} data-testid="button-editor-back">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Pages
+          </Button>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium truncate max-w-[200px]">{pageSettings.pageTitle || "Untitled"}</span>
+          {hasUnsavedChanges && (
+            <Badge variant="secondary" className="text-[10px]">Unsaved</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 p-0.5 border rounded-md">
+            <Button
+              size="sm"
+              variant={devicePreview === "desktop" ? "default" : "ghost"}
+              onClick={() => setDevicePreview("desktop")}
+              data-testid="button-preview-desktop"
+            >
+              <Monitor className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant={devicePreview === "tablet" ? "default" : "ghost"}
+              onClick={() => setDevicePreview("tablet")}
+              data-testid="button-preview-tablet"
+            >
+              <Tablet className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant={devicePreview === "mobile" ? "default" : "ghost"}
+              onClick={() => setDevicePreview("mobile")}
+              data-testid="button-preview-mobile"
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setRightPanel("page-settings");
+              setSelectedComponentId(null);
+            }}
+            data-testid="button-page-settings"
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            Page Settings
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !hasUnsavedChanges}
+            data-testid="button-save-page-editor"
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* 3-Panel Layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT SIDEBAR - Component Library */}
+        <div className={`border-r bg-muted/30 flex flex-col transition-all ${showComponentLibrary ? "w-56" : "w-0"}`}>
+          {showComponentLibrary && (
+            <>
+              <div className="p-2 border-b">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search components..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-7 h-8 text-xs"
+                    data-testid="input-search-components"
+                  />
+                </div>
+              </div>
+              <ScrollArea className="flex-1">
+                <div className="p-2 space-y-1">
+                  {filteredComponentTypes.map(([type, meta]) => {
+                    const Icon = meta.icon;
+                    return (
+                      <button
+                        key={type}
+                        className="w-full flex items-start gap-2 p-2 rounded-md text-left hover-elevate transition-colors cursor-pointer"
+                        onClick={() => addComponent(type)}
+                        data-testid={`library-add-${type}`}
+                      >
+                        <Icon className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium truncate">{meta.label}</div>
+                          <div className="text-[10px] text-muted-foreground leading-tight">{meta.description}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </>
+          )}
+        </div>
+
+        {/* Toggle left sidebar */}
+        <button
+          className="flex items-center justify-center w-5 border-r hover-elevate transition-colors flex-shrink-0"
+          onClick={() => setShowComponentLibrary(!showComponentLibrary)}
+          data-testid="button-toggle-library"
+        >
+          <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform ${showComponentLibrary ? "rotate-180" : ""}`} />
+        </button>
+
+        {/* MAIN CANVAS */}
+        <div className="flex-1 overflow-auto bg-muted/20">
+          <div className={`mx-auto p-6 transition-all ${
+            devicePreview === "desktop" ? "max-w-full" :
+            devicePreview === "tablet" ? "max-w-[768px]" :
+            "max-w-[375px]"
+          }`}>
+            {sortedComponents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <LayoutGrid className="h-16 w-16 text-muted-foreground/40 mb-4" />
+                <h3 className="text-lg font-medium mb-2">Start building your page</h3>
+                <p className="text-sm text-muted-foreground mb-4 max-w-md">
+                  Add components from the library on the left, or click below to add your first section.
+                </p>
+                <Button onClick={() => addComponent("hero")} data-testid="button-add-first-component">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Hero Section
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-0">
+                {sortedComponents.map((comp, idx) => {
+                  const meta = COMPONENT_TYPE_META[comp.type];
+                  const Icon = meta.icon;
+                  const isSelected = selectedComponentId === comp.id;
+                  const visKey = devicePreview === "mobile" ? "visibleMobile" : "visibleDesktop";
+                  const isVisible = comp[visKey];
+
+                  return (
+                    <div key={comp.id}>
+                      {/* Add-between drop zone */}
+                      <AddBetweenZone index={idx} onAdd={addComponentAtIndex} />
+
+                      {/* Component block on canvas */}
+                      <div
+                        draggable
+                        onDragStart={() => { dragItem.current = idx; }}
+                        onDragOver={(e) => { e.preventDefault(); dragOverItem.current = idx; }}
+                        onDrop={(e) => { e.preventDefault(); handleDragEnd(); }}
+                        onClick={() => {
+                          setSelectedComponentId(comp.id);
+                          setRightPanel("component");
+                        }}
+                        className={`relative group border-2 rounded-md transition-all cursor-pointer ${
+                          isSelected
+                            ? "border-primary ring-1 ring-primary/20"
+                            : "border-transparent hover:border-muted-foreground/30"
+                        } ${!comp.enabled || !isVisible ? "opacity-40" : ""}`}
+                        data-testid={`canvas-component-${comp.id}`}
+                      >
+                        {/* Component label overlay */}
+                        <div className={`absolute -top-3 left-3 z-10 flex items-center gap-1 ${isSelected ? "visible" : "invisible group-hover:visible"}`}>
+                          <Badge variant={isSelected ? "default" : "secondary"} className="text-[10px] px-1.5 py-0 gap-1">
+                            <GripVertical className="h-3 w-3 cursor-grab" />
+                            <Icon className="h-3 w-3" />
+                            {meta.label}
+                          </Badge>
+                        </div>
+
+                        {/* Component action buttons overlay */}
+                        <div className={`absolute -top-3 right-3 z-10 flex items-center gap-0.5 ${isSelected ? "visible" : "invisible group-hover:visible"}`}>
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); duplicateComponent(comp.id); }}
+                            data-testid={`canvas-duplicate-${comp.id}`}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); removeComponent(comp.id); }}
+                            data-testid={`canvas-remove-${comp.id}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+
+                        {/* Component preview content */}
+                        <CanvasComponentPreview component={comp} devicePreview={devicePreview} />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Add-after zone */}
+                <AddBetweenZone index={sortedComponents.length} onAdd={addComponentAtIndex} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT SIDEBAR - Settings Panel */}
+        <div className="w-80 border-l bg-background flex flex-col overflow-hidden">
+          {rightPanel === "page-settings" ? (
+            <PageSettingsPanel
+              settings={pageSettings}
+              onChange={(s) => { setPageSettings(s); markChanged(); }}
+              onClose={() => setRightPanel("component")}
+            />
+          ) : selectedComponent ? (
+            <ComponentSettingsPanel
+              component={selectedComponent}
+              onUpdateComponent={(updates) => updateComponent(selectedComponent.id, updates)}
+              onUpdateConfig={(config) => updateComponentConfig(selectedComponent.id, config)}
+              onUpdateStyles={(styles) => updateComponentStyles(selectedComponent.id, styles)}
+              onRemove={() => removeComponent(selectedComponent.id)}
+              onDuplicate={() => duplicateComponent(selectedComponent.id)}
+              onDeselect={() => setSelectedComponentId(null)}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center p-6">
+              <LayoutGrid className="h-10 w-10 text-muted-foreground/40 mb-3" />
+              <p className="text-sm text-muted-foreground">
+                Select a component on the canvas to edit its settings, or use Page Settings to configure this page.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => setRightPanel("page-settings")}
+                data-testid="button-open-page-settings"
+              >
+                <Settings className="h-4 w-4 mr-1" />
+                Page Settings
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddBetweenZone({ index, onAdd }: { index: number; onAdd: (type: BodyComponentType, index: number) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="relative group/add py-1">
+      <div
+        className={`flex items-center justify-center ${isOpen ? "h-auto" : "h-2"}`}
+      >
+        {!isOpen && (
+          <button
+            className="absolute inset-x-0 top-0 flex items-center justify-center h-6 opacity-0 group-hover/add:opacity-100 transition-opacity z-20"
+            onClick={() => setIsOpen(true)}
+            data-testid={`button-add-between-${index}`}
+          >
+            <div className="flex items-center gap-2">
+              <div className="h-px flex-1 bg-primary/40" />
+              <div className="flex items-center justify-center h-5 w-5 rounded-full bg-primary text-primary-foreground">
+                <Plus className="h-3 w-3" />
+              </div>
+              <div className="h-px flex-1 bg-primary/40" />
+            </div>
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="border rounded-md p-3 my-1 bg-background">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium">Add Component</span>
+            <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} data-testid={`button-close-add-${index}`}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {(Object.entries(COMPONENT_TYPE_META) as [BodyComponentType, typeof COMPONENT_TYPE_META["banner"]][]).map(([type, meta]) => {
+              const Icon = meta.icon;
+              return (
+                <button
+                  key={type}
+                  className="flex items-center gap-1.5 p-1.5 rounded text-left hover-elevate transition-colors text-xs"
+                  onClick={() => { onAdd(type, index); setIsOpen(false); }}
+                  data-testid={`add-between-${type}-${index}`}
+                >
+                  <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                  <span className="truncate">{meta.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CanvasComponentPreview({ component, devicePreview }: { component: BodyComponent; devicePreview: string }) {
+  const meta = COMPONENT_TYPE_META[component.type];
+  const Icon = meta.icon;
+
+  const bgStyle: Record<string, string> = {};
+  if (component.styles.background.type === "solid" && component.styles.background.color) {
+    bgStyle.backgroundColor = component.styles.background.color;
+  } else if (component.styles.background.type === "gradient") {
+    const dir = component.styles.background.gradientDirection.replace("to-", "to ");
+    bgStyle.background = `linear-gradient(${dir}, ${component.styles.background.gradientFrom || "#000"}, ${component.styles.background.gradientTo || "#fff"})`;
+  }
+
+  const getPreviewContent = () => {
+    switch (component.type) {
+      case "banner":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold">{component.config.title || "Banner Title"}</h3>
+            <p className="text-sm text-muted-foreground">{component.config.content || "Banner content"}</p>
+            {component.config.buttons.length > 0 && (
+              <div className="flex gap-2 pt-1 flex-wrap">
+                {component.config.buttons.map((btn, i) => (
+                  <Badge key={i} variant={btn.variant === "primary" ? "default" : "secondary"}>{btn.text}</Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      case "hero":
+        return (
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold">{component.config.title || "Hero Title"}</h2>
+            <p className="text-sm font-medium text-muted-foreground">{component.config.subtitle || "Subtitle"}</p>
+            <p className="text-xs text-muted-foreground">{component.config.content || "Hero description"}</p>
+          </div>
+        );
+      case "content":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Section Title"}</h3>
+            <p className="text-xs text-muted-foreground line-clamp-3">{component.config.content || "Content goes here..."}</p>
+          </div>
+        );
+      case "cta":
+        return (
+          <div className="text-center space-y-1">
+            <h3 className="text-base font-bold">{component.config.title || "Call to Action"}</h3>
+            <p className="text-xs text-muted-foreground">{component.config.content || "CTA description"}</p>
+            <div className="flex gap-2 justify-center pt-1 flex-wrap">
+              {component.config.buttons.map((btn, i) => (
+                <Badge key={i} variant={btn.variant === "primary" ? "default" : "secondary"}>{btn.text}</Badge>
+              ))}
+            </div>
+          </div>
+        );
+      case "form":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Form"}</h3>
+            <div className="flex gap-2 flex-wrap">
+              {component.config.fields.slice(0, 3).map((f) => (
+                <Badge key={f.id} variant="outline" className="text-[10px]">{f.label}</Badge>
+              ))}
+              {component.config.fields.length > 3 && (
+                <Badge variant="secondary" className="text-[10px]">+{component.config.fields.length - 3} more</Badge>
+              )}
+            </div>
+          </div>
+        );
+      case "grid":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Grid"}</h3>
+            <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${Math.min(component.config.columns, 4)}, 1fr)` }}>
+              {component.config.items.slice(0, component.config.columns).map((item) => (
+                <div key={item.id} className="p-2 border rounded text-xs">
+                  <div className="font-medium truncate">{item.title}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "testimonial":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Testimonials"}</h3>
+            <div className="flex gap-2 flex-wrap">
+              {component.config.items.slice(0, 3).map((t) => (
+                <div key={t.id} className="text-xs p-2 border rounded flex-1 min-w-[100px]">
+                  <p className="italic line-clamp-2">"{t.quote}"</p>
+                  <p className="font-medium mt-1">{t.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "feature_highlight":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Features"}</h3>
+            <div className="flex gap-3 flex-wrap">
+              {component.config.items.slice(0, 4).map((f) => (
+                <div key={f.id} className="text-xs">
+                  <div className="font-medium">{f.title}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "gallery":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Gallery"}</h3>
+            <div className="grid grid-cols-3 gap-1">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="aspect-square bg-muted rounded" />
+              ))}
+            </div>
+          </div>
+        );
+      case "stats":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "Stats"}</h3>
+            <div className="flex gap-4 flex-wrap">
+              {component.config.items.slice(0, 4).map((s) => (
+                <div key={s.id} className="text-center">
+                  <div className="text-lg font-bold">{s.prefix}{s.value}{s.suffix}</div>
+                  <div className="text-[10px] text-muted-foreground">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      case "faq":
+        return (
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">{component.config.title || "FAQ"}</h3>
+            {component.config.items.slice(0, 3).map((f) => (
+              <div key={f.id} className="text-xs border-b pb-1">
+                <span className="font-medium">{f.question}</span>
+              </div>
+            ))}
+          </div>
+        );
+      default:
+        return <p className="text-sm text-muted-foreground">{meta.label}</p>;
+    }
+  };
+
+  return (
+    <div
+      className="p-4 min-h-[60px] rounded-md"
+      style={{
+        ...bgStyle,
+        textAlign: component.styles.alignment || "left",
+      }}
+    >
+      {getPreviewContent()}
+    </div>
+  );
+}
+
+function ComponentSettingsPanel({
+  component,
+  onUpdateComponent,
+  onUpdateConfig,
+  onUpdateStyles,
+  onRemove,
+  onDuplicate,
+  onDeselect,
+}: {
+  component: BodyComponent;
+  onUpdateComponent: (updates: Partial<BodyComponent>) => void;
+  onUpdateConfig: (config: any) => void;
+  onUpdateStyles: (styles: SharedStyles) => void;
+  onRemove: () => void;
+  onDuplicate: () => void;
+  onDeselect: () => void;
+}) {
+  const meta = COMPONENT_TYPE_META[component.type];
+  const Icon = meta.icon;
+  const [showStyles, setShowStyles] = useState(false);
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2 p-3 border-b">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <span className="text-sm font-medium truncate">{meta.label}</span>
+        </div>
+        <Button variant="ghost" size="icon" onClick={onDeselect} data-testid="button-deselect-component">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-4">
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs">Label</Label>
+              <Input
+                value={component.label}
+                onChange={(e) => onUpdateComponent({ label: e.target.value })}
+                className="h-8 text-sm"
+                data-testid="input-component-label"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={component.enabled}
+                  onCheckedChange={(v) => onUpdateComponent({ enabled: v })}
+                  data-testid="switch-component-enabled"
+                />
+                <Label className="text-xs">Enabled</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Switch
+                    checked={component.visibleDesktop}
+                    onCheckedChange={(v) => onUpdateComponent({ visibleDesktop: v })}
+                    data-testid="switch-visible-desktop"
+                  />
+                  <Monitor className="h-3 w-3 text-muted-foreground" />
+                </div>
+                <div className="flex items-center gap-1">
+                  <Switch
+                    checked={component.visibleMobile}
+                    onCheckedChange={(v) => onUpdateComponent({ visibleMobile: v })}
+                    data-testid="switch-visible-mobile"
+                  />
+                  <Smartphone className="h-3 w-3 text-muted-foreground" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Content</h4>
+            <ComponentConfigEditor comp={component} onConfigChange={onUpdateConfig} />
+          </div>
+
+          <div className="border-t pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowStyles(!showStyles)}
+              className="w-full"
+              data-testid="button-toggle-styles"
+            >
+              <Palette className="h-3 w-3 mr-1" />
+              {showStyles ? "Hide Style Controls" : "Show Style Controls"}
+            </Button>
+            {showStyles && (
+              <div className="mt-2">
+                <StyleEditor styles={component.styles} onChange={onUpdateStyles} />
+              </div>
+            )}
+          </div>
+
+          <div className="border-t pt-3 flex gap-2">
+            <Button variant="outline" size="sm" onClick={onDuplicate} className="flex-1" data-testid="button-settings-duplicate">
+              <Copy className="h-3 w-3 mr-1" />
+              Duplicate
+            </Button>
+            <Button variant="outline" size="sm" onClick={onRemove} className="text-destructive flex-1" data-testid="button-settings-remove">
+              <Trash2 className="h-3 w-3 mr-1" />
+              Remove
+            </Button>
+          </div>
+        </div>
+      </ScrollArea>
+    </>
+  );
+}
+
+function PageSettingsPanel({
+  settings,
+  onChange,
+  onClose,
+}: {
+  settings: {
+    pageTitle: string;
+    pageSlug: string;
+    pageType: string;
+    navigationLabel: string;
+    showInNavigation: boolean;
+    status: string;
+    metaTitle: string;
+    metaDescription: string;
+  };
+  onChange: (s: typeof settings) => void;
+  onClose: () => void;
+}) {
+  const update = (key: string, value: any) => {
+    onChange({ ...settings, [key]: value });
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2 p-3 border-b">
+        <div className="flex items-center gap-2">
+          <Settings className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Page Settings</span>
+        </div>
+        <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-page-settings">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Page Title</Label>
+            <Input
+              value={settings.pageTitle}
+              onChange={(e) => {
+                const title = e.target.value;
+                const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+                update("pageTitle", title);
+                update("pageSlug", slug);
+              }}
+              className="h-8 text-sm"
+              data-testid="input-settings-page-title"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">URL Slug</Label>
+            <Input
+              value={settings.pageSlug}
+              onChange={(e) => update("pageSlug", e.target.value)}
+              className="h-8 text-sm"
+              data-testid="input-settings-page-slug"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">Page Type</Label>
+            <Select value={settings.pageType} onValueChange={(v) => update("pageType", v)}>
+              <SelectTrigger className="h-8 text-sm" data-testid="select-settings-page-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["HOME", "ABOUT", "SERVICES", "PROJECTS", "BLOG", "CONTACT", "SAFETY", "CAREERS", "TEAM", "FAQ", "CUSTOM"].map(t => (
+                  <SelectItem key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">Navigation Label</Label>
+            <Input
+              value={settings.navigationLabel}
+              onChange={(e) => update("navigationLabel", e.target.value)}
+              className="h-8 text-sm"
+              placeholder="Label shown in navigation"
+              data-testid="input-settings-nav-label"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={settings.showInNavigation}
+              onCheckedChange={(v) => update("showInNavigation", v)}
+              data-testid="switch-settings-show-nav"
+            />
+            <Label className="text-xs">Show in Navigation</Label>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">Status</Label>
+            <Select value={settings.status} onValueChange={(v) => update("status", v)}>
+              <SelectTrigger className="h-8 text-sm" data-testid="select-settings-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PUBLISHED">Published</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="border-t pt-3 space-y-3">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground">SEO Settings</h4>
+            <div className="space-y-2">
+              <Label className="text-xs">Meta Title</Label>
+              <Input
+                value={settings.metaTitle}
+                onChange={(e) => update("metaTitle", e.target.value)}
+                className="h-8 text-sm"
+                placeholder="Page Title | Company Name"
+                data-testid="input-settings-meta-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Meta Description</Label>
+              <Textarea
+                value={settings.metaDescription}
+                onChange={(e) => update("metaDescription", e.target.value)}
+                className="text-sm"
+                placeholder="A brief description for search engines..."
+                rows={3}
+                data-testid="input-settings-meta-desc"
+              />
+            </div>
+          </div>
+        </div>
+      </ScrollArea>
+    </>
+  );
+}
