@@ -45,6 +45,33 @@ import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "
 
 const router = express.Router();
 
+// ==============================================
+// In-Memory Presence Store
+// ==============================================
+interface PresenceEntry {
+  userId: string;
+  userName: string;
+  pageId: string;
+  lastSeen: number;
+  activity: "viewing" | "editing";
+}
+
+const presenceStore = new Map<string, PresenceEntry>();
+const PRESENCE_TIMEOUT_MS = 30000;
+
+function cleanExpiredPresence() {
+  const now = Date.now();
+  const keys = Array.from(presenceStore.keys());
+  for (const key of keys) {
+    const entry = presenceStore.get(key);
+    if (entry && now - entry.lastSeen > PRESENCE_TIMEOUT_MS) {
+      presenceStore.delete(key);
+    }
+  }
+}
+
+setInterval(cleanExpiredPresence, 15000);
+
 // Configure multer for memory storage (for file uploads)
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -2145,6 +2172,203 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error fetching preview data:", error);
     res.status(500).json({ error: "Failed to fetch preview data" });
+  }
+});
+
+// ==============================================
+// Presence Routes
+// ==============================================
+
+router.post("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    const activity = req.body.activity || "viewing";
+    const userName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "Unknown";
+    const key = `${user.id}:${pageId}`;
+
+    presenceStore.set(key, {
+      userId: user.id,
+      userName,
+      pageId,
+      lastSeen: Date.now(),
+      activity,
+    });
+
+    cleanExpiredPresence();
+
+    const activeUsers: PresenceEntry[] = [];
+    Array.from(presenceStore.values()).forEach(entry => {
+      if (entry.pageId === pageId && entry.userId !== user.id) {
+        activeUsers.push(entry);
+      }
+    });
+
+    res.json({ users: activeUsers });
+  } catch (error) {
+    console.error("Error updating presence:", error);
+    res.status(500).json({ error: "Failed to update presence" });
+  }
+});
+
+router.delete("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    presenceStore.delete(`${user.id}:${pageId}`);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to remove presence" });
+  }
+});
+
+// ==============================================
+// Conflict-Safe Save Check
+// ==============================================
+
+router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    const clientUpdatedAt = req.query.since as string;
+
+    if (!clientUpdatedAt) {
+      return res.json({ conflict: false });
+    }
+
+    const orgId = user.organizationId;
+    const page = await db.query.organizationWebsitePages.findFirst({
+      where: and(
+        eq(organizationWebsitePages.id, pageId),
+        orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined
+      ),
+    });
+
+    if (!page) return res.status(404).json({ error: "Page not found" });
+
+    const clientDate = new Date(clientUpdatedAt);
+    const serverDate = new Date(page.updatedAt);
+    const conflict = serverDate.getTime() > clientDate.getTime() + 1000;
+
+    const lastVersion = conflict ? await db.query.pageVersions.findFirst({
+      where: eq(pageVersions.pageId, pageId),
+      orderBy: [desc(pageVersions.versionNumber)],
+    }) : null;
+
+    res.json({
+      conflict,
+      serverUpdatedAt: page.updatedAt,
+      lastEditor: lastVersion?.editorName || null,
+      lastSaved: lastVersion?.createdAt || null,
+    });
+  } catch (error) {
+    console.error("Error checking conflict:", error);
+    res.status(500).json({ error: "Failed to check conflict" });
+  }
+});
+
+// ==============================================
+// Version Diff Route
+// ==============================================
+
+router.get("/versions/diff/:versionIdA/:versionIdB", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { versionIdA, versionIdB } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const [versionA, versionB] = await Promise.all([
+      db.query.pageVersions.findFirst({ where: eq(pageVersions.id, versionIdA) }),
+      db.query.pageVersions.findFirst({ where: eq(pageVersions.id, versionIdB) }),
+    ]);
+
+    if (!versionA || !versionB) {
+      return res.status(404).json({ error: "One or both versions not found" });
+    }
+
+    if (versionA.pageId !== versionB.pageId) {
+      return res.status(400).json({ error: "Versions must belong to the same page" });
+    }
+
+    const parseComponents = (json: string | null) => {
+      try {
+        if (!json) return [];
+        const parsed = JSON.parse(json);
+        return parsed.components || [];
+      } catch { return []; }
+    };
+
+    const parseSettings = (json: string | null) => {
+      try {
+        if (!json) return {};
+        return JSON.parse(json);
+      } catch { return {}; }
+    };
+
+    const compsA = parseComponents(versionA.contentJson);
+    const compsB = parseComponents(versionB.contentJson);
+    const settingsA = parseSettings(versionA.pageSettingsJson);
+    const settingsB = parseSettings(versionB.pageSettingsJson);
+
+    const idsA = new Set(compsA.map((c: any) => c.id));
+    const idsB = new Set(compsB.map((c: any) => c.id));
+    const compsMapA = new Map(compsA.map((c: any) => [c.id, c]));
+    const compsMapB = new Map(compsB.map((c: any) => [c.id, c]));
+
+    const diff: any[] = [];
+
+    for (const comp of compsB) {
+      if (!idsA.has(comp.id)) {
+        diff.push({ id: comp.id, type: comp.type, label: comp.label, status: "added", component: comp });
+      } else {
+        const oldComp: any = compsMapA.get(comp.id);
+        const oldJson = JSON.stringify(oldComp);
+        const newJson = JSON.stringify(comp);
+        if (oldJson !== newJson) {
+          const changes: string[] = [];
+          if (JSON.stringify(oldComp?.config) !== JSON.stringify(comp.config)) changes.push("content");
+          if (JSON.stringify(oldComp?.styles) !== JSON.stringify(comp.styles)) changes.push("styles");
+          if (oldComp?.label !== comp.label) changes.push("label");
+          if (oldComp?.order !== comp.order) changes.push("order");
+          if (oldComp?.enabled !== comp.enabled) changes.push("visibility");
+          diff.push({ id: comp.id, type: comp.type, label: comp.label, status: "modified", changes, oldComponent: oldComp, component: comp });
+        } else {
+          diff.push({ id: comp.id, type: comp.type, label: comp.label, status: "unchanged" });
+        }
+      }
+    }
+
+    for (const comp of compsA) {
+      if (!idsB.has(comp.id)) {
+        diff.push({ id: comp.id, type: comp.type, label: comp.label, status: "removed", component: comp });
+      }
+    }
+
+    const settingsChanges: any[] = [];
+    const allKeysArr = Array.from(new Set([...Object.keys(settingsA), ...Object.keys(settingsB)]));
+    for (const key of allKeysArr) {
+      if (JSON.stringify(settingsA[key]) !== JSON.stringify(settingsB[key])) {
+        settingsChanges.push({ field: key, oldValue: settingsA[key], newValue: settingsB[key] });
+      }
+    }
+
+    res.json({
+      versionA: { id: versionA.id, versionNumber: versionA.versionNumber, editorName: versionA.editorName, createdAt: versionA.createdAt, trigger: versionA.trigger },
+      versionB: { id: versionB.id, versionNumber: versionB.versionNumber, editorName: versionB.editorName, createdAt: versionB.createdAt, trigger: versionB.trigger },
+      componentDiff: diff,
+      settingsChanges,
+      summary: {
+        added: diff.filter(d => d.status === "added").length,
+        modified: diff.filter(d => d.status === "modified").length,
+        removed: diff.filter(d => d.status === "removed").length,
+        unchanged: diff.filter(d => d.status === "unchanged").length,
+      },
+    });
+  } catch (error) {
+    console.error("Error computing version diff:", error);
+    res.status(500).json({ error: "Failed to compute version diff" });
   }
 });
 

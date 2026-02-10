@@ -40,6 +40,15 @@ import {
   ExternalLink,
   ClipboardCopy,
   XCircle,
+  Users,
+  AlertTriangle,
+  GitCompare,
+  Activity,
+  Gauge,
+  CheckCircle2,
+  MinusCircle,
+  PlusCircle,
+  RefreshCw,
 } from "lucide-react";
 import {
   type BodyComponentType,
@@ -72,12 +81,39 @@ interface PageData {
   isPublished: boolean;
   noIndex: boolean;
   status?: string;
+  updatedAt?: string;
 }
 
 interface PageEditorProps {
   pageId: string;
   onBack: () => void;
 }
+
+interface PresenceUser {
+  userId: string;
+  userName: string;
+  activity: "viewing" | "editing";
+}
+
+interface ConflictInfo {
+  conflict: boolean;
+  serverUpdatedAt: string;
+  lastEditor: string | null;
+  lastSaved: string | null;
+}
+
+interface PerfMetrics {
+  editorLoadTime: number | null;
+  saveLatencies: number[];
+  previewRenderTimes: number[];
+  lastWarnings: string[];
+}
+
+const PERF_THRESHOLDS = {
+  editorLoad: 2000,
+  save: 500,
+  previewRender: 1000,
+};
 
 export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const { toast } = useToast();
@@ -91,6 +127,19 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
+  const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
+  const [showPerfMonitor, setShowPerfMonitor] = useState(false);
+  const [perfMetrics, setPerfMetrics] = useState<PerfMetrics>({
+    editorLoadTime: null,
+    saveLatencies: [],
+    previewRenderTimes: [],
+    lastWarnings: [],
+  });
+  const [showDiffDialog, setShowDiffDialog] = useState(false);
+  const [diffVersionA, setDiffVersionA] = useState<string | null>(null);
+  const [diffVersionB, setDiffVersionB] = useState<string | null>(null);
   const [pageSettings, setPageSettings] = useState({
     pageTitle: "",
     pageSlug: "",
@@ -104,6 +153,8 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
   const initialized = useRef(false);
+  const loadStartTime = useRef(Date.now());
+  const sessionUpdatedAt = useRef<string | null>(null);
 
   const { data: pageData, isLoading } = useQuery<PageData>({
     queryKey: [`/api/website/pages/${pageId}`],
@@ -112,6 +163,15 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   useEffect(() => {
     if (pageData && !initialized.current) {
       initialized.current = true;
+      const loadTime = Date.now() - loadStartTime.current;
+      setPerfMetrics(prev => {
+        const warnings = [...prev.lastWarnings];
+        if (loadTime > PERF_THRESHOLDS.editorLoad) {
+          warnings.push(`Editor load: ${loadTime}ms (threshold: ${PERF_THRESHOLDS.editorLoad}ms)`);
+        }
+        return { ...prev, editorLoadTime: loadTime, lastWarnings: warnings.slice(-10) };
+      });
+      sessionUpdatedAt.current = pageData.updatedAt || new Date().toISOString();
       if (pageData.contentJson) {
         try {
           const parsed = JSON.parse(pageData.contentJson) as BodyComponentsConfig;
@@ -133,8 +193,52 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
     }
   }, [pageData]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    const sendPresence = async () => {
+      try {
+        const activity = hasUnsavedChanges ? "editing" : "viewing";
+        const res = await apiRequest("POST", `/api/website/pages/${pageId}/presence`, { activity });
+        const data = await res.json();
+        setPresenceUsers(data.users || []);
+      } catch {}
+    };
+    sendPresence();
+    interval = setInterval(sendPresence, 10000);
+    return () => {
+      clearInterval(interval);
+      apiRequest("DELETE", `/api/website/pages/${pageId}/presence`).catch(() => {});
+    };
+  }, [pageId, hasUnsavedChanges]);
+
+  const saveMutationRef = useRef<{ mutate: () => void }>({ mutate: () => {} });
+
+  const executeSave = useCallback(() => {
+    saveMutationRef.current.mutate();
+  }, []);
+
+  const checkConflictBeforeSave = useCallback(async () => {
+    if (!sessionUpdatedAt.current) {
+      executeSave();
+      return;
+    }
+    try {
+      const res = await apiRequest("GET", `/api/website/pages/${pageId}/check-conflict?since=${encodeURIComponent(sessionUpdatedAt.current)}`);
+      const data: ConflictInfo = await res.json();
+      if (data.conflict) {
+        setConflictInfo(data);
+        setShowConflictDialog(true);
+      } else {
+        executeSave();
+      }
+    } catch {
+      executeSave();
+    }
+  }, [pageId, executeSave]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const saveStart = performance.now();
       const contentJson = JSON.stringify({ components } as BodyComponentsConfig);
       const { status, ...rest } = pageSettings;
       const body = {
@@ -142,12 +246,27 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         contentJson,
         isPublished: status === "PUBLISHED",
       };
-      return await apiRequest("PATCH", `/api/website/pages/${pageId}`, body);
+      const result = await apiRequest("PATCH", `/api/website/pages/${pageId}`, body);
+      const saveLatency = Math.round(performance.now() - saveStart);
+      setPerfMetrics(prev => {
+        const latencies = [...prev.saveLatencies, saveLatency].slice(-20);
+        const warnings = [...prev.lastWarnings];
+        if (saveLatency > PERF_THRESHOLDS.save) {
+          warnings.push(`Save latency: ${saveLatency}ms (threshold: ${PERF_THRESHOLDS.save}ms)`);
+        }
+        return { ...prev, saveLatencies: latencies, lastWarnings: warnings.slice(-10) };
+      });
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: async (res) => {
+      try {
+        const data = await res.json();
+        sessionUpdatedAt.current = data.updatedAt || new Date().toISOString();
+      } catch {}
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId] });
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
       setHasUnsavedChanges(false);
+      setShowConflictDialog(false);
       toast({ title: "Page saved successfully" });
       createVersionMutation.mutate({ trigger: "save", changeSummary: "Saved page changes" });
     },
@@ -155,6 +274,8 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
       toast({ title: "Error saving page", description: error.message, variant: "destructive" });
     },
   });
+
+  saveMutationRef.current = saveMutation;
 
   const createVersionMutation = useMutation({
     mutationFn: async (data: { trigger: string; changeSummary: string }) => {
@@ -300,7 +421,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="page-editor">
+    <div className="flex flex-col h-full relative" data-testid="page-editor">
       {/* Top Toolbar */}
       <div className="flex items-center justify-between gap-2 p-2 border-b bg-background z-50 flex-wrap">
         <div className="flex items-center gap-2">
@@ -341,6 +462,16 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
               <Smartphone className="h-3.5 w-3.5" />
             </Button>
           </div>
+          {presenceUsers.length > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-muted rounded-md" data-testid="presence-indicator">
+              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                {presenceUsers.length === 1
+                  ? `${presenceUsers[0].userName} is ${presenceUsers[0].activity === "editing" ? "editing" : "viewing"}`
+                  : `${presenceUsers.length} users ${presenceUsers.some(u => u.activity === "editing") ? "editing" : "viewing"}`}
+              </span>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -362,6 +493,14 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setShowPerfMonitor(!showPerfMonitor)}
+            data-testid="button-perf-monitor"
+          >
+            <Gauge className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               setRightPanel("page-settings");
               setSelectedComponentId(null);
@@ -373,7 +512,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           </Button>
           <Button
             size="sm"
-            onClick={() => saveMutation.mutate()}
+            onClick={() => checkConflictBeforeSave()}
             disabled={saveMutation.isPending || !hasUnsavedChanges}
             data-testid="button-save-page-editor"
           >
@@ -571,6 +710,76 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         </div>
       </div>
 
+      {showPerfMonitor && (
+        <div className="absolute bottom-4 right-4 z-50 w-80 bg-background border rounded-md shadow-lg" data-testid="perf-monitor-panel">
+          <div className="flex items-center justify-between gap-2 p-2 border-b">
+            <div className="flex items-center gap-1.5">
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Performance Monitor</span>
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setShowPerfMonitor(false)} data-testid="button-close-perf">
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="p-3 space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2 border rounded-md">
+                <p className="text-muted-foreground mb-0.5">Editor Load</p>
+                <p className="font-medium" data-testid="perf-editor-load">
+                  {perfMetrics.editorLoadTime != null ? `${perfMetrics.editorLoadTime}ms` : "---"}
+                </p>
+                {perfMetrics.editorLoadTime != null && (
+                  <PerfStatusBadge value={perfMetrics.editorLoadTime} threshold={PERF_THRESHOLDS.editorLoad} />
+                )}
+              </div>
+              <div className="p-2 border rounded-md">
+                <p className="text-muted-foreground mb-0.5">Avg Save</p>
+                <p className="font-medium" data-testid="perf-avg-save">
+                  {perfMetrics.saveLatencies.length > 0
+                    ? `${Math.round(perfMetrics.saveLatencies.reduce((a, b) => a + b, 0) / perfMetrics.saveLatencies.length)}ms`
+                    : "---"}
+                </p>
+                {perfMetrics.saveLatencies.length > 0 && (
+                  <PerfStatusBadge
+                    value={Math.round(perfMetrics.saveLatencies.reduce((a, b) => a + b, 0) / perfMetrics.saveLatencies.length)}
+                    threshold={PERF_THRESHOLDS.save}
+                  />
+                )}
+              </div>
+              <div className="p-2 border rounded-md">
+                <p className="text-muted-foreground mb-0.5">Avg Preview</p>
+                <p className="font-medium" data-testid="perf-avg-preview">
+                  {perfMetrics.previewRenderTimes.length > 0
+                    ? `${Math.round(perfMetrics.previewRenderTimes.reduce((a, b) => a + b, 0) / perfMetrics.previewRenderTimes.length)}ms`
+                    : "---"}
+                </p>
+                {perfMetrics.previewRenderTimes.length > 0 && (
+                  <PerfStatusBadge
+                    value={Math.round(perfMetrics.previewRenderTimes.reduce((a, b) => a + b, 0) / perfMetrics.previewRenderTimes.length)}
+                    threshold={PERF_THRESHOLDS.previewRender}
+                  />
+                )}
+              </div>
+              <div className="p-2 border rounded-md">
+                <p className="text-muted-foreground mb-0.5">Components</p>
+                <p className="font-medium">{components.length}</p>
+              </div>
+            </div>
+            {perfMetrics.lastWarnings.length > 0 && (
+              <div className="space-y-1">
+                <p className="font-medium text-muted-foreground">Recent Warnings</p>
+                {perfMetrics.lastWarnings.slice(-3).map((w, i) => (
+                  <div key={i} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                    <AlertTriangle className="h-3 w-3 text-yellow-500 flex-shrink-0 mt-0.5" />
+                    <span>{w}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <SharePreviewDialog
         pageId={pageId}
         open={showShareDialog}
@@ -585,6 +794,35 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         isReverting={revertVersionMutation.isPending}
         previewingVersionId={previewingVersionId}
         onPreviewVersion={setPreviewingVersionId}
+        onCompareVersions={(a, b) => { setDiffVersionA(a); setDiffVersionB(b); setShowDiffDialog(true); }}
+      />
+
+      <ConflictDialog
+        open={showConflictDialog}
+        onOpenChange={setShowConflictDialog}
+        conflictInfo={conflictInfo}
+        onReload={() => {
+          setShowConflictDialog(false);
+          initialized.current = false;
+          queryClient.invalidateQueries({ queryKey: [`/api/website/pages/${pageId}`] });
+        }}
+        onOverwrite={() => {
+          setShowConflictDialog(false);
+          executeSave();
+        }}
+        onSaveAsVersion={() => {
+          setShowConflictDialog(false);
+          createVersionMutation.mutate({ trigger: "conflict-save", changeSummary: "Saved as new version (conflict resolution)" });
+          toast({ title: "Changes saved as a new version" });
+        }}
+        isSaving={saveMutation.isPending}
+      />
+
+      <VersionDiffDialog
+        open={showDiffDialog}
+        onOpenChange={setShowDiffDialog}
+        versionIdA={diffVersionA}
+        versionIdB={diffVersionB}
       />
     </div>
   );
@@ -747,7 +985,7 @@ function SharePreviewDialog({ pageId, open, onOpenChange }: {
   );
 }
 
-function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isReverting, previewingVersionId, onPreviewVersion }: {
+function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isReverting, previewingVersionId, onPreviewVersion, onCompareVersions }: {
   pageId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -755,9 +993,12 @@ function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isRevertin
   isReverting: boolean;
   previewingVersionId: string | null;
   onPreviewVersion: (id: string | null) => void;
+  onCompareVersions: (a: string, b: string) => void;
 }) {
   const { toast } = useToast();
   const [confirmRevertId, setConfirmRevertId] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelections, setCompareSelections] = useState<string[]>([]);
 
   const { data: versions = [], isLoading: loadingVersions } = useQuery<any[]>({
     queryKey: ["/api/website/pages", pageId, "versions"],
@@ -803,9 +1044,44 @@ function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isRevertin
             Version History
           </DialogTitle>
           <DialogDescription>
-            View past versions of this page. You can preview and revert to any previous version.
+            View past versions of this page. You can preview, revert, or compare versions.
           </DialogDescription>
         </DialogHeader>
+
+        {!previewingVersionId && versions.length >= 2 && (
+          <div className="flex items-center justify-between gap-2 pb-2 border-b">
+            <Button
+              variant={compareMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setCompareMode(!compareMode);
+                setCompareSelections([]);
+              }}
+              data-testid="button-toggle-compare"
+            >
+              <GitCompare className="h-3.5 w-3.5 mr-1" />
+              {compareMode ? "Cancel Compare" : "Compare Versions"}
+            </Button>
+            {compareMode && compareSelections.length === 2 && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  onCompareVersions(compareSelections[0], compareSelections[1]);
+                  setCompareMode(false);
+                  setCompareSelections([]);
+                }}
+                data-testid="button-run-compare"
+              >
+                View Diff
+              </Button>
+            )}
+            {compareMode && (
+              <span className="text-xs text-muted-foreground">
+                {compareSelections.length}/2 selected
+              </span>
+            )}
+          </div>
+        )}
 
         {previewingVersionId && previewVersion ? (
           <div className="flex flex-col flex-1 min-h-0">
@@ -864,41 +1140,63 @@ function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isRevertin
               </div>
             ) : versions.length > 0 ? (
               <div className="space-y-1 p-1">
-                {versions.map((v: any) => (
-                  <div
-                    key={v.id}
-                    className="flex items-center justify-between gap-2 p-2 border rounded-md hover-elevate cursor-pointer"
-                    onClick={() => onPreviewVersion(v.id)}
-                    data-testid={`version-item-${v.id}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">v{v.versionNumber}</span>
-                        {getTriggerBadge(v.trigger)}
+                {versions.map((v: any) => {
+                  const isSelected = compareSelections.includes(v.id);
+                  return (
+                    <div
+                      key={v.id}
+                      className={`flex items-center justify-between gap-2 p-2 border rounded-md hover-elevate cursor-pointer ${
+                        compareMode && isSelected ? "border-primary bg-primary/5" : ""
+                      }`}
+                      onClick={() => {
+                        if (compareMode) {
+                          setCompareSelections(prev => {
+                            if (prev.includes(v.id)) return prev.filter(id => id !== v.id);
+                            if (prev.length >= 2) return [prev[1], v.id];
+                            return [...prev, v.id];
+                          });
+                        } else {
+                          onPreviewVersion(v.id);
+                        }
+                      }}
+                      data-testid={`version-item-${v.id}`}
+                    >
+                      {compareMode && (
+                        <div className={`w-4 h-4 rounded-sm border flex items-center justify-center flex-shrink-0 ${isSelected ? "bg-primary border-primary" : ""}`}>
+                          {isSelected && <CheckCircle2 className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">v{v.versionNumber}</span>
+                          {getTriggerBadge(v.trigger)}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{v.changeSummary || "No summary"}</p>
+                        <p className="text-[10px] text-muted-foreground">{v.editorName} - {formatDate(v.createdAt)}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">{v.changeSummary || "No summary"}</p>
-                      <p className="text-[10px] text-muted-foreground">{v.editorName} - {formatDate(v.createdAt)}</p>
+                      {!compareMode && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); onPreviewVersion(v.id); }}
+                            data-testid={`button-preview-version-${v.id}`}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); setConfirmRevertId(v.id); }}
+                            data-testid={`button-revert-version-${v.id}`}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => { e.stopPropagation(); onPreviewVersion(v.id); }}
-                        data-testid={`button-preview-version-${v.id}`}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => { e.stopPropagation(); setConfirmRevertId(v.id); }}
-                        data-testid={`button-revert-version-${v.id}`}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -1405,5 +1703,249 @@ function PageSettingsPanel({
         </div>
       </ScrollArea>
     </>
+  );
+}
+
+function PerfStatusBadge({ value, threshold }: { value: number; threshold: number }) {
+  const ok = value <= threshold;
+  return (
+    <Badge variant={ok ? "outline" : "destructive"} className="text-[9px] mt-0.5">
+      {ok ? "OK" : "Slow"}
+    </Badge>
+  );
+}
+
+function ConflictDialog({
+  open,
+  onOpenChange,
+  conflictInfo,
+  onReload,
+  onOverwrite,
+  onSaveAsVersion,
+  isSaving,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  conflictInfo: ConflictInfo | null;
+  onReload: () => void;
+  onOverwrite: () => void;
+  onSaveAsVersion: () => void;
+  isSaving: boolean;
+}) {
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "Unknown";
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) +
+      " on " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            Save Conflict Detected
+          </DialogTitle>
+          <DialogDescription>
+            This page has been modified by another user since you started editing.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {conflictInfo && (
+            <div className="bg-muted/50 border rounded-md p-3 text-xs space-y-1">
+              {conflictInfo.lastEditor && (
+                <p><span className="text-muted-foreground">Last saved by:</span> {conflictInfo.lastEditor}</p>
+              )}
+              {conflictInfo.lastSaved && (
+                <p><span className="text-muted-foreground">Saved at:</span> {formatDate(conflictInfo.lastSaved)}</p>
+              )}
+            </div>
+          )}
+
+          <p className="text-sm text-muted-foreground">
+            Choose how to proceed:
+          </p>
+
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={onReload}
+              data-testid="button-conflict-reload"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              <div className="text-left">
+                <div className="text-sm font-medium">Reload latest version</div>
+                <div className="text-[10px] text-muted-foreground">Discard your changes and load the latest saved version</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={onOverwrite}
+              disabled={isSaving}
+              data-testid="button-conflict-overwrite"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              <div className="text-left">
+                <div className="text-sm font-medium">Overwrite with my changes</div>
+                <div className="text-[10px] text-muted-foreground">Replace the server version with your current edits</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={onSaveAsVersion}
+              data-testid="button-conflict-save-version"
+            >
+              <History className="h-4 w-4 mr-2" />
+              <div className="text-left">
+                <div className="text-sm font-medium">Save as a new version</div>
+                <div className="text-[10px] text-muted-foreground">Keep both versions - your changes are saved separately</div>
+              </div>
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VersionDiffDialog({
+  open,
+  onOpenChange,
+  versionIdA,
+  versionIdB,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  versionIdA: string | null;
+  versionIdB: string | null;
+}) {
+  const { data: diffData, isLoading } = useQuery<any>({
+    queryKey: ["/api/website/versions/diff", versionIdA, versionIdB],
+    enabled: open && !!versionIdA && !!versionIdB,
+  });
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const statusColors: Record<string, string> = {
+    added: "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400",
+    modified: "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400",
+    removed: "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400",
+    unchanged: "bg-muted/30 border-muted-foreground/10",
+  };
+
+  const statusIcons: Record<string, typeof PlusCircle> = {
+    added: PlusCircle,
+    modified: AlertTriangle,
+    removed: MinusCircle,
+    unchanged: CheckCircle2,
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitCompare className="h-4 w-4" />
+            Version Comparison
+          </DialogTitle>
+          {diffData && (
+            <DialogDescription>
+              Comparing v{diffData.versionA.versionNumber} ({diffData.versionA.editorName}) with v{diffData.versionB.versionNumber} ({diffData.versionB.editorName})
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-2 p-2">
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+          </div>
+        ) : diffData ? (
+          <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="space-y-4 p-1">
+              <div className="flex items-center gap-3 flex-wrap text-xs">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-sm bg-green-500/20 border border-green-500/40" />
+                  <span>Added ({diffData.summary.added})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-sm bg-yellow-500/20 border border-yellow-500/40" />
+                  <span>Modified ({diffData.summary.modified})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-sm bg-red-500/20 border border-red-500/40" />
+                  <span>Removed ({diffData.summary.removed})</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-sm bg-muted border" />
+                  <span>Unchanged ({diffData.summary.unchanged})</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground">Components</h4>
+                {diffData.componentDiff.map((item: any) => {
+                  const StatusIcon = statusIcons[item.status] || CheckCircle2;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-2.5 border rounded-md ${statusColors[item.status] || ""}`}
+                      data-testid={`diff-item-${item.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <StatusIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="text-sm font-medium">{item.label || item.type}</span>
+                          <Badge variant="outline" className="text-[9px]">{item.type}</Badge>
+                        </div>
+                        <Badge variant="secondary" className="text-[9px] capitalize">{item.status}</Badge>
+                      </div>
+                      {item.status === "modified" && item.changes && (
+                        <div className="mt-1.5 flex gap-1 flex-wrap">
+                          {item.changes.map((c: string) => (
+                            <Badge key={c} variant="outline" className="text-[9px]">{c}</Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {diffData.settingsChanges.length > 0 && (
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-semibold uppercase text-muted-foreground">Page Settings</h4>
+                  {diffData.settingsChanges.map((change: any) => (
+                    <div key={change.field} className="p-2.5 border rounded-md bg-yellow-500/10 border-yellow-500/30">
+                      <p className="text-xs font-medium capitalize">{change.field.replace(/([A-Z])/g, " $1").trim()}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs">
+                        <span className="text-red-600 dark:text-red-400 line-through">{String(change.oldValue ?? "empty")}</span>
+                        <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="text-green-600 dark:text-green-400">{String(change.newValue ?? "empty")}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {diffData.componentDiff.length === 0 && diffData.settingsChanges.length === 0 && (
+                <div className="text-center py-6">
+                  <CheckCircle2 className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">These versions are identical</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
