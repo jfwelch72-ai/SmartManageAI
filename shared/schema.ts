@@ -4928,6 +4928,10 @@ export const organizationWebsites = pgTable("organization_websites", {
   footerColumns: integer("footer_columns").default(3),
   footerWidth: text("footer_width").default("boxed"),
   footerPadding: integer("footer_padding").default(40),
+
+  // Component Configurations (JSON)
+  headerComponentsConfig: json("header_components_config"),
+  footerComponentsConfig: json("footer_components_config"),
   
   // Features Toggle
   blogEnabled: boolean("blog_enabled").default(true),

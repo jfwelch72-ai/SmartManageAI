@@ -1,0 +1,59 @@
+Please add a new tab called “Components” next to the “Layout” tab in the website builder.
+Components Tab
+The Components tab should contain all basic, reusable, and editable components that users can drag and configure within layouts.
+________________________________________
+Global Components
+Create a Global Components section that applies site-wide.
+The first global components are Header and Footer.
+________________________________________
+Header Component
+Layout Behavior
+•	Desktop View
+o	Supports up to 3 sections:
+	Top Header
+	Middle Header
+	Bottom Header
+o	Each section can have up to 3 columns
+•	Mobile View
+o	Supports up to 2 columns
+o	Responsive stacking and ordering
+Draggable Header Elements
+Users should be able to drag, drop, reorder, enable/disable, and configure the following:
+•	Logo
+•	Main Navigation
+•	Primary CTA Button
+•	Search Icon
+•	Login / Account Button
+•	Social Icons
+•	Announcement Bar
+Each element should be fully editable (content, alignment, visibility per device).
+________________________________________
+Footer Component
+Layout Behavior
+•	Desktop View
+o	Supports up to 4 columns
+o	Can be arranged in:
+	Top Footer
+	Middle Footer
+	Bottom Footer
+•	Mobile View
+o	Supports up to 2 columns
+o	Responsive stacking and ordering
+Draggable Footer Elements
+Users should be able to drag, drop, reorder, enable/disable, and configure the following:
+•	Footer Logo
+•	Social Media Icons
+•	Copyright Notice
+•	Toggle: Enable / Disable “Back to Top” Button
+•	Link List (Horizontal or Vertical)
+•	Footer Headers / Titles
+Each footer element should be fully editable and responsive.
+________________________________________
+General Requirements
+•	Components must be reusable across pages
+•	Global components update site-wide when edited
+•	Support responsive settings (desktop vs mobile)
+•	Provide drag-and-drop ordering and column assignment
+•	Persist configurations in the database
+Please ensure the Components tab integrates cleanly with the Layout system and supports future component expansion.
+

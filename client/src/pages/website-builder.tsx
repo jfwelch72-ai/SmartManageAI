@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
+import WebsiteComponentsTab, {
+  type HeaderComponentsConfig,
+  type FooterComponentsConfig,
+  getDefaultHeaderConfig,
+  getDefaultFooterConfig,
+} from "@/components/website-components-tab";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -105,6 +111,8 @@ interface Website {
   footerColumns: number | null;
   footerWidth: string | null;
   footerPadding: number | null;
+  headerComponentsConfig: HeaderComponentsConfig | null;
+  footerComponentsConfig: FooterComponentsConfig | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -348,6 +356,9 @@ export default function WebsiteBuilderPage() {
     footerPadding: 40,
   });
 
+  const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
+  const [footerComponentsConfig, setFooterComponentsConfig] = useState<FooterComponentsConfig>(getDefaultFooterConfig());
+
   const [pageForm, setPageForm] = useState({
     pageType: "CUSTOM",
     pageTitle: "",
@@ -451,7 +462,7 @@ export default function WebsiteBuilderPage() {
   });
 
   const saveWebsiteMutation = useMutation({
-    mutationFn: async (data: typeof websiteForm) => {
+    mutationFn: async (data: Record<string, any>) => {
       return await apiRequest("POST", "/api/website", data);
     },
     onSuccess: () => {
@@ -684,7 +695,11 @@ export default function WebsiteBuilderPage() {
   };
 
   const handleSaveWebsite = () => {
-    saveWebsiteMutation.mutate(websiteForm);
+    saveWebsiteMutation.mutate({
+      ...websiteForm,
+      headerComponentsConfig,
+      footerComponentsConfig,
+    });
   };
 
   const handleTemplateSelect = (templateId: string) => {
@@ -801,6 +816,12 @@ export default function WebsiteBuilderPage() {
         footerWidth: websiteRef.footerWidth || prev.footerWidth,
         footerPadding: websiteRef.footerPadding ?? prev.footerPadding,
       }));
+      if (websiteRef.headerComponentsConfig) {
+        setHeaderComponentsConfig(websiteRef.headerComponentsConfig as HeaderComponentsConfig);
+      }
+      if (websiteRef.footerComponentsConfig) {
+        setFooterComponentsConfig(websiteRef.footerComponentsConfig as FooterComponentsConfig);
+      }
     }
   }, [websiteRef]);
 
@@ -894,6 +915,10 @@ export default function WebsiteBuilderPage() {
           <TabsTrigger value="layout" className="flex items-center gap-1" data-testid="tab-layout">
             <LayoutTemplate className="h-4 w-4" />
             <span className="hidden sm:inline">Layout</span>
+          </TabsTrigger>
+          <TabsTrigger value="components" className="flex items-center gap-1" data-testid="tab-components">
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">Components</span>
           </TabsTrigger>
           <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
             <Layout className="h-4 w-4" />
@@ -1634,6 +1659,17 @@ export default function WebsiteBuilderPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="components" className="space-y-6">
+          <WebsiteComponentsTab
+            headerConfig={headerComponentsConfig}
+            footerConfig={footerComponentsConfig}
+            onHeaderConfigChange={setHeaderComponentsConfig}
+            onFooterConfigChange={setFooterComponentsConfig}
+            onSave={handleSaveWebsite}
+            isSaving={saveWebsiteMutation.isPending}
+          />
         </TabsContent>
 
         <TabsContent value="pages" className="space-y-4">
