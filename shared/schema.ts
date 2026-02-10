@@ -4999,6 +4999,47 @@ export const insertOrganizationWebsitePageSchema = createInsertSchema(organizati
 export type InsertOrganizationWebsitePage = z.infer<typeof insertOrganizationWebsitePageSchema>;
 export type OrganizationWebsitePage = typeof organizationWebsitePages.$inferSelect;
 
+// Page Preview Links (shareable read-only preview)
+export const pagePreviewLinks = pgTable("page_preview_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pageId: varchar("page_id").notNull().references(() => organizationWebsitePages.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  token: varchar("token").notNull().unique(),
+  createdById: varchar("created_by_id").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tokenIdx: index("preview_links_token_idx").on(table.token),
+  pageIdx: index("preview_links_page_idx").on(table.pageId),
+}));
+
+export const insertPagePreviewLinkSchema = createInsertSchema(pagePreviewLinks).omit({ id: true, createdAt: true });
+export type InsertPagePreviewLink = z.infer<typeof insertPagePreviewLinkSchema>;
+export type PagePreviewLink = typeof pagePreviewLinks.$inferSelect;
+
+// Page Versions (version history / snapshots)
+export const pageVersions = pgTable("page_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pageId: varchar("page_id").notNull().references(() => organizationWebsitePages.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  versionNumber: integer("version_number").notNull(),
+  contentJson: text("content_json"),
+  pageSettingsJson: text("page_settings_json"),
+  editorId: varchar("editor_id").notNull(),
+  editorName: text("editor_name").notNull(),
+  changeSummary: text("change_summary"),
+  trigger: text("trigger").notNull().default("manual"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  pageIdx: index("page_versions_page_idx").on(table.pageId),
+  versionIdx: index("page_versions_version_idx").on(table.pageId, table.versionNumber),
+}));
+
+export const insertPageVersionSchema = createInsertSchema(pageVersions).omit({ id: true, createdAt: true });
+export type InsertPageVersion = z.infer<typeof insertPageVersionSchema>;
+export type PageVersion = typeof pageVersions.$inferSelect;
+
 // Blog Posts
 export const websiteBlogPosts = pgTable("website_blog_posts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

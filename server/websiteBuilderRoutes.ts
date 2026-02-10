@@ -20,6 +20,8 @@ import {
   users,
   crmOrganisations,
   crmContacts,
+  pagePreviewLinks,
+  pageVersions,
   insertOrganizationWebsiteSchema,
   insertOrganizationWebsitePageSchema,
   insertWebsiteBlogPostSchema,
@@ -402,12 +404,22 @@ router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) 
       }
     }
 
+    const isPublishing = req.body.isPublished === true && !existing.isPublished;
+
     const [updated] = await db.update(organizationWebsitePages)
       .set({ ...req.body, updatedAt: new Date() })
       .where(eq(organizationWebsitePages.id, id))
       .returning();
 
     await logUpdate(user.id, "organization_website_pages", id, existing, updated, req);
+
+    if (isPublishing) {
+      try {
+        await createVersionSnapshot(existing, user, "publish", "Published page");
+      } catch (e) {
+        console.error("Error creating version snapshot on publish:", e);
+      }
+    }
 
     res.json(updated);
   } catch (error) {
@@ -2133,6 +2145,332 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error fetching preview data:", error);
     res.status(500).json({ error: "Failed to fetch preview data" });
+  }
+});
+
+// ==============================================
+// Version History Helper
+// ==============================================
+async function createVersionSnapshot(
+  page: any,
+  user: { id: string; firstName?: string | null; lastName?: string | null; email?: string | null },
+  trigger: string,
+  changeSummary: string
+) {
+  const lastVersion = await db.query.pageVersions.findFirst({
+    where: eq(pageVersions.pageId, page.id),
+    orderBy: [desc(pageVersions.versionNumber)],
+  });
+  const nextVersion = (lastVersion?.versionNumber ?? 0) + 1;
+  const editorName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "Unknown";
+
+  const pageSettingsJson = JSON.stringify({
+    pageTitle: page.pageTitle,
+    pageSlug: page.pageSlug,
+    pageType: page.pageType,
+    navigationLabel: page.navigationLabel,
+    showInNavigation: page.showInNavigation,
+    isPublished: page.isPublished,
+    metaTitle: page.metaTitle,
+    metaDescription: page.metaDescription,
+  });
+
+  const [version] = await db.insert(pageVersions).values({
+    pageId: page.id,
+    organizationId: page.organizationId,
+    versionNumber: nextVersion,
+    contentJson: page.contentJson,
+    pageSettingsJson,
+    editorId: user.id,
+    editorName,
+    changeSummary,
+    trigger,
+  }).returning();
+  return version;
+}
+
+function generateChangeSummary(oldContent: string | null, newContent: string | null): string {
+  try {
+    const oldParsed = oldContent ? JSON.parse(oldContent) : { components: [] };
+    const newParsed = newContent ? JSON.parse(newContent) : { components: [] };
+    const oldCount = oldParsed.components?.length || 0;
+    const newCount = newParsed.components?.length || 0;
+    const parts: string[] = [];
+    if (newCount > oldCount) parts.push(`Added ${newCount - oldCount} component(s)`);
+    else if (newCount < oldCount) parts.push(`Removed ${oldCount - newCount} component(s)`);
+    if (newCount === oldCount && newCount > 0) parts.push(`Updated ${newCount} component(s)`);
+    if (parts.length === 0) return "Page content updated";
+    return parts.join(", ");
+  } catch {
+    return "Page content updated";
+  }
+}
+
+// ==============================================
+// Preview Link Routes
+// ==============================================
+
+// POST /api/website/pages/:pageId/preview-link - Generate a preview link
+router.post("/pages/:pageId/preview-link", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    const page = await db.query.organizationWebsitePages.findFirst({
+      where: and(
+        eq(organizationWebsitePages.id, pageId),
+        orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined
+      ),
+    });
+    if (!page) return res.status(404).json({ error: "Page not found" });
+
+    const expiresInHours = req.body.expiresInHours || 72;
+    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+    const token = randomUUID();
+
+    const [link] = await db.insert(pagePreviewLinks).values({
+      pageId,
+      organizationId: page.organizationId,
+      token,
+      createdById: user.id,
+      expiresAt,
+    }).returning();
+
+    res.json(link);
+  } catch (error) {
+    console.error("Error creating preview link:", error);
+    res.status(500).json({ error: "Failed to create preview link" });
+  }
+});
+
+// GET /api/website/pages/:pageId/preview-links - List active preview links
+router.get("/pages/:pageId/preview-links", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const links = await db.query.pagePreviewLinks.findMany({
+      where: and(
+        eq(pagePreviewLinks.pageId, pageId),
+        sql`${pagePreviewLinks.revokedAt} IS NULL`,
+        sql`${pagePreviewLinks.expiresAt} > NOW()`
+      ),
+      orderBy: [desc(pagePreviewLinks.createdAt)],
+    });
+
+    res.json(links);
+  } catch (error) {
+    console.error("Error listing preview links:", error);
+    res.status(500).json({ error: "Failed to list preview links" });
+  }
+});
+
+// DELETE /api/website/preview-links/:linkId - Revoke a preview link
+router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { linkId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const [updated] = await db.update(pagePreviewLinks)
+      .set({ revokedAt: new Date() })
+      .where(eq(pagePreviewLinks.id, linkId))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Preview link not found" });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error revoking preview link:", error);
+    res.status(500).json({ error: "Failed to revoke preview link" });
+  }
+});
+
+// GET /api/website/shared-preview/:token - Public preview (no auth)
+router.get("/shared-preview/:token", async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+
+    const link = await db.query.pagePreviewLinks.findFirst({
+      where: and(
+        eq(pagePreviewLinks.token, token),
+        sql`${pagePreviewLinks.revokedAt} IS NULL`,
+        sql`${pagePreviewLinks.expiresAt} > NOW()`
+      ),
+    });
+
+    if (!link) {
+      return res.status(404).json({ error: "Preview link not found or expired" });
+    }
+
+    const page = await db.query.organizationWebsitePages.findFirst({
+      where: eq(organizationWebsitePages.id, link.pageId),
+    });
+
+    if (!page) {
+      return res.status(404).json({ error: "Page not found" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.id, page.websiteId),
+    });
+
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, page.organizationId),
+    });
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      page,
+      website: website ? {
+        ...website,
+        logoUrl: orgLogoProxyUrl(page.organizationId, website.logoUrl),
+      } : null,
+      organization: org ? {
+        name: org.name,
+        tradeType: org.tradeType,
+        logoUrl: orgLogoProxyUrl(page.organizationId, org.logoUrl),
+      } : null,
+      expiresAt: link.expiresAt,
+    });
+  } catch (error) {
+    console.error("Error fetching shared preview:", error);
+    res.status(500).json({ error: "Failed to fetch preview" });
+  }
+});
+
+// ==============================================
+// Version History Routes
+// ==============================================
+
+// POST /api/website/pages/:pageId/versions - Create a version snapshot manually
+router.post("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    const page = await db.query.organizationWebsitePages.findFirst({
+      where: and(
+        eq(organizationWebsitePages.id, pageId),
+        orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined
+      ),
+    });
+    if (!page) return res.status(404).json({ error: "Page not found" });
+
+    const changeSummary = req.body.changeSummary || generateChangeSummary(null, page.contentJson);
+    const version = await createVersionSnapshot(page, user, req.body.trigger || "manual", changeSummary);
+    res.json(version);
+  } catch (error) {
+    console.error("Error creating version:", error);
+    res.status(500).json({ error: "Failed to create version" });
+  }
+});
+
+// GET /api/website/pages/:pageId/versions - List versions for a page
+router.get("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const versions = await db.query.pageVersions.findMany({
+      where: eq(pageVersions.pageId, pageId),
+      orderBy: [desc(pageVersions.versionNumber)],
+      limit: 50,
+    });
+
+    res.json(versions);
+  } catch (error) {
+    console.error("Error listing versions:", error);
+    res.status(500).json({ error: "Failed to list versions" });
+  }
+});
+
+// GET /api/website/versions/:versionId - Get a specific version
+router.get("/versions/:versionId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { versionId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const version = await db.query.pageVersions.findFirst({
+      where: eq(pageVersions.id, versionId),
+    });
+
+    if (!version) return res.status(404).json({ error: "Version not found" });
+    res.json(version);
+  } catch (error) {
+    console.error("Error fetching version:", error);
+    res.status(500).json({ error: "Failed to fetch version" });
+  }
+});
+
+// POST /api/website/pages/:pageId/revert/:versionId - Revert to a version
+router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { pageId, versionId } = req.params;
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    const currentPage = await db.query.organizationWebsitePages.findFirst({
+      where: and(
+        eq(organizationWebsitePages.id, pageId),
+        orgId ? eq(organizationWebsitePages.organizationId, orgId) : undefined
+      ),
+    });
+    if (!currentPage) return res.status(404).json({ error: "Page not found" });
+
+    const targetVersion = await db.query.pageVersions.findFirst({
+      where: and(
+        eq(pageVersions.id, versionId),
+        eq(pageVersions.pageId, pageId)
+      ),
+    });
+    if (!targetVersion) return res.status(404).json({ error: "Version not found" });
+
+    await createVersionSnapshot(currentPage, user, "revert", `Reverted to version ${targetVersion.versionNumber}`);
+
+    const settingsToRestore: any = { contentJson: targetVersion.contentJson, updatedAt: new Date() };
+    if (targetVersion.pageSettingsJson) {
+      try {
+        const settings = JSON.parse(targetVersion.pageSettingsJson);
+        if (settings.pageTitle) settingsToRestore.pageTitle = settings.pageTitle;
+        if (settings.pageSlug) settingsToRestore.pageSlug = settings.pageSlug;
+        if (settings.navigationLabel !== undefined) settingsToRestore.navigationLabel = settings.navigationLabel;
+        if (settings.showInNavigation !== undefined) settingsToRestore.showInNavigation = settings.showInNavigation;
+        if (settings.metaTitle !== undefined) settingsToRestore.metaTitle = settings.metaTitle;
+        if (settings.metaDescription !== undefined) settingsToRestore.metaDescription = settings.metaDescription;
+      } catch {}
+    }
+
+    const [updated] = await db.update(organizationWebsitePages)
+      .set(settingsToRestore)
+      .where(eq(organizationWebsitePages.id, pageId))
+      .returning();
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error reverting version:", error);
+    res.status(500).json({ error: "Failed to revert to version" });
   }
 });
 

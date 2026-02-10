@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, lazy, Suspense, memo, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   ArrowLeft,
   Save,
@@ -31,6 +32,14 @@ import {
   Loader2,
   LayoutGrid,
   X,
+  Share2,
+  History,
+  Link2,
+  Clock,
+  RotateCcw,
+  ExternalLink,
+  ClipboardCopy,
+  XCircle,
 } from "lucide-react";
 import {
   type BodyComponentType,
@@ -79,6 +88,9 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
   const [pageSettings, setPageSettings] = useState({
     pageTitle: "",
     pageSlug: "",
@@ -137,9 +149,37 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
       setHasUnsavedChanges(false);
       toast({ title: "Page saved successfully" });
+      createVersionMutation.mutate({ trigger: "save", changeSummary: "Saved page changes" });
     },
     onError: (error: any) => {
       toast({ title: "Error saving page", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createVersionMutation = useMutation({
+    mutationFn: async (data: { trigger: string; changeSummary: string }) => {
+      return await apiRequest("POST", `/api/website/pages/${pageId}/versions`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId, "versions"] });
+    },
+  });
+
+  const revertVersionMutation = useMutation({
+    mutationFn: async (versionId: string) => {
+      return await apiRequest("POST", `/api/website/pages/${pageId}/revert/${versionId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId, "versions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+      initialized.current = false;
+      setShowVersionHistory(false);
+      setPreviewingVersionId(null);
+      toast({ title: "Page reverted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error reverting page", description: error.message, variant: "destructive" });
     },
   });
 
@@ -301,6 +341,24 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
               <Smartphone className="h-3.5 w-3.5" />
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowShareDialog(true)}
+            data-testid="button-share-preview"
+          >
+            <Share2 className="h-4 w-4 mr-1" />
+            Share
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowVersionHistory(true)}
+            data-testid="button-version-history"
+          >
+            <History className="h-4 w-4 mr-1" />
+            Versions
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -512,7 +570,378 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           )}
         </div>
       </div>
+
+      <SharePreviewDialog
+        pageId={pageId}
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+      />
+
+      <VersionHistoryDialog
+        pageId={pageId}
+        open={showVersionHistory}
+        onOpenChange={setShowVersionHistory}
+        onRevert={(versionId) => revertVersionMutation.mutate(versionId)}
+        isReverting={revertVersionMutation.isPending}
+        previewingVersionId={previewingVersionId}
+        onPreviewVersion={setPreviewingVersionId}
+      />
     </div>
+  );
+}
+
+function SharePreviewDialog({ pageId, open, onOpenChange }: {
+  pageId: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+  const [expiresInHours, setExpiresInHours] = useState(72);
+
+  const { data: previewLinks = [], isLoading: loadingLinks } = useQuery<any[]>({
+    queryKey: ["/api/website/pages", pageId, "preview-links"],
+    enabled: open,
+  });
+
+  const createLinkMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/website/pages/${pageId}/preview-link`, { expiresInHours });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId, "preview-links"] });
+      toast({ title: "Preview link created" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error creating link", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const revokeLinkMutation = useMutation({
+    mutationFn: async (linkId: string) => {
+      return await apiRequest("DELETE", `/api/website/preview-links/${linkId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/pages", pageId, "preview-links"] });
+      toast({ title: "Preview link revoked" });
+    },
+  });
+
+  const getPreviewUrl = (token: string) => {
+    return `${window.location.origin}/shared-preview/${token}`;
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      toast({ title: "Link copied to clipboard" });
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const formatExpiry = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+    if (days > 0) return `${days}d ${hours % 24}h remaining`;
+    if (hours > 0) return `${hours}h remaining`;
+    return "Expiring soon";
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Share2 className="h-4 w-4" />
+            Share Preview
+          </DialogTitle>
+          <DialogDescription>
+            Generate a read-only preview link. Anyone with the link can view this page without logging in.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Select value={String(expiresInHours)} onValueChange={(v) => setExpiresInHours(Number(v))}>
+              <SelectTrigger className="flex-1" data-testid="select-preview-expiry">
+                <SelectValue placeholder="Expiration" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="24">24 hours</SelectItem>
+                <SelectItem value="72">3 days</SelectItem>
+                <SelectItem value="168">7 days</SelectItem>
+                <SelectItem value="720">30 days</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() => createLinkMutation.mutate()}
+              disabled={createLinkMutation.isPending}
+              data-testid="button-generate-preview-link"
+            >
+              {createLinkMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Link2 className="h-4 w-4 mr-1" />
+              )}
+              Generate Link
+            </Button>
+          </div>
+
+          {loadingLinks ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : previewLinks.length > 0 ? (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Active Preview Links</Label>
+              {previewLinks.map((link: any) => (
+                <div key={link.id} className="flex items-center gap-2 p-2 border rounded-md">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-mono truncate">{getPreviewUrl(link.token)}</p>
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatExpiry(link.expiresAt)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => copyToClipboard(getPreviewUrl(link.token))}
+                      data-testid={`button-copy-preview-${link.id}`}
+                    >
+                      <ClipboardCopy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => window.open(getPreviewUrl(link.token), "_blank")}
+                      data-testid={`button-open-preview-${link.id}`}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => revokeLinkMutation.mutate(link.id)}
+                      disabled={revokeLinkMutation.isPending}
+                      data-testid={`button-revoke-preview-${link.id}`}
+                    >
+                      <XCircle className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No active preview links. Generate one to share this page.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function VersionHistoryDialog({ pageId, open, onOpenChange, onRevert, isReverting, previewingVersionId, onPreviewVersion }: {
+  pageId: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onRevert: (versionId: string) => void;
+  isReverting: boolean;
+  previewingVersionId: string | null;
+  onPreviewVersion: (id: string | null) => void;
+}) {
+  const { toast } = useToast();
+  const [confirmRevertId, setConfirmRevertId] = useState<string | null>(null);
+
+  const { data: versions = [], isLoading: loadingVersions } = useQuery<any[]>({
+    queryKey: ["/api/website/pages", pageId, "versions"],
+    enabled: open,
+  });
+
+  const { data: previewVersion } = useQuery<any>({
+    queryKey: ["/api/website/versions", previewingVersionId],
+    enabled: !!previewingVersionId,
+  });
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+      " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const getTriggerBadge = (trigger: string) => {
+    switch (trigger) {
+      case "publish": return <Badge variant="default" className="text-[10px]">Published</Badge>;
+      case "revert": return <Badge variant="secondary" className="text-[10px]">Reverted</Badge>;
+      case "save": return <Badge variant="outline" className="text-[10px]">Saved</Badge>;
+      default: return <Badge variant="outline" className="text-[10px]">{trigger}</Badge>;
+    }
+  };
+
+  const getComponentCount = (contentJson: string | null) => {
+    try {
+      if (!contentJson) return 0;
+      const parsed = JSON.parse(contentJson);
+      return parsed.components?.length || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) { onPreviewVersion(null); setConfirmRevertId(null); } }}>
+      <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Version History
+          </DialogTitle>
+          <DialogDescription>
+            View past versions of this page. You can preview and revert to any previous version.
+          </DialogDescription>
+        </DialogHeader>
+
+        {previewingVersionId && previewVersion ? (
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b mb-2">
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => onPreviewVersion(null)} data-testid="button-back-versions">
+                  <ArrowLeft className="h-3 w-3 mr-1" />
+                  Back
+                </Button>
+                <span className="text-sm font-medium">Version {previewVersion.versionNumber}</span>
+                {getTriggerBadge(previewVersion.trigger)}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmRevertId(previewVersion.id)}
+                data-testid="button-revert-preview"
+              >
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Revert
+              </Button>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="space-y-2 p-1">
+                <div className="text-xs space-y-1">
+                  <p><span className="text-muted-foreground">Saved by:</span> {previewVersion.editorName}</p>
+                  <p><span className="text-muted-foreground">Date:</span> {formatDate(previewVersion.createdAt)}</p>
+                  <p><span className="text-muted-foreground">Summary:</span> {previewVersion.changeSummary || "No summary"}</p>
+                  <p><span className="text-muted-foreground">Components:</span> {getComponentCount(previewVersion.contentJson)}</p>
+                </div>
+                {previewVersion.pageSettingsJson && (
+                  <div className="border rounded-md p-2 mt-2">
+                    <p className="text-xs font-medium mb-1">Page Settings at this version:</p>
+                    {(() => {
+                      try {
+                        const s = JSON.parse(previewVersion.pageSettingsJson);
+                        return (
+                          <div className="text-xs space-y-0.5 text-muted-foreground">
+                            <p>Title: {s.pageTitle}</p>
+                            <p>Slug: /{s.pageSlug}</p>
+                            <p>Status: {s.isPublished ? "Published" : "Draft"}</p>
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : (
+          <ScrollArea className="flex-1 max-h-[50vh]">
+            {loadingVersions ? (
+              <div className="space-y-2 p-1">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+              </div>
+            ) : versions.length > 0 ? (
+              <div className="space-y-1 p-1">
+                {versions.map((v: any) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between gap-2 p-2 border rounded-md hover-elevate cursor-pointer"
+                    onClick={() => onPreviewVersion(v.id)}
+                    data-testid={`version-item-${v.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium">v{v.versionNumber}</span>
+                        {getTriggerBadge(v.trigger)}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{v.changeSummary || "No summary"}</p>
+                      <p className="text-[10px] text-muted-foreground">{v.editorName} - {formatDate(v.createdAt)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => { e.stopPropagation(); onPreviewVersion(v.id); }}
+                        data-testid={`button-preview-version-${v.id}`}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => { e.stopPropagation(); setConfirmRevertId(v.id); }}
+                        data-testid={`button-revert-version-${v.id}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <History className="h-10 w-10 text-muted-foreground/40 mb-2" />
+                <p className="text-sm text-muted-foreground">No version history yet</p>
+                <p className="text-xs text-muted-foreground">Versions are created automatically when you save or publish.</p>
+              </div>
+            )}
+          </ScrollArea>
+        )}
+
+        {confirmRevertId && (
+          <div className="border-t pt-3">
+            <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
+              <p className="text-sm font-medium mb-2">Revert to this version?</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                This will replace the current page content with the selected version. A snapshot of the current state will be saved before reverting.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmRevertId(null)}
+                  data-testid="button-cancel-revert"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { onRevert(confirmRevertId); setConfirmRevertId(null); }}
+                  disabled={isReverting}
+                  data-testid="button-confirm-revert"
+                >
+                  {isReverting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                  Revert
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -571,7 +1000,7 @@ function AddBetweenZone({ index, onAdd }: { index: number; onAdd: (type: BodyCom
   );
 }
 
-function CanvasComponentPreview({ component, devicePreview }: { component: BodyComponent; devicePreview: string }) {
+const CanvasComponentPreview = memo(function CanvasComponentPreview({ component, devicePreview }: { component: BodyComponent; devicePreview: string }) {
   const meta = COMPONENT_TYPE_META[component.type];
   const Icon = meta.icon;
 
@@ -732,7 +1161,7 @@ function CanvasComponentPreview({ component, devicePreview }: { component: BodyC
       {getPreviewContent()}
     </div>
   );
-}
+});
 
 function ComponentSettingsPanel({
   component,

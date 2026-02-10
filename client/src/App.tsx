@@ -81,6 +81,7 @@ import VoiceLogsPage from "@/pages/voice-logs";
 import IssueCapturesPage from "@/pages/issue-captures";
 import OfflineSyncPage from "@/pages/offline-sync";
 import PublicWebsite from "@/pages/public-website";
+import SharedPreviewPage from "@/pages/shared-preview";
 import VendorScoresPage from "@/pages/vendor-scores";
 import MaterialPriceIndexPage from "@/pages/material-price-index";
 import CrewMarketplacePage from "@/pages/crew-marketplace";
@@ -176,6 +177,7 @@ function Router() {
       <Route path="/register" component={RegisterPage} />
       <Route path="/impersonate" component={ImpersonatePage} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
+      <Route path="/shared-preview/:token" component={SharedPreviewPage} />
       <Route path="/portal/:projectId" component={ClientPortalPublic} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
