@@ -291,7 +291,23 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 
     console.log("Creating page with request body:", JSON.stringify(req.body));
 
-    const { pageType, pageTitle, pageSlug, navigationLabel, showInNavigation, ...rest } = req.body;
+    const { pageType, pageTitle, pageSlug, navigationLabel, showInNavigation, parentPageId, ...rest } = req.body;
+
+    // Validate parentPageId if provided
+    if (parentPageId) {
+      const parentPage = await db.query.organizationWebsitePages.findFirst({
+        where: and(
+          eq(organizationWebsitePages.id, parentPageId),
+          eq(organizationWebsitePages.organizationId, orgId!)
+        ),
+      });
+      if (!parentPage) {
+        return res.status(400).json({ error: "Parent page not found in your organization" });
+      }
+      if (parentPage.parentPageId) {
+        return res.status(400).json({ error: "Cannot nest pages more than one level deep" });
+      }
+    }
 
     const pageData = {
       ...rest,
@@ -300,6 +316,7 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
       pageSlug: pageSlug || "",
       navigationLabel: navigationLabel || pageTitle || "",
       showInNavigation: showInNavigation !== undefined ? showInNavigation : true,
+      parentPageId: parentPageId || null,
       websiteId: website.id,
       organizationId: orgId,
     };
@@ -364,6 +381,25 @@ router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) 
 
     if (!existing) {
       return res.status(404).json({ error: "Page not found" });
+    }
+
+    // Validate parentPageId if being updated
+    if (req.body.parentPageId !== undefined && req.body.parentPageId) {
+      if (req.body.parentPageId === id) {
+        return res.status(400).json({ error: "A page cannot be its own parent" });
+      }
+      const parentPage = await db.query.organizationWebsitePages.findFirst({
+        where: and(
+          eq(organizationWebsitePages.id, req.body.parentPageId),
+          eq(organizationWebsitePages.organizationId, existing.organizationId)
+        ),
+      });
+      if (!parentPage) {
+        return res.status(400).json({ error: "Parent page not found" });
+      }
+      if (parentPage.parentPageId) {
+        return res.status(400).json({ error: "Cannot nest pages more than one level deep" });
+      }
     }
 
     const [updated] = await db.update(organizationWebsitePages)

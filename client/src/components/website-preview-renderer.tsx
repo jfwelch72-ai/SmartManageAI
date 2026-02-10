@@ -5,6 +5,7 @@ import {
   MapPin, 
   Menu,
   ChevronRight,
+  ChevronDown,
   Star,
   CheckCircle,
   ArrowRight,
@@ -52,6 +53,7 @@ interface PreviewData {
     navigationOrder: number;
     metaDescription?: string | null;
     content?: string | null;
+    parentPageId?: string | null;
   }>;
   blogPosts: Array<{
     id: string;
@@ -111,6 +113,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   const [selectedProject, setSelectedProject] = useState<typeof projects[0] | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [contactFormSubmitted, setContactFormSubmitted] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [expandedMobileMenus, setExpandedMobileMenus] = useState<Set<string>>(new Set());
   
   const siteName = website.siteTitle || organization?.name || "Your Company";
   const tagline = website.siteTagline || "Building Excellence";
@@ -142,8 +146,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   };
 
   // Get nav items - combine default pages with custom pages from database
+  type NavItem = { id: string; label: string; slug: string; isCustom?: boolean; children?: NavItem[] };
   const getNavItems = () => {
-    const items: { id: string; label: string; slug: string; isCustom?: boolean }[] = [
+    const items: NavItem[] = [
       { id: "home", label: "Home", slug: "home" },
     ];
     
@@ -152,24 +157,67 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       .filter(p => p.pageSlug && !["home", "blog", "gallery", "contact"].includes(p.pageSlug.toLowerCase()))
       .sort((a, b) => (a.navigationOrder || 0) - (b.navigationOrder || 0));
     
-    // Add About and Services if they exist in pages, otherwise use defaults
-    const hasAbout = pages.some(p => p.pageSlug?.toLowerCase() === "about" || p.pageType?.toLowerCase() === "about");
-    const hasServices = pages.some(p => p.pageSlug?.toLowerCase() === "services" || p.pageType?.toLowerCase() === "services");
-    
     items.push({ id: "about", label: "About", slug: "about" });
     items.push({ id: "services", label: "Services", slug: "services" });
     
-    // Add other custom pages
+    // Build a map of parent page IDs to their child pages
+    const childPages = new Map<string, typeof customPages>();
+    const topLevelCustomPages: typeof customPages = [];
+    
     customPages.forEach(page => {
       if (!["about", "services"].includes(page.pageSlug?.toLowerCase() || "")) {
-        items.push({
-          id: page.id,
-          label: page.navigationLabel || page.pageTitle,
-          slug: `custom-${page.id}`,
-          isCustom: true
-        });
+        if (page.parentPageId) {
+          const existing = childPages.get(page.parentPageId) || [];
+          existing.push(page);
+          childPages.set(page.parentPageId, existing);
+        } else {
+          topLevelCustomPages.push(page);
+        }
       }
     });
+    
+    // Add top-level custom pages with their children
+    topLevelCustomPages.forEach(page => {
+      const navItem: NavItem = {
+        id: page.id,
+        label: page.navigationLabel || page.pageTitle,
+        slug: `custom-${page.id}`,
+        isCustom: true,
+      };
+      const children = childPages.get(page.id);
+      if (children && children.length > 0) {
+        navItem.children = children.map(child => ({
+          id: child.id,
+          label: child.navigationLabel || child.pageTitle,
+          slug: `custom-${child.id}`,
+          isCustom: true,
+        }));
+      }
+      items.push(navItem);
+    });
+    
+    // Also attach children to built-in pages (about, services) if any page references them
+    const builtInPageMap: Record<string, string> = {};
+    pages.forEach(p => {
+      if (p.pageSlug?.toLowerCase() === "about" || p.pageType?.toLowerCase() === "about") builtInPageMap[p.id] = "about";
+      if (p.pageSlug?.toLowerCase() === "services" || p.pageType?.toLowerCase() === "services") builtInPageMap[p.id] = "services";
+    });
+    for (const [pageId, builtInSlug] of Object.entries(builtInPageMap)) {
+      const children = childPages.get(pageId);
+      if (children && children.length > 0) {
+        const parentItem = items.find(i => i.slug === builtInSlug);
+        if (parentItem) {
+          parentItem.children = (parentItem.children || []).concat(
+            children.map(child => ({
+              id: child.id,
+              label: child.navigationLabel || child.pageTitle,
+              slug: `custom-${child.id}`,
+              isCustom: true,
+            }))
+          );
+        }
+      }
+    }
     
     if (website.galleryEnabled !== false && projects.length > 0) {
       items.push({ id: "gallery", label: "Gallery", slug: "gallery" });
@@ -237,18 +285,56 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                   style={{ backgroundColor: bgColor }}
                 >
                   {navItems.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => navigateTo(item.slug as PageView)}
-                      className="w-full text-left px-4 py-3 hover:opacity-80"
-                      style={{ 
-                        color: currentPage === item.slug ? primaryColor : textColor,
-                        backgroundColor: currentPage === item.slug ? `${primaryColor}10` : 'transparent'
-                      }}
-                      data-testid={`preview-nav-mobile-${item.slug}`}
-                    >
-                      {item.label}
-                    </button>
+                    <div key={item.id}>
+                      <div className="flex items-center">
+                        <button
+                          onClick={() => navigateTo(item.slug as PageView)}
+                          className="flex-1 text-left px-4 py-3 hover:opacity-80"
+                          style={{ 
+                            color: currentPage === item.slug ? primaryColor : textColor,
+                            backgroundColor: currentPage === item.slug ? `${primaryColor}10` : 'transparent'
+                          }}
+                          data-testid={`preview-nav-mobile-${item.slug}`}
+                        >
+                          {item.label}
+                        </button>
+                        {item.children && item.children.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setExpandedMobileMenus(prev => {
+                                const next = new Set(prev);
+                                if (next.has(item.id)) next.delete(item.id);
+                                else next.add(item.id);
+                                return next;
+                              });
+                            }}
+                            className="px-4 py-3"
+                            style={{ color: textColor }}
+                            data-testid={`preview-nav-mobile-expand-${item.slug}`}
+                          >
+                            <ChevronDown className={`h-4 w-4 transition-transform ${expandedMobileMenus.has(item.id) ? 'rotate-180' : ''}`} />
+                          </button>
+                        )}
+                      </div>
+                      {item.children && item.children.length > 0 && expandedMobileMenus.has(item.id) && (
+                        <div style={{ backgroundColor: `${primaryColor}05` }}>
+                          {item.children.map(child => (
+                            <button
+                              key={child.id}
+                              onClick={() => navigateTo(child.slug as PageView)}
+                              className="w-full text-left pl-8 pr-4 py-2.5 text-sm hover:opacity-80"
+                              style={{
+                                color: currentPage === child.slug ? primaryColor : textColor,
+                                backgroundColor: currentPage === child.slug ? `${primaryColor}10` : 'transparent'
+                              }}
+                              data-testid={`preview-nav-mobile-${child.slug}`}
+                            >
+                              {child.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -256,18 +342,61 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           ) : (
             <nav className="flex items-center gap-6">
               {navItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => navigateTo(item.slug as PageView)}
-                  className="font-medium hover:opacity-80 cursor-pointer transition-opacity"
-                  style={{ 
-                    color: currentPage === item.slug ? primaryColor : textColor,
-                    borderBottom: currentPage === item.slug ? `2px solid ${primaryColor}` : '2px solid transparent'
-                  }}
-                  data-testid={`preview-nav-${item.slug}`}
-                >
-                  {item.label}
-                </button>
+                item.children && item.children.length > 0 ? (
+                  <div 
+                    key={item.id} 
+                    className="relative"
+                    onMouseEnter={() => setOpenDropdown(item.id)}
+                    onMouseLeave={() => setOpenDropdown(null)}
+                  >
+                    <button
+                      className="font-medium hover:opacity-80 cursor-pointer transition-opacity flex items-center gap-1"
+                      style={{
+                        color: currentPage === item.slug || item.children.some(c => currentPage === c.slug) ? primaryColor : textColor,
+                        borderBottom: currentPage === item.slug || item.children.some(c => currentPage === c.slug) ? `2px solid ${primaryColor}` : '2px solid transparent'
+                      }}
+                      onClick={() => navigateTo(item.slug as PageView)}
+                      data-testid={`preview-nav-${item.slug}`}
+                    >
+                      {item.label}
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                    {openDropdown === item.id && (
+                      <div
+                        className="absolute top-full left-0 mt-1 min-w-[180px] rounded-md shadow-lg py-1 z-50"
+                        style={{ backgroundColor: bgColor, border: `1px solid ${primaryColor}20` }}
+                      >
+                        {item.children.map(child => (
+                          <button
+                            key={child.id}
+                            onClick={() => { navigateTo(child.slug as PageView); setOpenDropdown(null); }}
+                            className="w-full text-left px-4 py-2 text-sm hover:opacity-80 transition-opacity"
+                            style={{
+                              color: currentPage === child.slug ? primaryColor : textColor,
+                              backgroundColor: currentPage === child.slug ? `${primaryColor}10` : 'transparent'
+                            }}
+                            data-testid={`preview-nav-${child.slug}`}
+                          >
+                            {child.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    key={item.id}
+                    onClick={() => navigateTo(item.slug as PageView)}
+                    className="font-medium hover:opacity-80 cursor-pointer transition-opacity"
+                    style={{ 
+                      color: currentPage === item.slug ? primaryColor : textColor,
+                      borderBottom: currentPage === item.slug ? `2px solid ${primaryColor}` : '2px solid transparent'
+                    }}
+                    data-testid={`preview-nav-${item.slug}`}
+                  >
+                    {item.label}
+                  </button>
+                )
               ))}
             </nav>
           )}

@@ -100,6 +100,7 @@ interface WebsitePage {
   status: string;
   publishedAt: string | null;
   aiGenerated: boolean;
+  parentPageId: string | null;
 }
 
 interface BlogPost {
@@ -260,7 +261,8 @@ export default function WebsiteBuilderPage() {
     pageTitle: "",
     pageSlug: "",
     navigationLabel: "",
-    showInNavigation: true
+    showInNavigation: true,
+    parentPageId: "" as string
   });
 
   const [blogForm, setBlogForm] = useState({
@@ -393,7 +395,7 @@ export default function WebsiteBuilderPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
       toast({ title: "Page created successfully" });
       setShowCreatePageDialog(false);
-      setPageForm({ pageType: "CUSTOM", pageTitle: "", pageSlug: "", navigationLabel: "", showInNavigation: true });
+      setPageForm({ pageType: "CUSTOM", pageTitle: "", pageSlug: "", navigationLabel: "", showInNavigation: true, parentPageId: "" });
     },
     onError: (error: any) => {
       toast({ title: "Error creating page", description: error.message, variant: "destructive" });
@@ -1779,6 +1781,28 @@ export default function WebsiteBuilderPage() {
                 placeholder="About"
                 data-testid="input-nav-label"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Parent Menu</Label>
+              <Select
+                value={pageForm.parentPageId || "_none"}
+                onValueChange={(v) => setPageForm(prev => ({ ...prev, parentPageId: v === "_none" ? "" : v }))}
+              >
+                <SelectTrigger data-testid="select-parent-page">
+                  <SelectValue placeholder="None (Top Level)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">None (Top Level)</SelectItem>
+                  {pages
+                    .filter(p => !p.parentPageId)
+                    .sort((a, b) => (a.navigationOrder || 0) - (b.navigationOrder || 0))
+                    .map(p => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.navigationLabel || p.pageTitle}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex items-center justify-between">
               <Label>Show in Navigation</Label>

@@ -4951,6 +4951,8 @@ export const organizationWebsitePages = pgTable("organization_website_pages", {
   isPublished: boolean("is_published").default(false),
   showInNavigation: boolean("show_in_navigation").default(true),
   navigationOrder: integer("navigation_order").default(0),
+  navigationLabel: text("navigation_label"),
+  parentPageId: varchar("parent_page_id"),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
