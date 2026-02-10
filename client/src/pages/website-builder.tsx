@@ -7,6 +7,10 @@ import WebsiteComponentsTab, {
   getDefaultHeaderConfig,
   getDefaultFooterConfig,
 } from "@/components/website-components-tab";
+import WebsiteBodyComponents, {
+  type BodyComponentsConfig,
+  getDefaultBodyConfig,
+} from "@/components/website-body-components";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -113,6 +117,7 @@ interface Website {
   footerPadding: number | null;
   headerComponentsConfig: HeaderComponentsConfig | null;
   footerComponentsConfig: FooterComponentsConfig | null;
+  bodyComponentsConfig: BodyComponentsConfig | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -358,6 +363,7 @@ export default function WebsiteBuilderPage() {
 
   const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
   const [footerComponentsConfig, setFooterComponentsConfig] = useState<FooterComponentsConfig>(getDefaultFooterConfig());
+  const [bodyComponentsConfig, setBodyComponentsConfig] = useState<BodyComponentsConfig>(getDefaultBodyConfig());
 
   const [pageForm, setPageForm] = useState({
     pageType: "CUSTOM",
@@ -699,6 +705,7 @@ export default function WebsiteBuilderPage() {
       ...websiteForm,
       headerComponentsConfig,
       footerComponentsConfig,
+      bodyComponentsConfig,
     });
   };
 
@@ -821,6 +828,9 @@ export default function WebsiteBuilderPage() {
       }
       if (websiteRef.footerComponentsConfig) {
         setFooterComponentsConfig(websiteRef.footerComponentsConfig as FooterComponentsConfig);
+      }
+      if (websiteRef.bodyComponentsConfig) {
+        setBodyComponentsConfig(websiteRef.bodyComponentsConfig as BodyComponentsConfig);
       }
     }
   }, [websiteRef]);
@@ -1669,6 +1679,10 @@ export default function WebsiteBuilderPage() {
             onFooterConfigChange={setFooterComponentsConfig}
             onSave={handleSaveWebsite}
             isSaving={saveWebsiteMutation.isPending}
+          />
+          <WebsiteBodyComponents
+            config={bodyComponentsConfig}
+            onChange={setBodyComponentsConfig}
           />
         </TabsContent>
 
