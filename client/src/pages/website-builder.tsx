@@ -41,6 +41,7 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  RotateCcw,
   Search,
   BookOpen,
   FolderOpen,
@@ -1193,18 +1194,51 @@ export default function WebsiteBuilderPage() {
               <h2 className="text-lg font-semibold">Site Layout</h2>
               <p className="text-sm text-muted-foreground">Configure site-wide layout rules, header behavior, and inner page defaults</p>
             </div>
-            <Button
-              onClick={handleSaveWebsite}
-              disabled={saveWebsiteMutation.isPending}
-              data-testid="button-save-layout"
-            >
-              {saveWebsiteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
-              )}
-              Save Layout
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setWebsiteForm(prev => ({
+                    ...prev,
+                    contentWidth: "full-width",
+                    maxWidth: 1200,
+                    sectionPadding: 24,
+                    breakpointDesktop: 1280,
+                    breakpointTablet: 768,
+                    breakpointMobile: 480,
+                    headerType: "static",
+                    headerHeight: 80,
+                    logoPosition: "left",
+                    navigationLayout: "horizontal",
+                    showOnScroll: true,
+                    pageLayout: "boxed",
+                    sidebarWidth: 300,
+                    pagePadding: 32,
+                    showBreadcrumb: true,
+                    footerVisibility: true,
+                    footerColumns: 3,
+                    footerWidth: "boxed",
+                    footerPadding: 40,
+                  }));
+                }}
+                data-testid="button-reset-layout"
+              >
+                <RotateCcw className="h-4 w-4 mr-1" />
+                Reset to Defaults
+              </Button>
+              <Button
+                onClick={handleSaveWebsite}
+                disabled={saveWebsiteMutation.isPending}
+                data-testid="button-save-layout"
+              >
+                {saveWebsiteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                Save Layout
+              </Button>
+            </div>
           </div>
 
           <Card>
