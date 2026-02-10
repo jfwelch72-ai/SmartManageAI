@@ -252,7 +252,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       s.paddingRight = resolve(styles.spacing.paddingRight);
     }
     if (styles.background) {
-      if ((styles.background.type === 'color' || styles.background.type === 'solid') && styles.background.color) {
+      const bgType = styles.background.type as string;
+      if ((bgType === 'color' || bgType === 'solid') && styles.background.color) {
         s.backgroundColor = styles.background.color;
       } else if (styles.background.type === 'gradient') {
         const dir = styles.background.gradientDirection?.replace('to-', 'to ').replace('br', 'bottom right').replace('bl', 'bottom left').replace('tr', 'top right').replace('tl', 'top left').replace('b', 'bottom').replace('t', 'top').replace('r', 'right').replace('l', 'left') || 'to bottom';
@@ -1107,6 +1108,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
   // HOME PAGE
   const renderHomePage = () => {
+    const homePage = pages.find(p => (p.pageType || '').toUpperCase() === 'HOME');
+    if (homePage?.contentJson) {
+      try {
+        const parsedConfig = JSON.parse(homePage.contentJson) as BodyComponentsConfig;
+        if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
+          return renderBodyComponents(parsedConfig);
+        }
+      } catch {}
+    }
     if (data.bodyConfig && data.bodyConfig.components && data.bodyConfig.components.filter(c => c.enabled).length > 0) {
       return renderBodyComponents(data.bodyConfig);
     }
