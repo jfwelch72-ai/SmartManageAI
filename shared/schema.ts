@@ -4902,14 +4902,26 @@ export const organizationWebsites = pgTable("organization_websites", {
   contactPhone: text("contact_phone"),
   contactAddress: text("contact_address"),
   
-  // Layout Settings
-  headerStyle: text("header_style").default("standard"),
-  footerStyle: text("footer_style").default("standard"),
-  navPosition: text("nav_position").default("top"),
-  pageWidth: text("page_width").default("contained"),
-  showHero: boolean("show_hero").default(true),
-  heroStyle: text("hero_style").default("full-width"),
-  sidebarPosition: text("sidebar_position").default("none"),
+  // Global Layout Settings
+  contentWidth: text("content_width").default("full-width"),
+  maxWidth: integer("max_width").default(1200),
+  sectionPadding: integer("section_padding").default(24),
+  breakpointDesktop: integer("breakpoint_desktop").default(1280),
+  breakpointTablet: integer("breakpoint_tablet").default(768),
+  breakpointMobile: integer("breakpoint_mobile").default(480),
+  
+  // Header Layout Settings
+  headerType: text("header_type").default("static"),
+  headerHeight: integer("header_height").default(80),
+  logoPosition: text("logo_position").default("left"),
+  navigationLayout: text("navigation_layout").default("horizontal"),
+  showOnScroll: boolean("show_on_scroll").default(true),
+  
+  // Inner Page Layout Settings
+  pageLayout: text("page_layout").default("boxed"),
+  sidebarWidth: integer("sidebar_width").default(300),
+  pagePadding: integer("page_padding").default(32),
+  showBreadcrumb: boolean("show_breadcrumb").default(true),
   
   // Features Toggle
   blogEnabled: boolean("blog_enabled").default(true),
