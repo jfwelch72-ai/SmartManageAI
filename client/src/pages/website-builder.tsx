@@ -85,6 +85,13 @@ interface Website {
   showTestimonials: boolean;
   contactEmail: string | null;
   contactPhone: string | null;
+  headerStyle: string | null;
+  footerStyle: string | null;
+  navPosition: string | null;
+  pageWidth: string | null;
+  showHero: boolean | null;
+  heroStyle: string | null;
+  sidebarPosition: string | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -306,7 +313,14 @@ export default function WebsiteBuilderPage() {
     contactPhone: "",
     showBlog: true,
     showProjects: true,
-    showTestimonials: true
+    showTestimonials: true,
+    headerStyle: "standard",
+    footerStyle: "standard",
+    navPosition: "top",
+    pageWidth: "contained",
+    showHero: true,
+    heroStyle: "full-width",
+    sidebarPosition: "none",
   });
 
   const [pageForm, setPageForm] = useState({
@@ -742,6 +756,13 @@ export default function WebsiteBuilderPage() {
         metaDescription: websiteRef.metaDescription || prev.metaDescription,
         contactEmail: websiteRef.contactEmail || prev.contactEmail,
         contactPhone: websiteRef.contactPhone || prev.contactPhone,
+        headerStyle: websiteRef.headerStyle || prev.headerStyle,
+        footerStyle: websiteRef.footerStyle || prev.footerStyle,
+        navPosition: websiteRef.navPosition || prev.navPosition,
+        pageWidth: websiteRef.pageWidth || prev.pageWidth,
+        showHero: websiteRef.showHero ?? prev.showHero,
+        heroStyle: websiteRef.heroStyle || prev.heroStyle,
+        sidebarPosition: websiteRef.sidebarPosition || prev.sidebarPosition,
       }));
     }
   }, [websiteRef]);
@@ -828,10 +849,14 @@ export default function WebsiteBuilderPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-8 w-full max-w-5xl" data-testid="tabs-website-sections">
+        <TabsList className="grid grid-cols-9 w-full max-w-5xl" data-testid="tabs-website-sections">
           <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">Setup</span>
+          </TabsTrigger>
+          <TabsTrigger value="layout" className="flex items-center gap-1" data-testid="tab-layout">
+            <LayoutTemplate className="h-4 w-4" />
+            <span className="hidden sm:inline">Layout</span>
           </TabsTrigger>
           <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
             <Layout className="h-4 w-4" />
@@ -1122,6 +1147,195 @@ export default function WebsiteBuilderPage() {
                   Save Settings
                 </Button>
               </CardFooter>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="layout" className="space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Site Layout</h2>
+              <p className="text-sm text-muted-foreground">Configure the overall structure and layout of your website</p>
+            </div>
+            <Button
+              onClick={handleSaveWebsite}
+              disabled={saveWebsiteMutation.isPending}
+              data-testid="button-save-layout"
+            >
+              {saveWebsiteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-1" />
+              )}
+              Save Layout
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Header & Navigation</CardTitle>
+                <CardDescription>Configure how your header and navigation appear</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label data-testid="label-header-style">Header Style</Label>
+                  <Select
+                    value={websiteForm.headerStyle}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, headerStyle: val }))}
+                  >
+                    <SelectTrigger data-testid="select-header-style">
+                      <SelectValue placeholder="Select header style" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="centered">Centered Logo</SelectItem>
+                      <SelectItem value="minimal">Minimal</SelectItem>
+                      <SelectItem value="transparent">Transparent Overlay</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {websiteForm.headerStyle === "standard" && "Logo on the left, navigation on the right"}
+                    {websiteForm.headerStyle === "centered" && "Logo centered above navigation links"}
+                    {websiteForm.headerStyle === "minimal" && "Compact header with hamburger menu"}
+                    {websiteForm.headerStyle === "transparent" && "Header overlays the hero section with transparent background"}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label data-testid="label-nav-position">Navigation Position</Label>
+                  <Select
+                    value={websiteForm.navPosition}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, navPosition: val }))}
+                  >
+                    <SelectTrigger data-testid="select-nav-position">
+                      <SelectValue placeholder="Select nav position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="top">Top (Horizontal)</SelectItem>
+                      <SelectItem value="side-left">Side Left</SelectItem>
+                      <SelectItem value="side-right">Side Right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Page Structure</CardTitle>
+                <CardDescription>Set the overall page width and content area</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label data-testid="label-page-width">Page Width</Label>
+                  <Select
+                    value={websiteForm.pageWidth}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, pageWidth: val }))}
+                  >
+                    <SelectTrigger data-testid="select-page-width">
+                      <SelectValue placeholder="Select page width" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contained">Contained (max-width 1280px)</SelectItem>
+                      <SelectItem value="wide">Wide (max-width 1536px)</SelectItem>
+                      <SelectItem value="full">Full Width</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label data-testid="label-sidebar-position">Content Sidebar</Label>
+                  <Select
+                    value={websiteForm.sidebarPosition}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, sidebarPosition: val }))}
+                  >
+                    <SelectTrigger data-testid="select-sidebar-position">
+                      <SelectValue placeholder="Select sidebar position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Sidebar</SelectItem>
+                      <SelectItem value="left">Left Sidebar</SelectItem>
+                      <SelectItem value="right">Right Sidebar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Hero Section</CardTitle>
+                <CardDescription>Configure the hero area displayed on the homepage</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="show-hero" data-testid="label-show-hero">Show Hero Section</Label>
+                  <Switch
+                    id="show-hero"
+                    checked={websiteForm.showHero}
+                    onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showHero: checked }))}
+                    data-testid="switch-show-hero"
+                  />
+                </div>
+                {websiteForm.showHero && (
+                  <div className="space-y-2">
+                    <Label data-testid="label-hero-style">Hero Style</Label>
+                    <Select
+                      value={websiteForm.heroStyle}
+                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, heroStyle: val }))}
+                    >
+                      <SelectTrigger data-testid="select-hero-style">
+                        <SelectValue placeholder="Select hero style" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full-width">Full Width Banner</SelectItem>
+                        <SelectItem value="split">Split (Text + Image)</SelectItem>
+                        <SelectItem value="centered">Centered Content</SelectItem>
+                        <SelectItem value="video-bg">Video Background</SelectItem>
+                        <SelectItem value="slideshow">Image Slideshow</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {websiteForm.heroStyle === "full-width" && "A full-width banner with background image and overlay text"}
+                      {websiteForm.heroStyle === "split" && "Content on one side with an image on the other"}
+                      {websiteForm.heroStyle === "centered" && "Centered headline and call-to-action over a background"}
+                      {websiteForm.heroStyle === "video-bg" && "Background video with overlay content"}
+                      {websiteForm.heroStyle === "slideshow" && "Rotating images with content overlay"}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Footer</CardTitle>
+                <CardDescription>Choose how the footer is displayed</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label data-testid="label-footer-style">Footer Style</Label>
+                  <Select
+                    value={websiteForm.footerStyle}
+                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerStyle: val }))}
+                  >
+                    <SelectTrigger data-testid="select-footer-style">
+                      <SelectValue placeholder="Select footer style" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="minimal">Minimal</SelectItem>
+                      <SelectItem value="columns">Multi-Column</SelectItem>
+                      <SelectItem value="centered">Centered</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {websiteForm.footerStyle === "standard" && "Logo, links, and contact info in a structured layout"}
+                    {websiteForm.footerStyle === "minimal" && "Simple copyright and essential links only"}
+                    {websiteForm.footerStyle === "columns" && "Multiple columns for links, about, and contact sections"}
+                    {websiteForm.footerStyle === "centered" && "Centered layout with stacked content"}
+                  </p>
+                </div>
+              </CardContent>
             </Card>
           </div>
         </TabsContent>

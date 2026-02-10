@@ -4902,6 +4902,15 @@ export const organizationWebsites = pgTable("organization_websites", {
   contactPhone: text("contact_phone"),
   contactAddress: text("contact_address"),
   
+  // Layout Settings
+  headerStyle: text("header_style").default("standard"),
+  footerStyle: text("footer_style").default("standard"),
+  navPosition: text("nav_position").default("top"),
+  pageWidth: text("page_width").default("contained"),
+  showHero: boolean("show_hero").default(true),
+  heroStyle: text("hero_style").default("full-width"),
+  sidebarPosition: text("sidebar_position").default("none"),
+  
   // Features Toggle
   blogEnabled: boolean("blog_enabled").default(true),
   galleryEnabled: boolean("gallery_enabled").default(true),
