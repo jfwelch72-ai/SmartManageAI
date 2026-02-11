@@ -289,45 +289,40 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
       orderBy: [asc(organizationWebsitePages.navigationOrder)],
     });
 
-    if (orgId && pages.length === 0) {
+    if (orgId) {
       const website = await db.query.organizationWebsites.findFirst({
         where: eq(organizationWebsites.organizationId, orgId),
       });
       if (website) {
-        const [homePage] = await db.insert(organizationWebsitePages)
-          .values({
-            websiteId: website.id,
-            organizationId: orgId,
-            pageType: "HOME",
-            pageSlug: "home",
-            pageTitle: "Homepage",
-            navigationLabel: "Home",
-            showInNavigation: true,
-            navigationOrder: 0,
-            isPublished: true,
-          })
-          .returning();
-        pages = [homePage];
-      }
-    } else if (orgId && !pages.some(p => p.pageType === "HOME")) {
-      const website = await db.query.organizationWebsites.findFirst({
-        where: eq(organizationWebsites.organizationId, orgId),
-      });
-      if (website) {
-        const [homePage] = await db.insert(organizationWebsitePages)
-          .values({
-            websiteId: website.id,
-            organizationId: orgId,
-            pageType: "HOME",
-            pageSlug: "home",
-            pageTitle: "Homepage",
-            navigationLabel: "Home",
-            showInNavigation: true,
-            navigationOrder: 0,
-            isPublished: true,
-          })
-          .returning();
-        pages = [homePage, ...pages];
+        const defaultPages = [
+          { pageType: "HOME" as const, pageSlug: "home", pageTitle: "Homepage", navigationLabel: "Home", navigationOrder: 0 },
+          { pageType: "SERVICES" as const, pageSlug: "services", pageTitle: "Services", navigationLabel: "Services", navigationOrder: 1 },
+          { pageType: "ABOUT" as const, pageSlug: "about", pageTitle: "About", navigationLabel: "About", navigationOrder: 2 },
+          { pageType: "CONTACT" as const, pageSlug: "contact", pageTitle: "Contact", navigationLabel: "Contact", navigationOrder: 3 },
+        ];
+        let created = false;
+        for (const def of defaultPages) {
+          if (!pages.some(p => p.pageType === def.pageType)) {
+            const [newPage] = await db.insert(organizationWebsitePages)
+              .values({
+                websiteId: website.id,
+                organizationId: orgId,
+                pageType: def.pageType,
+                pageSlug: def.pageSlug,
+                pageTitle: def.pageTitle,
+                navigationLabel: def.navigationLabel,
+                showInNavigation: true,
+                navigationOrder: def.navigationOrder,
+                isPublished: true,
+              })
+              .returning();
+            pages.push(newPage);
+            created = true;
+          }
+        }
+        if (created) {
+          pages.sort((a, b) => (a.navigationOrder ?? 0) - (b.navigationOrder ?? 0));
+        }
       }
     }
 
@@ -519,8 +514,9 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
       return res.status(404).json({ error: "Page not found" });
     }
 
-    if (existing.pageType === "HOME") {
-      return res.status(400).json({ error: "Cannot delete the homepage. Set another page as the front page first." });
+    const corePageTypes = ["HOME", "SERVICES", "ABOUT", "CONTACT"];
+    if (corePageTypes.includes(existing.pageType)) {
+      return res.status(400).json({ error: "Cannot delete core navigation pages (Home, Services, About, Contact)." });
     }
 
     await db.delete(organizationWebsitePages)

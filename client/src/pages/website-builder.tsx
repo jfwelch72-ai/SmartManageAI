@@ -72,7 +72,10 @@ import {
   Loader2,
   Smartphone,
   LayoutTemplate,
-  Menu
+  Menu,
+  Briefcase,
+  Info,
+  Phone
 } from "lucide-react";
 import { format } from "date-fns";
 import { MediaLibraryTab } from "@/components/media-library";
@@ -1684,12 +1687,18 @@ export default function WebsiteBuilderPage() {
             <div className="grid gap-4">
               {pages.map((page) => {
                 const isHomePage = page.pageType === "HOME";
+                const isCoreNavPage = ["HOME", "SERVICES", "ABOUT", "CONTACT"].includes(page.pageType);
+                const pageIcon = page.pageType === "HOME" ? <Home className="h-5 w-5" />
+                  : page.pageType === "SERVICES" ? <Briefcase className="h-5 w-5" />
+                  : page.pageType === "ABOUT" ? <Info className="h-5 w-5" />
+                  : page.pageType === "CONTACT" ? <Phone className="h-5 w-5" />
+                  : <FileText className="h-5 w-5" />;
                 return (
                 <Card key={page.id} className="hover-elevate" data-testid={`card-page-${page.id}`}>
                   <CardContent className="p-4 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="p-2 rounded bg-muted flex-shrink-0">
-                        {isHomePage ? <Home className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+                        {pageIcon}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1726,7 +1735,7 @@ export default function WebsiteBuilderPage() {
                       <Button variant="ghost" size="icon" onClick={() => handleEditPage(page)} data-testid={`button-edit-page-${page.id}`}>
                         <Edit />
                       </Button>
-                      {!isHomePage && (
+                      {!isCoreNavPage && (
                         <Button
                           variant="ghost"
                           size="icon"
