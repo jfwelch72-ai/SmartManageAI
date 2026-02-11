@@ -1025,10 +1025,6 @@ export default function WebsiteBuilderPage() {
             <LayoutTemplate className="h-4 w-4" />
             <span className="hidden sm:inline">Layout</span>
           </TabsTrigger>
-          <TabsTrigger value="components" className="flex items-center gap-1" data-testid="tab-components">
-            <Settings className="h-4 w-4" />
-            <span className="hidden sm:inline">Components</span>
-          </TabsTrigger>
           <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
             <Layout className="h-4 w-4" />
             <span className="hidden sm:inline">Pages</span>
@@ -1835,9 +1831,6 @@ export default function WebsiteBuilderPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="components" className="space-y-6">
           <WebsiteComponentsTab
             headerConfig={headerComponentsConfig}
             footerConfig={footerComponentsConfig}
