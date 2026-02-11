@@ -102,6 +102,12 @@ interface PreviewData {
     publishedAt?: string | null;
     content?: string | null;
     content_html?: string | null;
+    category?: string | null;
+    tags?: string[] | null;
+    featured_post?: boolean | null;
+    featuredPost?: boolean | null;
+    view_count?: number | null;
+    viewCount?: number | null;
   }>;
   projects: Array<{
     id: string;
@@ -1292,6 +1298,124 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                   </div>
                 )}
               </div>
+            </section>
+          );
+        }
+        case 'blog_section': {
+          const bsCfg = comp.config as any;
+          const bsTitle = bsCfg.title || 'Latest From Our Blog';
+          const source = bsCfg.source || 'latest';
+          const categoryFilter = (bsCfg.categoryFilter || '').toLowerCase();
+          const tagFilter = (bsCfg.tagFilter || '').toLowerCase();
+          const sortOrder = bsCfg.sortOrder || 'latest';
+          const layoutStyle = bsCfg.layoutStyle || 'grid';
+          const desktopItemCount = bsCfg.desktopItems || 3;
+          const tabletItemCount = bsCfg.tabletItems || 2;
+          const mobileItemCount = bsCfg.mobileItems || 1;
+          const itemCount = deviceType === 'mobile' ? mobileItemCount : deviceType === 'tablet' ? tabletItemCount : desktopItemCount;
+          const showCoverImage = bsCfg.showCoverImage !== false;
+          const showExcerpt = bsCfg.showExcerpt !== false;
+          const showAuthor = bsCfg.showAuthor !== false;
+          const showDate = bsCfg.showDate !== false;
+          const showCategory = bsCfg.showCategory !== false;
+          const readMoreText = bsCfg.readMoreText || 'Read More';
+
+          let filteredPosts = [...blogPosts];
+          if (source === 'featured') {
+            filteredPosts = filteredPosts.filter(p => p.featured_post || p.featuredPost);
+          } else if (source === 'popular') {
+            filteredPosts = filteredPosts.filter(p => ((p.view_count || p.viewCount || 0) as number) > 0);
+          } else if (source === 'category' && categoryFilter) {
+            filteredPosts = filteredPosts.filter(p => (p.category || '').toLowerCase().includes(categoryFilter));
+          } else if (source === 'tag' && tagFilter) {
+            filteredPosts = filteredPosts.filter(p => (p.tags || []).some(t => t.toLowerCase().includes(tagFilter)));
+          }
+
+          if (sortOrder === 'popular') {
+            filteredPosts.sort((a, b) => ((b.view_count || b.viewCount || 0) as number) - ((a.view_count || a.viewCount || 0) as number));
+          } else if (sortOrder === 'featured') {
+            filteredPosts.sort((a, b) => ((b.featured_post || b.featuredPost) ? 1 : 0) - ((a.featured_post || a.featuredPost) ? 1 : 0));
+          } else {
+            filteredPosts.sort((a, b) => {
+              const da = new Date(a.published_at || a.publishedAt || 0).getTime();
+              const db = new Date(b.published_at || b.publishedAt || 0).getTime();
+              return db - da;
+            });
+          }
+
+          const displayPosts = filteredPosts.slice(0, itemCount);
+
+          const renderPostCard = (post: typeof blogPosts[0], idx: number) => {
+            const coverUrl = post.coverImageUrl || post.cover_image_url;
+            const author = post.authorName || post.author_name;
+            const pubDate = post.published_at || post.publishedAt;
+            const cat = post.category;
+            return (
+              <div key={post.id || idx} data-testid={`blog-card-${idx}`} style={{ backgroundColor: '#fff', borderRadius: '0.5rem', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                {showCoverImage && coverUrl && (
+                  <div style={{ height: '180px', overflow: 'hidden' }}>
+                    <img src={coverUrl} alt={post.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                )}
+                {showCoverImage && !coverUrl && (
+                  <div style={{ height: '180px', backgroundColor: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>
+                    No Image
+                  </div>
+                )}
+                <div style={{ padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  {showCategory && cat && (
+                    <span style={{ display: 'inline-block', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: primaryColor, marginBottom: '0.5rem', letterSpacing: '0.05em' }}>{cat}</span>
+                  )}
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem', lineHeight: 1.3, color: '#111' }}>{post.title}</h3>
+                  {showExcerpt && post.excerpt && (
+                    <p style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.75rem', flex: 1, lineHeight: 1.5 }}>{post.excerpt.substring(0, 120)}{post.excerpt.length > 120 ? '...' : ''}</p>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginTop: 'auto', borderTop: '1px solid #f3f4f6', paddingTop: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+                      {showAuthor && author && <span>{author}</span>}
+                      {showAuthor && author && showDate && pubDate && <span>·</span>}
+                      {showDate && pubDate && <span>{new Date(pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: primaryColor, fontWeight: 500, cursor: 'pointer' }}>{readMoreText} →</span>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          if (displayPosts.length === 0) {
+            return (
+              <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={{ ...sectionStyle, textAlign: 'center' as const }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem' }}>{bsTitle}</h2>
+                <p style={{ color: '#9ca3af' }}>No blog posts found matching your criteria.</p>
+              </section>
+            );
+          }
+
+          return (
+            <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={sectionStyle}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: 'center' as const }}>{bsTitle}</h2>
+              {layoutStyle === 'carousel' ? (
+                <div style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '0.5rem', scrollSnapType: 'x mandatory' }}>
+                  {displayPosts.map((post, idx) => (
+                    <div key={post.id || idx} style={{ minWidth: `${Math.max(280, Math.floor(100 / itemCount) - 2)}%`, scrollSnapAlign: 'start', flex: '0 0 auto', maxWidth: '320px' }}>
+                      {renderPostCard(post, idx)}
+                    </div>
+                  ))}
+                </div>
+              ) : layoutStyle === 'masonry' ? (
+                <div style={{ columns: itemCount, columnGap: '1rem' }}>
+                  {displayPosts.map((post, idx) => (
+                    <div key={post.id || idx} style={{ breakInside: 'avoid', marginBottom: '1rem' }}>
+                      {renderPostCard(post, idx)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${itemCount}, 1fr)`, gap: '1.5rem' }}>
+                  {displayPosts.map((post, idx) => renderPostCard(post, idx))}
+                </div>
+              )}
             </section>
           );
         }

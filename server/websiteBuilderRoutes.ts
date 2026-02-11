@@ -2297,11 +2297,12 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
              author_id, author_name, status, category, tags, 
              meta_title, meta_description, keywords, published_at, 
              view_count, cover_image_url, content_json, content_html, 
+             featured_post,
              created_at, updated_at
       FROM website_blog_posts 
       WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
       ORDER BY published_at DESC NULLS LAST
-      LIMIT 6
+      LIMIT 50
     `);
     const blogPosts = blogPostsResult.rows;
 

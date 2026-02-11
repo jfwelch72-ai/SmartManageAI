@@ -64,6 +64,7 @@ import {
   CheckCircle,
   BarChart,
   Hammer,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -84,7 +85,8 @@ export type BodyComponentType =
   | "equipment"
   | "safety"
   | "team"
-  | "logo_showcase";
+  | "logo_showcase"
+  | "blog_section";
 
 export interface TypographyStyles {
   fontFamily: string;
@@ -342,6 +344,24 @@ interface LogoShowcaseConfig {
   slideSpeed: number;
 }
 
+interface BlogSectionConfig {
+  title: string;
+  source: "latest" | "category" | "tag" | "featured" | "popular";
+  categoryFilter: string;
+  tagFilter: string;
+  sortOrder: "latest" | "popular" | "featured";
+  layoutStyle: "grid" | "masonry" | "carousel";
+  desktopItems: number;
+  tabletItems: number;
+  mobileItems: number;
+  showExcerpt: boolean;
+  showAuthor: boolean;
+  showDate: boolean;
+  showCategory: boolean;
+  showCoverImage: boolean;
+  readMoreText: string;
+}
+
 type ComponentConfig =
   | { type: "banner"; config: BannerConfig }
   | { type: "hero"; config: HeroConfig }
@@ -359,7 +379,8 @@ type ComponentConfig =
   | { type: "equipment"; config: EquipmentConfig }
   | { type: "safety"; config: SafetyConfig }
   | { type: "team"; config: TeamConfig }
-  | { type: "logo_showcase"; config: LogoShowcaseConfig };
+  | { type: "logo_showcase"; config: LogoShowcaseConfig }
+  | { type: "blog_section"; config: BlogSectionConfig };
 
 export type BodyComponent = {
   id: string;
@@ -432,6 +453,7 @@ export const COMPONENT_TYPE_META: Record<BodyComponentType, { label: string; ico
   safety: { label: "Safety & Compliance", icon: Shield, description: "Safety policies and compliance" },
   team: { label: "Team Members", icon: Users, description: "Key personnel and team" },
   logo_showcase: { label: "Logo Showcase", icon: Layers, description: "Client or partner logos" },
+  blog_section: { label: "Blog Section", icon: BookOpen, description: "Display blog posts with filtering and layout options" },
 };
 
 export function createDefaultComponent(type: BodyComponentType, order: number): BodyComponent {
@@ -482,6 +504,8 @@ export function createDefaultComponent(type: BodyComponentType, order: number): 
       return { ...base, type, config: { title: "Our Team", columns: 3, items: [{ id: "tm1", photoUrl: "", name: "John Smith", role: "Project Manager", bio: "20 years of construction management experience." }] } };
     case "logo_showcase":
       return { ...base, type, config: { title: "Our Partners", items: [{ id: "l1", imageUrl: "", altText: "Partner 1" }, { id: "l2", imageUrl: "", altText: "Partner 2" }], desktopColumns: 5, tabletColumns: 3, mobileColumns: 2, continuousSlide: false, slideSpeed: 30 } };
+    case "blog_section":
+      return { ...base, type, config: { title: "Latest From Our Blog", source: "latest", categoryFilter: "", tagFilter: "", sortOrder: "latest", layoutStyle: "grid", desktopItems: 3, tabletItems: 2, mobileItems: 1, showExcerpt: true, showAuthor: true, showDate: true, showCategory: true, showCoverImage: true, readMoreText: "Read More" } };
   }
 }
 
@@ -1989,6 +2013,67 @@ function LogoShowcaseEditor({ comp, onChange }: { comp: BodyComponent & { type: 
   );
 }
 
+function BlogSectionEditor({ comp, onChange }: { comp: BodyComponent & { type: "blog_section" }; onChange: (c: BlogSectionConfig) => void }) {
+  const cfg = comp.config;
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={cfg.title} onChange={(e) => onChange({ ...cfg, title: e.target.value })} data-testid="input-blog-section-title" /></div>
+      <div><Label className="text-xs">Content Source</Label>
+        <Select value={cfg.source} onValueChange={(v: BlogSectionConfig["source"]) => onChange({ ...cfg, source: v })}>
+          <SelectTrigger data-testid="select-blog-source"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="latest">Latest Posts</SelectItem>
+            <SelectItem value="featured">Featured Posts</SelectItem>
+            <SelectItem value="popular">Popular Posts</SelectItem>
+            <SelectItem value="category">By Category</SelectItem>
+            <SelectItem value="tag">By Tag</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {cfg.source === "category" && (
+        <div><Label className="text-xs">Category Filter</Label><Input value={cfg.categoryFilter} onChange={(e) => onChange({ ...cfg, categoryFilter: e.target.value })} placeholder="Enter category name" data-testid="input-blog-category" /></div>
+      )}
+      {cfg.source === "tag" && (
+        <div><Label className="text-xs">Tag Filter</Label><Input value={cfg.tagFilter} onChange={(e) => onChange({ ...cfg, tagFilter: e.target.value })} placeholder="Enter tag name" data-testid="input-blog-tag" /></div>
+      )}
+      <div><Label className="text-xs">Sort Order</Label>
+        <Select value={cfg.sortOrder} onValueChange={(v: BlogSectionConfig["sortOrder"]) => onChange({ ...cfg, sortOrder: v })}>
+          <SelectTrigger data-testid="select-blog-sort"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="latest">Newest First</SelectItem>
+            <SelectItem value="popular">Most Popular</SelectItem>
+            <SelectItem value="featured">Featured First</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div><Label className="text-xs">Layout Style</Label>
+        <Select value={cfg.layoutStyle} onValueChange={(v: BlogSectionConfig["layoutStyle"]) => onChange({ ...cfg, layoutStyle: v })}>
+          <SelectTrigger data-testid="select-blog-layout"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="grid">Grid</SelectItem>
+            <SelectItem value="masonry">Masonry</SelectItem>
+            <SelectItem value="carousel">Carousel</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div><Label className="text-xs">Desktop Items</Label><Input type="number" min={1} max={12} value={cfg.desktopItems} onChange={(e) => onChange({ ...cfg, desktopItems: parseInt(e.target.value) || 3 })} data-testid="input-blog-desktop" /></div>
+        <div><Label className="text-xs">Tablet Items</Label><Input type="number" min={1} max={6} value={cfg.tabletItems} onChange={(e) => onChange({ ...cfg, tabletItems: parseInt(e.target.value) || 2 })} data-testid="input-blog-tablet" /></div>
+        <div><Label className="text-xs">Mobile Items</Label><Input type="number" min={1} max={4} value={cfg.mobileItems} onChange={(e) => onChange({ ...cfg, mobileItems: parseInt(e.target.value) || 1 })} data-testid="input-blog-mobile" /></div>
+      </div>
+      <div className="space-y-2 pt-1 border-t">
+        <Label className="text-xs font-semibold">Display Options</Label>
+        <div className="flex items-center gap-2"><Switch checked={cfg.showCoverImage} onCheckedChange={(v) => onChange({ ...cfg, showCoverImage: v })} data-testid="switch-blog-cover" /><Label className="text-xs">Show Cover Image</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={cfg.showExcerpt} onCheckedChange={(v) => onChange({ ...cfg, showExcerpt: v })} data-testid="switch-blog-excerpt" /><Label className="text-xs">Show Excerpt</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={cfg.showAuthor} onCheckedChange={(v) => onChange({ ...cfg, showAuthor: v })} data-testid="switch-blog-author" /><Label className="text-xs">Show Author</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={cfg.showDate} onCheckedChange={(v) => onChange({ ...cfg, showDate: v })} data-testid="switch-blog-date" /><Label className="text-xs">Show Date</Label></div>
+        <div className="flex items-center gap-2"><Switch checked={cfg.showCategory} onCheckedChange={(v) => onChange({ ...cfg, showCategory: v })} data-testid="switch-blog-category-toggle" /><Label className="text-xs">Show Category Badge</Label></div>
+      </div>
+      <div><Label className="text-xs">Read More Button Text</Label><Input value={cfg.readMoreText} onChange={(e) => onChange({ ...cfg, readMoreText: e.target.value })} placeholder="Read More" data-testid="input-blog-readmore" /></div>
+    </div>
+  );
+}
+
 export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComponent; onConfigChange: (config: any) => void }) {
   switch (comp.type) {
     case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} />;
@@ -2008,6 +2093,7 @@ export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComp
     case "safety": return <SafetyEditor comp={comp as BodyComponent & { type: "safety" }} onChange={onConfigChange} />;
     case "team": return <TeamEditor comp={comp as BodyComponent & { type: "team" }} onChange={onConfigChange} />;
     case "logo_showcase": return <LogoShowcaseEditor comp={comp as BodyComponent & { type: "logo_showcase" }} onChange={onConfigChange} />;
+    case "blog_section": return <BlogSectionEditor comp={comp as BodyComponent & { type: "blog_section" }} onChange={onConfigChange} />;
     default: return null;
   }
 }
