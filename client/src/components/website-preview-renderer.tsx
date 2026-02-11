@@ -858,15 +858,18 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
                   {items.map((item: any, i: number) => {
                     const IconComp = item.mediaType === 'icon' && item.iconName ? GRID_ICON_MAP[item.iconName] : null;
+                    const itemAlign = item.alignment || 'left';
+                    const itemTextAlign = itemAlign as React.CSSProperties['textAlign'];
+                    const itemFlexAlign = itemAlign === 'center' ? 'center' : itemAlign === 'right' ? 'flex-end' : 'flex-start';
                     const gridBtnStyle: React.CSSProperties = item.buttonVariant === 'outline'
                       ? { backgroundColor: 'transparent', color: primaryColor, border: `2px solid ${primaryColor}`, padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' }
                       : item.buttonVariant === 'secondary'
                         ? { backgroundColor: secondaryColor, color: '#fff', border: 'none', padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' }
                         : { backgroundColor: primaryColor, color: '#fff', border: 'none', padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' };
                     const cardContent = (
-                      <>
+                      <div style={{ textAlign: itemTextAlign }}>
                         {item.mediaType === 'icon' && IconComp && (
-                          <div style={{ marginBottom: '0.75rem' }}>
+                          <div style={{ display: 'flex', justifyContent: itemFlexAlign, marginBottom: '0.75rem' }}>
                             <IconComp size={32} color={primaryColor} />
                           </div>
                         )}
@@ -878,23 +881,25 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                         {item.title && <h3 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>{item.title}</h3>}
                         {item.content && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.content}</p>}
                         {item.buttonEnabled && (
-                          item.itemClickable ? (
-                            <span style={gridBtnStyle} data-testid={`grid-item-btn-${i}`}>
-                              {item.buttonText || 'Learn More'}
-                            </span>
-                          ) : (
-                            <a
-                              href={item.buttonUrl || '#'}
-                              target={item.buttonOpenNewTab ? '_blank' : undefined}
-                              rel={item.buttonOpenNewTab ? 'noopener noreferrer' : undefined}
-                              style={gridBtnStyle}
-                              data-testid={`grid-item-btn-${i}`}
-                            >
-                              {item.buttonText || 'Learn More'}
-                            </a>
-                          )
+                          <div style={{ display: 'flex', justifyContent: itemFlexAlign, marginTop: '0.75rem' }}>
+                            {item.itemClickable ? (
+                              <span style={gridBtnStyle} data-testid={`grid-item-btn-${i}`}>
+                                {item.buttonText || 'Learn More'}
+                              </span>
+                            ) : (
+                              <a
+                                href={item.buttonUrl || '#'}
+                                target={item.buttonOpenNewTab ? '_blank' : undefined}
+                                rel={item.buttonOpenNewTab ? 'noopener noreferrer' : undefined}
+                                style={gridBtnStyle}
+                                data-testid={`grid-item-btn-${i}`}
+                              >
+                                {item.buttonText || 'Learn More'}
+                              </a>
+                            )}
+                          </div>
                         )}
-                      </>
+                      </div>
                     );
                     const cardStyle: React.CSSProperties = { backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', ...(item.itemClickable ? { cursor: 'pointer' } : {}) };
                     if (item.itemClickable && item.itemUrl) {

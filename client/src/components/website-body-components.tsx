@@ -1193,7 +1193,7 @@ function GridItemPreview({ item }: { item: GridItem }) {
     <div
       className="border rounded-md bg-muted/50 p-3"
       style={{ textAlign }}
-      data-testid="grid-item-preview"
+      data-testid={`grid-item-preview-${item.id}`}
     >
       {item.mediaType === "icon" && IconComp && (
         <div style={{ display: "flex", justifyContent: flexAlign, marginBottom: "0.5rem" }}>
