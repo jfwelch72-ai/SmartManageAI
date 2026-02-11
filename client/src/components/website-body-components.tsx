@@ -151,6 +151,18 @@ export interface GridItem {
   id: string;
   title: string;
   content: string;
+  mediaType?: "none" | "icon" | "image";
+  iconName?: string;
+  imageUrl?: string;
+  imageHeight?: number;
+  buttonEnabled?: boolean;
+  buttonText?: string;
+  buttonUrl?: string;
+  buttonVariant?: "primary" | "secondary" | "outline";
+  buttonOpenNewTab?: boolean;
+  itemClickable?: boolean;
+  itemUrl?: string;
+  itemOpenNewTab?: boolean;
 }
 
 interface BannerConfig {
