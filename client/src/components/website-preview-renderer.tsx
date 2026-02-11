@@ -28,7 +28,7 @@ import {
   Key,
   Layers,
   Lock,
-  Map,
+  Map as MapIcon,
   Settings,
   ThumbsUp,
   Wrench,
@@ -47,7 +47,7 @@ import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } 
 
 const GRID_ICON_MAP: Record<string, LucideIcon> = {
   Star, Heart, Shield, Zap, Target, Award, Briefcase, Clock,
-  Globe, Home, Key, Layers, Lock, Mail, Map, Phone,
+  Globe, Home, Key, Layers, Lock, Mail, Map: MapIcon, Phone,
   Settings, ThumbsUp, Tool: Hammer, Wrench, Truck, Users, CheckCircle, BarChart,
 };
 

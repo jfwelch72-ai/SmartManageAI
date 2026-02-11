@@ -54,7 +54,7 @@ import {
   Layers,
   Lock,
   Mail,
-  Map,
+  Map as MapIcon,
   Phone,
   Settings,
   ThumbsUp,
@@ -1180,7 +1180,7 @@ const GRID_ICON_OPTIONS = [
 
 const GRID_ICON_MAP: Record<string, LucideIcon> = {
   Star, Heart, Shield, Zap, Target, Award, Briefcase, Clock,
-  Globe, Home, Key, Layers, Lock, Mail, Map, Phone,
+  Globe, Home, Key, Layers, Lock, Mail, Map: MapIcon, Phone,
   Settings, ThumbsUp, Tool: Hammer, Truck, Users, Wrench, CheckCircle, BarChart,
 };
 
