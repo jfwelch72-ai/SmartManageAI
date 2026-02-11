@@ -453,6 +453,132 @@ export function ImageUploadField({ value, onChange, label, placeholder, testId }
   );
 }
 
+export function VideoUploadField({ value, onChange, label, placeholder, testId }: { value: string; onChange: (url: string) => void; label?: string; placeholder?: string; testId?: string }) {
+  const [uploading, setUploading] = useState(false);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
+  const [showMediaLibrary, setShowMediaLibrary] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!file.type.startsWith("video/")) {
+      toast({ title: "Invalid file", description: "Please select a video file.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 100MB.", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch("/api/website/upload-image", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      onChange(data.url);
+      toast({ title: "Video uploaded", description: file.name });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }, [onChange, toast]);
+
+  const handleUploadClick = () => {
+    setShowSourcePicker(true);
+  };
+
+  const handleChooseLocal = () => {
+    setShowSourcePicker(false);
+    fileRef.current?.click();
+  };
+
+  const handleChooseMediaLibrary = () => {
+    setShowSourcePicker(false);
+    setShowMediaLibrary(true);
+  };
+
+  return (
+    <div>
+      {label && <Label className="text-xs">{label}</Label>}
+      <div className="flex items-center gap-1">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder || "https://..."}
+          data-testid={testId}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="video/*"
+          className="hidden"
+          onChange={(e) => { if (e.target.files?.[0]) { handleUpload(e.target.files[0]); e.target.value = ""; } }}
+          data-testid={testId ? `${testId}-file` : undefined}
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleUploadClick}
+          disabled={uploading}
+          data-testid={testId ? `${testId}-upload` : undefined}
+        >
+          {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+        </Button>
+      </div>
+      {value && (
+        <div className="mt-1.5 rounded-md border overflow-hidden">
+          <video src={value} className="w-full h-20 object-cover" muted onError={(e) => { (e.target as HTMLVideoElement).style.display = "none"; }} />
+        </div>
+      )}
+
+      <Dialog open={showSourcePicker} onOpenChange={setShowSourcePicker}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Choose Video Source</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <button
+              className="flex flex-col items-center gap-2 p-4 rounded-md border hover-elevate cursor-pointer"
+              onClick={handleChooseMediaLibrary}
+              data-testid="button-video-source-media-library"
+            >
+              <HardDrive className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium">Media Library</span>
+              <span className="text-xs text-muted-foreground text-center">Choose from uploaded files</span>
+            </button>
+            <button
+              className="flex flex-col items-center gap-2 p-4 rounded-md border hover-elevate cursor-pointer"
+              onClick={handleChooseLocal}
+              data-testid="button-video-source-local-file"
+            >
+              <FolderOpen className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium">Local File</span>
+              <span className="text-xs text-muted-foreground text-center">Upload from your device</span>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMediaLibrary} onOpenChange={setShowMediaLibrary}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Select from Media Library</DialogTitle>
+          </DialogHeader>
+          <MediaLibraryPicker
+            onSelect={(url) => { onChange(url); }}
+            onClose={() => setShowMediaLibrary(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
   const updateTypography = (key: keyof TypographyStyles, value: string) => {
     onChange({ ...styles, typography: { ...styles.typography, [key]: value } });
@@ -615,8 +741,7 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
           )}
           {styles.background.type === "video" && (
             <div className="col-span-2">
-              <Label className="text-xs">Video URL</Label>
-              <Input value={styles.background.videoUrl} onChange={(e) => updateBackground("videoUrl", e.target.value)} placeholder="https://..." data-testid="input-bg-video" />
+              <VideoUploadField value={styles.background.videoUrl} onChange={(url) => updateBackground("videoUrl", url)} label="Video URL" testId="input-bg-video" />
             </div>
           )}
         </div>
