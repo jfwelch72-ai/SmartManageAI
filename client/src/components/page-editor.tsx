@@ -49,6 +49,10 @@ import {
   MinusCircle,
   PlusCircle,
   RefreshCw,
+  Bookmark,
+  Pencil,
+  MoreVertical,
+  FolderOpen,
 } from "lucide-react";
 import {
   type BodyComponentType,
@@ -140,6 +144,12 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const [showDiffDialog, setShowDiffDialog] = useState(false);
   const [diffVersionA, setDiffVersionA] = useState<string | null>(null);
   const [diffVersionB, setDiffVersionB] = useState<string | null>(null);
+  const [showSaveGlobalDialog, setShowSaveGlobalDialog] = useState(false);
+  const [saveGlobalName, setSaveGlobalName] = useState("");
+  const [saveGlobalComponentId, setSaveGlobalComponentId] = useState<string | null>(null);
+  const [showGlobalLibrary, setShowGlobalLibrary] = useState(false);
+  const [editingGlobalId, setEditingGlobalId] = useState<string | null>(null);
+  const [editingGlobalName, setEditingGlobalName] = useState("");
   const [pageSettings, setPageSettings] = useState({
     pageTitle: "",
     pageSlug: "",
@@ -304,6 +314,77 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
     },
   });
 
+  const { data: globalComponentsData, refetch: refetchGlobals } = useQuery<{ components: any[] }>({
+    queryKey: ["/api/website/global-components"],
+  });
+  const globalComponents = globalComponentsData?.components || [];
+
+  const saveGlobalMutation = useMutation({
+    mutationFn: async ({ name, component }: { name: string; component: BodyComponent }) => {
+      return await apiRequest("POST", "/api/website/global-components", { name, component });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/global-components"] });
+      setShowSaveGlobalDialog(false);
+      setSaveGlobalName("");
+      setSaveGlobalComponentId(null);
+      toast({ title: "Component saved as reusable" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error saving component", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const renameGlobalMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      return await apiRequest("PATCH", `/api/website/global-components/${id}`, { name });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/global-components"] });
+      setEditingGlobalId(null);
+      setEditingGlobalName("");
+      toast({ title: "Component renamed" });
+    },
+  });
+
+  const updateGlobalMutation = useMutation({
+    mutationFn: async ({ id, component }: { id: string; component: BodyComponent }) => {
+      return await apiRequest("PATCH", `/api/website/global-components/${id}`, { component });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/global-components"] });
+      toast({ title: "Global component updated" });
+    },
+  });
+
+  const duplicateGlobalMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("POST", `/api/website/global-components/${id}/duplicate`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/global-components"] });
+      toast({ title: "Component duplicated" });
+    },
+  });
+
+  const deleteGlobalMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/website/global-components/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/global-components"] });
+      toast({ title: "Component deleted" });
+    },
+  });
+
+  const openSaveAsGlobal = useCallback((compId: string) => {
+    const comp = components.find(c => c.id === compId);
+    if (!comp) return;
+    setSaveGlobalComponentId(compId);
+    setSaveGlobalName(comp.label || COMPONENT_TYPE_META[comp.type]?.label || "Untitled");
+    setShowSaveGlobalDialog(true);
+  }, [components]);
+
   const markChanged = useCallback(() => {
     setHasUnsavedChanges(true);
   }, []);
@@ -355,6 +436,16 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
   }, [components, updateComponents]);
+
+  const insertGlobalComponent = useCallback((globalComp: any) => {
+    const comp = JSON.parse(JSON.stringify(globalComp.component)) as BodyComponent;
+    comp.id = `body-${comp.type}-${Date.now()}`;
+    comp.order = components.length;
+    updateComponents([...components, comp]);
+    setSelectedComponentId(comp.id);
+    setRightPanel("component");
+    toast({ title: `Inserted "${globalComp.name}"` });
+  }, [components, updateComponents, toast]);
 
   const updateComponent = useCallback((id: string, updates: Partial<BodyComponent>) => {
     const newComps = components.map(c =>
@@ -541,38 +632,180 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         <div className={`border-r bg-muted/30 flex flex-col transition-all ${showComponentLibrary ? "w-56" : "w-0"}`}>
           {showComponentLibrary && (
             <>
-              <div className="p-2 border-b">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search components..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-7 h-8 text-xs"
-                    data-testid="input-search-components"
-                  />
+              <div className="p-2 border-b space-y-2">
+                <div className="flex items-center gap-0.5 p-0.5 border rounded-md">
+                  <Button
+                    size="sm"
+                    variant={!showGlobalLibrary ? "default" : "ghost"}
+                    onClick={() => setShowGlobalLibrary(false)}
+                    className="flex-1 text-xs h-7"
+                    data-testid="button-library-components"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Components
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={showGlobalLibrary ? "default" : "ghost"}
+                    onClick={() => setShowGlobalLibrary(true)}
+                    className="flex-1 text-xs h-7"
+                    data-testid="button-library-saved"
+                  >
+                    <FolderOpen className="h-3 w-3 mr-1" />
+                    Saved ({globalComponents.length})
+                  </Button>
                 </div>
+                {!showGlobalLibrary && (
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search components..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-7 h-8 text-xs"
+                      data-testid="input-search-components"
+                    />
+                  </div>
+                )}
               </div>
               <ScrollArea className="flex-1">
-                <div className="p-2 space-y-1">
-                  {filteredComponentTypes.map(([type, meta]) => {
-                    const Icon = meta.icon;
-                    return (
-                      <button
-                        key={type}
-                        className="w-full flex items-start gap-2 p-2 rounded-md text-left hover-elevate transition-colors cursor-pointer"
-                        onClick={() => addComponent(type)}
-                        data-testid={`library-add-${type}`}
-                      >
-                        <Icon className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium truncate">{meta.label}</div>
-                          <div className="text-[10px] text-muted-foreground leading-tight">{meta.description}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                {!showGlobalLibrary ? (
+                  <div className="p-2 space-y-1">
+                    {filteredComponentTypes.map(([type, meta]) => {
+                      const Icon = meta.icon;
+                      return (
+                        <button
+                          key={type}
+                          className="w-full flex items-start gap-2 p-2 rounded-md text-left hover-elevate transition-colors cursor-pointer"
+                          onClick={() => addComponent(type)}
+                          data-testid={`library-add-${type}`}
+                        >
+                          <Icon className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium truncate">{meta.label}</div>
+                            <div className="text-[10px] text-muted-foreground leading-tight">{meta.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-2 space-y-1">
+                    {globalComponents.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center px-2">
+                        <Bookmark className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                        <p className="text-xs text-muted-foreground">No saved components yet.</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Select a component on the canvas and click "Save as Reusable" to save it here.</p>
+                      </div>
+                    ) : (
+                      globalComponents.map((gc: any) => {
+                        const compType = gc.component?.type;
+                        const meta = compType ? COMPONENT_TYPE_META[compType as BodyComponentType] : null;
+                        const Icon = meta?.icon || LayoutGrid;
+                        const isEditing = editingGlobalId === gc.id;
+
+                        return (
+                          <div key={gc.id} className="rounded-md border bg-background p-2 space-y-1.5" data-testid={`global-comp-${gc.id}`}>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={editingGlobalName}
+                                  onChange={(e) => setEditingGlobalName(e.target.value)}
+                                  className="h-7 text-xs flex-1"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && editingGlobalName.trim()) {
+                                      renameGlobalMutation.mutate({ id: gc.id, name: editingGlobalName.trim() });
+                                    } else if (e.key === "Escape") {
+                                      setEditingGlobalId(null);
+                                    }
+                                  }}
+                                  data-testid="input-rename-global"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => {
+                                    if (editingGlobalName.trim()) {
+                                      renameGlobalMutation.mutate({ id: gc.id, name: editingGlobalName.trim() });
+                                    }
+                                  }}
+                                  data-testid="button-confirm-rename"
+                                >
+                                  <CheckCircle2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                <span className="text-xs font-medium truncate flex-1">{gc.name}</span>
+                                <Badge variant="secondary" className="text-[9px] px-1 flex-shrink-0">{meta?.label || compType}</Badge>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 h-7 text-[10px]"
+                                onClick={() => insertGlobalComponent(gc)}
+                                data-testid={`button-insert-global-${gc.id}`}
+                              >
+                                <Plus className="h-3 w-3 mr-0.5" />
+                                Insert
+                              </Button>
+                              {selectedComponent && selectedComponent.type === gc.component?.type && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[10px]"
+                                  onClick={() => {
+                                    updateGlobalMutation.mutate({ id: gc.id, component: selectedComponent });
+                                  }}
+                                  title="Update with selected component"
+                                  data-testid={`button-update-global-${gc.id}`}
+                                >
+                                  <RefreshCw className="h-3 w-3 mr-0.5" />
+                                  Update
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => { setEditingGlobalId(gc.id); setEditingGlobalName(gc.name); }}
+                                title="Rename"
+                                data-testid={`button-rename-global-${gc.id}`}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => duplicateGlobalMutation.mutate(gc.id)}
+                                title="Duplicate"
+                                data-testid={`button-duplicate-global-${gc.id}`}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive"
+                                onClick={() => deleteGlobalMutation.mutate(gc.id)}
+                                title="Delete"
+                                data-testid={`button-delete-global-${gc.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </ScrollArea>
             </>
           )}
@@ -657,6 +890,17 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
                             variant="secondary"
                             size="icon"
                             draggable={false}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openSaveAsGlobal(comp.id); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            data-testid={`canvas-save-global-${comp.id}`}
+                            title="Save as Reusable"
+                          >
+                            <Bookmark className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            draggable={false}
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); duplicateComponent(comp.id); }}
                             onMouseDown={(e) => e.stopPropagation()}
                             data-testid={`canvas-duplicate-${comp.id}`}
@@ -705,6 +949,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
               onUpdateStyles={(styles) => updateComponentStyles(selectedComponent.id, styles)}
               onRemove={() => removeComponent(selectedComponent.id)}
               onDuplicate={() => duplicateComponent(selectedComponent.id)}
+              onSaveAsGlobal={() => openSaveAsGlobal(selectedComponent.id)}
               onDeselect={() => setSelectedComponentId(null)}
             />
           ) : (
@@ -797,6 +1042,53 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={showSaveGlobalDialog} onOpenChange={setShowSaveGlobalDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as Reusable Component</DialogTitle>
+            <DialogDescription>
+              Give this component a name so you can reuse it across any page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Component Name</Label>
+              <Input
+                value={saveGlobalName}
+                onChange={(e) => setSaveGlobalName(e.target.value)}
+                placeholder="e.g. Hero with Video Background"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && saveGlobalName.trim() && saveGlobalComponentId) {
+                    const comp = components.find(c => c.id === saveGlobalComponentId);
+                    if (comp) saveGlobalMutation.mutate({ name: saveGlobalName.trim(), component: comp });
+                  }
+                }}
+                data-testid="input-global-name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveGlobalDialog(false)} data-testid="button-cancel-save-global">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (saveGlobalName.trim() && saveGlobalComponentId) {
+                  const comp = components.find(c => c.id === saveGlobalComponentId);
+                  if (comp) saveGlobalMutation.mutate({ name: saveGlobalName.trim(), component: comp });
+                }
+              }}
+              disabled={!saveGlobalName.trim() || saveGlobalMutation.isPending}
+              data-testid="button-confirm-save-global"
+            >
+              {saveGlobalMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Bookmark className="h-4 w-4 mr-1" />}
+              Save Component
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SharePreviewDialog
         pageId={pageId}
@@ -1541,6 +1833,7 @@ function ComponentSettingsPanel({
   onUpdateStyles,
   onRemove,
   onDuplicate,
+  onSaveAsGlobal,
   onDeselect,
 }: {
   component: BodyComponent;
@@ -1549,6 +1842,7 @@ function ComponentSettingsPanel({
   onUpdateStyles: (styles: SharedStyles) => void;
   onRemove: () => void;
   onDuplicate: () => void;
+  onSaveAsGlobal: () => void;
   onDeselect: () => void;
 }) {
   const meta = COMPONENT_TYPE_META[component.type];
@@ -1641,15 +1935,21 @@ function ComponentSettingsPanel({
             )}
           </div>
 
-          <div className="border-t pt-3 flex gap-2">
-            <Button variant="outline" size="sm" onClick={onDuplicate} className="flex-1" data-testid="button-settings-duplicate">
-              <Copy className="h-3 w-3 mr-1" />
-              Duplicate
+          <div className="border-t pt-3 space-y-2">
+            <Button variant="outline" size="sm" onClick={onSaveAsGlobal} className="w-full" data-testid="button-settings-save-global">
+              <Bookmark className="h-3 w-3 mr-1" />
+              Save as Reusable
             </Button>
-            <Button variant="outline" size="sm" onClick={onRemove} className="text-destructive flex-1" data-testid="button-settings-remove">
-              <Trash2 className="h-3 w-3 mr-1" />
-              Remove
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onDuplicate} className="flex-1" data-testid="button-settings-duplicate">
+                <Copy className="h-3 w-3 mr-1" />
+                Duplicate
+              </Button>
+              <Button variant="outline" size="sm" onClick={onRemove} className="text-destructive flex-1" data-testid="button-settings-remove">
+                <Trash2 className="h-3 w-3 mr-1" />
+                Remove
+              </Button>
+            </div>
           </div>
         </div>
       </ScrollArea>

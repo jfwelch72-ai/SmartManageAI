@@ -2878,4 +2878,166 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
   }
 });
 
+// ============================================
+// Global / Reusable Components
+// ============================================
+
+router.get("/global-components", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = validateOrgAccess(req, res);
+    if (!orgId) return;
+
+    const [website] = await db.select({ globalComponentsConfig: organizationWebsites.globalComponentsConfig })
+      .from(organizationWebsites)
+      .where(eq(organizationWebsites.organizationId, orgId))
+      .limit(1);
+
+    if (!website) return res.json({ components: [] });
+    const components = (website.globalComponentsConfig as any)?.components || [];
+    res.json({ components });
+  } catch (error) {
+    console.error("Error fetching global components:", error);
+    res.status(500).json({ error: "Failed to fetch global components" });
+  }
+});
+
+router.post("/global-components", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = validateOrgAccess(req, res);
+    if (!orgId) return;
+
+    const { component, name } = req.body;
+    if (!component || !name) return res.status(400).json({ error: "Component and name are required" });
+
+    const [website] = await db.select({ id: organizationWebsites.id, globalComponentsConfig: organizationWebsites.globalComponentsConfig })
+      .from(organizationWebsites)
+      .where(eq(organizationWebsites.organizationId, orgId))
+      .limit(1);
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    const existing = (website.globalComponentsConfig as any)?.components || [];
+    const newGlobalComp = {
+      id: `global-${Date.now()}-${randomUUID().substring(0, 8)}`,
+      name,
+      component: { ...component, id: `body-${component.type}-${Date.now()}` },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    existing.push(newGlobalComp);
+
+    await db.update(organizationWebsites)
+      .set({ globalComponentsConfig: { components: existing } })
+      .where(eq(organizationWebsites.id, website.id));
+
+    res.json(newGlobalComp);
+  } catch (error) {
+    console.error("Error saving global component:", error);
+    res.status(500).json({ error: "Failed to save global component" });
+  }
+});
+
+router.patch("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = validateOrgAccess(req, res);
+    if (!orgId) return;
+
+    const { id } = req.params;
+    const { name, component } = req.body;
+
+    const [website] = await db.select({ id: organizationWebsites.id, globalComponentsConfig: organizationWebsites.globalComponentsConfig })
+      .from(organizationWebsites)
+      .where(eq(organizationWebsites.organizationId, orgId))
+      .limit(1);
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    const existing = (website.globalComponentsConfig as any)?.components || [];
+    const idx = existing.findIndex((c: any) => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: "Global component not found" });
+
+    if (name !== undefined) existing[idx].name = name;
+    if (component !== undefined) existing[idx].component = component;
+    existing[idx].updatedAt = new Date().toISOString();
+
+    await db.update(organizationWebsites)
+      .set({ globalComponentsConfig: { components: existing } })
+      .where(eq(organizationWebsites.id, website.id));
+
+    res.json(existing[idx]);
+  } catch (error) {
+    console.error("Error updating global component:", error);
+    res.status(500).json({ error: "Failed to update global component" });
+  }
+});
+
+router.post("/global-components/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = validateOrgAccess(req, res);
+    if (!orgId) return;
+
+    const { id } = req.params;
+
+    const [website] = await db.select({ id: organizationWebsites.id, globalComponentsConfig: organizationWebsites.globalComponentsConfig })
+      .from(organizationWebsites)
+      .where(eq(organizationWebsites.organizationId, orgId))
+      .limit(1);
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    const existing = (website.globalComponentsConfig as any)?.components || [];
+    const source = existing.find((c: any) => c.id === id);
+    if (!source) return res.status(404).json({ error: "Global component not found" });
+
+    const duplicated = {
+      id: `global-${Date.now()}-${randomUUID().substring(0, 8)}`,
+      name: `${source.name} (Copy)`,
+      component: JSON.parse(JSON.stringify(source.component)),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    duplicated.component.id = `body-${duplicated.component.type}-${Date.now()}`;
+    existing.push(duplicated);
+
+    await db.update(organizationWebsites)
+      .set({ globalComponentsConfig: { components: existing } })
+      .where(eq(organizationWebsites.id, website.id));
+
+    res.json(duplicated);
+  } catch (error) {
+    console.error("Error duplicating global component:", error);
+    res.status(500).json({ error: "Failed to duplicate global component" });
+  }
+});
+
+router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = validateOrgAccess(req, res);
+    if (!orgId) return;
+
+    const { id } = req.params;
+
+    const [website] = await db.select({ id: organizationWebsites.id, globalComponentsConfig: organizationWebsites.globalComponentsConfig })
+      .from(organizationWebsites)
+      .where(eq(organizationWebsites.organizationId, orgId))
+      .limit(1);
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    const existing = (website.globalComponentsConfig as any)?.components || [];
+    const filtered = existing.filter((c: any) => c.id !== id);
+
+    if (filtered.length === existing.length) return res.status(404).json({ error: "Global component not found" });
+
+    await db.update(organizationWebsites)
+      .set({ globalComponentsConfig: { components: filtered } })
+      .where(eq(organizationWebsites.id, website.id));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting global component:", error);
+    res.status(500).json({ error: "Failed to delete global component" });
+  }
+});
+
 export default router;
