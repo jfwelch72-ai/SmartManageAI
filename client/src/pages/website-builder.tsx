@@ -125,6 +125,7 @@ interface Website {
   headerComponentsConfig: HeaderComponentsConfig | null;
   footerComponentsConfig: FooterComponentsConfig | null;
   bodyComponentsConfig: BodyComponentsConfig | null;
+  globalComponentsConfig: BodyComponentsConfig | null;
   lastPublishedAt: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -415,6 +416,7 @@ export default function WebsiteBuilderPage() {
   const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
   const [footerComponentsConfig, setFooterComponentsConfig] = useState<FooterComponentsConfig>(getDefaultFooterConfig());
   const [bodyComponentsConfig, setBodyComponentsConfig] = useState<BodyComponentsConfig>(getDefaultBodyConfig());
+  const [globalComponentsConfig, setGlobalComponentsConfig] = useState<BodyComponentsConfig>({ components: [] });
 
   const [pageForm, setPageForm] = useState({
     pageType: "CUSTOM",
@@ -792,6 +794,7 @@ export default function WebsiteBuilderPage() {
       headerComponentsConfig,
       footerComponentsConfig,
       bodyComponentsConfig,
+      globalComponentsConfig,
     });
   };
 
@@ -921,6 +924,9 @@ export default function WebsiteBuilderPage() {
       }
       if (websiteRef.bodyComponentsConfig) {
         setBodyComponentsConfig(websiteRef.bodyComponentsConfig as BodyComponentsConfig);
+      }
+      if (websiteRef.globalComponentsConfig) {
+        setGlobalComponentsConfig(websiteRef.globalComponentsConfig as BodyComponentsConfig);
       }
     }
   }, [websiteRef]);
@@ -1634,6 +1640,13 @@ export default function WebsiteBuilderPage() {
               showBreadcrumb: websiteForm.showBreadcrumb,
             }}
             onInnerPageChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
+          />
+
+          <WebsiteBodyComponents
+            config={globalComponentsConfig}
+            onChange={setGlobalComponentsConfig}
+            title="Global Components"
+            description="Create reusable components that can be shared across all pages of your website."
           />
         </TabsContent>
 

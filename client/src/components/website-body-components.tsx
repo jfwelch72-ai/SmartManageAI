@@ -1598,9 +1598,11 @@ export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComp
 interface WebsiteBodyComponentsProps {
   config: BodyComponentsConfig;
   onChange: (config: BodyComponentsConfig) => void;
+  title?: string;
+  description?: string;
 }
 
-export default function WebsiteBodyComponents({ config, onChange }: WebsiteBodyComponentsProps) {
+export default function WebsiteBodyComponents({ config, onChange, title, description }: WebsiteBodyComponentsProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showStylesFor, setShowStylesFor] = useState<string | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
@@ -1671,8 +1673,8 @@ export default function WebsiteBodyComponents({ config, onChange }: WebsiteBodyC
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
         <div>
-          <CardTitle className="text-base">Body Components</CardTitle>
-          <CardDescription>Add and configure page sections. Drag to reorder. All components support responsive desktop/mobile views.</CardDescription>
+          <CardTitle className="text-base">{title || "Body Components"}</CardTitle>
+          <CardDescription>{description || "Add and configure page sections. Drag to reorder. All components support responsive desktop/mobile views."}</CardDescription>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="flex items-center gap-1 p-1 border rounded-md">
