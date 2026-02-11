@@ -830,6 +830,17 @@ export default function WebsiteComponentsTab({
                   placeholder="Upload or select a logo"
                   testId={`input-footer-logo-${element.id}`}
                 />
+                <div className="space-y-1">
+                  <Label className="text-xs">Logo Height (px)</Label>
+                  <Input
+                    type="number"
+                    min={16}
+                    max={200}
+                    value={element.content.logoHeight || 28}
+                    onChange={(e) => updateFn(element.id, { content: { ...element.content, logoHeight: parseInt(e.target.value) || 28 } })}
+                    data-testid={`input-footer-logo-height-${element.id}`}
+                  />
+                </div>
               </div>
             )}
           </div>

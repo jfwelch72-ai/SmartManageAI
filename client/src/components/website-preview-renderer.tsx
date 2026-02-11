@@ -628,10 +628,11 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     switch (el.type) {
       case 'footer_logo': {
         const footerLogoSrc = (el as any).content?.imageUrl || website.logoUrl;
+        const footerLogoHeight = (el as any).content?.logoHeight || 28;
         return (
           <div key={el.id} data-testid="footer-config-logo" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {footerLogoSrc ? (
-              <img src={footerLogoSrc} alt={siteName} style={{ height: '28px', objectFit: 'contain' }} />
+              <img src={footerLogoSrc} alt={siteName} style={{ height: `${footerLogoHeight}px`, objectFit: 'contain' }} />
             ) : (
               <span style={{ fontWeight: 700, fontSize: '1.125rem', color: '#fff' }}>{siteName}</span>
             )}
