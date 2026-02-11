@@ -38,6 +38,33 @@ import {
   Loader2,
   FolderOpen,
   HardDrive,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Heart,
+  Shield,
+  Zap,
+  Target,
+  Award,
+  Briefcase,
+  Clock,
+  Globe,
+  Home,
+  Key,
+  Layers,
+  Lock,
+  Mail,
+  Map,
+  Phone,
+  Settings,
+  ThumbsUp,
+  Wrench,
+  Truck,
+  Users,
+  CheckCircle,
+  BarChart,
+  Hammer,
+  type LucideIcon,
 } from "lucide-react";
 
 export type BodyComponentType =
@@ -151,6 +178,7 @@ export interface GridItem {
   id: string;
   title: string;
   content: string;
+  alignment?: "left" | "center" | "right";
   mediaType?: "none" | "icon" | "image";
   iconName?: string;
   imageUrl?: string;
@@ -1150,9 +1178,49 @@ const GRID_ICON_OPTIONS = [
   "Settings", "ThumbsUp", "Tool", "Truck", "Users", "Wrench", "CheckCircle", "BarChart",
 ];
 
+const GRID_ICON_MAP: Record<string, LucideIcon> = {
+  Star, Heart, Shield, Zap, Target, Award, Briefcase, Clock,
+  Globe, Home, Key, Layers, Lock, Mail, Map, Phone,
+  Settings, ThumbsUp, Tool: Hammer, Truck, Users, Wrench, CheckCircle, BarChart,
+};
+
+function GridItemPreview({ item }: { item: GridItem }) {
+  const align = item.alignment || "left";
+  const textAlign = align as React.CSSProperties["textAlign"];
+  const flexAlign = align === "center" ? "center" : align === "right" ? "flex-end" : "flex-start";
+  const IconComp = item.mediaType === "icon" && item.iconName ? GRID_ICON_MAP[item.iconName] : null;
+  return (
+    <div
+      className="border rounded-md bg-muted/50 p-3"
+      style={{ textAlign }}
+      data-testid="grid-item-preview"
+    >
+      {item.mediaType === "icon" && IconComp && (
+        <div style={{ display: "flex", justifyContent: flexAlign, marginBottom: "0.5rem" }}>
+          <IconComp size={24} className="text-primary" />
+        </div>
+      )}
+      {item.mediaType === "image" && item.imageUrl && (
+        <div style={{ marginBottom: "0.5rem", overflow: "hidden", borderRadius: "0.25rem" }}>
+          <img src={item.imageUrl} alt={item.title || ""} style={{ width: "100%", height: `${Math.min(item.imageHeight || 160, 100)}px`, objectFit: "cover" }} />
+        </div>
+      )}
+      {item.title && <p className="text-xs font-semibold" style={{ marginBottom: "0.25rem" }}>{item.title}</p>}
+      {item.content && <p className="text-[10px] text-muted-foreground leading-snug">{item.content}</p>}
+      {item.buttonEnabled && (
+        <div style={{ display: "flex", justifyContent: flexAlign, marginTop: "0.5rem" }}>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-primary text-primary-foreground font-medium">
+            {item.buttonText || "Learn More"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }; onChange: (c: GridConfig) => void }) {
   const addItem = () => {
-    onChange({ ...comp.config, items: [...comp.config.items, { id: `g-${Date.now()}`, title: "New Item", content: "Description", mediaType: "none" }] });
+    onChange({ ...comp.config, items: [...comp.config.items, { id: `g-${Date.now()}`, title: "New Item", content: "Description", mediaType: "none", alignment: "left" }] });
   };
   const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
   const updateItem = (i: number, updates: Partial<GridItem>) => {
@@ -1180,13 +1248,36 @@ function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }
         <Label className="text-xs font-semibold">Grid Items</Label>
         {comp.config.items.map((item, i) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <Input value={item.title} onChange={(e) => updateItem(i, { title: e.target.value })} placeholder="Title" className="flex-1" data-testid={`input-grid-item-title-${i}`} />
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Item {i + 1}</Label>
               <Button variant="ghost" size="icon" onClick={() => removeItem(i)} data-testid={`button-remove-grid-${i}`}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-            <Textarea value={item.content} onChange={(e) => updateItem(i, { content: e.target.value })} className="resize-none text-xs" rows={2} data-testid={`input-grid-item-content-${i}`} />
+
+            <GridItemPreview item={item} />
+
+            <div className="space-y-1">
+              <Label className="text-xs">Content Alignment</Label>
+              <div className="flex gap-1">
+                {([
+                  { value: "left" as const, icon: AlignLeft, label: "Left" },
+                  { value: "center" as const, icon: AlignCenter, label: "Center" },
+                  { value: "right" as const, icon: AlignRight, label: "Right" },
+                ]).map(({ value, icon: Icon, label }) => (
+                  <Button
+                    key={value}
+                    size="sm"
+                    variant={(item.alignment || "left") === value ? "default" : "outline"}
+                    onClick={() => updateItem(i, { alignment: value })}
+                    data-testid={`button-grid-align-${value}-${i}`}
+                  >
+                    <Icon className="h-3.5 w-3.5 mr-1" />
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
 
             <div className="space-y-1">
               <Label className="text-xs">Media</Label>
@@ -1234,6 +1325,15 @@ function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }
                 </div>
               </>
             )}
+
+            <div className="space-y-1">
+              <Label className="text-xs">Title</Label>
+              <Input value={item.title} onChange={(e) => updateItem(i, { title: e.target.value })} placeholder="Title" data-testid={`input-grid-item-title-${i}`} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Description</Label>
+              <Textarea value={item.content} onChange={(e) => updateItem(i, { content: e.target.value })} className="resize-none text-xs" rows={2} data-testid={`input-grid-item-content-${i}`} />
+            </div>
 
             <div className="space-y-2 pt-1 border-t">
               <div className="flex items-center gap-2">
