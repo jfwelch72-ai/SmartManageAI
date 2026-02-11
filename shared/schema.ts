@@ -4890,6 +4890,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   templateId: text("template_id"),
   logoUrl: text("logo_url"),
   faviconUrl: text("favicon_url"),
+  logoHeight: integer("logo_height").default(55),
   
   // SEO Global Settings
   defaultMetaTitle: text("default_meta_title"),
