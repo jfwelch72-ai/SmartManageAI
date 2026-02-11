@@ -1366,36 +1366,6 @@ export default function WebsiteBuilderPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 space-y-3 border-t">
-                  <h4 className="font-medium">Sections</h4>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="showBlog">Show Blog</Label>
-                    <Switch
-                      id="showBlog"
-                      checked={websiteForm.showBlog}
-                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showBlog: checked }))}
-                      data-testid="switch-show-blog"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="showProjects">Show Projects Gallery</Label>
-                    <Switch
-                      id="showProjects"
-                      checked={websiteForm.showProjects}
-                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showProjects: checked }))}
-                      data-testid="switch-show-projects"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="showTestimonials">Show Testimonials</Label>
-                    <Switch
-                      id="showTestimonials"
-                      checked={websiteForm.showTestimonials}
-                      onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showTestimonials: checked }))}
-                      data-testid="switch-show-testimonials"
-                    />
-                  </div>
-                </div>
               </CardContent>
             </Card>
 
