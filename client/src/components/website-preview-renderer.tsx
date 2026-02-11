@@ -15,7 +15,28 @@ import {
   User,
   Send,
   Search,
-  ArrowUp
+  ArrowUp,
+  Heart,
+  Shield,
+  Zap,
+  Target,
+  Award,
+  Briefcase,
+  Clock,
+  Globe,
+  Home,
+  Key,
+  Layers,
+  Lock,
+  Map,
+  Settings,
+  ThumbsUp,
+  Wrench,
+  BarChart,
+  Users,
+  Truck,
+  Hammer,
+  type LucideIcon,
 } from "lucide-react";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -23,6 +44,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { HeaderComponentsConfig, FooterComponentsConfig, BackToTopConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
 import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } from "@/components/website-body-components";
+
+const GRID_ICON_MAP: Record<string, LucideIcon> = {
+  Star, Heart, Shield, Zap, Target, Award, Briefcase, Clock,
+  Globe, Home, Key, Layers, Lock, Mail, Map, Phone,
+  Settings, ThumbsUp, Tool: Hammer, Wrench, Truck, Users, CheckCircle, BarChart,
+};
 
 interface PreviewData {
   website: {
@@ -829,12 +856,60 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
-                  {items.map((item: any, i: number) => (
-                    <div key={i} data-testid={`grid-item-${i}`} style={{ backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
-                      {item.title && <h3 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>{item.title}</h3>}
-                      {item.content && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.content}</p>}
-                    </div>
-                  ))}
+                  {items.map((item: any, i: number) => {
+                    const IconComp = item.mediaType === 'icon' && item.iconName ? GRID_ICON_MAP[item.iconName] : null;
+                    const gridBtnStyle: React.CSSProperties = item.buttonVariant === 'outline'
+                      ? { backgroundColor: 'transparent', color: primaryColor, border: `2px solid ${primaryColor}`, padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' }
+                      : item.buttonVariant === 'secondary'
+                        ? { backgroundColor: secondaryColor, color: '#fff', border: 'none', padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' }
+                        : { backgroundColor: primaryColor, color: '#fff', border: 'none', padding: '0.5rem 1.25rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.75rem', display: 'inline-block', textDecoration: 'none' };
+                    const cardContent = (
+                      <>
+                        {item.mediaType === 'icon' && IconComp && (
+                          <div style={{ marginBottom: '0.75rem' }}>
+                            <IconComp size={32} color={primaryColor} />
+                          </div>
+                        )}
+                        {item.mediaType === 'image' && item.imageUrl && (
+                          <div style={{ marginBottom: '0.75rem', overflow: 'hidden', borderRadius: '0.375rem' }}>
+                            <img src={item.imageUrl} alt={item.title || ''} style={{ width: '100%', height: `${item.imageHeight || 160}px`, objectFit: 'cover' }} />
+                          </div>
+                        )}
+                        {item.title && <h3 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>{item.title}</h3>}
+                        {item.content && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.content}</p>}
+                        {item.buttonEnabled && (
+                          item.itemClickable ? (
+                            <span style={gridBtnStyle} data-testid={`grid-item-btn-${i}`}>
+                              {item.buttonText || 'Learn More'}
+                            </span>
+                          ) : (
+                            <a
+                              href={item.buttonUrl || '#'}
+                              target={item.buttonOpenNewTab ? '_blank' : undefined}
+                              rel={item.buttonOpenNewTab ? 'noopener noreferrer' : undefined}
+                              style={gridBtnStyle}
+                              data-testid={`grid-item-btn-${i}`}
+                            >
+                              {item.buttonText || 'Learn More'}
+                            </a>
+                          )
+                        )}
+                      </>
+                    );
+                    const cardStyle: React.CSSProperties = { backgroundColor: '#f9fafb', padding: '1.25rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', ...(item.itemClickable ? { cursor: 'pointer' } : {}) };
+                    if (item.itemClickable && item.itemUrl) {
+                      return (
+                        <a key={i} href={item.itemUrl} target={item.itemOpenNewTab ? '_blank' : undefined} rel={item.itemOpenNewTab ? 'noopener noreferrer' : undefined} data-testid={`grid-item-${i}`} style={{ ...cardStyle, textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                          {cardContent}
+                        </a>
+                      );
+                    }
+                    return (
+                      <div key={i} data-testid={`grid-item-${i}`} style={cardStyle}>
+                        {cardContent}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </section>

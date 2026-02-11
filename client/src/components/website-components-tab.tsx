@@ -836,7 +836,7 @@ export default function WebsiteComponentsTab({
                     type="number"
                     min={16}
                     max={200}
-                    value={element.content.logoHeight || 28}
+                    value={String(element.content.logoHeight || 28)}
                     onChange={(e) => updateFn(element.id, { content: { ...element.content, logoHeight: parseInt(e.target.value) || 28 } })}
                     data-testid={`input-footer-logo-height-${element.id}`}
                   />

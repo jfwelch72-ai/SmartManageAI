@@ -1144,9 +1144,15 @@ function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }
   );
 }
 
+const GRID_ICON_OPTIONS = [
+  "Star", "Heart", "Shield", "Zap", "Target", "Award", "Briefcase", "Clock",
+  "Globe", "Home", "Key", "Layers", "Lock", "Mail", "Map", "Phone",
+  "Settings", "ThumbsUp", "Tool", "Truck", "Users", "Wrench", "CheckCircle", "BarChart",
+];
+
 function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }; onChange: (c: GridConfig) => void }) {
   const addItem = () => {
-    onChange({ ...comp.config, items: [...comp.config.items, { id: `g-${Date.now()}`, title: "New Item", content: "Description" }] });
+    onChange({ ...comp.config, items: [...comp.config.items, { id: `g-${Date.now()}`, title: "New Item", content: "Description", mediaType: "none" }] });
   };
   const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
   const updateItem = (i: number, updates: Partial<GridItem>) => {
@@ -1181,6 +1187,125 @@ function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }
               </Button>
             </div>
             <Textarea value={item.content} onChange={(e) => updateItem(i, { content: e.target.value })} className="resize-none text-xs" rows={2} data-testid={`input-grid-item-content-${i}`} />
+
+            <div className="space-y-1">
+              <Label className="text-xs">Media</Label>
+              <Select value={item.mediaType || "none"} onValueChange={(v) => updateItem(i, { mediaType: v as GridItem["mediaType"] })}>
+                <SelectTrigger data-testid={`select-grid-media-${i}`}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="icon">Icon</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {item.mediaType === "icon" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Icon</Label>
+                <Select value={item.iconName || "Star"} onValueChange={(v) => updateItem(i, { iconName: v })}>
+                  <SelectTrigger data-testid={`select-grid-icon-${i}`}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {GRID_ICON_OPTIONS.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {item.mediaType === "image" && (
+              <>
+                <ImageUploadField
+                  value={item.imageUrl || ""}
+                  onChange={(url) => updateItem(i, { imageUrl: url })}
+                  label="Image"
+                  placeholder="Upload or select an image"
+                  testId={`input-grid-image-${i}`}
+                />
+                <div className="space-y-1">
+                  <Label className="text-xs">Image Height (px)</Label>
+                  <Input
+                    type="number"
+                    min={30}
+                    max={600}
+                    value={item.imageHeight || 160}
+                    onChange={(e) => updateItem(i, { imageHeight: parseInt(e.target.value) || 160 })}
+                    data-testid={`input-grid-img-height-${i}`}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2 pt-1 border-t">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={!!item.buttonEnabled}
+                  onCheckedChange={(v) => updateItem(i, { buttonEnabled: v })}
+                  data-testid={`switch-grid-button-${i}`}
+                />
+                <Label className="text-xs">Show Button</Label>
+              </div>
+              {item.buttonEnabled && (
+                <div className="space-y-2 pl-2">
+                  <Input
+                    value={item.buttonText || "Learn More"}
+                    onChange={(e) => updateItem(i, { buttonText: e.target.value })}
+                    placeholder="Button text"
+                    data-testid={`input-grid-btn-text-${i}`}
+                  />
+                  <Input
+                    value={item.buttonUrl || "#"}
+                    onChange={(e) => updateItem(i, { buttonUrl: e.target.value })}
+                    placeholder="Button URL"
+                    data-testid={`input-grid-btn-url-${i}`}
+                  />
+                  <Select value={item.buttonVariant || "primary"} onValueChange={(v) => updateItem(i, { buttonVariant: v as GridItem["buttonVariant"] })}>
+                    <SelectTrigger data-testid={`select-grid-btn-variant-${i}`}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="primary">Primary</SelectItem>
+                      <SelectItem value="secondary">Secondary</SelectItem>
+                      <SelectItem value="outline">Outline</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={!!item.buttonOpenNewTab}
+                      onCheckedChange={(v) => updateItem(i, { buttonOpenNewTab: v })}
+                      data-testid={`switch-grid-btn-newtab-${i}`}
+                    />
+                    <Label className="text-xs">Open in new tab</Label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-1 border-t">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={!!item.itemClickable}
+                  onCheckedChange={(v) => updateItem(i, { itemClickable: v })}
+                  data-testid={`switch-grid-clickable-${i}`}
+                />
+                <Label className="text-xs">Entire card clickable</Label>
+              </div>
+              {item.itemClickable && (
+                <div className="space-y-2 pl-2">
+                  <Input
+                    value={item.itemUrl || "#"}
+                    onChange={(e) => updateItem(i, { itemUrl: e.target.value })}
+                    placeholder="Card link URL"
+                    data-testid={`input-grid-item-url-${i}`}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={!!item.itemOpenNewTab}
+                      onCheckedChange={(v) => updateItem(i, { itemOpenNewTab: v })}
+                      data-testid={`switch-grid-item-newtab-${i}`}
+                    />
+                    <Label className="text-xs">Open in new tab</Label>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ))}
         <Button variant="outline" size="sm" onClick={addItem} data-testid="button-add-grid-item">
