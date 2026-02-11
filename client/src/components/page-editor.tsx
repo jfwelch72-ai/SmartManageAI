@@ -642,26 +642,26 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           {showComponentLibrary && (
             <>
               <div className="p-2 border-b space-y-2">
-                <div className="flex items-center gap-0.5 p-0.5 border rounded-md">
+                <div className="flex items-center gap-0.5 p-0.5 border rounded-md overflow-hidden">
                   <Button
                     size="sm"
                     variant={!showGlobalLibrary ? "default" : "ghost"}
                     onClick={() => setShowGlobalLibrary(false)}
-                    className="flex-1 text-xs h-7"
+                    className="flex-1 min-w-0 text-[11px] h-7 px-2"
                     data-testid="button-library-components"
                   >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Components
+                    <Plus className="h-3 w-3 mr-1 flex-shrink-0" />
+                    <span className="truncate">Components</span>
                   </Button>
                   <Button
                     size="sm"
                     variant={showGlobalLibrary ? "default" : "ghost"}
                     onClick={() => setShowGlobalLibrary(true)}
-                    className="flex-1 text-xs h-7"
+                    className="flex-1 min-w-0 text-[11px] h-7 px-2"
                     data-testid="button-library-saved"
                   >
-                    <FolderOpen className="h-3 w-3 mr-1" />
-                    Saved ({globalComponents.length})
+                    <FolderOpen className="h-3 w-3 mr-1 flex-shrink-0" />
+                    <span className="truncate">Saved ({globalComponents.length})</span>
                   </Button>
                 </div>
                 {!showGlobalLibrary && (
