@@ -626,16 +626,18 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
   const renderFooterElement = (el: FooterElement) => {
     switch (el.type) {
-      case 'footer_logo':
+      case 'footer_logo': {
+        const footerLogoSrc = (el as any).content?.imageUrl || website.logoUrl;
         return (
           <div key={el.id} data-testid="footer-config-logo" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {website.logoUrl ? (
-              <img src={website.logoUrl} alt={siteName} style={{ height: '28px', objectFit: 'contain' }} />
+            {footerLogoSrc ? (
+              <img src={footerLogoSrc} alt={siteName} style={{ height: '28px', objectFit: 'contain' }} />
             ) : (
               <span style={{ fontWeight: 700, fontSize: '1.125rem', color: '#fff' }}>{siteName}</span>
             )}
           </div>
         );
+      }
       case 'social_icons':
         return <div key={el.id} data-testid="footer-config-social" style={{ color: '#d1d5db' }}>{renderSocialIconsFromData()}</div>;
       case 'copyright':

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { ImageUploadField } from "@/components/website-body-components";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -817,6 +818,18 @@ export default function WebsiteComponentsTab({
                     <SelectItem value="vertical">Vertical</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {element.type === "footer_logo" && (
+              <div className="space-y-2">
+                <ImageUploadField
+                  value={element.content.imageUrl || ""}
+                  onChange={(url) => updateFn(element.id, { content: { ...element.content, imageUrl: url } })}
+                  label="Footer Logo Image"
+                  placeholder="Upload or select a logo"
+                  testId={`input-footer-logo-${element.id}`}
+                />
               </div>
             )}
           </div>
