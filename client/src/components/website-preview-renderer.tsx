@@ -21,7 +21,7 @@ import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok } from "react-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { HeaderComponentsConfig, FooterComponentsConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
+import type { HeaderComponentsConfig, FooterComponentsConfig, BackToTopConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
 import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } from "@/components/website-body-components";
 
 interface PreviewData {
@@ -642,17 +642,6 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           <div key={el.id} data-testid="footer-config-copyright" style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
             {el.content?.text || `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`}
           </div>
-        );
-      case 'back_to_top':
-        return (
-          <button
-            key={el.id}
-            data-testid="footer-config-back-to-top"
-            onClick={() => { const container = document.querySelector('[data-testid="preview-container"]'); container?.scrollTo({ top: 0, behavior: 'smooth' }); }}
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '0.4rem 0.875rem', borderRadius: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-          >
-            <ArrowUp size={14} /> Back to Top
-          </button>
         );
       case 'link_list':
         return (
@@ -2117,6 +2106,41 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       )}
       {renderCurrentPage()}
       {renderFooter()}
+      {data.footerConfig?.backToTop?.enabled && (
+        <button
+          data-testid="preview-back-to-top"
+          onClick={() => {
+            const container = document.querySelector('[data-testid="preview-container"]');
+            container?.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            width: `${data.footerConfig.backToTop.size || 40}px`,
+            height: `${data.footerConfig.backToTop.size || 40}px`,
+            padding: `${data.footerConfig.backToTop.padding || 8}px`,
+            backgroundColor: data.footerConfig.backToTop.backgroundColor || 'rgba(255,255,255,0.1)',
+            border: `${data.footerConfig.backToTop.borderWidth || 1}px solid ${data.footerConfig.backToTop.borderColor || 'rgba(255,255,255,0.2)'}`,
+            borderRadius: `${data.footerConfig.backToTop.borderRadius || 6}px`,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }}
+        >
+          {data.footerConfig.backToTop.type === "image" && data.footerConfig.backToTop.imageUrl ? (
+            <img
+              src={data.footerConfig.backToTop.imageUrl}
+              alt="Back to top"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            <ArrowUp size={Math.round((data.footerConfig.backToTop.size || 40) * 0.5)} color="#fff" />
+          )}
+        </button>
+      )}
     </div>
   );
 }

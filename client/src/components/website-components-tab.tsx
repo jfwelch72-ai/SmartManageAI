@@ -61,7 +61,7 @@ export interface HeaderElement {
 
 export interface FooterElement {
   id: string;
-  type: "footer_logo" | "social_icons" | "copyright" | "back_to_top" | "link_list" | "footer_title";
+  type: "footer_logo" | "social_icons" | "copyright" | "link_list" | "footer_title";
   label: string;
   enabled: boolean;
   alignment: "left" | "center" | "right";
@@ -71,6 +71,18 @@ export interface FooterElement {
   order: number;
   section: "top" | "middle" | "bottom";
   column: number;
+}
+
+export interface BackToTopConfig {
+  enabled: boolean;
+  type: "icon" | "image";
+  imageUrl: string;
+  size: number;
+  padding: number;
+  backgroundColor: string;
+  borderWidth: number;
+  borderRadius: number;
+  borderColor: string;
 }
 
 export interface HeaderComponentsConfig {
@@ -99,6 +111,7 @@ export interface FooterComponentsConfig {
     columns: number;
     elements: FooterElement[];
   };
+  backToTop?: BackToTopConfig;
 }
 
 const DEFAULT_HEADER_ELEMENTS: HeaderElement[] = [
@@ -115,10 +128,21 @@ const DEFAULT_FOOTER_ELEMENTS: FooterElement[] = [
   { id: "f-logo", type: "footer_logo", label: "Footer Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 0 },
   { id: "f-social", type: "social_icons", label: "Social Media Icons", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: {}, order: 1, section: "middle", column: 1 },
   { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "© 2026 All rights reserved." }, order: 0, section: "bottom", column: 0 },
-  { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: {}, order: 1, section: "bottom", column: 1 },
   { id: "f-links", type: "link_list", label: "Link List", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { orientation: "vertical" }, order: 0, section: "middle", column: 0 },
   { id: "f-title", type: "footer_title", label: "Footer Title", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { text: "Quick Links" }, order: 0, section: "top", column: 1 },
 ];
+
+const DEFAULT_BACK_TO_TOP: BackToTopConfig = {
+  enabled: true,
+  type: "icon",
+  imageUrl: "",
+  size: 40,
+  padding: 8,
+  backgroundColor: "rgba(255,255,255,0.1)",
+  borderWidth: 1,
+  borderRadius: 6,
+  borderColor: "rgba(255,255,255,0.2)",
+};
 
 export function getDefaultHeaderConfig(): HeaderComponentsConfig {
   return {
@@ -149,6 +173,7 @@ export function getDefaultFooterConfig(): FooterComponentsConfig {
       columns: 2,
       elements: DEFAULT_FOOTER_ELEMENTS.map(e => ({ ...e })),
     },
+    backToTop: { ...DEFAULT_BACK_TO_TOP },
   };
 }
 
@@ -226,7 +251,6 @@ const FOOTER_PRESETS: FooterPreset[] = [
       { id: "f-logo", type: "footer_logo", label: "Footer Logo", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 1 },
       { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved." }, order: 0, section: "bottom", column: 1 },
       { id: "f-social", type: "social_icons", label: "Social Media Icons", enabled: false, alignment: "center", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "middle", column: 1 },
-      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "bottom", column: 3 },
       { id: "f-links", type: "link_list", label: "Link List", enabled: false, alignment: "left", visibleDesktop: false, visibleMobile: false, content: { orientation: "vertical" }, order: 0, section: "middle", column: 0 },
       { id: "f-title", type: "footer_title", label: "Footer Title", enabled: false, alignment: "left", visibleDesktop: false, visibleMobile: false, content: { text: "Quick Links" }, order: 0, section: "top", column: 0 },
     ],
@@ -242,7 +266,6 @@ const FOOTER_PRESETS: FooterPreset[] = [
       { id: "f-links", type: "link_list", label: "Quick Links", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { orientation: "vertical" }, order: 0, section: "top", column: 1 },
       { id: "f-social", type: "social_icons", label: "Social Media Icons", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 3 },
       { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "center", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved." }, order: 0, section: "bottom", column: 0 },
-      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: false, alignment: "right", visibleDesktop: false, visibleMobile: false, content: {}, order: 1, section: "bottom", column: 3 },
     ],
   },
   {
@@ -256,7 +279,6 @@ const FOOTER_PRESETS: FooterPreset[] = [
       { id: "f-logo", type: "footer_logo", label: "Company Logo", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 2 },
       { id: "f-social", type: "social_icons", label: "Contact & Social", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: {}, order: 0, section: "top", column: 3 },
       { id: "f-copyright", type: "copyright", label: "Copyright Notice", enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true, content: { text: "\u00a9 2026 All rights reserved. All trademarks are property of their respective owners." }, order: 0, section: "bottom", column: 0 },
-      { id: "f-backtotop", type: "back_to_top", label: "Back to Top Button", enabled: true, alignment: "right", visibleDesktop: true, visibleMobile: true, content: {}, order: 1, section: "bottom", column: 3 },
     ],
   },
 ];
@@ -303,7 +325,6 @@ const ELEMENT_ICONS: Record<string, typeof Image> = {
   announcement_bar: Megaphone,
   footer_logo: Image,
   copyright: Copyright,
-  back_to_top: ArrowUp,
   link_list: Link,
   footer_title: Type,
 };
@@ -1283,6 +1304,7 @@ export default function WebsiteComponentsTab({
       )}
 
       {activeGlobal === "footer" && (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Footer Component</CardTitle>
@@ -1388,6 +1410,197 @@ export default function WebsiteComponentsTab({
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ArrowUp className="h-4 w-4" />
+                Back to Top Button
+              </CardTitle>
+              <CardDescription>Fixed button that scrolls visitors back to the top of the page</CardDescription>
+            </div>
+            <Switch
+              checked={footerConfig.backToTop?.enabled ?? DEFAULT_BACK_TO_TOP.enabled}
+              onCheckedChange={(checked) => {
+                const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                newConfig.backToTop.enabled = checked;
+                onFooterConfigChange(newConfig);
+              }}
+              data-testid="switch-back-to-top"
+            />
+          </CardHeader>
+          {(footerConfig.backToTop?.enabled ?? DEFAULT_BACK_TO_TOP.enabled) && (
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Button Content</Label>
+                <div className="flex items-center gap-1 p-1 border rounded-md w-fit">
+                  <Button
+                    size="sm"
+                    variant={(footerConfig.backToTop?.type ?? "icon") === "icon" ? "default" : "ghost"}
+                    onClick={() => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.type = "icon";
+                      onFooterConfigChange(newConfig);
+                    }}
+                    data-testid="button-btt-type-icon"
+                  >
+                    Icon
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={(footerConfig.backToTop?.type ?? "icon") === "image" ? "default" : "ghost"}
+                    onClick={() => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.type = "image";
+                      onFooterConfigChange(newConfig);
+                    }}
+                    data-testid="button-btt-type-image"
+                  >
+                    Image
+                  </Button>
+                </div>
+              </div>
+
+              {(footerConfig.backToTop?.type ?? "icon") === "image" && (
+                <div className="space-y-2">
+                  <Label>Image URL</Label>
+                  <Input
+                    value={footerConfig.backToTop?.imageUrl ?? ""}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.imageUrl = e.target.value;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    placeholder="https://example.com/icon.png"
+                    data-testid="input-btt-image-url"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Size (px)</Label>
+                  <Input
+                    type="number"
+                    value={footerConfig.backToTop?.size ?? DEFAULT_BACK_TO_TOP.size}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.size = parseInt(e.target.value) || 40;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    min={20}
+                    max={80}
+                    data-testid="input-btt-size"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Padding (px)</Label>
+                  <Input
+                    type="number"
+                    value={footerConfig.backToTop?.padding ?? DEFAULT_BACK_TO_TOP.padding}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.padding = parseInt(e.target.value) || 8;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    min={0}
+                    max={40}
+                    data-testid="input-btt-padding"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Background Color</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={footerConfig.backToTop?.backgroundColor ?? "#1a1a1a"}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.backgroundColor = e.target.value;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    className="w-9 h-9 rounded-md border cursor-pointer"
+                    data-testid="input-btt-bg-color"
+                  />
+                  <Input
+                    value={footerConfig.backToTop?.backgroundColor ?? DEFAULT_BACK_TO_TOP.backgroundColor}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.backgroundColor = e.target.value;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    placeholder="rgba(255,255,255,0.1)"
+                    data-testid="input-btt-bg-color-text"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Border Width</Label>
+                  <Input
+                    type="number"
+                    value={footerConfig.backToTop?.borderWidth ?? DEFAULT_BACK_TO_TOP.borderWidth}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.borderWidth = parseInt(e.target.value) || 0;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    min={0}
+                    max={10}
+                    data-testid="input-btt-border-width"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Border Radius</Label>
+                  <Input
+                    type="number"
+                    value={footerConfig.backToTop?.borderRadius ?? DEFAULT_BACK_TO_TOP.borderRadius}
+                    onChange={(e) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.borderRadius = parseInt(e.target.value) || 0;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    min={0}
+                    max={50}
+                    data-testid="input-btt-border-radius"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Border Color</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={footerConfig.backToTop?.borderColor ?? "#333333"}
+                      onChange={(e) => {
+                        const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                        if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                        newConfig.backToTop.borderColor = e.target.value;
+                        onFooterConfigChange(newConfig);
+                      }}
+                      className="w-9 h-9 rounded-md border cursor-pointer"
+                      data-testid="input-btt-border-color"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+        </>
       )}
 
       {activeGlobal === "innerpage" && (
