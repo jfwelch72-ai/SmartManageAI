@@ -72,9 +72,6 @@ import {
   Loader2,
   Smartphone,
   LayoutTemplate,
-  PanelLeft,
-  PanelRight,
-  ChevronDown,
   Menu
 } from "lucide-react";
 import { format } from "date-fns";
@@ -1501,336 +1498,6 @@ export default function WebsiteBuilderPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Settings className="h-4 w-4" />
-                Header Layout Setup
-              </CardTitle>
-              <CardDescription>Configure header layout, position, and navigation behavior</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label data-testid="label-header-type">Header Type</Label>
-                  <Select
-                    value={websiteForm.headerType}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, headerType: val }))}
-                  >
-                    <SelectTrigger data-testid="select-header-type">
-                      <SelectValue placeholder="Select header type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="static">Static</SelectItem>
-                      <SelectItem value="sticky">Sticky</SelectItem>
-                      <SelectItem value="fixed">Fixed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {websiteForm.headerType === "static" && "Header scrolls with the page content"}
-                    {websiteForm.headerType === "sticky" && "Header stays at the top when scrolling down"}
-                    {websiteForm.headerType === "fixed" && "Header is always fixed at the top of the viewport"}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label data-testid="label-header-height">Header Height (px)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={websiteForm.headerHeight}
-                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, headerHeight: parseInt(e.target.value) || 80 }))}
-                      min={40}
-                      max={200}
-                      data-testid="input-header-height"
-                    />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Height of the header bar (40 - 200px)</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label data-testid="label-logo-position">Logo Position</Label>
-                  <Select
-                    value={websiteForm.logoPosition}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, logoPosition: val }))}
-                  >
-                    <SelectTrigger data-testid="select-logo-position">
-                      <SelectValue placeholder="Select logo position" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="left">Left</SelectItem>
-                      <SelectItem value="center">Center</SelectItem>
-                      <SelectItem value="right">Right</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label data-testid="label-navigation-layout">Navigation Layout</Label>
-                  <Select
-                    value={websiteForm.navigationLayout}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, navigationLayout: val }))}
-                  >
-                    <SelectTrigger data-testid="select-navigation-layout">
-                      <SelectValue placeholder="Select navigation layout" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="horizontal">Horizontal</SelectItem>
-                      <SelectItem value="hamburger">Hamburger Menu</SelectItem>
-                      <SelectItem value="split">Split (Logo center, nav sides)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {websiteForm.navigationLayout === "horizontal" && "Navigation links displayed in a horizontal row"}
-                    {websiteForm.navigationLayout === "hamburger" && "Navigation hidden behind a hamburger menu icon"}
-                    {websiteForm.navigationLayout === "split" && "Logo centered with navigation links on both sides"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <Label data-testid="label-mobile-nav-style" className="flex items-center gap-2">
-                  <Smartphone className="h-4 w-4 text-muted-foreground" />
-                  Mobile Navigation Style
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Choose how the mobile menu appears when visitors tap the burger menu icon
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "dropdown" }))}
-                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "dropdown" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
-                    data-testid="button-mobile-nav-dropdown"
-                  >
-                    <div className="flex flex-col items-center gap-1">
-                      <div className="w-12 h-8 rounded border border-border flex flex-col items-center justify-center">
-                        <Menu className="h-3 w-3 text-muted-foreground" />
-                      </div>
-                      <div className="w-12 flex flex-col gap-0.5">
-                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
-                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
-                        <div className="w-full h-1 rounded bg-muted-foreground/30" />
-                      </div>
-                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                    </div>
-                    <span className="text-xs font-medium">Dropdown</span>
-                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Menu drops down below the header</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "slide-left" }))}
-                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "slide-left" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
-                    data-testid="button-mobile-nav-slide-left"
-                  >
-                    <div className="flex items-center gap-1">
-                      <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
-                      <PanelLeft className="h-4 w-4 text-muted-foreground" />
-                      <div className="w-8 h-10 rounded border border-border opacity-50" />
-                    </div>
-                    <span className="text-xs font-medium">Left Panel</span>
-                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the left side</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setWebsiteForm(prev => ({ ...prev, mobileNavStyle: "slide-right" }))}
-                    className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${websiteForm.mobileNavStyle === "slide-right" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
-                    data-testid="button-mobile-nav-slide-right"
-                  >
-                    <div className="flex items-center gap-1">
-                      <div className="w-8 h-10 rounded border border-border opacity-50" />
-                      <PanelRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
-                    </div>
-                    <span className="text-xs font-medium">Right Panel</span>
-                    <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the right side</p>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="show-on-scroll" data-testid="label-show-on-scroll">Show on Scroll</Label>
-                  <p className="text-xs text-muted-foreground">Reveal the header when user scrolls up</p>
-                </div>
-                <Switch
-                  id="show-on-scroll"
-                  checked={websiteForm.showOnScroll}
-                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showOnScroll: checked }))}
-                  data-testid="switch-show-on-scroll"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Inner Page Setup
-              </CardTitle>
-              <CardDescription>Define default layout behavior for inner pages</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label data-testid="label-page-layout">Page Layout</Label>
-                  <Select
-                    value={websiteForm.pageLayout}
-                    onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, pageLayout: val }))}
-                  >
-                    <SelectTrigger data-testid="select-page-layout">
-                      <SelectValue placeholder="Select page layout" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="full-width">Full Width</SelectItem>
-                      <SelectItem value="boxed">Boxed</SelectItem>
-                      <SelectItem value="sidebar-left">Sidebar Left</SelectItem>
-                      <SelectItem value="sidebar-right">Sidebar Right</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {websiteForm.pageLayout === "full-width" && "Content spans the full page width"}
-                    {websiteForm.pageLayout === "boxed" && "Content is centered in a contained box"}
-                    {websiteForm.pageLayout === "sidebar-left" && "Main content with a sidebar on the left"}
-                    {websiteForm.pageLayout === "sidebar-right" && "Main content with a sidebar on the right"}
-                  </p>
-                </div>
-
-                {(websiteForm.pageLayout === "sidebar-left" || websiteForm.pageLayout === "sidebar-right") && (
-                  <div className="space-y-2">
-                    <Label data-testid="label-sidebar-width">Sidebar Width (px)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={websiteForm.sidebarWidth}
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, sidebarWidth: parseInt(e.target.value) || 300 }))}
-                        min={200}
-                        max={500}
-                        data-testid="input-sidebar-width"
-                      />
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Width of the sidebar (200 - 500px)</p>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label data-testid="label-page-padding">Page Padding (px)</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={websiteForm.pagePadding}
-                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, pagePadding: parseInt(e.target.value) || 32 }))}
-                      min={0}
-                      max={120}
-                      data-testid="input-page-padding"
-                    />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Internal padding around the page content area</p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="show-breadcrumb" data-testid="label-breadcrumb">Breadcrumb Navigation</Label>
-                  <p className="text-xs text-muted-foreground">Show breadcrumb trail on inner pages for easier navigation</p>
-                </div>
-                <Switch
-                  id="show-breadcrumb"
-                  checked={websiteForm.showBreadcrumb}
-                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, showBreadcrumb: checked }))}
-                  data-testid="switch-breadcrumb"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Layout className="h-4 w-4" />
-                Footer Setup
-              </CardTitle>
-              <CardDescription>Configure footer layout, columns, and visibility</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="footer-visibility" data-testid="label-footer-visibility">Footer Visibility</Label>
-                  <p className="text-xs text-muted-foreground">Show or hide the footer across your website</p>
-                </div>
-                <Switch
-                  id="footer-visibility"
-                  checked={websiteForm.footerVisibility}
-                  onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, footerVisibility: checked }))}
-                  data-testid="switch-footer-visibility"
-                />
-              </div>
-
-              {websiteForm.footerVisibility && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                    <Label data-testid="label-footer-columns">Footer Columns</Label>
-                    <Select
-                      value={String(websiteForm.footerColumns)}
-                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerColumns: parseInt(val) }))}
-                    >
-                      <SelectTrigger data-testid="select-footer-columns">
-                        <SelectValue placeholder="Select columns" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 Column</SelectItem>
-                        <SelectItem value="2">2 Columns</SelectItem>
-                        <SelectItem value="3">3 Columns</SelectItem>
-                        <SelectItem value="4">4 Columns</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">Number of content columns in the footer</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label data-testid="label-footer-width">Footer Width</Label>
-                    <Select
-                      value={websiteForm.footerWidth}
-                      onValueChange={(val) => setWebsiteForm(prev => ({ ...prev, footerWidth: val }))}
-                    >
-                      <SelectTrigger data-testid="select-footer-width">
-                        <SelectValue placeholder="Select width" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="boxed">Boxed</SelectItem>
-                        <SelectItem value="full-width">Full Width</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {websiteForm.footerWidth === "boxed" ? "Footer content stays within the max width" : "Footer spans the full browser width"}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label data-testid="label-footer-padding">Footer Padding (px)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={websiteForm.footerPadding}
-                        onChange={(e) => setWebsiteForm(prev => ({ ...prev, footerPadding: parseInt(e.target.value) || 40 }))}
-                        min={0}
-                        max={120}
-                        data-testid="input-footer-padding"
-                      />
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Internal spacing within the footer area</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
           <WebsiteComponentsTab
             headerConfig={headerComponentsConfig}
             footerConfig={footerComponentsConfig}
@@ -1838,6 +1505,29 @@ export default function WebsiteBuilderPage() {
             onFooterConfigChange={setFooterComponentsConfig}
             onSave={handleSaveWebsite}
             isSaving={saveWebsiteMutation.isPending}
+            headerLayoutSettings={{
+              headerType: websiteForm.headerType,
+              headerHeight: websiteForm.headerHeight,
+              logoPosition: websiteForm.logoPosition,
+              navigationLayout: websiteForm.navigationLayout,
+              mobileNavStyle: websiteForm.mobileNavStyle,
+              showOnScroll: websiteForm.showOnScroll,
+            }}
+            onHeaderLayoutChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
+            footerLayoutSettings={{
+              footerVisibility: websiteForm.footerVisibility,
+              footerColumns: websiteForm.footerColumns,
+              footerWidth: websiteForm.footerWidth,
+              footerPadding: websiteForm.footerPadding,
+            }}
+            onFooterLayoutChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
+            innerPageSettings={{
+              pageLayout: websiteForm.pageLayout,
+              sidebarWidth: websiteForm.sidebarWidth,
+              pagePadding: websiteForm.pagePadding,
+              showBreadcrumb: websiteForm.showBreadcrumb,
+            }}
+            onInnerPageChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
           />
         </TabsContent>
 

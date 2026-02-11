@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Monitor,
   Smartphone,
@@ -38,6 +39,10 @@ import {
   Award,
   Shield,
   Check,
+  Menu,
+  PanelLeft,
+  PanelRight,
+  FileText,
 } from "lucide-react";
 
 export interface HeaderElement {
@@ -310,7 +315,55 @@ interface WebsiteComponentsTabProps {
   onFooterConfigChange: (config: FooterComponentsConfig) => void;
   onSave: () => void;
   isSaving: boolean;
+  headerLayoutSettings?: {
+    headerType: string;
+    headerHeight: number;
+    logoPosition: string;
+    navigationLayout: string;
+    mobileNavStyle: string;
+    showOnScroll: boolean;
+  };
+  onHeaderLayoutChange?: (updates: Partial<NonNullable<WebsiteComponentsTabProps['headerLayoutSettings']>>) => void;
+  footerLayoutSettings?: {
+    footerVisibility: boolean;
+    footerColumns: number;
+    footerWidth: string;
+    footerPadding: number;
+  };
+  onFooterLayoutChange?: (updates: Partial<NonNullable<WebsiteComponentsTabProps['footerLayoutSettings']>>) => void;
+  innerPageSettings?: {
+    pageLayout: string;
+    sidebarWidth: number;
+    pagePadding: number;
+    showBreadcrumb: boolean;
+  };
+  onInnerPageChange?: (updates: Partial<NonNullable<WebsiteComponentsTabProps['innerPageSettings']>>) => void;
 }
+
+const DEFAULT_HEADER_LAYOUT = {
+  headerType: "static",
+  headerHeight: 80,
+  logoPosition: "left",
+  navigationLayout: "horizontal",
+  mobileNavStyle: "dropdown",
+  showOnScroll: true,
+};
+
+const DEFAULT_FOOTER_LAYOUT = {
+  footerVisibility: true,
+  footerColumns: 3,
+  footerWidth: "boxed",
+  footerPadding: 40,
+};
+
+const DEFAULT_INNER_PAGE = {
+  pageLayout: "boxed",
+  sidebarWidth: 300,
+  pagePadding: 32,
+  showBreadcrumb: true,
+};
+
+const noop = () => {};
 
 export default function WebsiteComponentsTab({
   headerConfig,
@@ -319,10 +372,16 @@ export default function WebsiteComponentsTab({
   onFooterConfigChange,
   onSave,
   isSaving,
+  headerLayoutSettings = DEFAULT_HEADER_LAYOUT,
+  onHeaderLayoutChange = noop,
+  footerLayoutSettings = DEFAULT_FOOTER_LAYOUT,
+  onFooterLayoutChange = noop,
+  innerPageSettings = DEFAULT_INNER_PAGE,
+  onInnerPageChange = noop,
 }: WebsiteComponentsTabProps) {
   const [deviceView, setDeviceView] = useState<"desktop" | "mobile">("desktop");
   const [expandedElement, setExpandedElement] = useState<string | null>(null);
-  const [activeGlobal, setActiveGlobal] = useState<"header" | "footer">("header");
+  const [activeGlobal, setActiveGlobal] = useState<"header" | "footer" | "innerpage">("header");
   const [showPresets, setShowPresets] = useState(false);
   const [activeHeaderPreset, setActiveHeaderPreset] = useState<string | null>(null);
   const [activeFooterPreset, setActiveFooterPreset] = useState<string | null>(null);
@@ -914,6 +973,14 @@ export default function WebsiteComponentsTab({
           >
             Footer
           </Button>
+          <Button
+            size="sm"
+            variant={activeGlobal === "innerpage" ? "default" : "ghost"}
+            onClick={() => setActiveGlobal("innerpage")}
+            data-testid="button-global-innerpage"
+          >
+            Inner Page
+          </Button>
         </div>
       </div>
 
@@ -1035,6 +1102,173 @@ export default function WebsiteComponentsTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="w-full flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Settings className="h-4 w-4" />
+                    Layout Settings
+                  </span>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label data-testid="label-header-type">Header Type</Label>
+                    <Select
+                      value={headerLayoutSettings.headerType}
+                      onValueChange={(val) => onHeaderLayoutChange({ headerType: val })}
+                    >
+                      <SelectTrigger data-testid="select-header-type">
+                        <SelectValue placeholder="Select header type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="static">Static</SelectItem>
+                        <SelectItem value="sticky">Sticky</SelectItem>
+                        <SelectItem value="fixed">Fixed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {headerLayoutSettings.headerType === "static" && "Header scrolls with the page content"}
+                      {headerLayoutSettings.headerType === "sticky" && "Header stays at the top when scrolling down"}
+                      {headerLayoutSettings.headerType === "fixed" && "Header is always fixed at the top of the viewport"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label data-testid="label-header-height">Header Height (px)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={headerLayoutSettings.headerHeight}
+                        onChange={(e) => onHeaderLayoutChange({ headerHeight: parseInt(e.target.value) || 80 })}
+                        min={40}
+                        max={200}
+                        data-testid="input-header-height"
+                      />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Height of the header bar (40 - 200px)</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label data-testid="label-logo-position">Logo Position</Label>
+                    <Select
+                      value={headerLayoutSettings.logoPosition}
+                      onValueChange={(val) => onHeaderLayoutChange({ logoPosition: val })}
+                    >
+                      <SelectTrigger data-testid="select-logo-position">
+                        <SelectValue placeholder="Select logo position" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="center">Center</SelectItem>
+                        <SelectItem value="right">Right</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label data-testid="label-navigation-layout">Navigation Layout</Label>
+                    <Select
+                      value={headerLayoutSettings.navigationLayout}
+                      onValueChange={(val) => onHeaderLayoutChange({ navigationLayout: val })}
+                    >
+                      <SelectTrigger data-testid="select-navigation-layout">
+                        <SelectValue placeholder="Select navigation layout" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="horizontal">Horizontal</SelectItem>
+                        <SelectItem value="hamburger">Hamburger Menu</SelectItem>
+                        <SelectItem value="split">Split (Logo center, nav sides)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {headerLayoutSettings.navigationLayout === "horizontal" && "Navigation links displayed in a horizontal row"}
+                      {headerLayoutSettings.navigationLayout === "hamburger" && "Navigation hidden behind a hamburger menu icon"}
+                      {headerLayoutSettings.navigationLayout === "split" && "Logo centered with navigation links on both sides"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label data-testid="label-mobile-nav-style" className="flex items-center gap-2">
+                    <Smartphone className="h-4 w-4 text-muted-foreground" />
+                    Mobile Navigation Style
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Choose how the mobile menu appears when visitors tap the burger menu icon
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => onHeaderLayoutChange({ mobileNavStyle: "dropdown" })}
+                      className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${headerLayoutSettings.mobileNavStyle === "dropdown" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                      data-testid="button-mobile-nav-dropdown"
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="w-12 h-8 rounded border border-border flex flex-col items-center justify-center">
+                          <Menu className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        <div className="w-12 flex flex-col gap-0.5">
+                          <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                          <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                          <div className="w-full h-1 rounded bg-muted-foreground/30" />
+                        </div>
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                      <span className="text-xs font-medium">Dropdown</span>
+                      <p className="text-[10px] text-muted-foreground text-center leading-tight">Menu drops down below the header</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onHeaderLayoutChange({ mobileNavStyle: "slide-left" })}
+                      className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${headerLayoutSettings.mobileNavStyle === "slide-left" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                      data-testid="button-mobile-nav-slide-left"
+                    >
+                      <div className="flex items-center gap-1">
+                        <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
+                        <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                        <div className="w-8 h-10 rounded border border-border opacity-50" />
+                      </div>
+                      <span className="text-xs font-medium">Left Panel</span>
+                      <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the left side</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onHeaderLayoutChange({ mobileNavStyle: "slide-right" })}
+                      className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${headerLayoutSettings.mobileNavStyle === "slide-right" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                      data-testid="button-mobile-nav-slide-right"
+                    >
+                      <div className="flex items-center gap-1">
+                        <div className="w-8 h-10 rounded border border-border opacity-50" />
+                        <PanelRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="w-5 h-10 rounded border-2 border-primary/50 bg-primary/10" />
+                      </div>
+                      <span className="text-xs font-medium">Right Panel</span>
+                      <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the right side</p>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="show-on-scroll-comp" data-testid="label-show-on-scroll">Show on Scroll</Label>
+                    <p className="text-xs text-muted-foreground">Reveal the header when user scrolls up</p>
+                  </div>
+                  <Switch
+                    id="show-on-scroll-comp"
+                    checked={headerLayoutSettings.showOnScroll}
+                    onCheckedChange={(checked) => onHeaderLayoutChange({ showOnScroll: checked })}
+                    data-testid="switch-show-on-scroll"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
             {deviceView === "desktop" ? (
               <>
                 {renderDesktopSection("top", "Top Header", "header")}
@@ -1059,6 +1293,90 @@ export default function WebsiteComponentsTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="w-full flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Settings className="h-4 w-4" />
+                    Layout Settings
+                  </span>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="footer-visibility-comp" data-testid="label-footer-visibility">Footer Visibility</Label>
+                    <p className="text-xs text-muted-foreground">Show or hide the footer across your website</p>
+                  </div>
+                  <Switch
+                    id="footer-visibility-comp"
+                    checked={footerLayoutSettings.footerVisibility}
+                    onCheckedChange={(checked) => onFooterLayoutChange({ footerVisibility: checked })}
+                    data-testid="switch-footer-visibility"
+                  />
+                </div>
+
+                {footerLayoutSettings.footerVisibility && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                      <Label data-testid="label-footer-columns">Footer Columns</Label>
+                      <Select
+                        value={String(footerLayoutSettings.footerColumns)}
+                        onValueChange={(val) => onFooterLayoutChange({ footerColumns: parseInt(val) })}
+                      >
+                        <SelectTrigger data-testid="select-footer-columns">
+                          <SelectValue placeholder="Select columns" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 Column</SelectItem>
+                          <SelectItem value="2">2 Columns</SelectItem>
+                          <SelectItem value="3">3 Columns</SelectItem>
+                          <SelectItem value="4">4 Columns</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Number of content columns in the footer</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label data-testid="label-footer-width">Footer Width</Label>
+                      <Select
+                        value={footerLayoutSettings.footerWidth}
+                        onValueChange={(val) => onFooterLayoutChange({ footerWidth: val })}
+                      >
+                        <SelectTrigger data-testid="select-footer-width">
+                          <SelectValue placeholder="Select width" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="boxed">Boxed</SelectItem>
+                          <SelectItem value="full-width">Full Width</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {footerLayoutSettings.footerWidth === "boxed" ? "Footer content stays within the max width" : "Footer spans the full browser width"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label data-testid="label-footer-padding">Footer Padding (px)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={footerLayoutSettings.footerPadding}
+                          onChange={(e) => onFooterLayoutChange({ footerPadding: parseInt(e.target.value) || 40 })}
+                          min={0}
+                          max={120}
+                          data-testid="input-footer-padding"
+                        />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Internal spacing within the footer area</p>
+                    </div>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+
             {deviceView === "desktop" ? (
               <>
                 {renderDesktopSection("top", "Top Footer", "footer")}
@@ -1068,6 +1386,92 @@ export default function WebsiteComponentsTab({
             ) : (
               renderMobileView("footer")
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeGlobal === "innerpage" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Inner Page Settings
+            </CardTitle>
+            <CardDescription>Define default layout behavior for inner pages</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label data-testid="label-page-layout">Page Layout</Label>
+                <Select
+                  value={innerPageSettings.pageLayout}
+                  onValueChange={(val) => onInnerPageChange({ pageLayout: val })}
+                >
+                  <SelectTrigger data-testid="select-page-layout">
+                    <SelectValue placeholder="Select page layout" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full-width">Full Width</SelectItem>
+                    <SelectItem value="boxed">Boxed</SelectItem>
+                    <SelectItem value="sidebar-left">Sidebar Left</SelectItem>
+                    <SelectItem value="sidebar-right">Sidebar Right</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {innerPageSettings.pageLayout === "full-width" && "Content spans the full page width"}
+                  {innerPageSettings.pageLayout === "boxed" && "Content is centered in a contained box"}
+                  {innerPageSettings.pageLayout === "sidebar-left" && "Main content with a sidebar on the left"}
+                  {innerPageSettings.pageLayout === "sidebar-right" && "Main content with a sidebar on the right"}
+                </p>
+              </div>
+
+              {(innerPageSettings.pageLayout === "sidebar-left" || innerPageSettings.pageLayout === "sidebar-right") && (
+                <div className="space-y-2">
+                  <Label data-testid="label-sidebar-width">Sidebar Width (px)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={innerPageSettings.sidebarWidth}
+                      onChange={(e) => onInnerPageChange({ sidebarWidth: parseInt(e.target.value) || 300 })}
+                      min={200}
+                      max={500}
+                      data-testid="input-sidebar-width"
+                    />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Width of the sidebar (200 - 500px)</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label data-testid="label-page-padding">Page Padding (px)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={innerPageSettings.pagePadding}
+                    onChange={(e) => onInnerPageChange({ pagePadding: parseInt(e.target.value) || 32 })}
+                    min={0}
+                    max={120}
+                    data-testid="input-page-padding"
+                  />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Internal padding around the page content area</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="show-breadcrumb-comp" data-testid="label-breadcrumb">Breadcrumb Navigation</Label>
+                <p className="text-xs text-muted-foreground">Show breadcrumb trail on inner pages for easier navigation</p>
+              </div>
+              <Switch
+                id="show-breadcrumb-comp"
+                checked={innerPageSettings.showBreadcrumb}
+                onCheckedChange={(checked) => onInnerPageChange({ showBreadcrumb: checked })}
+                data-testid="switch-breadcrumb"
+              />
+            </div>
           </CardContent>
         </Card>
       )}
