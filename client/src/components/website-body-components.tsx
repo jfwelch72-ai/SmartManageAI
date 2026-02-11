@@ -78,7 +78,13 @@ export type BodyComponentType =
   | "feature_highlight"
   | "gallery"
   | "stats"
-  | "faq";
+  | "faq"
+  | "certifications"
+  | "about_company"
+  | "equipment"
+  | "safety"
+  | "team"
+  | "logo_showcase";
 
 export interface TypographyStyles {
   fontFamily: string;
@@ -265,6 +271,77 @@ interface FaqConfig {
   title: string;
 }
 
+interface CertificationItem {
+  id: string;
+  logoUrl: string;
+  label: string;
+}
+
+interface CertificationsConfig {
+  title: string;
+  columns: number;
+  items: CertificationItem[];
+}
+
+interface AboutCompanyConfig {
+  title: string;
+  overview: string;
+  yearsExperience: string;
+  mission: string;
+  vision: string;
+  teamPhotoUrl: string;
+}
+
+interface EquipmentItem {
+  id: string;
+  imageUrl: string;
+  model: string;
+  description: string;
+}
+
+interface EquipmentConfig {
+  title: string;
+  columns: number;
+  items: EquipmentItem[];
+}
+
+interface SafetyConfig {
+  title: string;
+  safetyPolicy: string;
+  stats: { id: string; value: string; label: string }[];
+  badges: { id: string; imageUrl: string; label: string }[];
+}
+
+interface TeamMember {
+  id: string;
+  photoUrl: string;
+  name: string;
+  role: string;
+  bio: string;
+}
+
+interface TeamConfig {
+  title: string;
+  columns: number;
+  items: TeamMember[];
+}
+
+interface LogoItem {
+  id: string;
+  imageUrl: string;
+  altText: string;
+}
+
+interface LogoShowcaseConfig {
+  title: string;
+  items: LogoItem[];
+  desktopColumns: number;
+  tabletColumns: number;
+  mobileColumns: number;
+  continuousSlide: boolean;
+  slideSpeed: number;
+}
+
 type ComponentConfig =
   | { type: "banner"; config: BannerConfig }
   | { type: "hero"; config: HeroConfig }
@@ -276,7 +353,13 @@ type ComponentConfig =
   | { type: "feature_highlight"; config: FeatureHighlightConfig }
   | { type: "gallery"; config: GalleryConfig }
   | { type: "stats"; config: StatsConfig }
-  | { type: "faq"; config: FaqConfig };
+  | { type: "faq"; config: FaqConfig }
+  | { type: "certifications"; config: CertificationsConfig }
+  | { type: "about_company"; config: AboutCompanyConfig }
+  | { type: "equipment"; config: EquipmentConfig }
+  | { type: "safety"; config: SafetyConfig }
+  | { type: "team"; config: TeamConfig }
+  | { type: "logo_showcase"; config: LogoShowcaseConfig };
 
 export type BodyComponent = {
   id: string;
@@ -343,6 +426,12 @@ export const COMPONENT_TYPE_META: Record<BodyComponentType, { label: string; ico
   gallery: { label: "Gallery", icon: ImageIcon, description: "Image gallery from Galleries tab" },
   stats: { label: "Stats / KPIs", icon: BarChart3, description: "Numeric stats and metrics" },
   faq: { label: "FAQ Section", icon: HelpCircle, description: "Accordion Q&A section" },
+  certifications: { label: "Certifications", icon: Shield, description: "Accreditations and certifications" },
+  about_company: { label: "About Company", icon: Briefcase, description: "Company overview and mission" },
+  equipment: { label: "Equipment", icon: Truck, description: "Equipment and machinery showcase" },
+  safety: { label: "Safety & Compliance", icon: Shield, description: "Safety policies and compliance" },
+  team: { label: "Team Members", icon: Users, description: "Key personnel and team" },
+  logo_showcase: { label: "Logo Showcase", icon: Layers, description: "Client or partner logos" },
 };
 
 export function createDefaultComponent(type: BodyComponentType, order: number): BodyComponent {
@@ -381,6 +470,18 @@ export function createDefaultComponent(type: BodyComponentType, order: number): 
       return { ...base, type, config: { columns: 4, title: "By the Numbers", items: [{ id: "s1", value: "500", label: "Projects", prefix: "", suffix: "+" }, { id: "s2", value: "98", label: "Satisfaction", prefix: "", suffix: "%" }, { id: "s3", value: "50", label: "Team Members", prefix: "", suffix: "" }, { id: "s4", value: "10", label: "Years", prefix: "", suffix: "+" }] } };
     case "faq":
       return { ...base, type, config: { title: "Frequently Asked Questions", items: [{ id: "faq1", question: "What services do you offer?", answer: "We offer a wide range of construction services." }, { id: "faq2", question: "How can I get a quote?", answer: "Contact us through our form or call us directly." }] } };
+    case "certifications":
+      return { ...base, type, config: { title: "Our Certifications", columns: 4, items: [{ id: "c1", logoUrl: "", label: "ISO Certified" }, { id: "c2", logoUrl: "", label: "Licensed Contractor" }] } };
+    case "about_company":
+      return { ...base, type, config: { title: "About Our Company", overview: "We are a leading construction company with decades of experience.", yearsExperience: "25", mission: "To deliver quality construction projects on time and within budget.", vision: "To be the most trusted name in construction.", teamPhotoUrl: "" } };
+    case "equipment":
+      return { ...base, type, config: { title: "Our Equipment", columns: 3, items: [{ id: "eq1", imageUrl: "", model: "Excavator CAT 320", description: "Heavy-duty excavator for large projects" }] } };
+    case "safety":
+      return { ...base, type, config: { title: "Safety & Compliance", safetyPolicy: "Safety is our top priority. We maintain strict protocols to ensure a zero-incident workplace.", stats: [{ id: "ss1", value: "500+", label: "Safe Work Days" }, { id: "ss2", value: "0", label: "Lost Time Incidents" }], badges: [{ id: "sb1", imageUrl: "", label: "OSHA Compliant" }] } };
+    case "team":
+      return { ...base, type, config: { title: "Our Team", columns: 3, items: [{ id: "tm1", photoUrl: "", name: "John Smith", role: "Project Manager", bio: "20 years of construction management experience." }] } };
+    case "logo_showcase":
+      return { ...base, type, config: { title: "Our Partners", items: [{ id: "l1", imageUrl: "", altText: "Partner 1" }, { id: "l2", imageUrl: "", altText: "Partner 2" }], desktopColumns: 5, tabletColumns: 3, mobileColumns: 2, continuousSlide: false, slideSpeed: 30 } };
   }
 }
 
@@ -1678,6 +1779,216 @@ function FaqEditor({ comp, onChange }: { comp: BodyComponent & { type: "faq" }; 
   );
 }
 
+function CertificationsEditor({ comp, onChange }: { comp: BodyComponent & { type: "certifications" }; onChange: (c: CertificationsConfig) => void }) {
+  const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `c-${Date.now()}`, logoUrl: "", label: "New Certification" }] });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const updateItem = (i: number, updates: Partial<CertificationItem>) => {
+    const items = [...comp.config.items];
+    items[i] = { ...items[i], ...updates };
+    onChange({ ...comp.config, items });
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-cert-title" /></div>
+      <div><Label className="text-xs">Columns</Label>
+        <Select value={String(comp.config.columns)} onValueChange={(v) => onChange({ ...comp.config, columns: parseInt(v) })}>
+          <SelectTrigger data-testid="select-cert-cols"><SelectValue /></SelectTrigger>
+          <SelectContent>{[2, 3, 4, 5, 6].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Certifications</Label>
+        {comp.config.items.map((item, i) => (
+          <div key={item.id} className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Certification {i + 1}</Label>
+              <Button variant="ghost" size="icon" onClick={() => removeItem(i)} data-testid={`button-remove-cert-${i}`}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+            <ImageUploadField value={item.logoUrl} onChange={(url) => updateItem(i, { logoUrl: url })} label="Logo" placeholder="Upload certification logo" testId={`input-cert-logo-${i}`} />
+            <div><Label className="text-xs">Label</Label><Input value={item.label} onChange={(e) => updateItem(i, { label: e.target.value })} placeholder="Certification name" data-testid={`input-cert-label-${i}`} /></div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addItem} data-testid="button-add-cert"><Plus className="h-3 w-3 mr-1" /> Add Certification</Button>
+      </div>
+    </div>
+  );
+}
+
+function AboutCompanyEditor({ comp, onChange }: { comp: BodyComponent & { type: "about_company" }; onChange: (c: AboutCompanyConfig) => void }) {
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-about-title" /></div>
+      <div><Label className="text-xs">Company Overview</Label><Textarea value={comp.config.overview} onChange={(e) => onChange({ ...comp.config, overview: e.target.value })} className="resize-none text-xs" rows={4} data-testid="input-about-overview" /></div>
+      <div><Label className="text-xs">Years of Experience</Label><Input value={comp.config.yearsExperience} onChange={(e) => onChange({ ...comp.config, yearsExperience: e.target.value })} placeholder="e.g. 25" data-testid="input-about-years" /></div>
+      <div><Label className="text-xs">Mission Statement</Label><Textarea value={comp.config.mission} onChange={(e) => onChange({ ...comp.config, mission: e.target.value })} className="resize-none text-xs" rows={3} data-testid="input-about-mission" /></div>
+      <div><Label className="text-xs">Vision Statement</Label><Textarea value={comp.config.vision} onChange={(e) => onChange({ ...comp.config, vision: e.target.value })} className="resize-none text-xs" rows={3} data-testid="input-about-vision" /></div>
+      <ImageUploadField value={comp.config.teamPhotoUrl} onChange={(url) => onChange({ ...comp.config, teamPhotoUrl: url })} label="Team Photo" placeholder="Upload team photo" testId="input-about-photo" />
+    </div>
+  );
+}
+
+function EquipmentEditor({ comp, onChange }: { comp: BodyComponent & { type: "equipment" }; onChange: (c: EquipmentConfig) => void }) {
+  const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `eq-${Date.now()}`, imageUrl: "", model: "New Equipment", description: "" }] });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const updateItem = (i: number, updates: Partial<EquipmentItem>) => {
+    const items = [...comp.config.items];
+    items[i] = { ...items[i], ...updates };
+    onChange({ ...comp.config, items });
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-equip-title" /></div>
+      <div><Label className="text-xs">Columns</Label>
+        <Select value={String(comp.config.columns)} onValueChange={(v) => onChange({ ...comp.config, columns: parseInt(v) })}>
+          <SelectTrigger data-testid="select-equip-cols"><SelectValue /></SelectTrigger>
+          <SelectContent>{[1, 2, 3, 4].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Equipment Items</Label>
+        {comp.config.items.map((item, i) => (
+          <div key={item.id} className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Equipment {i + 1}</Label>
+              <Button variant="ghost" size="icon" onClick={() => removeItem(i)} data-testid={`button-remove-equip-${i}`}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+            <ImageUploadField value={item.imageUrl} onChange={(url) => updateItem(i, { imageUrl: url })} label="Equipment Image" placeholder="Upload equipment photo" testId={`input-equip-image-${i}`} />
+            <div><Label className="text-xs">Model / Name</Label><Input value={item.model} onChange={(e) => updateItem(i, { model: e.target.value })} placeholder="Equipment model" data-testid={`input-equip-model-${i}`} /></div>
+            <div><Label className="text-xs">Description</Label><Textarea value={item.description} onChange={(e) => updateItem(i, { description: e.target.value })} className="resize-none text-xs" rows={2} data-testid={`input-equip-desc-${i}`} /></div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addItem} data-testid="button-add-equip"><Plus className="h-3 w-3 mr-1" /> Add Equipment</Button>
+      </div>
+    </div>
+  );
+}
+
+function SafetyEditor({ comp, onChange }: { comp: BodyComponent & { type: "safety" }; onChange: (c: SafetyConfig) => void }) {
+  const addStat = () => onChange({ ...comp.config, stats: [...comp.config.stats, { id: `ss-${Date.now()}`, value: "0", label: "New Stat" }] });
+  const removeStat = (i: number) => onChange({ ...comp.config, stats: comp.config.stats.filter((_, idx) => idx !== i) });
+  const updateStat = (i: number, updates: Partial<SafetyConfig["stats"][0]>) => {
+    const stats = [...comp.config.stats];
+    stats[i] = { ...stats[i], ...updates };
+    onChange({ ...comp.config, stats });
+  };
+  const addBadge = () => onChange({ ...comp.config, badges: [...comp.config.badges, { id: `sb-${Date.now()}`, imageUrl: "", label: "New Badge" }] });
+  const removeBadge = (i: number) => onChange({ ...comp.config, badges: comp.config.badges.filter((_, idx) => idx !== i) });
+  const updateBadge = (i: number, updates: Partial<SafetyConfig["badges"][0]>) => {
+    const badges = [...comp.config.badges];
+    badges[i] = { ...badges[i], ...updates };
+    onChange({ ...comp.config, badges });
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-safety-title" /></div>
+      <div><Label className="text-xs">Safety Policy</Label><Textarea value={comp.config.safetyPolicy} onChange={(e) => onChange({ ...comp.config, safetyPolicy: e.target.value })} className="resize-none text-xs" rows={4} data-testid="input-safety-policy" /></div>
+      <div className="space-y-2 pt-1 border-t">
+        <Label className="text-xs font-semibold">Safety Stats</Label>
+        {comp.config.stats.map((stat, i) => (
+          <div key={stat.id} className="flex items-center gap-2">
+            <Input value={stat.value} onChange={(e) => updateStat(i, { value: e.target.value })} placeholder="Value" className="w-20" data-testid={`input-safety-stat-val-${i}`} />
+            <Input value={stat.label} onChange={(e) => updateStat(i, { label: e.target.value })} placeholder="Label" className="flex-1" data-testid={`input-safety-stat-label-${i}`} />
+            <Button variant="ghost" size="icon" onClick={() => removeStat(i)} data-testid={`button-remove-safety-stat-${i}`}><Trash2 className="h-4 w-4" /></Button>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addStat} data-testid="button-add-safety-stat"><Plus className="h-3 w-3 mr-1" /> Add Stat</Button>
+      </div>
+      <div className="space-y-2 pt-1 border-t">
+        <Label className="text-xs font-semibold">Compliance Badges</Label>
+        {comp.config.badges.map((badge, i) => (
+          <div key={badge.id} className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Badge {i + 1}</Label>
+              <Button variant="ghost" size="icon" onClick={() => removeBadge(i)} data-testid={`button-remove-safety-badge-${i}`}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+            <ImageUploadField value={badge.imageUrl} onChange={(url) => updateBadge(i, { imageUrl: url })} label="Badge Image" placeholder="Upload badge" testId={`input-safety-badge-img-${i}`} />
+            <div><Label className="text-xs">Label</Label><Input value={badge.label} onChange={(e) => updateBadge(i, { label: e.target.value })} placeholder="Badge name" data-testid={`input-safety-badge-label-${i}`} /></div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addBadge} data-testid="button-add-safety-badge"><Plus className="h-3 w-3 mr-1" /> Add Badge</Button>
+      </div>
+    </div>
+  );
+}
+
+function TeamEditor({ comp, onChange }: { comp: BodyComponent & { type: "team" }; onChange: (c: TeamConfig) => void }) {
+  const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `tm-${Date.now()}`, photoUrl: "", name: "New Member", role: "", bio: "" }] });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const updateItem = (i: number, updates: Partial<TeamMember>) => {
+    const items = [...comp.config.items];
+    items[i] = { ...items[i], ...updates };
+    onChange({ ...comp.config, items });
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-team-title" /></div>
+      <div><Label className="text-xs">Columns</Label>
+        <Select value={String(comp.config.columns)} onValueChange={(v) => onChange({ ...comp.config, columns: parseInt(v) })}>
+          <SelectTrigger data-testid="select-team-cols"><SelectValue /></SelectTrigger>
+          <SelectContent>{[1, 2, 3, 4].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Team Members</Label>
+        {comp.config.items.map((item, i) => (
+          <div key={item.id} className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Member {i + 1}</Label>
+              <Button variant="ghost" size="icon" onClick={() => removeItem(i)} data-testid={`button-remove-team-${i}`}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+            <ImageUploadField value={item.photoUrl} onChange={(url) => updateItem(i, { photoUrl: url })} label="Photo" placeholder="Upload team member photo" testId={`input-team-photo-${i}`} />
+            <div><Label className="text-xs">Name</Label><Input value={item.name} onChange={(e) => updateItem(i, { name: e.target.value })} placeholder="Full name" data-testid={`input-team-name-${i}`} /></div>
+            <div><Label className="text-xs">Role / Title</Label><Input value={item.role} onChange={(e) => updateItem(i, { role: e.target.value })} placeholder="e.g. Project Manager" data-testid={`input-team-role-${i}`} /></div>
+            <div><Label className="text-xs">Bio</Label><Textarea value={item.bio} onChange={(e) => updateItem(i, { bio: e.target.value })} className="resize-none text-xs" rows={2} data-testid={`input-team-bio-${i}`} /></div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addItem} data-testid="button-add-team"><Plus className="h-3 w-3 mr-1" /> Add Member</Button>
+      </div>
+    </div>
+  );
+}
+
+function LogoShowcaseEditor({ comp, onChange }: { comp: BodyComponent & { type: "logo_showcase" }; onChange: (c: LogoShowcaseConfig) => void }) {
+  const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `l-${Date.now()}`, imageUrl: "", altText: "" }] });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const updateItem = (i: number, updates: Partial<LogoItem>) => {
+    const items = [...comp.config.items];
+    items[i] = { ...items[i], ...updates };
+    onChange({ ...comp.config, items });
+  };
+  return (
+    <div className="space-y-3">
+      <div><Label className="text-xs">Section Title</Label><Input value={comp.config.title} onChange={(e) => onChange({ ...comp.config, title: e.target.value })} data-testid="input-logo-title" /></div>
+      <div className="grid grid-cols-3 gap-2">
+        <div><Label className="text-xs">Desktop Columns</Label><Input type="number" min={1} max={10} value={comp.config.desktopColumns} onChange={(e) => onChange({ ...comp.config, desktopColumns: parseInt(e.target.value) || 5 })} data-testid="input-logo-desktop-cols" /></div>
+        <div><Label className="text-xs">Tablet Columns</Label><Input type="number" min={1} max={6} value={comp.config.tabletColumns} onChange={(e) => onChange({ ...comp.config, tabletColumns: parseInt(e.target.value) || 3 })} data-testid="input-logo-tablet-cols" /></div>
+        <div><Label className="text-xs">Mobile Columns</Label><Input type="number" min={1} max={4} value={comp.config.mobileColumns} onChange={(e) => onChange({ ...comp.config, mobileColumns: parseInt(e.target.value) || 2 })} data-testid="input-logo-mobile-cols" /></div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch checked={comp.config.continuousSlide} onCheckedChange={(v) => onChange({ ...comp.config, continuousSlide: v })} data-testid="switch-logo-slide" />
+        <Label className="text-xs">Continuous Sliding</Label>
+      </div>
+      {comp.config.continuousSlide && (
+        <div><Label className="text-xs">Slide Speed (seconds per cycle)</Label><Input type="number" min={5} max={120} value={comp.config.slideSpeed || 30} onChange={(e) => onChange({ ...comp.config, slideSpeed: parseInt(e.target.value) || 30 })} data-testid="input-logo-speed" /></div>
+      )}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Logos</Label>
+        {comp.config.items.map((item, i) => (
+          <div key={item.id} className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-xs font-medium">Logo {i + 1}</Label>
+              <Button variant="ghost" size="icon" onClick={() => removeItem(i)} data-testid={`button-remove-logo-${i}`}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+            <ImageUploadField value={item.imageUrl} onChange={(url) => updateItem(i, { imageUrl: url })} label="Logo Image" placeholder="Upload logo" testId={`input-logo-img-${i}`} />
+            <div><Label className="text-xs">Alt Text</Label><Input value={item.altText} onChange={(e) => updateItem(i, { altText: e.target.value })} placeholder="Logo description" data-testid={`input-logo-alt-${i}`} /></div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" onClick={addItem} data-testid="button-add-logo"><Plus className="h-3 w-3 mr-1" /> Add Logo</Button>
+      </div>
+    </div>
+  );
+}
+
 export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComponent; onConfigChange: (config: any) => void }) {
   switch (comp.type) {
     case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} />;
@@ -1691,6 +2002,12 @@ export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComp
     case "gallery": return <GalleryEditor comp={comp as BodyComponent & { type: "gallery" }} onChange={onConfigChange} />;
     case "stats": return <StatsEditor comp={comp as BodyComponent & { type: "stats" }} onChange={onConfigChange} />;
     case "faq": return <FaqEditor comp={comp as BodyComponent & { type: "faq" }} onChange={onConfigChange} />;
+    case "certifications": return <CertificationsEditor comp={comp as BodyComponent & { type: "certifications" }} onChange={onConfigChange} />;
+    case "about_company": return <AboutCompanyEditor comp={comp as BodyComponent & { type: "about_company" }} onChange={onConfigChange} />;
+    case "equipment": return <EquipmentEditor comp={comp as BodyComponent & { type: "equipment" }} onChange={onConfigChange} />;
+    case "safety": return <SafetyEditor comp={comp as BodyComponent & { type: "safety" }} onChange={onConfigChange} />;
+    case "team": return <TeamEditor comp={comp as BodyComponent & { type: "team" }} onChange={onConfigChange} />;
+    case "logo_showcase": return <LogoShowcaseEditor comp={comp as BodyComponent & { type: "logo_showcase" }} onChange={onConfigChange} />;
     default: return null;
   }
 }

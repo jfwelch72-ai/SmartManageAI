@@ -1081,6 +1081,220 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             </section>
           );
         }
+        case 'certifications': {
+          const { title, columns = 4, items = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-cert-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`, gap: '1.5rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`cert-item-${i}`} style={{ textAlign: 'center', padding: '1.25rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                      {item.logoUrl ? (
+                        <img src={item.logoUrl} alt={item.label || ''} style={{ width: '64px', height: '64px', objectFit: 'contain', margin: '0 auto 0.75rem' }} />
+                      ) : (
+                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: `${primaryColor}15`, color: primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.75rem' }}>
+                          <Shield size={28} />
+                        </div>
+                      )}
+                      {item.label && <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>{item.label}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'about_company': {
+          const { title, overview, yearsExperience, mission, vision, teamPhotoUrl } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-about-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: teamPhotoUrl ? '1fr 1fr' : '1fr', gap: '2rem', alignItems: 'start' }}>
+                  <div>
+                    {overview && <p style={{ fontSize: '1rem', color: '#374151', lineHeight: 1.7, marginBottom: '1.5rem' }}>{overview}</p>}
+                    {yearsExperience && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', backgroundColor: `${primaryColor}10`, color: primaryColor, padding: '0.5rem 1rem', borderRadius: '0.375rem', fontWeight: 700, fontSize: '1rem', marginBottom: '1.5rem' }}>
+                        {yearsExperience}+ Years of Experience
+                      </div>
+                    )}
+                    {mission && (
+                      <div style={{ marginBottom: '1rem' }}>
+                        <h3 style={{ fontWeight: 600, fontSize: '1.0625rem', marginBottom: '0.375rem', color: primaryColor }}>Our Mission</h3>
+                        <p style={{ fontSize: '0.9375rem', color: '#4b5563', lineHeight: 1.6 }}>{mission}</p>
+                      </div>
+                    )}
+                    {vision && (
+                      <div>
+                        <h3 style={{ fontWeight: 600, fontSize: '1.0625rem', marginBottom: '0.375rem', color: primaryColor }}>Our Vision</h3>
+                        <p style={{ fontSize: '0.9375rem', color: '#4b5563', lineHeight: 1.6 }}>{vision}</p>
+                      </div>
+                    )}
+                  </div>
+                  {teamPhotoUrl && (
+                    <div style={{ borderRadius: '0.5rem', overflow: 'hidden', marginTop: isMobile ? '1.5rem' : 0 }}>
+                      <img src={teamPhotoUrl} alt="Our Team" style={{ width: '100%', height: 'auto', objectFit: 'cover', borderRadius: '0.5rem' }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'equipment': {
+          const { title, columns = 3, items = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-equip-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`equip-item-${i}`} style={{ backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                      {item.imageUrl ? (
+                        <img src={item.imageUrl} alt={item.model || ''} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '200px', backgroundColor: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                          <Truck size={48} />
+                        </div>
+                      )}
+                      <div style={{ padding: '1rem' }}>
+                        {item.model && <h3 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.375rem' }}>{item.model}</h3>}
+                        {item.description && <p style={{ fontSize: '0.875rem', color: '#6b7280', lineHeight: 1.5 }}>{item.description}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'safety': {
+          const { title, safetyPolicy, stats = [], badges = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-safety-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                {safetyPolicy && <p style={{ fontSize: '1rem', color: '#374151', lineHeight: 1.7, marginBottom: '2rem', maxWidth: '48rem' }}>{safetyPolicy}</p>}
+                {stats.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : stats.length}, 1fr)`, gap: '1.25rem', marginBottom: '2rem' }}>
+                    {stats.map((stat: any, i: number) => (
+                      <div key={i} data-testid={`safety-stat-${i}`} style={{ textAlign: 'center', padding: '1.25rem', backgroundColor: `${primaryColor}08`, borderRadius: '0.5rem', border: `1px solid ${primaryColor}20` }}>
+                        <div style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 800, color: primaryColor, lineHeight: 1 }}>{stat.value}</div>
+                        {stat.label && <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.375rem', fontWeight: 500 }}>{stat.label}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {badges.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', justifyContent: 'center' }}>
+                    {badges.map((badge: any, i: number) => (
+                      <div key={i} data-testid={`safety-badge-${i}`} style={{ textAlign: 'center', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb', minWidth: '120px' }}>
+                        {badge.imageUrl ? (
+                          <img src={badge.imageUrl} alt={badge.label || ''} style={{ width: '48px', height: '48px', objectFit: 'contain', margin: '0 auto 0.5rem' }} />
+                        ) : (
+                          <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem' }}>
+                            <Shield size={24} />
+                          </div>
+                        )}
+                        {badge.label && <p style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{badge.label}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        }
+        case 'team': {
+          const { title, columns = 3, items = [] } = cfg;
+          return (
+            <section key={comp.id} data-testid={`body-team-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
+                  {items.map((item: any, i: number) => (
+                    <div key={i} data-testid={`team-item-${i}`} style={{ textAlign: 'center', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                      {item.photoUrl ? (
+                        <img src={item.photoUrl} alt={item.name || ''} style={{ width: '100%', height: '220px', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '220px', backgroundColor: `${primaryColor}10`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '2rem' }}>
+                            {(item.name || 'T').charAt(0).toUpperCase()}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ padding: '1rem' }}>
+                        {item.name && <h3 style={{ fontWeight: 600, fontSize: '1.0625rem', marginBottom: '0.25rem' }}>{item.name}</h3>}
+                        {item.role && <p style={{ fontSize: '0.875rem', color: primaryColor, fontWeight: 500, marginBottom: '0.5rem' }}>{item.role}</p>}
+                        {item.bio && <p style={{ fontSize: '0.8125rem', color: '#6b7280', lineHeight: 1.5 }}>{item.bio}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        }
+        case 'logo_showcase': {
+          const { title, items = [], desktopColumns = 5, mobileColumns = 2, continuousSlide = false, slideSpeed = 30 } = cfg;
+          const cols = isMobile ? mobileColumns : desktopColumns;
+          const logoItems = items.filter((item: any) => item.imageUrl);
+          return (
+            <section key={comp.id} data-testid={`body-logo-${comp.id}`} className={customClassName} style={containerStyle}>
+              {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
+              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
+                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
+                {continuousSlide && logoItems.length > 0 ? (
+                  <div style={{ overflow: 'hidden', position: 'relative' }}>
+                    <style>{`
+                      @keyframes logoSlide-${comp.id.replace(/[^a-zA-Z0-9]/g, '')} {
+                        0% { transform: translateX(0); }
+                        100% { transform: translateX(-50%); }
+                      }
+                    `}</style>
+                    <div style={{
+                      display: 'flex',
+                      animation: `logoSlide-${comp.id.replace(/[^a-zA-Z0-9]/g, '')} ${slideSpeed}s linear infinite`,
+                      width: 'max-content',
+                    }}>
+                      {[...logoItems, ...logoItems].map((item: any, i: number) => (
+                        <div key={i} style={{ flex: '0 0 auto', padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <img src={item.imageUrl} alt={item.altText || ''} style={{ maxHeight: '60px', maxWidth: '140px', objectFit: 'contain', opacity: 0.7, filter: 'grayscale(30%)' }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: '1.5rem', alignItems: 'center', justifyItems: 'center' }}>
+                    {items.map((item: any, i: number) => (
+                      <div key={i} data-testid={`logo-item-${i}`} style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.altText || ''} style={{ maxHeight: '60px', maxWidth: '140px', objectFit: 'contain', opacity: 0.8 }} />
+                        ) : (
+                          <div style={{ width: '100px', height: '50px', backgroundColor: '#f3f4f6', borderRadius: '0.375rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '0.75rem' }}>
+                            Logo
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        }
         default:
           return null;
       }
