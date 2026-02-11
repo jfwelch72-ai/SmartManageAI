@@ -1836,8 +1836,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
   // ABOUT PAGE
   const renderAboutPage = () => {
-    // Check if there's custom about page content
     const customAbout = findPageContent("about");
+    if (customAbout?.contentJson) {
+      try {
+        const parsedConfig = JSON.parse(customAbout.contentJson) as BodyComponentsConfig;
+        if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
+          return renderBodyComponents(parsedConfig);
+        }
+      } catch {}
+    }
     const aboutContent = customAbout?.content || customAbout?.metaDescription;
     
     return (
@@ -1895,7 +1902,17 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   };
 
   // SERVICES PAGE
-  const renderServicesPage = () => (
+  const renderServicesPage = () => {
+    const customServices = findPageContent("services");
+    if (customServices?.contentJson) {
+      try {
+        const parsedConfig = JSON.parse(customServices.contentJson) as BodyComponentsConfig;
+        if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
+          return renderBodyComponents(parsedConfig);
+        }
+      } catch {}
+    }
+    return (
     <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
       <div className="mx-auto px-4" style={{ maxWidth: '1200px' }}>
         <h1 
@@ -1936,7 +1953,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         </div>
       </div>
     </section>
-  );
+    );
+  };
 
   // BLOG PAGE
   const renderBlogPage = () => (
@@ -2208,7 +2226,17 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   };
 
   // CONTACT PAGE
-  const renderContactPage = () => (
+  const renderContactPage = () => {
+    const customContact = findPageContent("contact");
+    if (customContact?.contentJson) {
+      try {
+        const parsedConfig = JSON.parse(customContact.contentJson) as BodyComponentsConfig;
+        if (parsedConfig.components && parsedConfig.components.filter(c => c.enabled).length > 0) {
+          return renderBodyComponents(parsedConfig);
+        }
+      } catch {}
+    }
+    return (
     <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
       <div className="mx-auto px-4" style={{ maxWidth: '1200px' }}>
         <h1 
@@ -2354,7 +2382,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         </div>
       </div>
     </section>
-  );
+    );
+  };
 
   // Main render based on current page
   const renderCurrentPage = () => {
