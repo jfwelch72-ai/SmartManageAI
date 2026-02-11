@@ -1399,7 +1399,7 @@ export default function WebsiteBuilderPage() {
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-2">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Target className="h-5 w-5" />
@@ -1408,35 +1408,33 @@ export default function WebsiteBuilderPage() {
                 <CardDescription>Optimize your website for search engines</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="metaTitle">Meta Title (60 characters max)</Label>
-                    <Input
-                      id="metaTitle"
-                      value={websiteForm.metaTitle || website?.metaTitle || ""}
-                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaTitle: e.target.value }))}
-                      maxLength={60}
-                      placeholder="Your Company | Quality Construction Services"
-                      data-testid="input-meta-title"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {(websiteForm.metaTitle || website?.metaTitle || "").length}/60 characters
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="metaDescription">Meta Description (160 characters max)</Label>
-                    <Textarea
-                      id="metaDescription"
-                      value={websiteForm.metaDescription || website?.metaDescription || ""}
-                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaDescription: e.target.value }))}
-                      maxLength={160}
-                      placeholder="We provide top-quality construction services in the greater metro area. Contact us for a free estimate."
-                      data-testid="input-meta-description"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {(websiteForm.metaDescription || website?.metaDescription || "").length}/160 characters
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="metaTitle">Meta Title (60 characters max)</Label>
+                  <Input
+                    id="metaTitle"
+                    value={websiteForm.metaTitle || website?.metaTitle || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaTitle: e.target.value }))}
+                    maxLength={60}
+                    placeholder="Your Company | Quality Construction Services"
+                    data-testid="input-meta-title"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {(websiteForm.metaTitle || website?.metaTitle || "").length}/60 characters
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="metaDescription">Meta Description (160 characters max)</Label>
+                  <Textarea
+                    id="metaDescription"
+                    value={websiteForm.metaDescription || website?.metaDescription || ""}
+                    onChange={(e) => setWebsiteForm(prev => ({ ...prev, metaDescription: e.target.value }))}
+                    maxLength={160}
+                    placeholder="We provide top-quality construction services in the greater metro area. Contact us for a free estimate."
+                    data-testid="input-meta-description"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {(websiteForm.metaDescription || website?.metaDescription || "").length}/160 characters
+                  </p>
                 </div>
               </CardContent>
               <CardFooter className="flex justify-end gap-2">
