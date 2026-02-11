@@ -438,13 +438,22 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   }, [components, updateComponents]);
 
   const insertGlobalComponent = useCallback((globalComp: any) => {
-    const comp = JSON.parse(JSON.stringify(globalComp.component)) as BodyComponent;
+    let srcComp = globalComp.component;
+    if (!srcComp && globalComp.type) {
+      const { name: _n, createdAt: _c, updatedAt: _u, ...rest } = globalComp;
+      srcComp = rest;
+    }
+    if (!srcComp) {
+      toast({ title: "Error", description: "This saved component has no content data.", variant: "destructive" });
+      return;
+    }
+    const comp = JSON.parse(JSON.stringify(srcComp)) as BodyComponent;
     comp.id = `body-${comp.type}-${Date.now()}`;
     comp.order = components.length;
     updateComponents([...components, comp]);
     setSelectedComponentId(comp.id);
     setRightPanel("component");
-    toast({ title: `Inserted "${globalComp.name}"` });
+    toast({ title: `Inserted "${globalComp.name || 'Component'}"` });
   }, [components, updateComponents, toast]);
 
   const updateComponent = useCallback((id: string, updates: Partial<BodyComponent>) => {
@@ -754,7 +763,7 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
                                 <Plus className="h-3 w-3 mr-0.5" />
                                 Insert
                               </Button>
-                              {selectedComponent && selectedComponent.type === gc.component?.type && (
+                              {selectedComponent && selectedComponent.type === (gc.component?.type || gc.type) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
