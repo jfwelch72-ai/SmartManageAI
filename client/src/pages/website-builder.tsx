@@ -88,6 +88,8 @@ interface Website {
   siteTitle: string | null;
   siteTagline: string | null;
   logoUrl: string | null;
+  faviconUrl: string | null;
+  logoHeight: number | null;
   primaryColor: string | null;
   secondaryColor: string | null;
   accentColor: string | null;
@@ -396,6 +398,9 @@ export default function WebsiteBuilderPage() {
     logoPosition: "left",
     navigationLayout: "horizontal",
     mobileNavStyle: "dropdown",
+    logoUrl: "",
+    faviconUrl: "",
+    logoHeight: 55,
     showOnScroll: true,
     pageLayout: "boxed",
     sidebarWidth: 300,
@@ -895,6 +900,9 @@ export default function WebsiteBuilderPage() {
         logoPosition: websiteRef.logoPosition || prev.logoPosition,
         navigationLayout: websiteRef.navigationLayout || prev.navigationLayout,
         mobileNavStyle: websiteRef.mobileNavStyle || prev.mobileNavStyle,
+        logoUrl: websiteRef.logoUrl || prev.logoUrl,
+        faviconUrl: websiteRef.faviconUrl || prev.faviconUrl,
+        logoHeight: websiteRef.logoHeight ?? prev.logoHeight,
         showOnScroll: websiteRef.showOnScroll ?? prev.showOnScroll,
         pageLayout: websiteRef.pageLayout || prev.pageLayout,
         sidebarWidth: websiteRef.sidebarWidth ?? prev.sidebarWidth,
@@ -1107,6 +1115,136 @@ export default function WebsiteBuilderPage() {
                     placeholder="(555) 123-4567"
                     data-testid="input-contact-phone"
                   />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Image className="h-5 w-5" />
+                  Website Logo & Favicon
+                </CardTitle>
+                <CardDescription>Upload your brand logo and site favicon</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Website Logo</Label>
+                    <label
+                      htmlFor="logo-upload"
+                      className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-md p-4 cursor-pointer hover-elevate"
+                      style={{ minHeight: 100 }}
+                      data-testid="upload-logo"
+                    >
+                      {websiteForm.logoUrl ? (
+                        <>
+                          <img
+                            src={websiteForm.logoUrl}
+                            alt="Logo"
+                            style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }}
+                          />
+                          <span className="text-xs text-muted-foreground">Replace logo</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-6 w-6 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">Upload logo</span>
+                        </>
+                      )}
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          try {
+                            const response = await fetch('/api/website/upload-image', {
+                              method: 'POST',
+                              body: formData,
+                              credentials: 'include'
+                            });
+                            if (!response.ok) throw new Error('Upload failed');
+                            const data = await response.json();
+                            setWebsiteForm(prev => ({ ...prev, logoUrl: data.url }));
+                            toast({ title: "Logo uploaded successfully" });
+                          } catch (err: any) {
+                            toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Favicon</Label>
+                    <label
+                      htmlFor="favicon-upload"
+                      className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-md p-4 cursor-pointer hover-elevate"
+                      style={{ minHeight: 100 }}
+                      data-testid="upload-favicon"
+                    >
+                      {websiteForm.faviconUrl ? (
+                        <>
+                          <img
+                            src={websiteForm.faviconUrl}
+                            alt="Favicon"
+                            style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }}
+                          />
+                          <span className="text-xs text-muted-foreground">Replace favicon</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-6 w-6 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">Upload favicon</span>
+                        </>
+                      )}
+                      <input
+                        id="favicon-upload"
+                        type="file"
+                        accept="image/*,.ico"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          try {
+                            const response = await fetch('/api/website/upload-image', {
+                              method: 'POST',
+                              body: formData,
+                              credentials: 'include'
+                            });
+                            if (!response.ok) throw new Error('Upload failed');
+                            const data = await response.json();
+                            setWebsiteForm(prev => ({ ...prev, faviconUrl: data.url }));
+                            toast({ title: "Favicon uploaded successfully" });
+                          } catch (err: any) {
+                            toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="logoHeight">Logo Height</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="logoHeight"
+                      type="number"
+                      min={20}
+                      max={300}
+                      value={websiteForm.logoHeight}
+                      onChange={(e) => setWebsiteForm(prev => ({ ...prev, logoHeight: parseInt(e.target.value) || 55 }))}
+                      data-testid="input-logo-height"
+                    />
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">px</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Default: 55px</p>
                 </div>
               </CardContent>
             </Card>
@@ -2253,6 +2391,8 @@ export default function WebsiteBuilderPage() {
                           fontFamily: websiteForm.fontFamily || previewData.website?.fontFamily,
                           contactEmail: websiteForm.contactEmail || previewData.website?.contactEmail,
                           contactPhone: websiteForm.contactPhone || previewData.website?.contactPhone,
+                          logoUrl: websiteForm.logoUrl || previewData.website?.logoUrl,
+                          logoHeight: websiteForm.logoHeight ?? previewData.website?.logoHeight,
                         },
                         headerConfig: headerComponentsConfig,
                         footerConfig: footerComponentsConfig,

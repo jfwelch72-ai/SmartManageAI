@@ -36,6 +36,7 @@ interface PreviewData {
     textColor: string | null;
     fontFamily: string | null;
     logoUrl: string | null;
+    logoHeight: number | null;
     contactEmail: string | null;
     contactPhone: string | null;
     contactAddress: string | null;
@@ -377,7 +378,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
             {website.logoUrl ? (
-              <img src={website.logoUrl} alt={siteName} style={{ height: '32px', objectFit: 'contain' }} />
+              <img src={website.logoUrl} alt={siteName} style={{ height: `${website.logoHeight || 55}px`, objectFit: 'contain' }} />
             ) : (
               <span style={{ fontWeight: 700, fontSize: '1.25rem', color: primaryColor }}>{siteName}</span>
             )}
@@ -1025,7 +1026,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               <img 
                 src={website.logoUrl || organization?.logoUrl || ''} 
                 alt={siteName}
-                className={`${isMobile ? 'h-8' : 'h-10'} object-contain`}
+                style={{ height: `${website.logoHeight || 55}px`, objectFit: 'contain' }}
               />
             ) : (
               <div 
