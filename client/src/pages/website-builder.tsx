@@ -1839,10 +1839,6 @@ export default function WebsiteBuilderPage() {
             onSave={handleSaveWebsite}
             isSaving={saveWebsiteMutation.isPending}
           />
-          <WebsiteBodyComponents
-            config={bodyComponentsConfig}
-            onChange={setBodyComponentsConfig}
-          />
         </TabsContent>
 
         <TabsContent value="pages" className="space-y-4">
