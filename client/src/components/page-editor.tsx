@@ -1591,6 +1591,16 @@ function ComponentSettingsPanel({
           </div>
 
           <div className="border-t pt-3">
+            <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Custom CSS Class</h4>
+            <Input
+              value={component.customClass || ""}
+              onChange={(e) => onUpdateComponent({ customClass: e.target.value })}
+              placeholder="e.g. my-section hero-dark"
+              data-testid="input-custom-class"
+            />
+          </div>
+
+          <div className="border-t pt-3">
             <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Content</h4>
             <ComponentConfigEditor comp={component} onConfigChange={onUpdateConfig} />
           </div>

@@ -257,12 +257,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       if ((bgType === 'color' || bgType === 'solid') && styles.background.color) {
         s.backgroundColor = styles.background.color;
       } else if (styles.background.type === 'gradient') {
-        const dir = styles.background.gradientDirection?.replace('to-', 'to ').replace('br', 'bottom right').replace('bl', 'bottom left').replace('tr', 'top right').replace('tl', 'top left').replace('b', 'bottom').replace('t', 'top').replace('r', 'right').replace('l', 'left') || 'to bottom';
+        const dirMap: Record<string, string> = { 'to-t': 'to top', 'to-b': 'to bottom', 'to-l': 'to left', 'to-r': 'to right', 'to-tr': 'to top right', 'to-tl': 'to top left', 'to-br': 'to bottom right', 'to-bl': 'to bottom left' };
+        const dir = dirMap[styles.background.gradientDirection || 'to-b'] || 'to bottom';
         s.background = `linear-gradient(${dir}, ${styles.background.gradientFrom || primaryColor}, ${styles.background.gradientTo || secondaryColor})`;
       } else if (styles.background.type === 'image' && styles.background.imageUrl) {
         s.backgroundImage = `url(${styles.background.imageUrl})`;
-        s.backgroundSize = 'cover';
-        s.backgroundPosition = 'center';
+        s.backgroundSize = styles.background.imageSize || 'cover';
+        s.backgroundPosition = styles.background.imagePosition || 'center';
+        s.backgroundAttachment = (styles.background.imageAttachment || 'scroll') as React.CSSProperties['backgroundAttachment'];
+        s.backgroundRepeat = (styles.background.imageRepeat || 'no-repeat') as React.CSSProperties['backgroundRepeat'];
       }
     }
     if (styles.typography) {
@@ -296,6 +299,33 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           }}
         />
       );
+    }
+    return null;
+  };
+
+  const renderOverlay = (styles: SharedStyles) => {
+    const overlay = styles.background?.overlay;
+    if (!overlay?.enabled) return null;
+    const opacity = (overlay.opacity ?? 50) / 100;
+    const baseStyle: React.CSSProperties = {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      zIndex: 0,
+      pointerEvents: 'none',
+    };
+    if (overlay.type === 'color') {
+      return <div style={{ ...baseStyle, backgroundColor: overlay.color || '#000000', opacity }} />;
+    }
+    if (overlay.type === 'gradient') {
+      const dirMap: Record<string, string> = { 'to-t': 'to top', 'to-b': 'to bottom', 'to-l': 'to left', 'to-r': 'to right', 'to-tr': 'to top right', 'to-tl': 'to top left', 'to-br': 'to bottom right', 'to-bl': 'to bottom left' };
+      const dir = dirMap[overlay.gradientDirection || 'to-b'] || 'to bottom';
+      return <div style={{ ...baseStyle, background: `linear-gradient(${dir}, ${overlay.gradientFrom || '#000000'}, ${overlay.gradientTo || '#000000'})`, opacity }} />;
+    }
+    if (overlay.type === 'image' && overlay.imageUrl) {
+      return <div style={{ ...baseStyle, backgroundImage: `url(${overlay.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity }} />;
     }
     return null;
   };
@@ -700,18 +730,22 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       const align = comp.styles.alignment || 'center';
       const cfg = comp.config as any;
       const hasVideoBackground = comp.styles.background?.type === 'video' && comp.styles.background?.videoUrl;
-      if (hasVideoBackground) {
+      const hasOverlay = comp.styles.background?.overlay?.enabled;
+      const needsPositioning = hasVideoBackground || hasOverlay;
+      if (needsPositioning) {
         containerStyle.position = 'relative';
         containerStyle.overflow = 'hidden';
       }
-      const contentZStyle: React.CSSProperties = hasVideoBackground ? { position: 'relative', zIndex: 1 } : {};
+      const contentZStyle: React.CSSProperties = needsPositioning ? { position: 'relative', zIndex: 1 } : {};
+      const customClassName = comp.customClass || '';
 
       switch (comp.type) {
         case 'banner': {
           const { title, content: text, buttons = [], sideImageUrl } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-banner-${comp.id}`} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
+            <section key={comp.id} data-testid={`body-banner-${comp.id}`} className={customClassName} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
                   {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.75rem' }}>{title}</h2>}
@@ -727,8 +761,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           const { title, subtitle, content: text, imageUrl, imagePosition = 'right', buttons = [] } = cfg;
           const hasImage = !!imageUrl;
           return (
-            <section key={comp.id} data-testid={`body-hero-${comp.id}`} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
+            <section key={comp.id} data-testid={`body-hero-${comp.id}`} className={customClassName} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : imagePosition === 'left' ? 'row-reverse' : 'row', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
                   {subtitle && <p style={{ color: primaryColor, fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{subtitle}</p>}
@@ -748,8 +783,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'content': {
           const { title, content: text } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-content-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-content-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', textAlign: align as React.CSSProperties['textAlign'] }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' }}>{title}</h2>}
                 {text && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, color: '#4b5563' }}>{text}</div>}
@@ -760,8 +796,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'form': {
           const { title, submitButtonText, fields = [] } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-form-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-form-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '40rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -793,8 +830,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'grid': {
           const { columns = 3, items = [], title } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-grid-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-grid-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.25rem' }}>
@@ -812,8 +850,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'cta': {
           const { title, content: text, buttons = [] } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-cta-${comp.id}`} style={{ ...containerStyle, background: containerStyle.background || `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, color: '#fff', position: 'relative', overflow: 'hidden' }}>
+            <section key={comp.id} data-testid={`body-cta-${comp.id}`} className={customClassName} style={{ ...containerStyle, background: containerStyle.background || `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, color: '#fff', position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', textAlign: 'center' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 800, marginBottom: '0.75rem' }}>{title}</h2>}
                 {text && <p style={{ fontSize: '1.125rem', opacity: 0.9, marginBottom: '1.5rem' }}>{text}</p>}
@@ -833,8 +872,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'testimonial': {
           const { layout = 'grid', columns = 3, items = [], title } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-testimonial-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-testimonial-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: layout === 'carousel' ? 'flex' : 'grid', gridTemplateColumns: layout !== 'carousel' ? `repeat(${isMobile ? 1 : columns}, 1fr)` : undefined, gap: '1.25rem', overflowX: layout === 'carousel' ? 'auto' : undefined }}>
@@ -867,8 +907,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'feature_highlight': {
           const { columns = 3, items = [], title } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-feature-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-feature-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 1 : columns}, 1fr)`, gap: '1.5rem', marginTop: '1.5rem' }}>
@@ -889,8 +930,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'gallery': {
           const { title, columns = 3 } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-gallery-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-gallery-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', textAlign: align as React.CSSProperties['textAlign'] }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' }}>{title}</h2>}
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`, gap: '0.75rem' }}>
@@ -907,8 +949,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'stats': {
           const { columns = 4, items = [], title } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-stats-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-stats-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`, gap: '1.25rem' }}>
@@ -928,8 +971,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         case 'faq': {
           const { items = [], title } = cfg;
           return (
-            <section key={comp.id} data-testid={`body-faq-${comp.id}`} style={{ ...containerStyle, position: hasVideoBackground ? 'relative' as const : undefined, overflow: hasVideoBackground ? 'hidden' as const : undefined }}>
+            <section key={comp.id} data-testid={`body-faq-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
+              {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

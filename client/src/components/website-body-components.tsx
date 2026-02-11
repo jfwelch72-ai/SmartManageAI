@@ -70,6 +70,17 @@ export interface SpacingStyles {
   marginBottom: string;
 }
 
+export interface BackgroundOverlay {
+  enabled: boolean;
+  type: "color" | "gradient" | "image";
+  color: string;
+  opacity: number;
+  gradientFrom: string;
+  gradientTo: string;
+  gradientDirection: string;
+  imageUrl: string;
+}
+
 export interface BackgroundStyles {
   type: "none" | "solid" | "gradient" | "image" | "video";
   color: string;
@@ -78,6 +89,11 @@ export interface BackgroundStyles {
   gradientDirection: string;
   imageUrl: string;
   videoUrl: string;
+  imagePosition: string;
+  imageSize: string;
+  imageAttachment: string;
+  imageRepeat: string;
+  overlay?: BackgroundOverlay;
 }
 
 export interface SharedStyles {
@@ -230,6 +246,7 @@ export type BodyComponent = {
   visibleMobile: boolean;
   order: number;
   styles: SharedStyles;
+  customClass?: string;
 } & ComponentConfig;
 
 export interface BodyComponentsConfig {
@@ -261,6 +278,10 @@ const DEFAULT_BACKGROUND: BackgroundStyles = {
   gradientDirection: "to-b",
   imageUrl: "",
   videoUrl: "",
+  imagePosition: "center",
+  imageSize: "cover",
+  imageAttachment: "scroll",
+  imageRepeat: "no-repeat",
 };
 
 const DEFAULT_STYLES: SharedStyles = {
@@ -735,16 +756,188 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
             </>
           )}
           {styles.background.type === "image" && (
-            <div className="col-span-2">
-              <ImageUploadField value={styles.background.imageUrl} onChange={(url) => updateBackground("imageUrl", url)} label="Image URL" testId="input-bg-image" />
-            </div>
+            <>
+              <div className="col-span-full">
+                <ImageUploadField value={styles.background.imageUrl} onChange={(url) => updateBackground("imageUrl", url)} label="Image URL" testId="input-bg-image" />
+              </div>
+              <div>
+                <Label className="text-xs">Position</Label>
+                <Select value={styles.background.imagePosition || "center"} onValueChange={(v) => updateBackground("imagePosition", v)}>
+                  <SelectTrigger data-testid="select-bg-img-position"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="center">Center</SelectItem>
+                    <SelectItem value="top">Top</SelectItem>
+                    <SelectItem value="bottom">Bottom</SelectItem>
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                    <SelectItem value="top left">Top Left</SelectItem>
+                    <SelectItem value="top right">Top Right</SelectItem>
+                    <SelectItem value="bottom left">Bottom Left</SelectItem>
+                    <SelectItem value="bottom right">Bottom Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Size</Label>
+                <Select value={styles.background.imageSize || "cover"} onValueChange={(v) => updateBackground("imageSize", v)}>
+                  <SelectTrigger data-testid="select-bg-img-size"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cover">Cover</SelectItem>
+                    <SelectItem value="contain">Contain</SelectItem>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="100% 100%">Stretch</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Attachment</Label>
+                <Select value={styles.background.imageAttachment || "scroll"} onValueChange={(v) => updateBackground("imageAttachment", v)}>
+                  <SelectTrigger data-testid="select-bg-img-attachment"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scroll">Scroll</SelectItem>
+                    <SelectItem value="fixed">Fixed (Parallax)</SelectItem>
+                    <SelectItem value="local">Local</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Repeat</Label>
+                <Select value={styles.background.imageRepeat || "no-repeat"} onValueChange={(v) => updateBackground("imageRepeat", v)}>
+                  <SelectTrigger data-testid="select-bg-img-repeat"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no-repeat">No Repeat</SelectItem>
+                    <SelectItem value="repeat">Repeat</SelectItem>
+                    <SelectItem value="repeat-x">Repeat X</SelectItem>
+                    <SelectItem value="repeat-y">Repeat Y</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           )}
           {styles.background.type === "video" && (
-            <div className="col-span-2">
+            <div className="col-span-full">
               <VideoUploadField value={styles.background.videoUrl} onChange={(url) => updateBackground("videoUrl", url)} label="Video URL" testId="input-bg-video" />
             </div>
           )}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase text-muted-foreground">Background Overlay</Label>
+        <div className="flex items-center gap-2 mb-2">
+          <Switch
+            checked={styles.background.overlay?.enabled || false}
+            onCheckedChange={(checked) => {
+              const currentOverlay = styles.background.overlay || { enabled: false, type: "color" as const, color: "#000000", opacity: 50, gradientFrom: "#000000", gradientTo: "#000000", gradientDirection: "to-b", imageUrl: "" };
+              onChange({ ...styles, background: { ...styles.background, overlay: { ...currentOverlay, enabled: checked } } });
+            }}
+            data-testid="switch-bg-overlay"
+          />
+          <Label className="text-xs">Enable Overlay</Label>
+        </div>
+        {styles.background.overlay?.enabled && (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs">Overlay Type</Label>
+              <Select
+                value={styles.background.overlay.type || "color"}
+                onValueChange={(v) => {
+                  onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, type: v as "color" | "gradient" | "image" } } });
+                }}
+              >
+                <SelectTrigger data-testid="select-overlay-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="color">Color</SelectItem>
+                  <SelectItem value="gradient">Gradient</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Opacity ({styles.background.overlay.opacity ?? 50}%)</Label>
+              <Input
+                type="range"
+                min="0"
+                max="100"
+                value={styles.background.overlay.opacity ?? 50}
+                onChange={(e) => {
+                  onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, opacity: parseInt(e.target.value) } } });
+                }}
+                data-testid="input-overlay-opacity"
+              />
+            </div>
+            {styles.background.overlay.type === "color" && (
+              <div>
+                <Label className="text-xs">Overlay Color</Label>
+                <Input
+                  type="color"
+                  value={styles.background.overlay.color || "#000000"}
+                  onChange={(e) => {
+                    onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, color: e.target.value } } });
+                  }}
+                  data-testid="input-overlay-color"
+                />
+              </div>
+            )}
+            {styles.background.overlay.type === "gradient" && (
+              <>
+                <div>
+                  <Label className="text-xs">From</Label>
+                  <Input
+                    type="color"
+                    value={styles.background.overlay.gradientFrom || "#000000"}
+                    onChange={(e) => {
+                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientFrom: e.target.value } } });
+                    }}
+                    data-testid="input-overlay-gradient-from"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">To</Label>
+                  <Input
+                    type="color"
+                    value={styles.background.overlay.gradientTo || "#000000"}
+                    onChange={(e) => {
+                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientTo: e.target.value } } });
+                    }}
+                    data-testid="input-overlay-gradient-to"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Direction</Label>
+                  <Select
+                    value={styles.background.overlay.gradientDirection || "to-b"}
+                    onValueChange={(v) => {
+                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientDirection: v } } });
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-overlay-gradient-dir"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="to-t">Top</SelectItem>
+                      <SelectItem value="to-b">Bottom</SelectItem>
+                      <SelectItem value="to-l">Left</SelectItem>
+                      <SelectItem value="to-r">Right</SelectItem>
+                      <SelectItem value="to-tr">Top Right</SelectItem>
+                      <SelectItem value="to-bl">Bottom Left</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+            {styles.background.overlay.type === "image" && (
+              <div className="col-span-full">
+                <ImageUploadField
+                  value={styles.background.overlay.imageUrl || ""}
+                  onChange={(url) => {
+                    onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, imageUrl: url } } });
+                  }}
+                  label="Overlay Image"
+                  testId="input-overlay-image"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
