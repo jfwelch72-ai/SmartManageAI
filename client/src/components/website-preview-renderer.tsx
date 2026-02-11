@@ -2106,41 +2106,65 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       )}
       {renderCurrentPage()}
       {renderFooter()}
-      {data.footerConfig?.backToTop?.enabled && (
-        <button
-          data-testid="preview-back-to-top"
-          onClick={() => {
-            const container = document.querySelector('[data-testid="preview-container"]');
-            container?.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          style={{
-            position: 'absolute',
-            bottom: '20px',
-            right: '20px',
-            width: `${data.footerConfig.backToTop.size || 40}px`,
-            height: `${data.footerConfig.backToTop.size || 40}px`,
-            padding: `${data.footerConfig.backToTop.padding || 8}px`,
-            backgroundColor: data.footerConfig.backToTop.backgroundColor || 'rgba(255,255,255,0.1)',
-            border: `${data.footerConfig.backToTop.borderWidth || 1}px solid ${data.footerConfig.backToTop.borderColor || 'rgba(255,255,255,0.2)'}`,
-            borderRadius: `${data.footerConfig.backToTop.borderRadius || 6}px`,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-          }}
-        >
-          {data.footerConfig.backToTop.type === "image" && data.footerConfig.backToTop.imageUrl ? (
-            <img
-              src={data.footerConfig.backToTop.imageUrl}
-              alt="Back to top"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          ) : (
-            <ArrowUp size={Math.round((data.footerConfig.backToTop.size || 40) * 0.5)} color="#fff" />
-          )}
-        </button>
-      )}
+      {data.footerConfig?.backToTop?.enabled && (() => {
+        const btt = data.footerConfig!.backToTop!;
+        const btnSize = btt.size || 40;
+        return (
+          <div
+            style={{
+              position: 'sticky',
+              bottom: 0,
+              width: '100%',
+              height: 0,
+              overflow: 'visible',
+              pointerEvents: 'none',
+              zIndex: 50,
+            }}
+          >
+            <button
+              data-testid="preview-back-to-top"
+              onClick={(e) => {
+                let el: HTMLElement | null = e.currentTarget as HTMLElement;
+                while (el) {
+                  const style = window.getComputedStyle(el);
+                  if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+                    el.scrollTo({ top: 0, behavior: 'smooth' });
+                    return;
+                  }
+                  el = el.parentElement;
+                }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              style={{
+                position: 'absolute',
+                bottom: '20px',
+                right: '20px',
+                width: `${btnSize}px`,
+                height: `${btnSize}px`,
+                padding: `${btt.padding || 8}px`,
+                backgroundColor: btt.backgroundColor || 'rgba(255,255,255,0.1)',
+                border: `${btt.borderWidth || 1}px solid ${btt.borderColor || 'rgba(255,255,255,0.2)'}`,
+                borderRadius: `${btt.borderRadius || 6}px`,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'auto',
+              }}
+            >
+              {btt.type === "image" && btt.imageUrl ? (
+                <img
+                  src={btt.imageUrl}
+                  alt="Back to top"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <ArrowUp size={Math.round(btnSize * 0.5)} color="#fff" />
+              )}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
