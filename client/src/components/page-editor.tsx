@@ -1254,7 +1254,7 @@ function AddBetweenZone({ index, onAdd }: { index: number; onAdd: (type: BodyCom
       >
         {!isOpen && (
           <button
-            className="absolute inset-x-0 top-0 flex items-center justify-center h-6 opacity-0 group-hover/add:opacity-100 transition-opacity z-20"
+            className="absolute inset-x-0 top-0 flex items-center justify-center h-6 opacity-0 pointer-events-none group-hover/add:opacity-100 group-hover/add:pointer-events-auto transition-opacity z-20"
             onClick={() => setIsOpen(true)}
             data-testid={`button-add-between-${index}`}
           >
