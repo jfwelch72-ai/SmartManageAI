@@ -343,8 +343,17 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
     const newComp = JSON.parse(JSON.stringify(comp)) as BodyComponent;
     newComp.id = `body-${comp.type}-${Date.now()}`;
     newComp.label = `${comp.label} (Copy)`;
-    newComp.order = components.length;
-    updateComponents([...components, newComp]);
+    const idx = components.findIndex(c => c.id === id);
+    const newComponents = [...components];
+    newComponents.splice(idx + 1, 0, newComp);
+    newComponents.forEach((c, i) => { c.order = i; });
+    updateComponents(newComponents);
+    setSelectedComponentId(newComp.id);
+    setRightPanel("component");
+    setTimeout(() => {
+      const el = document.querySelector(`[data-testid="canvas-component-${newComp.id}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
   }, [components, updateComponents]);
 
   const updateComponent = useCallback((id: string, updates: Partial<BodyComponent>) => {
@@ -638,11 +647,18 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
                         </div>
 
                         {/* Component action buttons overlay */}
-                        <div className={`absolute -top-3 right-3 z-10 flex items-center gap-0.5 ${isSelected ? "visible" : "invisible group-hover:visible"}`}>
+                        <div
+                          className={`absolute -top-3 right-3 z-30 flex items-center gap-0.5 ${isSelected ? "visible" : "invisible group-hover:visible"}`}
+                          draggable={false}
+                          onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
                           <Button
                             variant="secondary"
                             size="icon"
-                            onClick={(e) => { e.stopPropagation(); duplicateComponent(comp.id); }}
+                            draggable={false}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); duplicateComponent(comp.id); }}
+                            onMouseDown={(e) => e.stopPropagation()}
                             data-testid={`canvas-duplicate-${comp.id}`}
                           >
                             <Copy className="h-3 w-3" />
@@ -650,7 +666,9 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
                           <Button
                             variant="secondary"
                             size="icon"
-                            onClick={(e) => { e.stopPropagation(); removeComponent(comp.id); }}
+                            draggable={false}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeComponent(comp.id); }}
+                            onMouseDown={(e) => e.stopPropagation()}
                             data-testid={`canvas-remove-${comp.id}`}
                           >
                             <Trash2 className="h-3 w-3" />
