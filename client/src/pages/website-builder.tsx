@@ -3513,7 +3513,11 @@ export default function WebsiteBuilderPage() {
                       } catch (err: any) {
                         clearInterval(progressInterval);
                         setWizardProgress(0);
-                        setWizardError(err.message || "An unexpected error occurred.");
+                        const rawMsg = err.message || "An unexpected error occurred.";
+                        const cleanMsg = rawMsg.includes("<!DOCTYPE") || rawMsg.includes("<html") || rawMsg.length > 300
+                          ? "The server was temporarily unavailable. Please try again."
+                          : rawMsg;
+                        setWizardError(cleanMsg);
                       } finally {
                         setWizardGenerating(false);
                       }
