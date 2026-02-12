@@ -4931,6 +4931,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   footerWidth: text("footer_width").default("boxed"),
   footerPadding: integer("footer_padding").default(40),
   footerSectionSettings: json("footer_section_settings"),
+  headerSectionSettings: json("header_section_settings"),
 
   // Component Configurations (JSON)
   headerComponentsConfig: json("header_components_config"),

@@ -124,6 +124,40 @@ export const DEFAULT_FOOTER_SECTION_STYLE: FooterSectionStyle = {
   gap: 12,
 };
 
+export interface HeaderSectionStyle {
+  columns: number;
+  width: string;
+  sectionPadding: number;
+  backgroundType: "solid" | "gradient" | "image";
+  backgroundColor: string;
+  gradientStart: string;
+  gradientEnd: string;
+  gradientDirection: string;
+  backgroundImageUrl: string;
+  backgroundSize: string;
+  backgroundPosition: string;
+  padding: number;
+  margin: number;
+  gap: number;
+}
+
+export const DEFAULT_HEADER_SECTION_STYLE: HeaderSectionStyle = {
+  columns: 3,
+  width: "boxed",
+  sectionPadding: 16,
+  backgroundType: "solid",
+  backgroundColor: "",
+  gradientStart: "#ffffff",
+  gradientEnd: "#f3f4f6",
+  gradientDirection: "to bottom",
+  backgroundImageUrl: "",
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+  padding: 0,
+  margin: 0,
+  gap: 12,
+};
+
 export interface HeaderComponentsConfig {
   desktop: {
     sections: {
@@ -382,6 +416,11 @@ interface WebsiteComponentsTabProps {
     navigationLayout: string;
     mobileNavStyle: string;
     showOnScroll: boolean;
+    sectionSettings?: {
+      top: HeaderSectionStyle;
+      middle: HeaderSectionStyle;
+      bottom: HeaderSectionStyle;
+    };
   };
   onHeaderLayoutChange?: (updates: Partial<NonNullable<WebsiteComponentsTabProps['headerLayoutSettings']>>) => void;
   footerLayoutSettings?: {
@@ -412,6 +451,11 @@ const DEFAULT_HEADER_LAYOUT = {
   navigationLayout: "horizontal",
   mobileNavStyle: "dropdown",
   showOnScroll: true,
+  sectionSettings: {
+    top: { ...DEFAULT_HEADER_SECTION_STYLE },
+    middle: { ...DEFAULT_HEADER_SECTION_STYLE },
+    bottom: { ...DEFAULT_HEADER_SECTION_STYLE },
+  },
 };
 
 const DEFAULT_FOOTER_LAYOUT = {
@@ -1726,6 +1770,249 @@ export default function WebsiteComponentsTab({
                     onCheckedChange={(checked) => onHeaderLayoutChange({ showOnScroll: checked })}
                     data-testid="switch-show-on-scroll"
                   />
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <Label className="text-sm font-medium">Header Sections</Label>
+                  <p className="text-xs text-muted-foreground">Configure layout, background and spacing for each header section independently</p>
+                  {(["top", "middle", "bottom"] as const).map(sectionKey => {
+                    const sectionSettings = headerLayoutSettings.sectionSettings?.[sectionKey] || DEFAULT_HEADER_SECTION_STYLE;
+                    const updateSection = (updates: Partial<HeaderSectionStyle>) => {
+                      const current = headerLayoutSettings.sectionSettings || {
+                        top: { ...DEFAULT_HEADER_SECTION_STYLE },
+                        middle: { ...DEFAULT_HEADER_SECTION_STYLE },
+                        bottom: { ...DEFAULT_HEADER_SECTION_STYLE },
+                      };
+                      onHeaderLayoutChange({
+                        sectionSettings: {
+                          ...current,
+                          [sectionKey]: { ...current[sectionKey], ...updates },
+                        },
+                      });
+                    };
+                    const sectionLabel = sectionKey === "top" ? "Top Header" : sectionKey === "middle" ? "Middle Header" : "Bottom Header";
+                    return (
+                      <Collapsible key={sectionKey}>
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" size="sm" className="w-full justify-between gap-1 text-xs">
+                            <span className="flex items-center gap-1.5">
+                              <PanelLeft className="h-3.5 w-3.5" />
+                              {sectionLabel}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="space-y-3 pt-2 pl-2 border-l-2 border-muted ml-2">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="space-y-1">
+                              <Label className="text-xs" data-testid={`label-header-${sectionKey}-columns`}>Header Columns</Label>
+                              <Select
+                                value={String(sectionSettings.columns || 3)}
+                                onValueChange={(val) => updateSection({ columns: parseInt(val) })}
+                              >
+                                <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-columns`}>
+                                  <SelectValue placeholder="Select columns" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="1">1 Column</SelectItem>
+                                  <SelectItem value="2">2 Columns</SelectItem>
+                                  <SelectItem value="3">3 Columns</SelectItem>
+                                  <SelectItem value="4">4 Columns</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">Number of content columns</p>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs" data-testid={`label-header-${sectionKey}-width`}>Header Width</Label>
+                              <Select
+                                value={sectionSettings.width || "boxed"}
+                                onValueChange={(val) => updateSection({ width: val })}
+                              >
+                                <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-width`}>
+                                  <SelectValue placeholder="Select width" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="boxed">Boxed</SelectItem>
+                                  <SelectItem value="full-width">Full Width</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">
+                                {(sectionSettings.width || "boxed") === "boxed" ? "Content stays within the max width" : "Spans the full browser width"}
+                              </p>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs" data-testid={`label-header-${sectionKey}-section-padding`}>Header Padding (px)</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="number"
+                                  className="h-8"
+                                  value={sectionSettings.sectionPadding ?? 16}
+                                  onChange={(e) => updateSection({ sectionPadding: parseInt(e.target.value) || 0 })}
+                                  min={0}
+                                  max={120}
+                                  data-testid={`input-header-${sectionKey}-section-padding`}
+                                />
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">Internal spacing within the section</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Background Type</Label>
+                            <Select
+                              value={sectionSettings.backgroundType}
+                              onValueChange={(val) => updateSection({ backgroundType: val as "solid" | "gradient" | "image" })}
+                            >
+                              <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-bg-type`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="solid">Solid Color</SelectItem>
+                                <SelectItem value="gradient">Gradient</SelectItem>
+                                <SelectItem value="image">Image</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {sectionSettings.backgroundType === "solid" && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Background Color</Label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={sectionSettings.backgroundColor || "#ffffff"}
+                                  onChange={(e) => updateSection({ backgroundColor: e.target.value })}
+                                  className="h-8 w-8 rounded border cursor-pointer"
+                                  data-testid={`input-header-${sectionKey}-bg-color`}
+                                />
+                                <Input
+                                  className="h-8 flex-1"
+                                  value={sectionSettings.backgroundColor || "#ffffff"}
+                                  onChange={(e) => updateSection({ backgroundColor: e.target.value })}
+                                  placeholder="#ffffff"
+                                  data-testid={`input-header-${sectionKey}-bg-color-hex`}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {sectionSettings.backgroundType === "gradient" && (
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Start Color</Label>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="color"
+                                      value={sectionSettings.gradientStart}
+                                      onChange={(e) => updateSection({ gradientStart: e.target.value })}
+                                      className="h-8 w-8 rounded border cursor-pointer"
+                                      data-testid={`input-header-${sectionKey}-grad-start`}
+                                    />
+                                    <Input className="h-8 flex-1" value={sectionSettings.gradientStart} onChange={(e) => updateSection({ gradientStart: e.target.value })} />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">End Color</Label>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="color"
+                                      value={sectionSettings.gradientEnd}
+                                      onChange={(e) => updateSection({ gradientEnd: e.target.value })}
+                                      className="h-8 w-8 rounded border cursor-pointer"
+                                      data-testid={`input-header-${sectionKey}-grad-end`}
+                                    />
+                                    <Input className="h-8 flex-1" value={sectionSettings.gradientEnd} onChange={(e) => updateSection({ gradientEnd: e.target.value })} />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Direction</Label>
+                                <Select value={sectionSettings.gradientDirection} onValueChange={(val) => updateSection({ gradientDirection: val })}>
+                                  <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-grad-dir`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="to bottom">Top to Bottom</SelectItem>
+                                    <SelectItem value="to right">Left to Right</SelectItem>
+                                    <SelectItem value="to bottom right">Diagonal</SelectItem>
+                                    <SelectItem value="135deg">Reverse Diagonal</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="h-6 rounded border" style={{ background: `linear-gradient(${sectionSettings.gradientDirection}, ${sectionSettings.gradientStart}, ${sectionSettings.gradientEnd})` }} />
+                            </div>
+                          )}
+
+                          {sectionSettings.backgroundType === "image" && (
+                            <div className="space-y-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Image URL</Label>
+                                <Input
+                                  className="h-8"
+                                  placeholder="https://... or /images/header-bg.jpg"
+                                  value={sectionSettings.backgroundImageUrl}
+                                  onChange={(e) => updateSection({ backgroundImageUrl: e.target.value })}
+                                  data-testid={`input-header-${sectionKey}-bg-image`}
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Size</Label>
+                                  <Select value={sectionSettings.backgroundSize} onValueChange={(val) => updateSection({ backgroundSize: val })}>
+                                    <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-bg-size`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="cover">Cover</SelectItem>
+                                      <SelectItem value="contain">Contain</SelectItem>
+                                      <SelectItem value="auto">Auto</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Position</Label>
+                                  <Select value={sectionSettings.backgroundPosition} onValueChange={(val) => updateSection({ backgroundPosition: val })}>
+                                    <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-bg-pos`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="center">Center</SelectItem>
+                                      <SelectItem value="top">Top</SelectItem>
+                                      <SelectItem value="bottom">Bottom</SelectItem>
+                                      <SelectItem value="left">Left</SelectItem>
+                                      <SelectItem value="right">Right</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              {sectionSettings.backgroundImageUrl && (
+                                <div className="h-12 rounded border bg-cover bg-center" style={{ backgroundImage: `url(${sectionSettings.backgroundImageUrl})`, backgroundSize: sectionSettings.backgroundSize, backgroundPosition: sectionSettings.backgroundPosition }} />
+                              )}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Padding (px)</Label>
+                              <Input type="number" className="h-8" min={0} max={120} value={sectionSettings.padding} onChange={(e) => updateSection({ padding: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-padding`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Margin (px)</Label>
+                              <Input type="number" className="h-8" min={0} max={120} value={sectionSettings.margin} onChange={(e) => updateSection({ margin: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-margin`} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Gap (px)</Label>
+                              <Input type="number" className="h-8" min={0} max={100} value={sectionSettings.gap} onChange={(e) => updateSection({ gap: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-gap`} />
+                            </div>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    );
+                  })}
                 </div>
               </CollapsibleContent>
             </Collapsible>

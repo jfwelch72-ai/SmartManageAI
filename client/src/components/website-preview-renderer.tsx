@@ -142,6 +142,15 @@ interface PreviewData {
       bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
     } | null;
   } | null;
+  headerLayoutSettings?: {
+    headerType?: string;
+    headerHeight?: number;
+    sectionSettings?: {
+      top?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      middle?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+    } | null;
+  } | null;
 }
 
 type PageView = "home" | "about" | "services" | "blog" | "gallery" | "contact" | "blog-post" | "project-detail" | string;
@@ -629,6 +638,25 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     }
 
     const sections = ['top', 'middle', 'bottom'] as const;
+    const headerSectionStyles = data.headerLayoutSettings?.sectionSettings;
+
+    const getHeaderSectionBackground = (key: typeof sections[number]): React.CSSProperties => {
+      const ss = headerSectionStyles?.[key];
+      if (!ss) return {};
+      const style: React.CSSProperties = {};
+      if (ss.backgroundType === 'solid' && ss.backgroundColor) {
+        style.backgroundColor = ss.backgroundColor;
+      } else if (ss.backgroundType === 'gradient') {
+        style.background = `linear-gradient(${ss.gradientDirection || 'to bottom'}, ${ss.gradientStart || '#ffffff'}, ${ss.gradientEnd || '#f3f4f6'})`;
+      } else if (ss.backgroundType === 'image' && ss.backgroundImageUrl) {
+        style.backgroundImage = `url(${ss.backgroundImageUrl})`;
+        style.backgroundSize = ss.backgroundSize || 'cover';
+        style.backgroundPosition = ss.backgroundPosition || 'center';
+        style.backgroundRepeat = 'no-repeat';
+      }
+      return style;
+    };
+
     return (
       <header data-testid="configured-header" style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#fff' }}>
         {sections.map(sectionKey => {
@@ -642,10 +670,20 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           const leftEls = elements.filter(e => e.alignment === 'left' && e.type !== 'announcement_bar');
           const centerEls = elements.filter(e => e.alignment === 'center' && e.type !== 'announcement_bar');
           const rightEls = elements.filter(e => e.alignment === 'right' && e.type !== 'announcement_bar');
+          const hss = headerSectionStyles?.[sectionKey];
+          const headerSectionBg = getHeaderSectionBackground(sectionKey);
+          const hPadding = hss?.sectionPadding != null ? `${hss.sectionPadding}px` : undefined;
+          const hWidth = hss?.width || 'boxed';
           return (
-            <div key={sectionKey}>
+            <div key={sectionKey} style={{ ...headerSectionBg }}>
               {hasAnnouncement && renderHeaderElement(hasAnnouncement)}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: sectionKey === 'top' ? '0.25rem 1.5rem' : '0.5rem 1.5rem', gap: '1rem' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: hPadding || (sectionKey === 'top' ? '0.25rem 1.5rem' : '0.5rem 1.5rem'),
+                gap: hss?.gap != null ? `${hss.gap}px` : '1rem',
+                maxWidth: hWidth === 'boxed' ? '1200px' : '100%',
+                margin: hWidth === 'boxed' ? '0 auto' : '0',
+              }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   {leftEls.map(e => renderHeaderElement(e))}
                 </div>

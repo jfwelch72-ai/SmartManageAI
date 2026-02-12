@@ -127,6 +127,7 @@ interface Website {
   footerWidth: string | null;
   footerPadding: number | null;
   footerSectionSettings: Record<string, any> | null;
+  headerSectionSettings: Record<string, any> | null;
   headerComponentsConfig: HeaderComponentsConfig | null;
   footerComponentsConfig: FooterComponentsConfig | null;
   bodyComponentsConfig: BodyComponentsConfig | null;
@@ -436,6 +437,7 @@ export default function WebsiteBuilderPage() {
     footerWidth: "boxed",
     footerPadding: 40,
     footerSectionSettings: null,
+    headerSectionSettings: null as Record<string, any> | null,
   });
 
   const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
@@ -944,6 +946,7 @@ export default function WebsiteBuilderPage() {
         footerWidth: websiteRef.footerWidth || prev.footerWidth,
         footerPadding: websiteRef.footerPadding ?? prev.footerPadding,
         footerSectionSettings: (websiteRef as any).footerSectionSettings ?? prev.footerSectionSettings,
+        headerSectionSettings: (websiteRef as any).headerSectionSettings ?? prev.headerSectionSettings,
       }));
       if (websiteRef.headerComponentsConfig) {
         setHeaderComponentsConfig(websiteRef.headerComponentsConfig as HeaderComponentsConfig);
@@ -1500,6 +1503,7 @@ export default function WebsiteBuilderPage() {
                     footerColumns: 3,
                     footerWidth: "boxed",
                     footerPadding: 40,
+                    headerSectionSettings: null,
                   }));
                 }}
                 data-testid="button-reset-layout"
@@ -1661,8 +1665,15 @@ export default function WebsiteBuilderPage() {
               navigationLayout: websiteForm.navigationLayout,
               mobileNavStyle: websiteForm.mobileNavStyle,
               showOnScroll: websiteForm.showOnScroll,
+              sectionSettings: websiteForm.headerSectionSettings as any,
             }}
-            onHeaderLayoutChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
+            onHeaderLayoutChange={(updates) => {
+              if (updates.sectionSettings) {
+                setWebsiteForm(prev => ({ ...prev, headerSectionSettings: updates.sectionSettings as any }));
+              } else {
+                setWebsiteForm(prev => ({ ...prev, ...updates }));
+              }
+            }}
             footerLayoutSettings={{
               footerVisibility: websiteForm.footerVisibility,
               footerColumns: websiteForm.footerColumns,
@@ -2431,6 +2442,11 @@ export default function WebsiteBuilderPage() {
                         footerLayoutSettings: {
                           footerColumns: websiteForm.footerColumns,
                           sectionSettings: websiteForm.footerSectionSettings as any,
+                        },
+                        headerLayoutSettings: {
+                          headerType: websiteForm.headerType,
+                          headerHeight: websiteForm.headerHeight,
+                          sectionSettings: websiteForm.headerSectionSettings as any,
                         },
                       }} 
                       deviceType={previewDevice}
