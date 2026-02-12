@@ -856,13 +856,21 @@ export default function WebsiteComponentsTab({
   ) => {
     const config = componentType === "header" ? headerConfig : footerConfig;
     const section = config.desktop.sections[sectionKey];
-    const maxColumns = componentType === "header" ? 3 : 4;
+    const maxColumns = componentType === "header" ? 3 : footerLayoutSettings.footerColumns;
     const elements = section.elements.sort((a, b) => a.order - b.order);
 
     const columnElements: (HeaderElement | FooterElement)[][] = Array.from(
       { length: maxColumns },
       (_, colIdx) => elements.filter(e => e.column === colIdx)
     );
+
+    const gridColsClass = maxColumns === 1
+      ? "grid-cols-1"
+      : maxColumns === 2
+        ? "grid-cols-1 md:grid-cols-2"
+        : maxColumns === 3
+          ? "grid-cols-1 md:grid-cols-3"
+          : "grid-cols-1 md:grid-cols-4";
 
     return (
       <div key={sectionKey} className="space-y-2" data-testid={`section-${componentType}-${sectionKey}`}>
@@ -873,7 +881,7 @@ export default function WebsiteComponentsTab({
           </Badge>
         </div>
         <div
-          className={`grid gap-3 ${maxColumns === 3 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1 md:grid-cols-4"}`}
+          className={`grid gap-3 ${gridColsClass}`}
         >
           {columnElements.map((colElems, colIdx) => (
             <div
