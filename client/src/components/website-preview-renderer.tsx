@@ -136,6 +136,11 @@ interface PreviewData {
   bodyConfig?: BodyComponentsConfig | null;
   footerLayoutSettings?: {
     footerColumns: number;
+    sectionSettings?: {
+      top?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      middle?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      bottom?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+    } | null;
   } | null;
 }
 
@@ -768,6 +773,25 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     }
     const sections = ['top', 'middle', 'bottom'] as const;
     const footerColumns = data.footerLayoutSettings?.footerColumns || 4;
+    const sectionStyles = data.footerLayoutSettings?.sectionSettings;
+
+    const getSectionBackground = (key: typeof sections[number]): React.CSSProperties => {
+      const ss = sectionStyles?.[key];
+      if (!ss) return {};
+      const style: React.CSSProperties = {};
+      if (ss.backgroundType === 'solid' && ss.backgroundColor) {
+        style.backgroundColor = ss.backgroundColor;
+      } else if (ss.backgroundType === 'gradient') {
+        style.background = `linear-gradient(${ss.gradientDirection || 'to bottom'}, ${ss.gradientStart || '#1f2937'}, ${ss.gradientEnd || '#111827'})`;
+      } else if (ss.backgroundType === 'image' && ss.backgroundImageUrl) {
+        style.backgroundImage = `url(${ss.backgroundImageUrl})`;
+        style.backgroundSize = ss.backgroundSize || 'cover';
+        style.backgroundPosition = ss.backgroundPosition || 'center';
+        style.backgroundRepeat = 'no-repeat';
+      }
+      return style;
+    };
+
     return (
       <footer data-testid="configured-footer" style={{ backgroundColor: '#1f2937', color: '#fff' }}>
         {sections.map(sectionKey => {
@@ -781,16 +805,22 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             const col = Math.min(el.column || 0, colCount - 1);
             columnBuckets[col].push(el);
           });
+          const ss = sectionStyles?.[sectionKey];
+          const sectionPadding = ss?.padding != null ? `${ss.padding}px` : (sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem');
+          const sectionMargin = ss?.margin != null ? `${ss.margin}px` : '0';
+          const sectionGap = ss?.gap != null ? `${ss.gap}px` : '1.5rem';
           return (
             <div
               key={sectionKey}
               style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${colCount}, 1fr)`,
-                gap: '1.5rem',
-                padding: sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem',
+                gap: sectionGap,
+                padding: sectionPadding,
+                margin: sectionMargin,
                 borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none',
                 alignItems: 'start',
+                ...getSectionBackground(sectionKey),
               }}
             >
               {Array.from({ length: colCount }, (_, colIdx) => (

@@ -126,6 +126,7 @@ interface Website {
   footerColumns: number | null;
   footerWidth: string | null;
   footerPadding: number | null;
+  footerSectionSettings: Record<string, any> | null;
   headerComponentsConfig: HeaderComponentsConfig | null;
   footerComponentsConfig: FooterComponentsConfig | null;
   bodyComponentsConfig: BodyComponentsConfig | null;
@@ -434,6 +435,7 @@ export default function WebsiteBuilderPage() {
     footerColumns: 3,
     footerWidth: "boxed",
     footerPadding: 40,
+    footerSectionSettings: null,
   });
 
   const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
@@ -941,6 +943,7 @@ export default function WebsiteBuilderPage() {
         footerColumns: websiteRef.footerColumns ?? prev.footerColumns,
         footerWidth: websiteRef.footerWidth || prev.footerWidth,
         footerPadding: websiteRef.footerPadding ?? prev.footerPadding,
+        footerSectionSettings: (websiteRef as any).footerSectionSettings ?? prev.footerSectionSettings,
       }));
       if (websiteRef.headerComponentsConfig) {
         setHeaderComponentsConfig(websiteRef.headerComponentsConfig as HeaderComponentsConfig);
@@ -1665,8 +1668,15 @@ export default function WebsiteBuilderPage() {
               footerColumns: websiteForm.footerColumns,
               footerWidth: websiteForm.footerWidth,
               footerPadding: websiteForm.footerPadding,
+              sectionSettings: websiteForm.footerSectionSettings as any,
             }}
-            onFooterLayoutChange={(updates) => setWebsiteForm(prev => ({ ...prev, ...updates }))}
+            onFooterLayoutChange={(updates) => {
+              if (updates.sectionSettings) {
+                setWebsiteForm(prev => ({ ...prev, footerSectionSettings: updates.sectionSettings as any }));
+              } else {
+                setWebsiteForm(prev => ({ ...prev, ...updates }));
+              }
+            }}
             innerPageSettings={{
               pageLayout: websiteForm.pageLayout,
               sidebarWidth: websiteForm.sidebarWidth,
@@ -2420,6 +2430,7 @@ export default function WebsiteBuilderPage() {
                         bodyConfig: bodyComponentsConfig,
                         footerLayoutSettings: {
                           footerColumns: websiteForm.footerColumns,
+                          sectionSettings: websiteForm.footerSectionSettings as any,
                         },
                       }} 
                       deviceType={previewDevice}
