@@ -1037,16 +1037,14 @@ export default function WebsiteBuilderPage() {
               </Button>
             </>
           )}
-          {hasWebsite && (
-            <Button 
-              variant="default"
-              onClick={() => { setShowAIWizard(true); setWizardStep(0); setWizardResult(null); setWizardError(""); }}
-              data-testid="button-ai-wizard"
-            >
-              <Wand2 className="h-4 w-4 mr-1" />
-              AI Website Wizard
-            </Button>
-          )}
+          <Button 
+            variant="default"
+            onClick={() => { setShowAIWizard(true); setWizardStep(0); setWizardResult(null); setWizardError(""); }}
+            data-testid="button-ai-wizard"
+          >
+            <Wand2 className="h-4 w-4 mr-1" />
+            AI Website Wizard
+          </Button>
           <Button 
             variant="outline" 
             onClick={() => setShowAIAssistant(true)}

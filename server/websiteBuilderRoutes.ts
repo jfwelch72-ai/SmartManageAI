@@ -2911,14 +2911,6 @@ router.post("/ai-wizard", requireAuth, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: "Organization access required" });
     }
 
-    const website = await db.query.organizationWebsites.findFirst({
-      where: eq(organizationWebsites.organizationId, orgId!),
-    });
-
-    if (!website) {
-      return res.status(400).json({ error: "Please set up your website first" });
-    }
-
     const {
       companyName, industry, services, companyDescription, goals,
       contactEmail, contactPhone, contactAddress,
@@ -2927,6 +2919,32 @@ router.post("/ai-wizard", requireAuth, async (req: AuthRequest, res: Response) =
 
     if (!companyName || !industry || !services || !companyDescription || !goals) {
       return res.status(400).json({ error: "Missing required fields: companyName, industry, services, companyDescription, goals" });
+    }
+
+    let website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.organizationId, orgId!),
+    });
+
+    if (!website) {
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId!),
+      });
+      const subdomain = org?.slug || `org-${Date.now()}`;
+      const [created] = await db.insert(organizationWebsites)
+        .values({
+          organizationId: orgId!,
+          subdomain,
+          siteTitle: companyName,
+          siteTagline: companyDescription.substring(0, 200),
+          primaryColor: "#2563eb",
+          secondaryColor: "#1e40af",
+          accentColor: "#f59e0b",
+          fontFamily: "Inter",
+          status: "DRAFT",
+        })
+        .returning();
+      website = created;
+      await logCreate(user.id, "organization_websites", website.id, { subdomain, siteTitle: companyName }, req);
     }
 
     const systemPrompt = `You are a professional website architect for construction and trade companies. Generate ONLY valid JSON with no explanations, markdown, or code fences.
