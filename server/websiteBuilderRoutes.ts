@@ -2879,6 +2879,278 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
 });
 
 // ============================================
+// AI WEBSITE WIZARD
+// ============================================
+
+const AI_WIZARD_DEFAULT_STYLES = {
+  typography: { fontFamily: "inherit", fontSize: "base", fontWeight: "normal", color: "", lineHeight: "normal" },
+  spacing: { paddingTop: "8", paddingBottom: "8", paddingLeft: "4", paddingRight: "4", marginTop: "0", marginBottom: "0" },
+  background: { type: "none", color: "", gradientFrom: "", gradientTo: "", gradientDirection: "to-b", imageUrl: "", videoUrl: "", imagePosition: "center", imageSize: "cover", imageAttachment: "scroll", imageRepeat: "no-repeat" },
+  alignment: "center",
+};
+
+const AI_WIZARD_LABELS: Record<string, string> = {
+  banner: "Banner Section", hero: "Hero Section", content: "Content Section",
+  form: "Form", grid: "Grid & Layout", cta: "Call to Action",
+  testimonial: "Testimonials", feature_highlight: "Feature Highlights",
+  gallery: "Gallery", stats: "Stats / KPIs", faq: "FAQ Section",
+  certifications: "Certifications", about_company: "About Company",
+  equipment: "Equipment", safety: "Safety & Compliance", team: "Team Members",
+  logo_showcase: "Logo Showcase", blog_section: "Blog Section",
+};
+
+router.post("/ai-wizard", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.organizationId, orgId!),
+    });
+
+    if (!website) {
+      return res.status(400).json({ error: "Please set up your website first" });
+    }
+
+    const {
+      companyName, industry, services, companyDescription, goals,
+      contactEmail, contactPhone, contactAddress,
+      stylePreference, colorPreference,
+    } = req.body;
+
+    if (!companyName || !industry || !services || !companyDescription || !goals) {
+      return res.status(400).json({ error: "Missing required fields: companyName, industry, services, companyDescription, goals" });
+    }
+
+    const systemPrompt = `You are a professional website architect for construction and trade companies. Generate ONLY valid JSON with no explanations, markdown, or code fences.
+
+The user will provide company details. You must return a JSON object with this exact structure:
+{
+  "siteSettings": {
+    "siteTitle": "string",
+    "siteTagline": "string",
+    "primaryColor": "#hex",
+    "secondaryColor": "#hex",
+    "accentColor": "#hex",
+    "fontFamily": "Inter"
+  },
+  "pages": [
+    {
+      "pageType": "HOME" or "CUSTOM",
+      "pageSlug": "string",
+      "pageTitle": "string",
+      "navigationLabel": "string",
+      "showInNavigation": true,
+      "navigationOrder": 0,
+      "metaTitle": "string (60 chars max)",
+      "metaDescription": "string (160 chars max)",
+      "components": [
+        { "type": "component_type", "config": { ... } }
+      ]
+    }
+  ]
+}
+
+Available component types and their EXACT config schemas:
+
+1. "hero": { "title": "string", "subtitle": "string", "content": "string", "imageEnabled": true, "imageUrl": "", "imagePosition": "right", "buttons": [{"text": "string", "url": "string", "variant": "default"|"outline"}] }
+
+2. "banner": { "title": "string", "content": "string", "buttons": [{"text": "string", "url": "string", "variant": "default"|"outline"}], "sideImageEnabled": false, "sideImageUrl": "" }
+
+3. "content": { "title": "string", "content": "string" }
+
+4. "form": { "title": "string", "submitButtonText": "string", "fields": [{"id": "string", "label": "string", "type": "text"|"email"|"tel"|"textarea"|"select", "placeholder": "string", "required": true|false}] }
+
+5. "grid": { "columns": 3, "title": "string", "items": [{"id": "string", "title": "string", "content": "string", "icon": "string", "imageUrl": "", "buttonText": "string", "buttonUrl": "string"}] }
+
+6. "cta": { "title": "string", "content": "string", "buttons": [{"text": "string", "url": "string", "variant": "default"|"outline"}] }
+
+7. "testimonial": { "layout": "grid", "columns": 3, "title": "string", "items": [{"id": "string", "name": "string", "role": "string", "quote": "string", "imageEnabled": false, "imageUrl": ""}] }
+
+8. "feature_highlight": { "columns": 3, "title": "string", "items": [{"id": "string", "title": "string", "description": "string", "icon": "string"}] }
+   Valid icons: "star", "zap", "headphones", "shield", "award", "target", "check-circle", "truck", "hard-hat", "wrench", "clock", "users"
+
+9. "stats": { "columns": 4, "title": "string", "items": [{"id": "string", "value": "string", "label": "string", "prefix": "string", "suffix": "string"}] }
+
+10. "faq": { "title": "string", "items": [{"id": "string", "question": "string", "answer": "string"}] }
+
+11. "certifications": { "title": "string", "columns": 4, "items": [{"id": "string", "logoUrl": "", "label": "string"}] }
+
+12. "about_company": { "title": "string", "overview": "string", "yearsExperience": "string", "mission": "string", "vision": "string", "teamPhotoUrl": "" }
+
+13. "equipment": { "title": "string", "columns": 3, "items": [{"id": "string", "imageUrl": "", "model": "string", "description": "string"}] }
+
+14. "safety": { "title": "string", "safetyPolicy": "string", "stats": [{"id": "string", "value": "string", "label": "string"}], "badges": [{"id": "string", "imageUrl": "", "label": "string"}] }
+
+15. "team": { "title": "string", "columns": 3, "items": [{"id": "string", "photoUrl": "", "name": "string", "role": "string", "bio": "string"}] }
+
+16. "logo_showcase": { "title": "string", "items": [{"id": "string", "imageUrl": "", "altText": "string"}], "desktopColumns": 5, "tabletColumns": 3, "mobileColumns": 2, "continuousSlide": false, "slideSpeed": 30 }
+
+17. "blog_section": { "title": "string", "source": "latest", "sortOrder": "latest", "layoutStyle": "grid", "desktopItems": 3, "tabletItems": 2, "mobileItems": 1, "showExcerpt": true, "showAuthor": true, "showDate": true, "showCategory": true, "showCoverImage": true, "readMoreText": "Read More" }
+
+GUARDRAILS:
+- Max 7 components per page.
+- Homepage MUST include: hero, feature_highlight or grid (for services), stats, cta, testimonial.
+- If goal includes "lead_generation", MUST include a form component on relevant pages.
+- If industry is construction-related, include certifications, safety, equipment components where appropriate.
+- Mobile-first: max 3 columns in grids, clear CTA buttons.
+- Generate realistic, professional content with real-sounding service descriptions and stats.
+- All items need unique IDs using patterns like "g1", "g2", "fh1", "fh2", "t1", "t2", "s1", "s2", etc.
+
+PAGE GENERATION RULES:
+- ALWAYS generate: Home, About, Services, Contact pages.
+- For construction companies, also generate a Projects/Gallery page.
+- Keep navigation simple (4-6 pages max).
+- Home page should have the most components (5-7).
+- Other pages should have 2-5 components.
+- Contact page MUST have a form component.
+- Home page uses pageType "HOME", all others use "CUSTOM".
+
+COLOR RULES:
+- Choose colors that match the style and color preferences provided.
+- primaryColor should be the main brand color.
+- secondaryColor should complement the primary.
+- accentColor should provide contrast for CTAs and highlights.`;
+
+    const userPrompt = `Generate a complete website for:
+Company Name: ${companyName}
+Industry: ${industry}
+Services: ${services}
+Description: ${companyDescription}
+Goals: ${goals}
+${contactEmail ? `Email: ${contactEmail}` : ""}
+${contactPhone ? `Phone: ${contactPhone}` : ""}
+${contactAddress ? `Address: ${contactAddress}` : ""}
+${stylePreference ? `Style Preference: ${stylePreference}` : ""}
+${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 8000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return res.status(500).json({ error: "AI did not return a response" });
+    }
+
+    let aiResult: any;
+    try {
+      aiResult = JSON.parse(content);
+    } catch (parseErr) {
+      console.error("Failed to parse AI wizard response:", parseErr);
+      return res.status(500).json({ error: "AI returned invalid JSON" });
+    }
+
+    const { siteSettings, pages: aiPages } = aiResult;
+
+    if (!siteSettings || !aiPages || !Array.isArray(aiPages)) {
+      return res.status(500).json({ error: "AI returned an incomplete response" });
+    }
+
+    await db.update(organizationWebsites).set({
+      siteTitle: siteSettings.siteTitle || companyName,
+      siteTagline: siteSettings.siteTagline || "",
+      primaryColor: siteSettings.primaryColor || "#2563eb",
+      secondaryColor: siteSettings.secondaryColor || "#1e40af",
+      accentColor: siteSettings.accentColor || "#f59e0b",
+      fontFamily: siteSettings.fontFamily || "Inter",
+      updatedAt: new Date(),
+    }).where(eq(organizationWebsites.id, website.id));
+
+    const resultPages: any[] = [];
+    const baseTs = Date.now();
+
+    for (const aiPage of aiPages) {
+      const components = (aiPage.components || []).map((comp: any, idx: number) => ({
+        id: `body-${comp.type}-${baseTs + idx}`,
+        label: AI_WIZARD_LABELS[comp.type] || comp.type,
+        enabled: true,
+        visibleDesktop: true,
+        visibleMobile: true,
+        order: idx,
+        styles: { ...AI_WIZARD_DEFAULT_STYLES },
+        type: comp.type,
+        config: comp.config,
+      }));
+
+      const contentJson = JSON.stringify({ components });
+
+      const existingPage = await db.query.organizationWebsitePages.findFirst({
+        where: and(
+          eq(organizationWebsitePages.organizationId, orgId!),
+          eq(organizationWebsitePages.pageSlug, aiPage.pageSlug)
+        ),
+      });
+
+      if (existingPage) {
+        const [updated] = await db.update(organizationWebsitePages)
+          .set({
+            contentJson,
+            pageTitle: aiPage.pageTitle,
+            navigationLabel: aiPage.navigationLabel,
+            showInNavigation: aiPage.showInNavigation ?? true,
+            navigationOrder: aiPage.navigationOrder ?? 0,
+            metaTitle: aiPage.metaTitle || "",
+            metaDescription: aiPage.metaDescription || "",
+            updatedAt: new Date(),
+          })
+          .where(eq(organizationWebsitePages.id, existingPage.id))
+          .returning();
+        resultPages.push(updated);
+      } else {
+        const [created] = await db.insert(organizationWebsitePages)
+          .values({
+            websiteId: website.id,
+            organizationId: orgId!,
+            pageType: aiPage.pageType === "HOME" ? "HOME" : "CUSTOM",
+            pageSlug: aiPage.pageSlug,
+            pageTitle: aiPage.pageTitle,
+            navigationLabel: aiPage.navigationLabel,
+            showInNavigation: aiPage.showInNavigation ?? true,
+            navigationOrder: aiPage.navigationOrder ?? 0,
+            metaTitle: aiPage.metaTitle || "",
+            metaDescription: aiPage.metaDescription || "",
+            contentJson,
+            isPublished: true,
+          })
+          .returning();
+        resultPages.push(created);
+      }
+    }
+
+    res.json({
+      success: true,
+      pages: resultPages,
+      siteSettings: {
+        siteTitle: siteSettings.siteTitle,
+        siteTagline: siteSettings.siteTagline,
+        primaryColor: siteSettings.primaryColor,
+        secondaryColor: siteSettings.secondaryColor,
+        accentColor: siteSettings.accentColor,
+        fontFamily: siteSettings.fontFamily,
+      },
+    });
+  } catch (error) {
+    console.error("Error in AI website wizard:", error);
+    res.status(500).json({ error: "AI website wizard failed. Please try again." });
+  }
+});
+
+// ============================================
 // Global / Reusable Components
 // ============================================
 
