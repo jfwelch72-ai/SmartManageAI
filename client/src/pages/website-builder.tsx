@@ -359,6 +359,25 @@ export default function WebsiteBuilderPage() {
     coverImageUrl: ""
   });
   
+  const [showAIWizard, setShowAIWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardGenerating, setWizardGenerating] = useState(false);
+  const [wizardProgress, setWizardProgress] = useState(0);
+  const [wizardResult, setWizardResult] = useState<any>(null);
+  const [wizardError, setWizardError] = useState("");
+  const [wizardForm, setWizardForm] = useState({
+    companyName: "",
+    industry: "general_contractor",
+    services: "",
+    companyDescription: "",
+    goals: "lead_generation",
+    contactEmail: "",
+    contactPhone: "",
+    contactAddress: "",
+    stylePreference: "modern",
+    colorPreference: "blue",
+  });
+
   const [showEditPageDialog, setShowEditPageDialog] = useState(false);
   const [selectedPage, setSelectedPage] = useState<any>(null);
   const [editPageForm, setEditPageForm] = useState({
@@ -1017,6 +1036,16 @@ export default function WebsiteBuilderPage() {
                 Publish
               </Button>
             </>
+          )}
+          {hasWebsite && (
+            <Button 
+              variant="default"
+              onClick={() => { setShowAIWizard(true); setWizardStep(0); setWizardResult(null); setWizardError(""); }}
+              data-testid="button-ai-wizard"
+            >
+              <Wand2 className="h-4 w-4 mr-1" />
+              AI Website Wizard
+            </Button>
           )}
           <Button 
             variant="outline" 
@@ -3133,6 +3162,352 @@ export default function WebsiteBuilderPage() {
               {editPageMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
               Save Changes
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Website Wizard Dialog */}
+      <Dialog open={showAIWizard} onOpenChange={(open) => { if (!open && !wizardGenerating) setShowAIWizard(false); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5 text-primary" />
+              AI Website Wizard
+            </DialogTitle>
+            <DialogDescription>
+              {wizardStep === 0 && "Tell us about your company and we'll generate a professional website for you."}
+              {wizardStep === 1 && "Set your goals and style preferences."}
+              {wizardStep === 2 && "Add your contact information."}
+              {wizardStep === 3 && wizardGenerating && "Generating your website..."}
+              {wizardStep === 3 && !wizardGenerating && wizardResult && "Your website has been generated!"}
+              {wizardStep === 3 && !wizardGenerating && wizardError && "Something went wrong."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {wizardStep === 0 && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Company Name *</Label>
+                <Input
+                  value={wizardForm.companyName}
+                  onChange={(e) => setWizardForm(p => ({ ...p, companyName: e.target.value }))}
+                  placeholder="e.g., Summit Construction LLC"
+                  data-testid="input-wizard-company-name"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Industry / Trade *</Label>
+                <Select value={wizardForm.industry} onValueChange={(v) => setWizardForm(p => ({ ...p, industry: v }))}>
+                  <SelectTrigger data-testid="select-wizard-industry">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general_contractor">General Contractor</SelectItem>
+                    <SelectItem value="concrete">Concrete</SelectItem>
+                    <SelectItem value="electrical">Electrical</SelectItem>
+                    <SelectItem value="plumbing">Plumbing</SelectItem>
+                    <SelectItem value="hvac">HVAC</SelectItem>
+                    <SelectItem value="roofing">Roofing</SelectItem>
+                    <SelectItem value="painting">Painting</SelectItem>
+                    <SelectItem value="landscaping">Landscaping</SelectItem>
+                    <SelectItem value="demolition">Demolition</SelectItem>
+                    <SelectItem value="flooring">Flooring</SelectItem>
+                    <SelectItem value="masonry">Masonry</SelectItem>
+                    <SelectItem value="steel_erection">Steel / Structural</SelectItem>
+                    <SelectItem value="excavation">Excavation / Sitework</SelectItem>
+                    <SelectItem value="drywall">Drywall</SelectItem>
+                    <SelectItem value="carpentry">Carpentry</SelectItem>
+                    <SelectItem value="fire_protection">Fire Protection</SelectItem>
+                    <SelectItem value="insulation">Insulation</SelectItem>
+                    <SelectItem value="other_construction">Other Construction Trade</SelectItem>
+                    <SelectItem value="non_construction">Non-Construction Business</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Company Description *</Label>
+                <Textarea
+                  value={wizardForm.companyDescription}
+                  onChange={(e) => setWizardForm(p => ({ ...p, companyDescription: e.target.value }))}
+                  placeholder="Briefly describe what your company does, your specialties, and what makes you stand out..."
+                  rows={3}
+                  data-testid="input-wizard-description"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Services Offered *</Label>
+                <Textarea
+                  value={wizardForm.services}
+                  onChange={(e) => setWizardForm(p => ({ ...p, services: e.target.value }))}
+                  placeholder="e.g., Residential Construction, Commercial Renovations, Kitchen Remodeling, Bathroom Remodeling"
+                  rows={2}
+                  data-testid="input-wizard-services"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Separate each service with a comma</p>
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 1 && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Primary Goal</Label>
+                <Select value={wizardForm.goals} onValueChange={(v) => setWizardForm(p => ({ ...p, goals: v }))}>
+                  <SelectTrigger data-testid="select-wizard-goals">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead_generation">Generate Leads / Get More Clients</SelectItem>
+                    <SelectItem value="portfolio_showcase">Showcase Projects & Portfolio</SelectItem>
+                    <SelectItem value="brand_awareness">Build Brand Awareness</SelectItem>
+                    <SelectItem value="recruitment">Recruit New Team Members</SelectItem>
+                    <SelectItem value="information">Provide Company Information</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Style Preference</Label>
+                <Select value={wizardForm.stylePreference} onValueChange={(v) => setWizardForm(p => ({ ...p, stylePreference: v }))}>
+                  <SelectTrigger data-testid="select-wizard-style">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="modern">Modern & Clean</SelectItem>
+                    <SelectItem value="classic">Classic & Professional</SelectItem>
+                    <SelectItem value="bold">Bold & Impactful</SelectItem>
+                    <SelectItem value="minimal">Minimal & Simple</SelectItem>
+                    <SelectItem value="industrial">Industrial & Rugged</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Color Preference</Label>
+                <Select value={wizardForm.colorPreference} onValueChange={(v) => setWizardForm(p => ({ ...p, colorPreference: v }))}>
+                  <SelectTrigger data-testid="select-wizard-color">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="blue">Blue (Trust & Reliability)</SelectItem>
+                    <SelectItem value="orange">Orange (Energy & Enthusiasm)</SelectItem>
+                    <SelectItem value="green">Green (Growth & Sustainability)</SelectItem>
+                    <SelectItem value="red">Red (Bold & Powerful)</SelectItem>
+                    <SelectItem value="dark">Dark / Charcoal (Premium & Sleek)</SelectItem>
+                    <SelectItem value="earth_tones">Earth Tones (Natural & Grounded)</SelectItem>
+                    <SelectItem value="navy_gold">Navy & Gold (Luxury & Trust)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 2 && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Optional - this info will be used in your Contact page and footer.</p>
+              <div>
+                <Label className="text-sm font-medium">Contact Email</Label>
+                <Input
+                  value={wizardForm.contactEmail}
+                  onChange={(e) => setWizardForm(p => ({ ...p, contactEmail: e.target.value }))}
+                  placeholder="info@yourcompany.com"
+                  data-testid="input-wizard-email"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Phone Number</Label>
+                <Input
+                  value={wizardForm.contactPhone}
+                  onChange={(e) => setWizardForm(p => ({ ...p, contactPhone: e.target.value }))}
+                  placeholder="(555) 123-4567"
+                  data-testid="input-wizard-phone"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Business Address</Label>
+                <Input
+                  value={wizardForm.contactAddress}
+                  onChange={(e) => setWizardForm(p => ({ ...p, contactAddress: e.target.value }))}
+                  placeholder="123 Main St, City, State 12345"
+                  data-testid="input-wizard-address"
+                />
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 3 && wizardGenerating && (
+            <div className="py-8 space-y-6">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <div className="h-16 w-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                  <Wand2 className="h-6 w-6 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="font-medium">Building your website...</p>
+                  <p className="text-sm text-muted-foreground">
+                    {wizardProgress < 30 && "Analyzing your business profile..."}
+                    {wizardProgress >= 30 && wizardProgress < 60 && "Designing page layouts and components..."}
+                    {wizardProgress >= 60 && wizardProgress < 85 && "Writing professional content..."}
+                    {wizardProgress >= 85 && "Finalizing and saving pages..."}
+                  </p>
+                </div>
+              </div>
+              <Progress value={wizardProgress} className="w-full" />
+            </div>
+          )}
+
+          {wizardStep === 3 && !wizardGenerating && wizardResult && (
+            <div className="py-4 space-y-4">
+              <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-md">
+                <Check className="h-6 w-6 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="font-medium text-green-700 dark:text-green-400">Website Generated Successfully</p>
+                  <p className="text-sm text-muted-foreground">
+                    Created {wizardResult.pages?.length || 0} pages with professional content tailored to your business.
+                  </p>
+                </div>
+              </div>
+              {wizardResult.pages && wizardResult.pages.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Pages Created:</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {wizardResult.pages.map((page: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 p-2 border rounded-md text-sm">
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <span className="truncate">{page.pageTitle || page.navigationLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {wizardResult.siteSettings && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Site Settings Updated:</Label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {wizardResult.siteSettings.primaryColor && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: wizardResult.siteSettings.primaryColor }} />
+                        <span>Primary</span>
+                      </div>
+                    )}
+                    {wizardResult.siteSettings.secondaryColor && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: wizardResult.siteSettings.secondaryColor }} />
+                        <span>Secondary</span>
+                      </div>
+                    )}
+                    {wizardResult.siteSettings.accentColor && (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: wizardResult.siteSettings.accentColor }} />
+                        <span>Accent</span>
+                      </div>
+                    )}
+                    {wizardResult.siteSettings.fontFamily && (
+                      <Badge variant="secondary" className="text-xs">{wizardResult.siteSettings.fontFamily}</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {wizardStep === 3 && !wizardGenerating && wizardError && (
+            <div className="py-4">
+              <div className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/20 rounded-md">
+                <AlertCircle className="h-6 w-6 text-destructive flex-shrink-0" />
+                <div>
+                  <p className="font-medium text-destructive">Generation Failed</p>
+                  <p className="text-sm text-muted-foreground">{wizardError}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex items-center justify-between gap-2">
+            {wizardStep < 3 && (
+              <>
+                {wizardStep > 0 && (
+                  <Button variant="outline" onClick={() => setWizardStep(s => s - 1)} data-testid="button-wizard-back">
+                    Back
+                  </Button>
+                )}
+                <div className="flex items-center gap-1.5 mx-auto">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className={`h-2 w-2 rounded-full transition-colors ${i === wizardStep ? "bg-primary" : "bg-muted-foreground/30"}`} />
+                  ))}
+                </div>
+                {wizardStep < 2 ? (
+                  <Button
+                    onClick={() => setWizardStep(s => s + 1)}
+                    disabled={wizardStep === 0 && (!wizardForm.companyName.trim() || !wizardForm.services.trim() || !wizardForm.companyDescription.trim())}
+                    data-testid="button-wizard-next"
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={async () => {
+                      setWizardStep(3);
+                      setWizardGenerating(true);
+                      setWizardProgress(0);
+                      setWizardError("");
+                      setWizardResult(null);
+                      const progressInterval = setInterval(() => {
+                        setWizardProgress(p => {
+                          if (p >= 90) { clearInterval(progressInterval); return 90; }
+                          return p + Math.random() * 8 + 2;
+                        });
+                      }, 800);
+                      try {
+                        const res = await apiRequest("POST", "/api/website/ai-wizard", wizardForm);
+                        const data = await res.json();
+                        clearInterval(progressInterval);
+                        setWizardProgress(100);
+                        if (data.success) {
+                          setWizardResult(data);
+                          queryClient.invalidateQueries({ queryKey: ["/api/website"] });
+                          queryClient.invalidateQueries({ queryKey: ["/api/website/pages"] });
+                          queryClient.invalidateQueries({ queryKey: ["/api/website/preview"] });
+                          toast({ title: "Website generated!", description: `Created ${data.pages?.length || 0} pages with AI content.` });
+                        } else {
+                          setWizardError(data.error || "Failed to generate website.");
+                        }
+                      } catch (err: any) {
+                        clearInterval(progressInterval);
+                        setWizardProgress(0);
+                        setWizardError(err.message || "An unexpected error occurred.");
+                      } finally {
+                        setWizardGenerating(false);
+                      }
+                    }}
+                    data-testid="button-wizard-generate"
+                  >
+                    <Wand2 className="h-4 w-4 mr-1" />
+                    Generate Website
+                  </Button>
+                )}
+              </>
+            )}
+            {wizardStep === 3 && !wizardGenerating && (
+              <>
+                {wizardError && (
+                  <Button variant="outline" onClick={() => { setWizardStep(0); setWizardError(""); }} data-testid="button-wizard-retry">
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Try Again
+                  </Button>
+                )}
+                {wizardResult && (
+                  <>
+                    <Button variant="outline" onClick={() => { setWizardStep(0); setWizardResult(null); }} data-testid="button-wizard-regenerate">
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Regenerate
+                    </Button>
+                    <Button onClick={() => { setShowAIWizard(false); setActiveTab("pages"); }} data-testid="button-wizard-edit-site">
+                      <Edit className="h-4 w-4 mr-1" />
+                      Edit This Site
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

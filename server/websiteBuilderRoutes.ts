@@ -2999,7 +2999,7 @@ GUARDRAILS:
 - Max 7 components per page.
 - Homepage MUST include: hero, feature_highlight or grid (for services), stats, cta, testimonial.
 - If goal includes "lead_generation", MUST include a form component on relevant pages.
-- If industry is construction-related, include certifications, safety, equipment components where appropriate.
+- If industry is construction-related, include certifications, safety, equipment, team components where appropriate. Do NOT use "gallery" type - use a "grid" component for showcasing projects instead.
 - Mobile-first: max 3 columns in grids, clear CTA buttons.
 - Generate realistic, professional content with real-sounding service descriptions and stats.
 - All items need unique IDs using patterns like "g1", "g2", "fh1", "fh2", "t1", "t2", "s1", "s2", etc.
