@@ -729,12 +729,23 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           </div>
         );
       }
-      case 'footer_title':
+      case 'footer_title': {
+        const titleStyle: Record<string, string> = {
+          fontWeight: (el.content?.fontStyle === 'bold' || el.content?.fontStyle === 'bold-italic' || (!el.content?.fontStyle)) ? '600' : '400',
+          fontSize: el.content?.fontSize ? `${el.content.fontSize}px` : '0.9375rem',
+          color: el.content?.textColor || '#fff',
+          textAlign: el.content?.textAlign || 'left',
+          textTransform: el.content?.textTransform || 'none',
+          fontStyle: (el.content?.fontStyle === 'italic' || el.content?.fontStyle === 'bold-italic') ? 'italic' : 'normal',
+          padding: el.content?.padding ? `${el.content.padding}px` : '0',
+          margin: el.content?.margin ? `${el.content.margin}px` : '0',
+        };
         return (
-          <div key={el.id} data-testid="footer-config-title" style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#fff' }}>
+          <div key={el.id} data-testid="footer-config-title" style={titleStyle}>
             {el.content?.text || siteName}
           </div>
         );
+      }
       default:
         return null;
     }

@@ -816,14 +816,147 @@ export default function WebsiteComponentsTab({
             )}
 
             {element.type === "footer_title" && (
-              <div className="space-y-1">
-                <Label className="text-xs">Title Text</Label>
-                <Input
-                  className="h-8"
-                  value={element.content.text || ""}
-                  onChange={(e) => updateFn(element.id, { content: { ...element.content, text: e.target.value } })}
-                  data-testid={`input-text-${element.id}`}
-                />
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Title Text</Label>
+                  <Input
+                    className="h-8"
+                    value={element.content.text || ""}
+                    onChange={(e) => updateFn(element.id, { content: { ...element.content, text: e.target.value } })}
+                    data-testid={`input-text-${element.id}`}
+                  />
+                </div>
+
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm" className="w-full justify-start gap-1 text-xs text-muted-foreground">
+                      <Settings className="h-3.5 w-3.5" /> Style Options
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 pt-2">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Padding (px)</Label>
+                        <Input
+                          type="number"
+                          className="h-8"
+                          min={0}
+                          max={100}
+                          value={element.content.padding || "0"}
+                          onChange={(e) => updateFn(element.id, { content: { ...element.content, padding: e.target.value } })}
+                          data-testid={`input-padding-${element.id}`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Margin (px)</Label>
+                        <Input
+                          type="number"
+                          className="h-8"
+                          min={0}
+                          max={100}
+                          value={element.content.margin || "0"}
+                          onChange={(e) => updateFn(element.id, { content: { ...element.content, margin: e.target.value } })}
+                          data-testid={`input-margin-${element.id}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Text Color</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={element.content.textColor || "#ffffff"}
+                            onChange={(e) => updateFn(element.id, { content: { ...element.content, textColor: e.target.value } })}
+                            className="h-8 w-8 rounded border cursor-pointer"
+                            data-testid={`input-text-color-${element.id}`}
+                          />
+                          <Input
+                            className="h-8 flex-1"
+                            value={element.content.textColor || "#ffffff"}
+                            onChange={(e) => updateFn(element.id, { content: { ...element.content, textColor: e.target.value } })}
+                            data-testid={`input-text-color-hex-${element.id}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Text Size (px)</Label>
+                        <Input
+                          type="number"
+                          className="h-8"
+                          min={8}
+                          max={72}
+                          value={element.content.fontSize || "15"}
+                          onChange={(e) => updateFn(element.id, { content: { ...element.content, fontSize: e.target.value } })}
+                          data-testid={`input-font-size-${element.id}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Text Alignment</Label>
+                        <Select
+                          value={element.content.textAlign || "left"}
+                          onValueChange={(val) => updateFn(element.id, { content: { ...element.content, textAlign: val } })}
+                        >
+                          <SelectTrigger className="h-8" data-testid={`select-text-align-${element.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">Left</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                            <SelectItem value="right">Right</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Text Transform</Label>
+                        <Select
+                          value={element.content.textTransform || "none"}
+                          onValueChange={(val) => updateFn(element.id, { content: { ...element.content, textTransform: val } })}
+                        >
+                          <SelectTrigger className="h-8" data-testid={`select-text-transform-${element.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                            <SelectItem value="lowercase">lowercase</SelectItem>
+                            <SelectItem value="capitalize">Capitalize</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Font Style</Label>
+                      <Select
+                        value={element.content.fontStyle || "bold"}
+                        onValueChange={(val) => updateFn(element.id, { content: { ...element.content, fontStyle: val } })}
+                      >
+                        <SelectTrigger className="h-8" data-testid={`select-font-style-${element.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="normal">Normal</SelectItem>
+                          <SelectItem value="italic">Italic</SelectItem>
+                          <SelectItem value="bold">Bold</SelectItem>
+                          <SelectItem value="bold-italic">Bold Italic</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {componentType === "footer" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => duplicateFooterElement(element as FooterElement)}
+                    data-testid={`button-duplicate-${element.id}`}
+                  >
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate Component
+                  </Button>
+                )}
               </div>
             )}
 
