@@ -302,7 +302,7 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
         ];
         let created = false;
         for (const def of defaultPages) {
-          if (!pages.some(p => p.pageType === def.pageType)) {
+          if (!pages.some(p => p.pageType === def.pageType || p.pageSlug === def.pageSlug)) {
             const [newPage] = await db.insert(organizationWebsitePages)
               .values({
                 websiteId: website.id,
@@ -2984,7 +2984,7 @@ Available component types and their EXACT config schemas:
 
 3. "content": { "title": "string", "content": "string" }
 
-4. "form": { "title": "string", "submitButtonText": "string", "fields": [{"id": "string", "label": "string", "type": "text"|"email"|"tel"|"textarea"|"select", "placeholder": "string", "required": true|false}] }
+4. "form": { "title": "string", "submitButtonText": "string", "fields": [{"id": "string", "label": "string", "type": "text"|"email"|"phone"|"number"|"textarea"|"select", "placeholder": "string", "required": true|false}] }
 
 5. "grid": { "columns": 3, "title": "string", "items": [{"id": "string", "title": "string", "content": "string", "icon": "string", "imageUrl": "", "buttonText": "string", "buttonUrl": "string"}] }
 
@@ -3130,11 +3130,16 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
           .returning();
         resultPages.push(updated);
       } else {
+        const slugToPageType: Record<string, string> = {
+          home: "HOME", about: "ABOUT", services: "SERVICES", contact: "CONTACT",
+        };
+        const resolvedPageType = slugToPageType[aiPage.pageSlug] || "CUSTOM";
+
         const [created] = await db.insert(organizationWebsitePages)
           .values({
             websiteId: website.id,
             organizationId: orgId!,
-            pageType: aiPage.pageType === "HOME" ? "HOME" : "CUSTOM",
+            pageType: resolvedPageType as any,
             pageSlug: aiPage.pageSlug,
             pageTitle: aiPage.pageTitle,
             navigationLabel: aiPage.navigationLabel,

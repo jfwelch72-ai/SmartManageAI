@@ -828,7 +828,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               <div style={{ ...contentZStyle, maxWidth: '40rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
                 <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {fields.filter((f: any) => f.enabled).map((field: any) => (
+                  {fields.filter((f: any) => f.enabled !== false).map((field: any) => (
                     <div key={field.id}>
                       <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>
                         {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
@@ -841,7 +841,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                           {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
                         </select>
                       ) : (
-                        <input type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'} placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }} />
+                        <input type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }} />
                       )}
                     </div>
                   ))}
