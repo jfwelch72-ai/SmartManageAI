@@ -91,6 +91,9 @@ export interface BackToTopConfig {
 }
 
 export interface FooterSectionStyle {
+  columns: number;
+  width: string;
+  sectionPadding: number;
   backgroundType: "solid" | "gradient" | "image";
   backgroundColor: string;
   gradientStart: string;
@@ -105,6 +108,9 @@ export interface FooterSectionStyle {
 }
 
 export const DEFAULT_FOOTER_SECTION_STYLE: FooterSectionStyle = {
+  columns: 3,
+  width: "boxed",
+  sectionPadding: 40,
   backgroundType: "solid",
   backgroundColor: "",
   gradientStart: "#1f2937",
@@ -1257,7 +1263,8 @@ export default function WebsiteComponentsTab({
   ) => {
     const config = componentType === "header" ? headerConfig : footerConfig;
     const section = config.desktop.sections[sectionKey];
-    const maxColumns = componentType === "header" ? 3 : footerLayoutSettings.footerColumns;
+    const sectionSS = footerLayoutSettings.sectionSettings?.[sectionKey];
+    const maxColumns = componentType === "header" ? 3 : (sectionSS?.columns || footerLayoutSettings.footerColumns || 3);
     const elements = section.elements.sort((a, b) => a.order - b.order);
 
     const columnElements: (HeaderElement | FooterElement)[][] = Array.from(
@@ -1773,67 +1780,9 @@ export default function WebsiteComponentsTab({
                 </div>
 
                 {footerLayoutSettings.footerVisibility && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-2">
-                      <Label data-testid="label-footer-columns">Footer Columns</Label>
-                      <Select
-                        value={String(footerLayoutSettings.footerColumns)}
-                        onValueChange={(val) => onFooterLayoutChange({ footerColumns: parseInt(val) })}
-                      >
-                        <SelectTrigger data-testid="select-footer-columns">
-                          <SelectValue placeholder="Select columns" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 Column</SelectItem>
-                          <SelectItem value="2">2 Columns</SelectItem>
-                          <SelectItem value="3">3 Columns</SelectItem>
-                          <SelectItem value="4">4 Columns</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Number of content columns in the footer</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label data-testid="label-footer-width">Footer Width</Label>
-                      <Select
-                        value={footerLayoutSettings.footerWidth}
-                        onValueChange={(val) => onFooterLayoutChange({ footerWidth: val })}
-                      >
-                        <SelectTrigger data-testid="select-footer-width">
-                          <SelectValue placeholder="Select width" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="boxed">Boxed</SelectItem>
-                          <SelectItem value="full-width">Full Width</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        {footerLayoutSettings.footerWidth === "boxed" ? "Footer content stays within the max width" : "Footer spans the full browser width"}
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label data-testid="label-footer-padding">Footer Padding (px)</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          value={footerLayoutSettings.footerPadding}
-                          onChange={(e) => onFooterLayoutChange({ footerPadding: parseInt(e.target.value) || 40 })}
-                          min={0}
-                          max={120}
-                          data-testid="input-footer-padding"
-                        />
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Internal spacing within the footer area</p>
-                    </div>
-                  </div>
-                )}
-
-                {footerLayoutSettings.footerVisibility && (
                   <div className="space-y-3 pt-2">
                     <Label className="text-sm font-medium">Footer Sections</Label>
-                    <p className="text-xs text-muted-foreground">Configure background and spacing for each footer section independently</p>
+                    <p className="text-xs text-muted-foreground">Configure layout, background and spacing for each footer section independently</p>
                     {(["top", "middle", "bottom"] as const).map(sectionKey => {
                       const sectionSettings = footerLayoutSettings.sectionSettings?.[sectionKey] || DEFAULT_FOOTER_SECTION_STYLE;
                       const updateSection = (updates: Partial<FooterSectionStyle>) => {
@@ -1862,6 +1811,63 @@ export default function WebsiteComponentsTab({
                             </Button>
                           </CollapsibleTrigger>
                           <CollapsibleContent className="space-y-3 pt-2 pl-2 border-l-2 border-muted ml-2">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="space-y-1">
+                                <Label className="text-xs" data-testid={`label-footer-${sectionKey}-columns`}>Footer Columns</Label>
+                                <Select
+                                  value={String(sectionSettings.columns || 3)}
+                                  onValueChange={(val) => updateSection({ columns: parseInt(val) })}
+                                >
+                                  <SelectTrigger className="h-8" data-testid={`select-footer-${sectionKey}-columns`}>
+                                    <SelectValue placeholder="Select columns" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="1">1 Column</SelectItem>
+                                    <SelectItem value="2">2 Columns</SelectItem>
+                                    <SelectItem value="3">3 Columns</SelectItem>
+                                    <SelectItem value="4">4 Columns</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">Number of content columns</p>
+                              </div>
+
+                              <div className="space-y-1">
+                                <Label className="text-xs" data-testid={`label-footer-${sectionKey}-width`}>Footer Width</Label>
+                                <Select
+                                  value={sectionSettings.width || "boxed"}
+                                  onValueChange={(val) => updateSection({ width: val })}
+                                >
+                                  <SelectTrigger className="h-8" data-testid={`select-footer-${sectionKey}-width`}>
+                                    <SelectValue placeholder="Select width" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="boxed">Boxed</SelectItem>
+                                    <SelectItem value="full-width">Full Width</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                  {(sectionSettings.width || "boxed") === "boxed" ? "Content stays within the max width" : "Spans the full browser width"}
+                                </p>
+                              </div>
+
+                              <div className="space-y-1">
+                                <Label className="text-xs" data-testid={`label-footer-${sectionKey}-section-padding`}>Footer Padding (px)</Label>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    className="h-8"
+                                    value={sectionSettings.sectionPadding ?? 40}
+                                    onChange={(e) => updateSection({ sectionPadding: parseInt(e.target.value) || 0 })}
+                                    min={0}
+                                    max={120}
+                                    data-testid={`input-footer-${sectionKey}-section-padding`}
+                                  />
+                                  <span className="text-xs text-muted-foreground whitespace-nowrap">px</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">Internal spacing within the section</p>
+                              </div>
+                            </div>
+
                             <div className="space-y-1">
                               <Label className="text-xs">Background Type</Label>
                               <Select

@@ -135,11 +135,11 @@ interface PreviewData {
   footerConfig?: FooterComponentsConfig | null;
   bodyConfig?: BodyComponentsConfig | null;
   footerLayoutSettings?: {
-    footerColumns: number;
+    footerColumns?: number;
     sectionSettings?: {
-      top?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      middle?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      bottom?: { backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      top?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      middle?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
     } | null;
   } | null;
 }
@@ -772,8 +772,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       );
     }
     const sections = ['top', 'middle', 'bottom'] as const;
-    const footerColumns = data.footerLayoutSettings?.footerColumns || 4;
     const sectionStyles = data.footerLayoutSettings?.sectionSettings;
+    const globalFooterColumns = data.footerLayoutSettings?.footerColumns || 3;
 
     const getSectionBackground = (key: typeof sections[number]): React.CSSProperties => {
       const ss = sectionStyles?.[key];
@@ -798,29 +798,38 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           const section = config.desktop.sections[sectionKey];
           const elements = section.elements.filter(e => e.enabled && e.visibleDesktop).sort((a, b) => a.order - b.order);
           if (elements.length === 0) return null;
-          const colCount = section.columns || footerColumns;
+          const ss = sectionStyles?.[sectionKey];
+          const colCount = ss?.columns || section.columns || globalFooterColumns;
           const columnBuckets: Record<number, typeof elements> = {};
           for (let i = 0; i < colCount; i++) columnBuckets[i] = [];
           elements.forEach(el => {
             const col = Math.min(el.column || 0, colCount - 1);
             columnBuckets[col].push(el);
           });
-          const ss = sectionStyles?.[sectionKey];
+          const footerPadding = ss?.sectionPadding != null ? `${ss.sectionPadding}px` : '40px';
           const sectionPadding = ss?.padding != null ? `${ss.padding}px` : (sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem');
           const sectionMargin = ss?.margin != null ? `${ss.margin}px` : '0';
           const sectionGap = ss?.gap != null ? `${ss.gap}px` : '1.5rem';
+          const sectionWidth = ss?.width || 'boxed';
           return (
             <div
               key={sectionKey}
+              style={{
+                padding: footerPadding,
+                maxWidth: sectionWidth === 'boxed' ? '1200px' : '100%',
+                margin: sectionWidth === 'boxed' ? '0 auto' : '0',
+                borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                ...getSectionBackground(sectionKey),
+              }}
+            >
+            <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${colCount}, 1fr)`,
                 gap: sectionGap,
                 padding: sectionPadding,
                 margin: sectionMargin,
-                borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none',
                 alignItems: 'start',
-                ...getSectionBackground(sectionKey),
               }}
             >
               {Array.from({ length: colCount }, (_, colIdx) => (
@@ -828,6 +837,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                   {(columnBuckets[colIdx] || []).map(el => renderFooterElement(el))}
                 </div>
               ))}
+            </div>
             </div>
           );
         })}
