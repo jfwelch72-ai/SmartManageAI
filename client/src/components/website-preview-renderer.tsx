@@ -354,8 +354,21 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       if (styles.typography.fontWeight) s.fontWeight = fwMap[styles.typography.fontWeight] || 400;
       const fsMap: Record<string, string> = { xs: '0.75rem', sm: '0.875rem', base: '1rem', lg: '1.125rem', xl: '1.25rem', '2xl': '1.5rem', '3xl': '1.875rem', '4xl': '2.25rem' };
       if (styles.typography.fontSize) s.fontSize = fsMap[styles.typography.fontSize] || styles.typography.fontSize;
+      if (styles.typography.fontFamily && styles.typography.fontFamily !== 'inherit') {
+        const genericMap: Record<string, string> = { sans: 'system-ui, -apple-system, sans-serif', serif: 'Georgia, "Times New Roman", serif', mono: '"Courier New", monospace' };
+        if (genericMap[styles.typography.fontFamily]) {
+          s.fontFamily = genericMap[styles.typography.fontFamily];
+        } else {
+          s.fontFamily = `"${styles.typography.fontFamily}", sans-serif`;
+          loadGoogleFont(styles.typography.fontFamily);
+        }
+      }
+      if (styles.typography.fontStyle) s.fontStyle = styles.typography.fontStyle as React.CSSProperties['fontStyle'];
+      if (styles.typography.textTransform) s.textTransform = styles.typography.textTransform as React.CSSProperties['textTransform'];
+      if (styles.typography.letterSpacing) s.letterSpacing = `${styles.typography.letterSpacing}px`;
+      if (styles.typography.textAlign) s.textAlign = styles.typography.textAlign as React.CSSProperties['textAlign'];
     }
-    if (styles.alignment) s.textAlign = styles.alignment as React.CSSProperties['textAlign'];
+    if (styles.alignment && !styles.typography?.textAlign) s.textAlign = styles.alignment as React.CSSProperties['textAlign'];
     return s;
   };
 

@@ -10,6 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { MediaLibraryPicker } from "@/components/media-library";
+import { GOOGLE_FONTS, loadGoogleFont } from "./text-style-editor";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   GripVertical,
   Plus,
@@ -65,6 +68,8 @@ import {
   BarChart,
   Hammer,
   BookOpen,
+  Check,
+  ChevronsUpDown,
   type LucideIcon,
 } from "lucide-react";
 
@@ -94,6 +99,10 @@ export interface TypographyStyles {
   fontWeight: string;
   color: string;
   lineHeight: string;
+  fontStyle?: string;
+  textAlign?: string;
+  textTransform?: string;
+  letterSpacing?: string;
 }
 
 export interface SpacingStyles {
@@ -766,6 +775,7 @@ export function VideoUploadField({ value, onChange, label, placeholder, testId }
 }
 
 export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
+  const [fontFamilyOpen, setFontFamilyOpen] = useState(false);
   const updateTypography = (key: keyof TypographyStyles, value: string) => {
     onChange({ ...styles, typography: { ...styles.typography, [key]: value } });
   };
@@ -781,17 +791,42 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
       <div className="space-y-2">
         <Label className="text-xs font-semibold uppercase text-muted-foreground">Typography</Label>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <div>
+          <div className="col-span-2 md:col-span-3">
             <Label className="text-xs">Font Family</Label>
-            <Select value={styles.typography.fontFamily} onValueChange={(v) => updateTypography("fontFamily", v)}>
-              <SelectTrigger data-testid="select-font-family"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="inherit">Inherit</SelectItem>
-                <SelectItem value="sans">Sans-serif</SelectItem>
-                <SelectItem value="serif">Serif</SelectItem>
-                <SelectItem value="mono">Monospace</SelectItem>
-              </SelectContent>
-            </Select>
+            <Popover open={fontFamilyOpen} onOpenChange={setFontFamilyOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full justify-between h-9" data-testid="select-font-family">
+                  <span style={{ fontFamily: styles.typography.fontFamily !== 'inherit' ? `"${styles.typography.fontFamily}", sans-serif` : undefined }}>
+                    {styles.typography.fontFamily === 'inherit' ? 'Inherit' : styles.typography.fontFamily || 'Inherit'}
+                  </span>
+                  <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search fonts..." />
+                  <CommandList>
+                    <CommandEmpty>No font found.</CommandEmpty>
+                    <CommandGroup heading="System">
+                      {["inherit", "sans", "serif", "mono"].map(f => (
+                        <CommandItem key={f} value={f} onSelect={() => { updateTypography("fontFamily", f); setFontFamilyOpen(false); }}>
+                          <Check className={`mr-2 h-3.5 w-3.5 ${styles.typography.fontFamily === f ? 'opacity-100' : 'opacity-0'}`} />
+                          {f === 'inherit' ? 'Inherit' : f === 'sans' ? 'Sans-serif' : f === 'serif' ? 'Serif' : 'Monospace'}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    <CommandGroup heading="Google Fonts">
+                      {GOOGLE_FONTS.map(f => (
+                        <CommandItem key={f} value={f} onSelect={() => { updateTypography("fontFamily", f); loadGoogleFont(f); setFontFamilyOpen(false); }}>
+                          <Check className={`mr-2 h-3.5 w-3.5 ${styles.typography.fontFamily === f ? 'opacity-100' : 'opacity-0'}`} />
+                          <span style={{ fontFamily: `"${f}", sans-serif` }}>{f}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div>
             <Label className="text-xs">Font Size</Label>
@@ -836,6 +871,44 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
                 <SelectItem value="loose">Loose</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Font Style</Label>
+            <Select value={styles.typography.fontStyle || "normal"} onValueChange={(v) => updateTypography("fontStyle", v)}>
+              <SelectTrigger data-testid="select-font-style"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="italic">Italic</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Text Align</Label>
+            <Select value={styles.typography.textAlign || "center"} onValueChange={(v) => updateTypography("textAlign", v)}>
+              <SelectTrigger data-testid="select-text-align"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+                <SelectItem value="justify">Justify</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Text Transform</Label>
+            <Select value={styles.typography.textTransform || "none"} onValueChange={(v) => updateTypography("textTransform", v)}>
+              <SelectTrigger data-testid="select-text-transform"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                <SelectItem value="lowercase">lowercase</SelectItem>
+                <SelectItem value="capitalize">Capitalize</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Letter Spacing</Label>
+            <Input type="number" step={0.5} min={-5} max={20} value={styles.typography.letterSpacing || "0"} onChange={(e) => updateTypography("letterSpacing", e.target.value)} data-testid="input-letter-spacing" />
           </div>
         </div>
       </div>
