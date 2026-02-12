@@ -44,6 +44,10 @@ import {
   PanelLeft,
   PanelRight,
   FileText,
+  Plus,
+  Trash2,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 
 export interface HeaderElement {
@@ -486,6 +490,26 @@ export default function WebsiteComponentsTab({
     onFooterConfigChange(newConfig);
   }, [footerConfig, deviceView, onFooterConfigChange]);
 
+  const duplicateFooterElement = useCallback((element: FooterElement) => {
+    const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+    const newId = `${element.id}-copy-${Date.now()}`;
+    const newElement: FooterElement = {
+      ...JSON.parse(JSON.stringify(element)),
+      id: newId,
+      label: `${element.label} (Copy)`,
+      order: element.order + 1,
+    };
+    for (const sectionKey of ["top", "middle", "bottom"] as const) {
+      const section = newConfig.desktop.sections[sectionKey];
+      const idx = section.elements.findIndex(e => e.id === element.id);
+      if (idx !== -1) {
+        section.elements.splice(idx + 1, 0, newElement);
+      }
+    }
+    newConfig.mobile.elements.push({ ...newElement });
+    onFooterConfigChange(newConfig);
+  }, [footerConfig, onFooterConfigChange]);
+
   const moveHeaderElement = useCallback((elementId: string, targetSection: "top" | "middle" | "bottom", targetColumn: number) => {
     const newConfig = JSON.parse(JSON.stringify(headerConfig)) as HeaderComponentsConfig;
     let element: HeaderElement | null = null;
@@ -803,23 +827,229 @@ export default function WebsiteComponentsTab({
               </div>
             )}
 
-            {element.type === "link_list" && (
-              <div className="space-y-1">
-                <Label className="text-xs">Link Orientation</Label>
-                <Select
-                  value={element.content.orientation || "vertical"}
-                  onValueChange={(val) => updateFn(element.id, { content: { ...element.content, orientation: val } })}
-                >
-                  <SelectTrigger className="h-8" data-testid={`select-orientation-${element.id}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="horizontal">Horizontal</SelectItem>
-                    <SelectItem value="vertical">Vertical</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {element.type === "link_list" && (() => {
+              const links: Array<{ title: string; url: string; newTab?: boolean }> = (() => {
+                try { return element.content.links ? JSON.parse(element.content.links) : []; } catch { return []; }
+              })();
+              const updateLinks = (newLinks: typeof links) => {
+                updateFn(element.id, { content: { ...element.content, links: JSON.stringify(newLinks) } });
+              };
+              return (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Link Orientation</Label>
+                    <Select
+                      value={element.content.orientation || "vertical"}
+                      onValueChange={(val) => updateFn(element.id, { content: { ...element.content, orientation: val } })}
+                    >
+                      <SelectTrigger className="h-8" data-testid={`select-orientation-${element.id}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="horizontal">Horizontal</SelectItem>
+                        <SelectItem value="vertical">Vertical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Links</Label>
+                    {links.map((link, linkIdx) => (
+                      <div key={linkIdx} className="flex flex-col gap-1.5 p-2 border rounded-md">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            className="h-8 flex-1"
+                            placeholder="Link title"
+                            value={link.title}
+                            onChange={(e) => {
+                              const updated = [...links];
+                              updated[linkIdx] = { ...updated[linkIdx], title: e.target.value };
+                              updateLinks(updated);
+                            }}
+                            data-testid={`input-link-title-${element.id}-${linkIdx}`}
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => {
+                              const updated = links.filter((_, i) => i !== linkIdx);
+                              updateLinks(updated);
+                            }}
+                            data-testid={`button-remove-link-${element.id}-${linkIdx}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
+                        <Input
+                          className="h-8"
+                          placeholder="URL (e.g. /about or https://...)"
+                          value={link.url}
+                          onChange={(e) => {
+                            const updated = [...links];
+                            updated[linkIdx] = { ...updated[linkIdx], url: e.target.value };
+                            updateLinks(updated);
+                          }}
+                          data-testid={`input-link-url-${element.id}-${linkIdx}`}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={link.newTab || false}
+                            onCheckedChange={(checked) => {
+                              const updated = [...links];
+                              updated[linkIdx] = { ...updated[linkIdx], newTab: checked };
+                              updateLinks(updated);
+                            }}
+                            data-testid={`switch-link-newtab-${element.id}-${linkIdx}`}
+                          />
+                          <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                            <ExternalLink className="h-3 w-3" /> Open in new tab
+                          </Label>
+                        </div>
+                      </div>
+                    ))}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => updateLinks([...links, { title: "", url: "", newTab: false }])}
+                      data-testid={`button-add-link-${element.id}`}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add Link
+                    </Button>
+                  </div>
+
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" size="sm" className="w-full justify-start gap-1 text-xs text-muted-foreground">
+                        <Settings className="h-3.5 w-3.5" /> Style Options
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-3 pt-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Padding (px)</Label>
+                          <Input
+                            type="number"
+                            className="h-8"
+                            min={0}
+                            max={100}
+                            value={element.content.padding || "0"}
+                            onChange={(e) => updateFn(element.id, { content: { ...element.content, padding: e.target.value } })}
+                            data-testid={`input-padding-${element.id}`}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Margin (px)</Label>
+                          <Input
+                            type="number"
+                            className="h-8"
+                            min={0}
+                            max={100}
+                            value={element.content.margin || "0"}
+                            onChange={(e) => updateFn(element.id, { content: { ...element.content, margin: e.target.value } })}
+                            data-testid={`input-margin-${element.id}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Text Color</Label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={element.content.textColor || "#ffffff"}
+                              onChange={(e) => updateFn(element.id, { content: { ...element.content, textColor: e.target.value } })}
+                              className="h-8 w-8 rounded border cursor-pointer"
+                              data-testid={`input-text-color-${element.id}`}
+                            />
+                            <Input
+                              className="h-8 flex-1"
+                              value={element.content.textColor || "#ffffff"}
+                              onChange={(e) => updateFn(element.id, { content: { ...element.content, textColor: e.target.value } })}
+                              data-testid={`input-text-color-hex-${element.id}`}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Text Size (px)</Label>
+                          <Input
+                            type="number"
+                            className="h-8"
+                            min={8}
+                            max={72}
+                            value={element.content.fontSize || "14"}
+                            onChange={(e) => updateFn(element.id, { content: { ...element.content, fontSize: e.target.value } })}
+                            data-testid={`input-font-size-${element.id}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Text Alignment</Label>
+                          <Select
+                            value={element.content.textAlign || "left"}
+                            onValueChange={(val) => updateFn(element.id, { content: { ...element.content, textAlign: val } })}
+                          >
+                            <SelectTrigger className="h-8" data-testid={`select-text-align-${element.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="left">Left</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="right">Right</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Text Transform</Label>
+                          <Select
+                            value={element.content.textTransform || "none"}
+                            onValueChange={(val) => updateFn(element.id, { content: { ...element.content, textTransform: val } })}
+                          >
+                            <SelectTrigger className="h-8" data-testid={`select-text-transform-${element.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                              <SelectItem value="lowercase">lowercase</SelectItem>
+                              <SelectItem value="capitalize">Capitalize</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Font Style</Label>
+                        <Select
+                          value={element.content.fontStyle || "normal"}
+                          onValueChange={(val) => updateFn(element.id, { content: { ...element.content, fontStyle: val } })}
+                        >
+                          <SelectTrigger className="h-8" data-testid={`select-font-style-${element.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="normal">Normal</SelectItem>
+                            <SelectItem value="italic">Italic</SelectItem>
+                            <SelectItem value="bold">Bold</SelectItem>
+                            <SelectItem value="bold-italic">Bold Italic</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {componentType === "footer" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => duplicateFooterElement(element as FooterElement)}
+                      data-testid={`button-duplicate-${element.id}`}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate Component
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
 
             {element.type === "footer_logo" && (
               <div className="space-y-2">

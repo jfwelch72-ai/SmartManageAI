@@ -680,20 +680,55 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
             {el.content?.text || `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`}
           </div>
         );
-      case 'link_list':
+      case 'link_list': {
+        let customLinks: Array<{ title: string; url: string; newTab?: boolean }> = [];
+        try { customLinks = el.content?.links ? JSON.parse(el.content.links) : []; } catch { customLinks = []; }
+        const hasCustomLinks = customLinks.length > 0;
+        const orientation = el.content?.orientation || 'vertical';
+        const linkStyle: Record<string, string> = {
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: el.content?.textColor || '#d1d5db',
+          fontSize: el.content?.fontSize ? `${el.content.fontSize}px` : '0.8125rem',
+          textAlign: el.content?.textAlign || 'left',
+          textTransform: el.content?.textTransform || 'none',
+          fontStyle: (el.content?.fontStyle === 'italic' || el.content?.fontStyle === 'bold-italic') ? 'italic' : 'normal',
+          fontWeight: (el.content?.fontStyle === 'bold' || el.content?.fontStyle === 'bold-italic') ? '700' : '400',
+          textDecoration: 'none',
+        };
+        const containerStyle: Record<string, string> = {
+          display: 'flex',
+          gap: '0.5rem',
+          flexWrap: 'wrap',
+          flexDirection: orientation === 'vertical' ? 'column' : 'row',
+          padding: el.content?.padding ? `${el.content.padding}px` : '0',
+          margin: el.content?.margin ? `${el.content.margin}px` : '0',
+        };
         return (
-          <div key={el.id} data-testid="footer-config-links" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            {navItems.map(item => (
+          <div key={el.id} data-testid="footer-config-links" style={containerStyle}>
+            {hasCustomLinks ? customLinks.map((link, idx) => (
+              <a
+                key={idx}
+                href={link.url || '#'}
+                target={link.newTab ? '_blank' : undefined}
+                rel={link.newTab ? 'noopener noreferrer' : undefined}
+                style={linkStyle}
+              >
+                {link.title || 'Untitled'}
+              </a>
+            )) : navItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => navigateTo(item.id)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db', fontSize: '0.8125rem' }}
+                style={linkStyle}
               >
                 {item.label}
               </button>
             ))}
           </div>
         );
+      }
       case 'footer_title':
         return (
           <div key={el.id} data-testid="footer-config-title" style={{ fontWeight: 600, fontSize: '0.9375rem', color: '#fff' }}>
