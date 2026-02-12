@@ -1,0 +1,99 @@
+At the top right can you add a button “AI Website Wizard” that will help user to populate website settings, layout and components and generate page, blogs and project gallery with it’s generated content and images, see below the plan how to build this function
+
+AI Wizard UX Flow
+User clicks AI Wizard
+ → Answer Questions
+   → Show Loading Animation
+     → Generate Preview
+       → "Edit This Site"
+       → "Regenerate"
+
+AI generates:
+•	Site structure
+•	Layout config
+•	Header + Footer
+•	Pages
+•	Components
+•	Basic content
+•	Theme styles
+Pages AI Should Generate
+Minimum:
+•	Home
+•	About
+•	Services
+•	Contact
+Optional:
+•	Blog
+•	Projects
+•	Testimonials
+AI Prompt Engineering 
+Master Prompt
+You are a professional website architect.
+
+•	Generate a structured website configuration using valid builder JSON.
+•	Do not output explanations.
+•	Do not output HTML.
+•	Use only available components:
+
+•	Follow these rules:
+•	- Prioritize the primary goal
+•	- Use conversion-focused layouts
+•	- Keep navigation simple
+•	- Ensure mobile-friendly structure
+
+System Architecture
+A. Multi-Step Generation 
+Instead of one giant AI call:
+Step 1: Generate Site Blueprint
+•	Pages
+•	Layout type
+•	Navigation
+Step 2: Generate Header + Footer
+Step 3: Generate Page Components
+Step 4: Generate Content Copy
+This gives:
+•	Better control
+•	Easier debugging
+•	Lower token cost
+
+Safety & Guardrails
+Add rules like:
+•	Must include contact form if goal = lead generation
+•	Max 7 sections per page
+•	Header must include logo + navigation
+•	Footer must include contact info
+Mobile-First Logic
+Force AI:
+•	No sidebar by default
+•	Avoid 4-column layouts
+•	Clear CTA buttons
+•	Max 3 items per row
+Performance Optimization
+After AI generation:
+•	Lazy load images
+•	Optimize images
+•	Remove unused components
+•	Pre-generate static version
+Advanced Features Later
+You can expand to:
+•	AI generate images
+•	AI generate logo
+•	AI write SEO meta tags
+•	AI generate blog posts
+•	AI generate construction takeoff page (👀)
+
+
+
+Smart Feature for Your Industry Focus
+•	Since you're building systems that could support construction companies:
+•	Add wizard logic:
+•	If industry = construction:
+•	Include project gallery
+•	Include certifications
+•	Include safety section
+•	Include request estimate CTA
+•	That makes your builder niche-smart instead of generic.
+
+
+
+
