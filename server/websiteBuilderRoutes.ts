@@ -1080,13 +1080,13 @@ router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: R
     const imagePrompt = `Professional, high-quality construction industry blog header image for an article titled "${title}"${category ? ` in the category "${category}"` : ""}. Modern, clean composition suitable for a professional construction management website. Photorealistic style, well-lit, no text overlays.`;
 
     const imageResponse = await openai.images.generate({
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: imagePrompt,
       n: 1,
-      size: "1792x1024",
-      quality: "standard",
-      response_format: "b64_json",
-    });
+      size: "1536x1024",
+      quality: "low",
+      output_format: "png",
+    } as any);
 
     const b64Data = imageResponse.data?.[0]?.b64_json;
     if (!b64Data) {
@@ -1125,13 +1125,16 @@ router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: R
     res.json({ imageUrl: proxyUrl });
   } catch (error: any) {
     console.error("Error generating blog image:", error);
-    if (error?.status === 400 || error?.code === "content_policy_violation") {
+    if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different title." });
+    }
+    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model")) {
+      return res.status(501).json({ error: "AI image generation model is not available. Please upload an image manually." });
     }
     if (error?.status === 404 || error?.message?.includes("not found") || error?.message?.includes("does not exist")) {
       return res.status(501).json({ error: "AI image generation is not available with your current configuration. Please upload an image manually." });
     }
-    res.status(500).json({ error: "Failed to generate blog featured image" });
+    res.status(500).json({ error: error?.message || "Failed to generate blog featured image" });
   }
 });
 
