@@ -134,6 +134,9 @@ interface PreviewData {
   headerConfig?: HeaderComponentsConfig | null;
   footerConfig?: FooterComponentsConfig | null;
   bodyConfig?: BodyComponentsConfig | null;
+  footerLayoutSettings?: {
+    footerColumns: number;
+  } | null;
 }
 
 type PageView = "home" | "about" | "services" | "blog" | "gallery" | "contact" | "blog-post" | "project-detail" | string;
@@ -764,7 +767,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       );
     }
     const sections = ['top', 'middle', 'bottom'] as const;
-    const footerColumns = (data as any).footerLayoutSettings?.footerColumns || 4;
+    const footerColumns = data.footerLayoutSettings?.footerColumns || 4;
     return (
       <footer data-testid="configured-footer" style={{ backgroundColor: '#1f2937', color: '#fff' }}>
         {sections.map(sectionKey => {

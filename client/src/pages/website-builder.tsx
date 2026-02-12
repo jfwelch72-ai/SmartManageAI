@@ -2418,6 +2418,9 @@ export default function WebsiteBuilderPage() {
                         headerConfig: headerComponentsConfig,
                         footerConfig: footerComponentsConfig,
                         bodyConfig: bodyComponentsConfig,
+                        footerLayoutSettings: {
+                          footerColumns: websiteForm.footerColumns,
+                        },
                       }} 
                       deviceType={previewDevice}
                     />
