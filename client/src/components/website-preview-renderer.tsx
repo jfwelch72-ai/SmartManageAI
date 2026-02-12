@@ -44,6 +44,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { HeaderComponentsConfig, FooterComponentsConfig, BackToTopConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
 import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } from "@/components/website-body-components";
+import { loadGoogleFont } from "./text-style-editor";
 
 const GRID_ICON_MAP: Record<string, LucideIcon> = {
   Star, Heart, Shield, Zap, Target, Award, Briefcase, Clock,
@@ -176,6 +177,34 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [expandedMobileMenus, setExpandedMobileMenus] = useState<Set<string>>(new Set());
   const [faqOpenItems, setFaqOpenItems] = useState<Set<string>>(new Set());
+
+  const buildTextStyle = (content: Record<string, string> | undefined, defaults: { fontSize?: string; color?: string; fontWeight?: string } = {}): React.CSSProperties => {
+    if (!content) return {};
+    const style: React.CSSProperties = {};
+    if (content.fontFamily) {
+      style.fontFamily = `"${content.fontFamily}", sans-serif`;
+      loadGoogleFont(content.fontFamily);
+    }
+    style.fontSize = content.fontSize ? `${content.fontSize}px` : defaults.fontSize;
+    style.color = content.textColor || defaults.color;
+    style.textAlign = (content.textAlign as any) || undefined;
+    style.textTransform = (content.textTransform as any) || undefined;
+    style.letterSpacing = content.letterSpacing ? `${content.letterSpacing}px` : undefined;
+    style.lineHeight = content.lineHeight || undefined;
+    style.padding = content.padding ? `${content.padding}px` : undefined;
+    style.margin = content.margin ? `${content.margin}px` : undefined;
+    if (content.fontWeight) {
+      style.fontWeight = content.fontWeight;
+    } else if (content.fontStyle === 'bold' || content.fontStyle === 'bold-italic') {
+      style.fontWeight = '700';
+    } else {
+      style.fontWeight = defaults.fontWeight;
+    }
+    if (content.fontStyle === 'italic' || content.fontStyle === 'bold-italic') {
+      style.fontStyle = 'italic';
+    }
+    return style;
+  };
   
   const siteName = website.siteTitle || organization?.name || "Your Company";
   const tagline = website.siteTagline || "Building Excellence";
@@ -476,16 +505,18 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         );
       case 'social_icons':
         return <div key={el.id} data-testid="header-config-social">{renderSocialIconsFromData()}</div>;
-      case 'announcement_bar':
+      case 'announcement_bar': {
+        const announceStyle = buildTextStyle(el.content, { fontSize: '0.8125rem', color: '#fff' });
         return (
           <div
             key={el.id}
             data-testid="header-config-announcement"
-            style={{ width: '100%', backgroundColor: primaryColor, color: '#fff', textAlign: 'center', padding: '0.375rem 1rem', fontSize: '0.8125rem' }}
+            style={{ width: '100%', backgroundColor: primaryColor, textAlign: 'center', padding: '0.375rem 1rem', ...announceStyle }}
           >
             {el.content?.text || 'Welcome to our site!'}
           </div>
         );
+      }
       default:
         return null;
     }
@@ -720,30 +751,30 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       }
       case 'social_icons':
         return <div key={el.id} data-testid="footer-config-social" style={{ color: '#d1d5db' }}>{renderSocialIconsFromData()}</div>;
-      case 'copyright':
+      case 'copyright': {
+        const copyrightStyle = buildTextStyle(el.content, { fontSize: '0.8125rem', color: '#9ca3af' });
         return (
-          <div key={el.id} data-testid="footer-config-copyright" style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
+          <div key={el.id} data-testid="footer-config-copyright" style={copyrightStyle}>
             {el.content?.text || `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`}
           </div>
         );
+      }
       case 'link_list': {
         let customLinks: Array<{ title: string; url: string; newTab?: boolean }> = [];
         try { customLinks = el.content?.links ? JSON.parse(el.content.links) : []; } catch { customLinks = []; }
         const hasCustomLinks = customLinks.length > 0;
         const orientation = el.content?.orientation || 'vertical';
-        const linkStyle: Record<string, string> = {
+        const textSt = buildTextStyle(el.content, { fontSize: '0.8125rem', color: '#d1d5db' });
+        const linkStyle: React.CSSProperties = {
+          ...textSt,
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: el.content?.textColor || '#d1d5db',
-          fontSize: el.content?.fontSize ? `${el.content.fontSize}px` : '0.8125rem',
-          textAlign: el.content?.textAlign || 'left',
-          textTransform: el.content?.textTransform || 'none',
-          fontStyle: (el.content?.fontStyle === 'italic' || el.content?.fontStyle === 'bold-italic') ? 'italic' : 'normal',
-          fontWeight: (el.content?.fontStyle === 'bold' || el.content?.fontStyle === 'bold-italic') ? '700' : '400',
           textDecoration: 'none',
+          padding: undefined,
+          margin: undefined,
         };
-        const containerStyle: Record<string, string> = {
+        const containerStyle: React.CSSProperties = {
           display: 'flex',
           gap: '0.5rem',
           flexWrap: 'wrap',
@@ -776,16 +807,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         );
       }
       case 'footer_title': {
-        const titleStyle: Record<string, string> = {
-          fontWeight: (el.content?.fontStyle === 'bold' || el.content?.fontStyle === 'bold-italic' || (!el.content?.fontStyle)) ? '600' : '400',
-          fontSize: el.content?.fontSize ? `${el.content.fontSize}px` : '0.9375rem',
-          color: el.content?.textColor || '#fff',
-          textAlign: el.content?.textAlign || 'left',
-          textTransform: el.content?.textTransform || 'none',
-          fontStyle: (el.content?.fontStyle === 'italic' || el.content?.fontStyle === 'bold-italic') ? 'italic' : 'normal',
-          padding: el.content?.padding ? `${el.content.padding}px` : '0',
-          margin: el.content?.margin ? `${el.content.margin}px` : '0',
-        };
+        const titleStyle = buildTextStyle(el.content, { fontSize: '0.9375rem', color: '#fff', fontWeight: '600' });
         return (
           <div key={el.id} data-testid="footer-config-title" style={titleStyle}>
             {el.content?.text || siteName}
