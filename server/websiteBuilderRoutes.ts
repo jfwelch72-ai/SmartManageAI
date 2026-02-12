@@ -1059,6 +1059,82 @@ Return a JSON object with:
   }
 });
 
+// POST /api/website/blog/generate-image - AI-generate a featured image for a blog post
+router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const { title, category } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: "Blog post title is required" });
+    }
+
+    const imagePrompt = `Professional, high-quality construction industry blog header image for an article titled "${title}"${category ? ` in the category "${category}"` : ""}. Modern, clean composition suitable for a professional construction management website. Photorealistic style, well-lit, no text overlays.`;
+
+    const imageResponse = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: imagePrompt,
+      n: 1,
+      size: "1792x1024",
+      quality: "standard",
+      response_format: "b64_json",
+    });
+
+    const b64Data = imageResponse.data?.[0]?.b64_json;
+    if (!b64Data) {
+      return res.status(500).json({ error: "Failed to generate image" });
+    }
+
+    const imageBuffer = Buffer.from(b64Data, "base64");
+
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.status(500).json({ error: "Object storage not configured" });
+    }
+
+    const basePath = publicPaths[0];
+    const uniqueId = randomUUID();
+    const fileName = `gallery/${orgId}/${uniqueId}.png`;
+    const fullPath = `${basePath}/${fileName}`;
+    const pathParts = fullPath.split('/').filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const objectName = pathParts.slice(1).join('/');
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const blob = bucket.file(objectName);
+
+    await blob.save(imageBuffer, {
+      metadata: {
+        contentType: "image/png",
+        metadata: {
+          originalName: `ai-generated-${uniqueId}.png`,
+        },
+      },
+    });
+
+    const proxyUrl = `/api/website/image/${orgId}/${uniqueId}.png`;
+
+    res.json({ imageUrl: proxyUrl });
+  } catch (error: any) {
+    console.error("Error generating blog image:", error);
+    if (error?.status === 400 || error?.code === "content_policy_violation") {
+      return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different title." });
+    }
+    if (error?.status === 404 || error?.message?.includes("not found") || error?.message?.includes("does not exist")) {
+      return res.status(501).json({ error: "AI image generation is not available with your current configuration. Please upload an image manually." });
+    }
+    res.status(500).json({ error: "Failed to generate blog featured image" });
+  }
+});
+
 // ============================================
 // PROJECT GALLERY
 // ============================================

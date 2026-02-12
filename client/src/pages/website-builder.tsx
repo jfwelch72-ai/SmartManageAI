@@ -10,6 +10,7 @@ import WebsiteComponentsTab, {
 import WebsiteBodyComponents, {
   type BodyComponentsConfig,
   getDefaultBodyConfig,
+  ImageUploadField,
 } from "@/components/website-body-components";
 import PageEditor from "@/components/page-editor";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -454,8 +455,10 @@ export default function WebsiteBuilderPage() {
     excerpt: "",
     content: "",
     category: "",
+    coverImageUrl: "",
     status: "DRAFT"
   });
+  const [generatingBlogImage, setGeneratingBlogImage] = useState(false);
 
   const [generateBlogForm, setGenerateBlogForm] = useState({
     topic: "",
@@ -595,7 +598,7 @@ export default function WebsiteBuilderPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/website/blog/posts"] });
       toast({ title: "Blog post created successfully" });
       setShowCreateBlogDialog(false);
-      setBlogForm({ title: "", excerpt: "", content: "", category: "", status: "DRAFT" });
+      setBlogForm({ title: "", excerpt: "", content: "", category: "", coverImageUrl: "", status: "DRAFT" });
     },
     onError: (error: any) => {
       toast({ title: "Error creating blog post", description: error.message, variant: "destructive" });
@@ -846,6 +849,7 @@ export default function WebsiteBuilderPage() {
         excerpt: generatedBlogContent.excerpt || "",
         content: generatedBlogContent.content || "",
         category: generatedBlogContent.suggestedCategory || "",
+        coverImageUrl: generatedBlogContent.coverImageUrl || "",
         status: "DRAFT"
       });
       setShowGenerateBlogDialog(false);
@@ -2618,6 +2622,44 @@ export default function WebsiteBuilderPage() {
                 rows={8}
                 data-testid="input-blog-content"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Featured Image</Label>
+              <ImageUploadField
+                value={blogForm.coverImageUrl}
+                onChange={(url) => setBlogForm(prev => ({ ...prev, coverImageUrl: url }))}
+                label=""
+                placeholder="Image URL or upload..."
+                testId="input-blog-cover-image"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!blogForm.title) {
+                    toast({ title: "Enter a title first", description: "The AI needs a title to generate a relevant image.", variant: "destructive" });
+                    return;
+                  }
+                  setGeneratingBlogImage(true);
+                  try {
+                    const res = await apiRequest("POST", "/api/website/blog/generate-image", { title: blogForm.title, category: blogForm.category });
+                    const data = await res.json();
+                    if (data.imageUrl) {
+                      setBlogForm(prev => ({ ...prev, coverImageUrl: data.imageUrl }));
+                      toast({ title: "Image generated successfully" });
+                    }
+                  } catch (err: any) {
+                    toast({ title: "Failed to generate image", description: err.message, variant: "destructive" });
+                  } finally {
+                    setGeneratingBlogImage(false);
+                  }
+                }}
+                disabled={generatingBlogImage || !blogForm.title}
+                data-testid="button-ai-generate-blog-image"
+              >
+                {generatingBlogImage ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Wand2 className="h-4 w-4 mr-1" />}
+                {generatingBlogImage ? "Generating..." : "AI Generate Image"}
+              </Button>
             </div>
             <div className="space-y-2">
               <Label>Category</Label>
