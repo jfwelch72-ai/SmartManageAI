@@ -764,28 +764,37 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       );
     }
     const sections = ['top', 'middle', 'bottom'] as const;
+    const footerColumns = (data as any).footerLayoutSettings?.footerColumns || 4;
     return (
       <footer data-testid="configured-footer" style={{ backgroundColor: '#1f2937', color: '#fff' }}>
         {sections.map(sectionKey => {
           const section = config.desktop.sections[sectionKey];
           const elements = section.elements.filter(e => e.enabled && e.visibleDesktop).sort((a, b) => a.order - b.order);
           if (elements.length === 0) return null;
-          const leftEls = elements.filter(e => e.alignment === 'left');
-          const centerEls = elements.filter(e => e.alignment === 'center');
-          const rightEls = elements.filter(e => e.alignment === 'right');
+          const colCount = section.columns || footerColumns;
+          const columnBuckets: Record<number, typeof elements> = {};
+          for (let i = 0; i < colCount; i++) columnBuckets[i] = [];
+          elements.forEach(el => {
+            const col = Math.min(el.column || 0, colCount - 1);
+            columnBuckets[col].push(el);
+          });
           return (
-            <div key={sectionKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem', borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none', gap: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {leftEls.map(el => renderFooterElement(el))}
-              </div>
-              {centerEls.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center' }}>
-                  {centerEls.map(el => renderFooterElement(el))}
+            <div
+              key={sectionKey}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${colCount}, 1fr)`,
+                gap: '1.5rem',
+                padding: sectionKey === 'middle' ? '2rem 2rem' : '1rem 2rem',
+                borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                alignItems: 'start',
+              }}
+            >
+              {Array.from({ length: colCount }, (_, colIdx) => (
+                <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {(columnBuckets[colIdx] || []).map(el => renderFooterElement(el))}
                 </div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {rightEls.map(el => renderFooterElement(el))}
-              </div>
+              ))}
             </div>
           );
         })}
