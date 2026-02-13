@@ -49,6 +49,7 @@ import {
   Trash2,
   Copy,
   ExternalLink,
+  Maximize2,
 } from "lucide-react";
 
 export interface HeaderElement {
@@ -1496,7 +1497,7 @@ export default function WebsiteComponentsTab({
                   <p className="text-xs text-muted-foreground">
                     Choose how the mobile menu appears when visitors tap the burger menu icon
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <button
                       type="button"
                       onClick={() => onHeaderLayoutChange({ mobileNavStyle: "dropdown" })}
@@ -1546,6 +1547,23 @@ export default function WebsiteComponentsTab({
                       </div>
                       <span className="text-xs font-medium">Right Panel</span>
                       <p className="text-[10px] text-muted-foreground text-center leading-tight">Slides in from the right side</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onHeaderLayoutChange({ mobileNavStyle: "popup" })}
+                      className={`relative flex flex-col items-center gap-2 rounded-md border-2 p-4 transition-colors ${headerLayoutSettings.mobileNavStyle === "popup" ? "border-primary bg-primary/5" : "border-border hover-elevate"}`}
+                      data-testid="button-mobile-nav-popup"
+                    >
+                      <div className="flex items-center justify-center">
+                        <div className="w-12 h-10 rounded border border-border opacity-30 relative flex items-center justify-center">
+                          <div className="w-8 h-6 rounded border-2 border-primary/50 bg-primary/10 flex items-center justify-center">
+                            <Maximize2 className="h-3 w-3 text-primary/60" />
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-xs font-medium">Popup Modal</span>
+                      <p className="text-[10px] text-muted-foreground text-center leading-tight">Centered overlay modal</p>
                     </button>
                   </div>
                 </div>

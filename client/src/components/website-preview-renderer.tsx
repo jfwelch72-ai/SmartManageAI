@@ -687,6 +687,57 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       );
     }
 
+    if (mobileNavStyle === 'popup') {
+      return (
+        <div
+          style={{ position: 'sticky', top: 0, left: 0, width: '100%', height: 0, zIndex: 998, marginTop: 0 }}
+        >
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '5000px', backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 998, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '2rem' }}
+            data-testid="mobile-nav-overlay"
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '90%',
+              maxWidth: '360px',
+              maxHeight: '500px',
+              backgroundColor: menuBg,
+              borderRadius: '0.75rem',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              zIndex: 999,
+              display: 'flex',
+              flexDirection: 'column' as const,
+              animation: 'popupFadeIn 0.2s ease-out',
+              overflow: 'hidden',
+            }}
+            data-testid="mobile-nav-popup"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: `1px solid ${primaryColor}15` }}>
+              <span style={{ fontWeight: 700, fontSize: '1.125rem', color: primaryColor }}>{siteName}</span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: menuText, padding: '0.25rem' }}
+                data-testid="mobile-nav-close"
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0.25rem' }}>
+              {renderMobileNavContent(menuBg, menuText, extraElements)}
+            </div>
+          </div>
+          <style>{`
+            @keyframes popupFadeIn { from { opacity: 0; transform: translateX(-50%) scale(0.95); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+          `}</style>
+        </div>
+      );
+    }
+
     return (
       <div
         style={{ backgroundColor: menuBg, borderTop: `1px solid ${primaryColor}15`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
@@ -719,7 +770,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
-          {mobileNavStyle === 'dropdown' && renderMobileMenu('#fff', '#374151', extraButtons.length > 0 ? <>{extraButtons.map(e => renderHeaderElement(e))}</> : undefined)}
+          {renderMobileMenu('#fff', '#374151', extraButtons.length > 0 ? <>{extraButtons.map(e => renderHeaderElement(e))}</> : undefined)}
         </header>
       );
     }
