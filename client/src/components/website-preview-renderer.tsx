@@ -480,13 +480,54 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
         return (
           <nav key={el.id} data-testid="header-config-nav" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             {navItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => navigateTo(item.id)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: currentPage === item.id ? primaryColor : '#374151' }}
-              >
-                {item.label}
-              </button>
+              item.children && item.children.length > 0 ? (
+                <div
+                  key={item.id}
+                  className="relative"
+                  onMouseEnter={() => setOpenDropdown(item.id)}
+                  onMouseLeave={() => setOpenDropdown(null)}
+                >
+                  <button
+                    onClick={() => navigateTo(item.slug as PageView)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: currentPage === item.slug || item.children.some(c => currentPage === c.slug) ? primaryColor : '#374151', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                    data-testid={`preview-nav-${item.slug}`}
+                  >
+                    {item.label}
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  {openDropdown === item.id && (
+                    <div
+                      className="absolute top-full left-0 mt-1 min-w-[180px] rounded-md shadow-lg py-1 z-50"
+                      style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb' }}
+                    >
+                      {item.children.map(child => (
+                        <button
+                          key={child.id}
+                          onClick={() => { navigateTo(child.slug as PageView); setOpenDropdown(null); }}
+                          className="w-full text-left px-4 py-2 text-sm hover:opacity-80 transition-opacity"
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: currentPage === child.slug ? primaryColor : '#374151',
+                            backgroundColor: currentPage === child.slug ? `${primaryColor}10` : 'transparent'
+                          }}
+                          data-testid={`preview-nav-${child.slug}`}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  key={item.id}
+                  onClick={() => navigateTo(item.slug as PageView)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: currentPage === item.slug ? primaryColor : '#374151' }}
+                  data-testid={`preview-nav-${item.slug}`}
+                >
+                  {item.label}
+                </button>
+              )
             ))}
           </nav>
         );
