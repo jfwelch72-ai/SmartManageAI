@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { MediaLibraryPicker } from "@/components/media-library";
-import { GOOGLE_FONTS, loadGoogleFont } from "./text-style-editor";
+import { TextStyleEditor, GOOGLE_FONTS, loadGoogleFont } from "./text-style-editor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
@@ -213,6 +213,7 @@ export interface GridItem {
 interface BannerConfig {
   title: string;
   content: string;
+  contentStyle?: Record<string, string>;
   buttons: ButtonConfig[];
   sideImageEnabled: boolean;
   sideImageUrl: string;
@@ -222,6 +223,8 @@ interface HeroConfig {
   title: string;
   subtitle: string;
   content: string;
+  subtitleStyle?: Record<string, string>;
+  contentStyle?: Record<string, string>;
   imageEnabled: boolean;
   imageUrl: string;
   imagePosition: "top" | "left" | "bottom" | "right";
@@ -230,6 +233,7 @@ interface HeroConfig {
 
 interface ContentConfig {
   content: string;
+  contentStyle?: Record<string, string>;
   title: string;
 }
 
@@ -248,6 +252,7 @@ interface GridConfig {
 interface CtaConfig {
   title: string;
   content: string;
+  contentStyle?: Record<string, string>;
   buttons: ButtonConfig[];
 }
 
@@ -1239,6 +1244,13 @@ function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banne
       <div>
         <Label className="text-xs">Banner Content</Label>
         <Textarea value={comp.config.content} onChange={(e) => onChange({ ...comp.config, content: e.target.value })} className="resize-none" data-testid="input-banner-content" />
+        <TextStyleEditor
+          content={comp.config.contentStyle || {}}
+          onUpdate={(updates) => onChange({ ...comp.config, contentStyle: { ...(comp.config.contentStyle || {}), ...updates } })}
+          elementId={`banner-content-${comp.id}`}
+          defaultFontSize="16"
+          defaultColor="#e5e7eb"
+        />
       </div>
       <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} />
       <div className="flex items-center gap-3">
@@ -1264,10 +1276,24 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
       <div>
         <Label className="text-xs">Subtitle</Label>
         <Input value={comp.config.subtitle} onChange={(e) => onChange({ ...comp.config, subtitle: e.target.value })} data-testid="input-hero-subtitle" />
+        <TextStyleEditor
+          content={comp.config.subtitleStyle || {}}
+          onUpdate={(updates) => onChange({ ...comp.config, subtitleStyle: { ...(comp.config.subtitleStyle || {}), ...updates } })}
+          elementId={`hero-subtitle-${comp.id}`}
+          defaultFontSize="14"
+          defaultColor="#6366f1"
+        />
       </div>
       <div>
         <Label className="text-xs">Content</Label>
         <Textarea value={comp.config.content} onChange={(e) => onChange({ ...comp.config, content: e.target.value })} className="resize-none" data-testid="input-hero-content" />
+        <TextStyleEditor
+          content={comp.config.contentStyle || {}}
+          onUpdate={(updates) => onChange({ ...comp.config, contentStyle: { ...(comp.config.contentStyle || {}), ...updates } })}
+          elementId={`hero-content-${comp.id}`}
+          defaultFontSize="18"
+          defaultColor="#6b7280"
+        />
       </div>
       <div className="flex items-center gap-3">
         <Switch checked={comp.config.imageEnabled} onCheckedChange={(v) => onChange({ ...comp.config, imageEnabled: v })} data-testid="switch-hero-image" />
@@ -1307,6 +1333,13 @@ function ContentEditor({ comp, onChange }: { comp: BodyComponent & { type: "cont
       <div>
         <Label className="text-xs">Content</Label>
         <Textarea value={comp.config.content} onChange={(e) => onChange({ ...comp.config, content: e.target.value })} rows={5} className="resize-none" data-testid="input-content-body" />
+        <TextStyleEditor
+          content={comp.config.contentStyle || {}}
+          onUpdate={(updates) => onChange({ ...comp.config, contentStyle: { ...(comp.config.contentStyle || {}), ...updates } })}
+          elementId={`content-body-${comp.id}`}
+          defaultFontSize="16"
+          defaultColor="#4b5563"
+        />
       </div>
     </div>
   );
@@ -1624,6 +1657,13 @@ function CtaEditor({ comp, onChange }: { comp: BodyComponent & { type: "cta" }; 
       <div>
         <Label className="text-xs">CTA Content</Label>
         <Textarea value={comp.config.content} onChange={(e) => onChange({ ...comp.config, content: e.target.value })} className="resize-none" data-testid="input-cta-content" />
+        <TextStyleEditor
+          content={comp.config.contentStyle || {}}
+          onUpdate={(updates) => onChange({ ...comp.config, contentStyle: { ...(comp.config.contentStyle || {}), ...updates } })}
+          elementId={`cta-content-${comp.id}`}
+          defaultFontSize="18"
+          defaultColor="#ffffff"
+        />
       </div>
       <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} />
     </div>
