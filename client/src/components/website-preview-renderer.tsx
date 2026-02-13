@@ -1318,10 +1318,21 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
               }
             });
             
+            const submitBtn = formEl.querySelector('button[type="submit"]') as HTMLButtonElement;
+            const origBtnText = submitBtn?.textContent || submitButtonText || 'Submit';
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending...'; }
+            
+            const resetBtn = (text?: string) => {
+              if (submitBtn) {
+                submitBtn.textContent = text || origBtnText;
+                submitBtn.disabled = false;
+              }
+            };
+            
             try {
               const formWebsiteId = websiteId || '';
               
-              await fetch('/api/website/contact', {
+              const response = await fetch('/api/website/contact', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1338,20 +1349,26 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                 }),
               });
               
-              if (redirectUrl) {
-                window.open(redirectUrl, '_blank');
-              } else {
-                const btn = formEl.querySelector('button[type="submit"]') as HTMLButtonElement;
-                if (btn) {
-                  const origText = btn.textContent;
-                  btn.textContent = 'Submitted!';
-                  btn.disabled = true;
-                  setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+              let result: any = {};
+              try { result = await response.json(); } catch {}
+              
+              if (response.ok && result.success !== false) {
+                formEl.reset();
+                if (redirectUrl) {
+                  window.location.href = redirectUrl;
+                  setTimeout(() => resetBtn(), 5000);
+                } else {
+                  if (submitBtn) submitBtn.textContent = 'Submitted Successfully!';
+                  setTimeout(() => resetBtn(), 4000);
                 }
+              } else {
+                if (submitBtn) submitBtn.textContent = 'Error - Please try again';
+                setTimeout(() => resetBtn(), 3000);
               }
-              formEl.reset();
             } catch (err) {
               console.error('Form submission error:', err);
+              if (submitBtn) submitBtn.textContent = 'Error - Please try again';
+              setTimeout(() => resetBtn(), 3000);
             }
           };
           
