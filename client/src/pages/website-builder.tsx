@@ -1658,6 +1658,7 @@ export default function WebsiteBuilderPage() {
             onFooterConfigChange={setFooterComponentsConfig}
             onSave={handleSaveWebsite}
             isSaving={saveWebsiteMutation.isPending}
+            brandingColors={{ primaryColor: websiteForm.primaryColor || "#3B82F6", secondaryColor: websiteForm.secondaryColor || "#1E40AF", accentColor: websiteForm.accentColor || "#F59E0B" }}
             headerLayoutSettings={{
               headerType: websiteForm.headerType,
               headerHeight: websiteForm.headerHeight,
@@ -1702,6 +1703,7 @@ export default function WebsiteBuilderPage() {
             onChange={setGlobalComponentsConfig}
             title="Global Components"
             description="Create reusable components that can be shared across all pages of your website."
+            brandingColors={{ primaryColor: websiteForm.primaryColor || "#3B82F6", secondaryColor: websiteForm.secondaryColor || "#1E40AF", accentColor: websiteForm.accentColor || "#F59E0B" }}
           />
         </TabsContent>
 

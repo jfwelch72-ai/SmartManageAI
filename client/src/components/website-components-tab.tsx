@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { ImageUploadField } from "@/components/website-body-components";
 import { TextStyleEditor, loadGoogleFont } from "./text-style-editor";
+import BrandingColorPicker from "@/components/branding-color-picker";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -472,6 +473,7 @@ interface WebsiteComponentsTabProps {
   onFooterConfigChange: (config: FooterComponentsConfig) => void;
   onSave: () => void;
   isSaving: boolean;
+  brandingColors?: { primaryColor: string; secondaryColor: string; accentColor: string };
   headerLayoutSettings?: {
     headerType: string;
     headerHeight: number;
@@ -550,12 +552,14 @@ function ColumnSettingsEditor({
   settings, 
   onUpdate, 
   colIdx, 
-  testIdPrefix 
+  testIdPrefix,
+  brandingColors 
 }: { 
   settings: ColumnSettings; 
   onUpdate: (updates: Partial<ColumnSettings>) => void; 
   colIdx: number;
   testIdPrefix: string;
+  brandingColors?: { primaryColor: string; secondaryColor: string; accentColor: string };
 }) {
   return (
     <Collapsible>
@@ -600,21 +604,32 @@ function ColumnSettingsEditor({
             </SelectContent>
           </Select>
           {settings.backgroundType === "solid" && (
-            <div className="flex items-center gap-1">
-              <input type="color" value={settings.backgroundColor || "#ffffff"} onChange={(e) => onUpdate({ backgroundColor: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" data-testid={`${testIdPrefix}-col${colIdx}-bg-color`} />
-              <Input value={settings.backgroundColor || ""} onChange={(e) => onUpdate({ backgroundColor: e.target.value })} placeholder="#ffffff" className="h-7 text-xs flex-1" data-testid={`${testIdPrefix}-col${colIdx}-bg-color-hex`} />
-            </div>
+            <BrandingColorPicker
+              value={settings.backgroundColor || "#ffffff"}
+              onChange={(color) => onUpdate({ backgroundColor: color })}
+              brandingColors={brandingColors}
+              placeholder="#ffffff"
+              data-testid={`${testIdPrefix}-col${colIdx}-bg-color`}
+              data-testid-hex={`${testIdPrefix}-col${colIdx}-bg-color-hex`}
+              size="sm"
+            />
           )}
           {settings.backgroundType === "gradient" && (
             <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <input type="color" value={settings.gradientStart || "#ffffff"} onChange={(e) => onUpdate({ gradientStart: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" />
-                <Input value={settings.gradientStart || ""} onChange={(e) => onUpdate({ gradientStart: e.target.value })} placeholder="Start" className="h-7 text-xs flex-1" />
-              </div>
-              <div className="flex items-center gap-1">
-                <input type="color" value={settings.gradientEnd || "#f3f4f6"} onChange={(e) => onUpdate({ gradientEnd: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" />
-                <Input value={settings.gradientEnd || ""} onChange={(e) => onUpdate({ gradientEnd: e.target.value })} placeholder="End" className="h-7 text-xs flex-1" />
-              </div>
+              <BrandingColorPicker
+                value={settings.gradientStart || "#ffffff"}
+                onChange={(color) => onUpdate({ gradientStart: color })}
+                brandingColors={brandingColors}
+                placeholder="Start"
+                size="sm"
+              />
+              <BrandingColorPicker
+                value={settings.gradientEnd || "#f3f4f6"}
+                onChange={(color) => onUpdate({ gradientEnd: color })}
+                brandingColors={brandingColors}
+                placeholder="End"
+                size="sm"
+              />
               <Select value={settings.gradientDirection || "to bottom"} onValueChange={(v) => onUpdate({ gradientDirection: v })}>
                 <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -735,6 +750,7 @@ export default function WebsiteComponentsTab({
   onFooterConfigChange,
   onSave,
   isSaving,
+  brandingColors,
   headerLayoutSettings = DEFAULT_HEADER_LAYOUT,
   onHeaderLayoutChange = noop,
   footerLayoutSettings = DEFAULT_FOOTER_LAYOUT,
@@ -1210,6 +1226,7 @@ export default function WebsiteComponentsTab({
                   elementId={element.id}
                   defaultFontSize="13"
                   defaultColor="#ffffff"
+                  brandingColors={brandingColors}
                 />
               </div>
             )}
@@ -1229,6 +1246,7 @@ export default function WebsiteComponentsTab({
                   elementId={element.id}
                   defaultFontSize="13"
                   defaultColor="#9ca3af"
+                  brandingColors={brandingColors}
                 />
               </div>
             )}
@@ -1251,6 +1269,7 @@ export default function WebsiteComponentsTab({
                   elementId={element.id}
                   defaultFontSize="15"
                   defaultColor="#ffffff"
+                  brandingColors={brandingColors}
                 />
 
                 {componentType === "footer" && (
@@ -1362,6 +1381,7 @@ export default function WebsiteComponentsTab({
                     elementId={element.id}
                     defaultFontSize="14"
                     defaultColor="#ffffff"
+                    brandingColors={brandingColors}
                   />
 
                   {componentType === "footer" && (
@@ -1478,6 +1498,7 @@ export default function WebsiteComponentsTab({
                     }}
                     colIdx={colIdx}
                     testIdPrefix={`${componentType}-${sectionKey}`}
+                    brandingColors={brandingColors}
                   />
                 </div>
                 {colElems.map((el, idx) =>
@@ -2027,22 +2048,14 @@ export default function WebsiteComponentsTab({
                           {sectionSettings.backgroundType === "solid" && (
                             <div className="space-y-1">
                               <Label className="text-xs">Background Color</Label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={sectionSettings.backgroundColor || "#ffffff"}
-                                  onChange={(e) => updateSection({ backgroundColor: e.target.value })}
-                                  className="h-8 w-8 rounded border cursor-pointer"
-                                  data-testid={`input-header-${sectionKey}-bg-color`}
-                                />
-                                <Input
-                                  className="h-8 flex-1"
-                                  value={sectionSettings.backgroundColor || "#ffffff"}
-                                  onChange={(e) => updateSection({ backgroundColor: e.target.value })}
-                                  placeholder="#ffffff"
-                                  data-testid={`input-header-${sectionKey}-bg-color-hex`}
-                                />
-                              </div>
+                              <BrandingColorPicker
+                                value={sectionSettings.backgroundColor || "#ffffff"}
+                                onChange={(color) => updateSection({ backgroundColor: color })}
+                                brandingColors={brandingColors}
+                                placeholder="#ffffff"
+                                data-testid={`input-header-${sectionKey}-bg-color`}
+                                data-testid-hex={`input-header-${sectionKey}-bg-color-hex`}
+                              />
                             </div>
                           )}
 
@@ -2051,29 +2064,21 @@ export default function WebsiteComponentsTab({
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
                                   <Label className="text-xs">Start Color</Label>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="color"
-                                      value={sectionSettings.gradientStart}
-                                      onChange={(e) => updateSection({ gradientStart: e.target.value })}
-                                      className="h-8 w-8 rounded border cursor-pointer"
-                                      data-testid={`input-header-${sectionKey}-grad-start`}
-                                    />
-                                    <Input className="h-8 flex-1" value={sectionSettings.gradientStart} onChange={(e) => updateSection({ gradientStart: e.target.value })} />
-                                  </div>
+                                  <BrandingColorPicker
+                                    value={sectionSettings.gradientStart}
+                                    onChange={(color) => updateSection({ gradientStart: color })}
+                                    brandingColors={brandingColors}
+                                    data-testid={`input-header-${sectionKey}-grad-start`}
+                                  />
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs">End Color</Label>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="color"
-                                      value={sectionSettings.gradientEnd}
-                                      onChange={(e) => updateSection({ gradientEnd: e.target.value })}
-                                      className="h-8 w-8 rounded border cursor-pointer"
-                                      data-testid={`input-header-${sectionKey}-grad-end`}
-                                    />
-                                    <Input className="h-8 flex-1" value={sectionSettings.gradientEnd} onChange={(e) => updateSection({ gradientEnd: e.target.value })} />
-                                  </div>
+                                  <BrandingColorPicker
+                                    value={sectionSettings.gradientEnd}
+                                    onChange={(color) => updateSection({ gradientEnd: color })}
+                                    brandingColors={brandingColors}
+                                    data-testid={`input-header-${sectionKey}-grad-end`}
+                                  />
                                 </div>
                               </div>
                               <div className="space-y-1">
@@ -2207,10 +2212,14 @@ export default function WebsiteComponentsTab({
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <Label className="text-xs">Border Color</Label>
-                                <div className="flex items-center gap-1">
-                                  <input type="color" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-header-${sectionKey}-border-color`} />
-                                  <Input className="h-8 flex-1" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} placeholder="#e5e7eb" data-testid={`input-header-${sectionKey}-border-color-hex`} />
-                                </div>
+                                <BrandingColorPicker
+                                  value={sectionSettings.borderColor || "#e5e7eb"}
+                                  onChange={(color) => updateSection({ borderColor: color })}
+                                  brandingColors={brandingColors}
+                                  placeholder="#e5e7eb"
+                                  data-testid={`input-header-${sectionKey}-border-color`}
+                                  data-testid-hex={`input-header-${sectionKey}-border-color-hex`}
+                                />
                               </div>
                               <div className="space-y-1">
                                 <Label className="text-xs">Border Radius (px)</Label>
@@ -2384,22 +2393,14 @@ export default function WebsiteComponentsTab({
                             {sectionSettings.backgroundType === "solid" && (
                               <div className="space-y-1">
                                 <Label className="text-xs">Background Color</Label>
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="color"
-                                    value={sectionSettings.backgroundColor || "#1f2937"}
-                                    onChange={(e) => updateSection({ backgroundColor: e.target.value })}
-                                    className="h-8 w-8 rounded border cursor-pointer"
-                                    data-testid={`input-footer-${sectionKey}-bg-color`}
-                                  />
-                                  <Input
-                                    className="h-8 flex-1"
-                                    value={sectionSettings.backgroundColor || "#1f2937"}
-                                    onChange={(e) => updateSection({ backgroundColor: e.target.value })}
-                                    placeholder="#1f2937"
-                                    data-testid={`input-footer-${sectionKey}-bg-color-hex`}
-                                  />
-                                </div>
+                                <BrandingColorPicker
+                                  value={sectionSettings.backgroundColor || "#1f2937"}
+                                  onChange={(color) => updateSection({ backgroundColor: color })}
+                                  brandingColors={brandingColors}
+                                  placeholder="#1f2937"
+                                  data-testid={`input-footer-${sectionKey}-bg-color`}
+                                  data-testid-hex={`input-footer-${sectionKey}-bg-color-hex`}
+                                />
                               </div>
                             )}
 
@@ -2408,29 +2409,21 @@ export default function WebsiteComponentsTab({
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-1">
                                     <Label className="text-xs">Start Color</Label>
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="color"
-                                        value={sectionSettings.gradientStart}
-                                        onChange={(e) => updateSection({ gradientStart: e.target.value })}
-                                        className="h-8 w-8 rounded border cursor-pointer"
-                                        data-testid={`input-footer-${sectionKey}-grad-start`}
-                                      />
-                                      <Input className="h-8 flex-1" value={sectionSettings.gradientStart} onChange={(e) => updateSection({ gradientStart: e.target.value })} />
-                                    </div>
+                                    <BrandingColorPicker
+                                      value={sectionSettings.gradientStart}
+                                      onChange={(color) => updateSection({ gradientStart: color })}
+                                      brandingColors={brandingColors}
+                                      data-testid={`input-footer-${sectionKey}-grad-start`}
+                                    />
                                   </div>
                                   <div className="space-y-1">
                                     <Label className="text-xs">End Color</Label>
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="color"
-                                        value={sectionSettings.gradientEnd}
-                                        onChange={(e) => updateSection({ gradientEnd: e.target.value })}
-                                        className="h-8 w-8 rounded border cursor-pointer"
-                                        data-testid={`input-footer-${sectionKey}-grad-end`}
-                                      />
-                                      <Input className="h-8 flex-1" value={sectionSettings.gradientEnd} onChange={(e) => updateSection({ gradientEnd: e.target.value })} />
-                                    </div>
+                                    <BrandingColorPicker
+                                      value={sectionSettings.gradientEnd}
+                                      onChange={(color) => updateSection({ gradientEnd: color })}
+                                      brandingColors={brandingColors}
+                                      data-testid={`input-footer-${sectionKey}-grad-end`}
+                                    />
                                   </div>
                                 </div>
                                 <div className="space-y-1">
@@ -2564,10 +2557,14 @@ export default function WebsiteComponentsTab({
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1">
                                   <Label className="text-xs">Border Color</Label>
-                                  <div className="flex items-center gap-1">
-                                    <input type="color" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-footer-${sectionKey}-border-color`} />
-                                    <Input className="h-8 flex-1" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} placeholder="#e5e7eb" data-testid={`input-footer-${sectionKey}-border-color-hex`} />
-                                  </div>
+                                  <BrandingColorPicker
+                                    value={sectionSettings.borderColor || "#e5e7eb"}
+                                    onChange={(color) => updateSection({ borderColor: color })}
+                                    brandingColors={brandingColors}
+                                    placeholder="#e5e7eb"
+                                    data-testid={`input-footer-${sectionKey}-border-color`}
+                                    data-testid-hex={`input-footer-${sectionKey}-border-color-hex`}
+                                  />
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs">Border Radius (px)</Label>
@@ -2704,31 +2701,19 @@ export default function WebsiteComponentsTab({
 
               <div className="space-y-2">
                 <Label>Background Color</Label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={footerConfig.backToTop?.backgroundColor ?? "#1a1a1a"}
-                    onChange={(e) => {
-                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
-                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
-                      newConfig.backToTop.backgroundColor = e.target.value;
-                      onFooterConfigChange(newConfig);
-                    }}
-                    className="w-9 h-9 rounded-md border cursor-pointer"
-                    data-testid="input-btt-bg-color"
-                  />
-                  <Input
-                    value={footerConfig.backToTop?.backgroundColor ?? DEFAULT_BACK_TO_TOP.backgroundColor}
-                    onChange={(e) => {
-                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
-                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
-                      newConfig.backToTop.backgroundColor = e.target.value;
-                      onFooterConfigChange(newConfig);
-                    }}
-                    placeholder="rgba(255,255,255,0.1)"
-                    data-testid="input-btt-bg-color-text"
-                  />
-                </div>
+                <BrandingColorPicker
+                  value={footerConfig.backToTop?.backgroundColor ?? "#1a1a1a"}
+                  onChange={(color) => {
+                    const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                    if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                    newConfig.backToTop.backgroundColor = color;
+                    onFooterConfigChange(newConfig);
+                  }}
+                  brandingColors={brandingColors}
+                  placeholder="rgba(255,255,255,0.1)"
+                  data-testid="input-btt-bg-color"
+                  data-testid-hex="input-btt-bg-color-text"
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -2766,20 +2751,18 @@ export default function WebsiteComponentsTab({
                 </div>
                 <div className="space-y-2">
                   <Label>Border Color</Label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={footerConfig.backToTop?.borderColor ?? "#333333"}
-                      onChange={(e) => {
-                        const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
-                        if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
-                        newConfig.backToTop.borderColor = e.target.value;
-                        onFooterConfigChange(newConfig);
-                      }}
-                      className="w-9 h-9 rounded-md border cursor-pointer"
-                      data-testid="input-btt-border-color"
-                    />
-                  </div>
+                  <BrandingColorPicker
+                    value={footerConfig.backToTop?.borderColor ?? "#333333"}
+                    onChange={(color) => {
+                      const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+                      if (!newConfig.backToTop) newConfig.backToTop = { ...DEFAULT_BACK_TO_TOP };
+                      newConfig.backToTop.borderColor = color;
+                      onFooterConfigChange(newConfig);
+                    }}
+                    brandingColors={brandingColors}
+                    placeholder="#333333"
+                    data-testid="input-btt-border-color"
+                  />
                 </div>
               </div>
             </CardContent>
@@ -2879,6 +2862,7 @@ export default function WebsiteComponentsTab({
                 onUpdate={(updates) => onInnerPageChange({ contentColumnSettings: { ...(innerPageSettings.contentColumnSettings || DEFAULT_COLUMN_SETTINGS), ...updates } })}
                 colIdx={0}
                 testIdPrefix="inner-page-content"
+                brandingColors={brandingColors}
               />
             </div>
 
@@ -2891,6 +2875,7 @@ export default function WebsiteComponentsTab({
                   onUpdate={(updates) => onInnerPageChange({ sidebarColumnSettings: { ...(innerPageSettings.sidebarColumnSettings || DEFAULT_COLUMN_SETTINGS), ...updates } })}
                   colIdx={0}
                   testIdPrefix="inner-page-sidebar"
+                  brandingColors={brandingColors}
                 />
               </div>
             )}

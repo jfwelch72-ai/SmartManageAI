@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import BrandingColorPicker, { type BrandingColors } from "@/components/branding-color-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -46,6 +47,7 @@ interface TextStyleEditorProps {
   defaultFontSize?: string;
   defaultColor?: string;
   showFontFamily?: boolean;
+  brandingColors?: BrandingColors;
 }
 
 export function TextStyleEditor({
@@ -55,6 +57,7 @@ export function TextStyleEditor({
   defaultFontSize = "14",
   defaultColor = "#ffffff",
   showFontFamily = true,
+  brandingColors,
 }: TextStyleEditorProps) {
   const [fontPopoverOpen, setFontPopoverOpen] = useState(false);
 
@@ -174,21 +177,15 @@ export function TextStyleEditor({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Text Color</Label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={content.textColor || defaultColor}
-                onChange={(e) => handleUpdate("textColor", e.target.value)}
-                className="h-8 w-8 rounded border cursor-pointer"
-                data-testid={`input-textstyle-textColor-${elementId}`}
-              />
-              <Input
-                className="h-8 flex-1"
-                value={content.textColor || defaultColor}
-                onChange={(e) => handleUpdate("textColor", e.target.value)}
-                data-testid={`input-textstyle-textColorHex-${elementId}`}
-              />
-            </div>
+            <BrandingColorPicker
+              value={content.textColor || defaultColor}
+              onChange={(color) => handleUpdate("textColor", color)}
+              brandingColors={brandingColors}
+              placeholder={defaultColor}
+              size="sm"
+              data-testid={`input-textstyle-textColor-${elementId}`}
+              data-testid-hex={`input-textstyle-textColorHex-${elementId}`}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Font Style</Label>

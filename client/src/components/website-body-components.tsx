@@ -14,6 +14,7 @@ import { TextStyleEditor, GOOGLE_FONTS, loadGoogleFont } from "./text-style-edit
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import BrandingColorPicker, { type BrandingColors } from "@/components/branding-color-picker";
 import {
   GripVertical,
   Plus,
@@ -785,7 +786,7 @@ export function VideoUploadField({ value, onChange, label, placeholder, testId }
   );
 }
 
-export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChange: (s: SharedStyles) => void }) {
+export function StyleEditor({ styles, onChange, brandingColors }: { styles: SharedStyles; onChange: (s: SharedStyles) => void; brandingColors?: BrandingColors }) {
   const [fontFamilyOpen, setFontFamilyOpen] = useState(false);
   const updateTypography = (key: keyof TypographyStyles, value: string) => {
     onChange({ ...styles, typography: { ...styles.typography, [key]: value } });
@@ -869,7 +870,7 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
           </div>
           <div>
             <Label className="text-xs">Text Color</Label>
-            <Input type="color" value={styles.typography.color || "#000000"} onChange={(e) => updateTypography("color", e.target.value)} data-testid="input-text-color" />
+            <BrandingColorPicker value={styles.typography.color || ""} onChange={(color) => updateTypography("color", color)} brandingColors={brandingColors} placeholder="#000000" data-testid="input-text-color" showHexInput={false} size="sm" />
           </div>
           <div>
             <Label className="text-xs">Line Height</Label>
@@ -975,18 +976,18 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
           {styles.background.type === "solid" && (
             <div>
               <Label className="text-xs">Color</Label>
-              <Input type="color" value={styles.background.color || "#ffffff"} onChange={(e) => updateBackground("color", e.target.value)} data-testid="input-bg-color" />
+              <BrandingColorPicker value={styles.background.color || ""} onChange={(color) => updateBackground("color", color)} brandingColors={brandingColors} placeholder="#ffffff" data-testid="input-bg-color" showHexInput={false} size="sm" />
             </div>
           )}
           {styles.background.type === "gradient" && (
             <>
               <div>
                 <Label className="text-xs">From</Label>
-                <Input type="color" value={styles.background.gradientFrom || "#000000"} onChange={(e) => updateBackground("gradientFrom", e.target.value)} data-testid="input-gradient-from" />
+                <BrandingColorPicker value={styles.background.gradientFrom || ""} onChange={(color) => updateBackground("gradientFrom", color)} brandingColors={brandingColors} placeholder="#000000" data-testid="input-gradient-from" showHexInput={false} size="sm" />
               </div>
               <div>
                 <Label className="text-xs">To</Label>
-                <Input type="color" value={styles.background.gradientTo || "#ffffff"} onChange={(e) => updateBackground("gradientTo", e.target.value)} data-testid="input-gradient-to" />
+                <BrandingColorPicker value={styles.background.gradientTo || ""} onChange={(color) => updateBackground("gradientTo", color)} brandingColors={brandingColors} placeholder="#ffffff" data-testid="input-gradient-to" showHexInput={false} size="sm" />
               </div>
               <div>
                 <Label className="text-xs">Direction</Label>
@@ -1118,13 +1119,16 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
             {styles.background.overlay.type === "color" && (
               <div>
                 <Label className="text-xs">Overlay Color</Label>
-                <Input
-                  type="color"
-                  value={styles.background.overlay.color || "#000000"}
-                  onChange={(e) => {
-                    onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, color: e.target.value } } });
+                <BrandingColorPicker
+                  value={styles.background.overlay.color || ""}
+                  onChange={(color) => {
+                    onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, color } } });
                   }}
+                  brandingColors={brandingColors}
+                  placeholder="#000000"
                   data-testid="input-overlay-color"
+                  showHexInput={false}
+                  size="sm"
                 />
               </div>
             )}
@@ -1132,24 +1136,30 @@ export function StyleEditor({ styles, onChange }: { styles: SharedStyles; onChan
               <>
                 <div>
                   <Label className="text-xs">From</Label>
-                  <Input
-                    type="color"
-                    value={styles.background.overlay.gradientFrom || "#000000"}
-                    onChange={(e) => {
-                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientFrom: e.target.value } } });
+                  <BrandingColorPicker
+                    value={styles.background.overlay.gradientFrom || ""}
+                    onChange={(color) => {
+                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientFrom: color } } });
                     }}
+                    brandingColors={brandingColors}
+                    placeholder="#000000"
                     data-testid="input-overlay-gradient-from"
+                    showHexInput={false}
+                    size="sm"
                   />
                 </div>
                 <div>
                   <Label className="text-xs">To</Label>
-                  <Input
-                    type="color"
-                    value={styles.background.overlay.gradientTo || "#000000"}
-                    onChange={(e) => {
-                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientTo: e.target.value } } });
+                  <BrandingColorPicker
+                    value={styles.background.overlay.gradientTo || ""}
+                    onChange={(color) => {
+                      onChange({ ...styles, background: { ...styles.background, overlay: { ...styles.background.overlay!, gradientTo: color } } });
                     }}
+                    brandingColors={brandingColors}
+                    placeholder="#000000"
                     data-testid="input-overlay-gradient-to"
+                    showHexInput={false}
+                    size="sm"
                   />
                 </div>
                 <div>
@@ -1241,7 +1251,7 @@ function ButtonStyleFontPicker({ value, onChange, btnIndex }: { value: string; o
   );
 }
 
-function ButtonListEditor({ buttons, onChange }: { buttons: ButtonConfig[]; onChange: (b: ButtonConfig[]) => void }) {
+function ButtonListEditor({ buttons, onChange, brandingColors }: { buttons: ButtonConfig[]; onChange: (b: ButtonConfig[]) => void; brandingColors?: BrandingColors }) {
   const addButton = () => onChange([...buttons, { text: "Button", url: "#", variant: "primary" }]);
   const removeButton = (i: number) => onChange(buttons.filter((_, idx) => idx !== i));
   const updateButton = (i: number, updates: Partial<ButtonConfig>) => {
@@ -1285,26 +1295,41 @@ function ButtonListEditor({ buttons, onChange }: { buttons: ButtonConfig[]; onCh
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">Background Color</Label>
-                  <div className="flex items-center gap-1">
-                    <input type="color" value={btn.style?.backgroundColor || "#3b82f6"} onChange={(e) => updateButtonStyle(i, { backgroundColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-btn-style-bgColor-${i}`} />
-                    <Input className="h-8 flex-1" value={btn.style?.backgroundColor || ""} onChange={(e) => updateButtonStyle(i, { backgroundColor: e.target.value })} placeholder="#3b82f6" data-testid={`input-btn-style-bgColorHex-${i}`} />
-                  </div>
+                  <BrandingColorPicker
+                    value={btn.style?.backgroundColor || ""}
+                    onChange={(color) => updateButtonStyle(i, { backgroundColor: color })}
+                    brandingColors={brandingColors}
+                    placeholder="#3b82f6"
+                    data-testid={`input-btn-style-bgColor-${i}`}
+                    data-testid-hex={`input-btn-style-bgColorHex-${i}`}
+                    size="sm"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Text Color</Label>
-                  <div className="flex items-center gap-1">
-                    <input type="color" value={btn.style?.textColor || "#ffffff"} onChange={(e) => updateButtonStyle(i, { textColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-btn-style-textColor-${i}`} />
-                    <Input className="h-8 flex-1" value={btn.style?.textColor || ""} onChange={(e) => updateButtonStyle(i, { textColor: e.target.value })} placeholder="#ffffff" data-testid={`input-btn-style-textColorHex-${i}`} />
-                  </div>
+                  <BrandingColorPicker
+                    value={btn.style?.textColor || ""}
+                    onChange={(color) => updateButtonStyle(i, { textColor: color })}
+                    brandingColors={brandingColors}
+                    placeholder="#ffffff"
+                    data-testid={`input-btn-style-textColor-${i}`}
+                    data-testid-hex={`input-btn-style-textColorHex-${i}`}
+                    size="sm"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">Border Color</Label>
-                  <div className="flex items-center gap-1">
-                    <input type="color" value={btn.style?.borderColor || "#3b82f6"} onChange={(e) => updateButtonStyle(i, { borderColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-btn-style-borderColor-${i}`} />
-                    <Input className="h-8 flex-1" value={btn.style?.borderColor || ""} onChange={(e) => updateButtonStyle(i, { borderColor: e.target.value })} placeholder="#3b82f6" data-testid={`input-btn-style-borderColorHex-${i}`} />
-                  </div>
+                  <BrandingColorPicker
+                    value={btn.style?.borderColor || ""}
+                    onChange={(color) => updateButtonStyle(i, { borderColor: color })}
+                    brandingColors={brandingColors}
+                    placeholder="#3b82f6"
+                    data-testid={`input-btn-style-borderColor-${i}`}
+                    data-testid-hex={`input-btn-style-borderColorHex-${i}`}
+                    size="sm"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Border Width (px)</Label>
@@ -1359,7 +1384,7 @@ function ButtonListEditor({ buttons, onChange }: { buttons: ButtonConfig[]; onCh
   );
 }
 
-function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banner" }; onChange: (c: BannerConfig) => void }) {
+function BannerEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & { type: "banner" }; onChange: (c: BannerConfig) => void; brandingColors?: BrandingColors }) {
   return (
     <div className="space-y-3">
       <div>
@@ -1371,6 +1396,7 @@ function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banne
           elementId={`banner-title-${comp.id}`}
           defaultFontSize="32"
           defaultColor="#1f2937"
+          brandingColors={brandingColors}
         />
       </div>
       <div>
@@ -1382,9 +1408,10 @@ function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banne
           elementId={`banner-content-${comp.id}`}
           defaultFontSize="16"
           defaultColor="#e5e7eb"
+          brandingColors={brandingColors}
         />
       </div>
-      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} />
+      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} brandingColors={brandingColors} />
       <div className="flex items-center gap-3">
         <Switch checked={comp.config.sideImageEnabled} onCheckedChange={(v) => onChange({ ...comp.config, sideImageEnabled: v })} data-testid="switch-side-image" />
         <Label className="text-xs">Enable Side Image</Label>
@@ -1398,7 +1425,7 @@ function BannerEditor({ comp, onChange }: { comp: BodyComponent & { type: "banne
   );
 }
 
-function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }; onChange: (c: HeroConfig) => void }) {
+function HeroEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & { type: "hero" }; onChange: (c: HeroConfig) => void; brandingColors?: BrandingColors }) {
   return (
     <div className="space-y-3">
       <div>
@@ -1410,6 +1437,7 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
           elementId={`hero-title-${comp.id}`}
           defaultFontSize="44"
           defaultColor="#1f2937"
+          brandingColors={brandingColors}
         />
       </div>
       <div>
@@ -1421,6 +1449,7 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
           elementId={`hero-subtitle-${comp.id}`}
           defaultFontSize="14"
           defaultColor="#6366f1"
+          brandingColors={brandingColors}
         />
       </div>
       <div>
@@ -1432,6 +1461,7 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
           elementId={`hero-content-${comp.id}`}
           defaultFontSize="18"
           defaultColor="#6b7280"
+          brandingColors={brandingColors}
         />
       </div>
       <div className="flex items-center gap-3">
@@ -1457,12 +1487,12 @@ function HeroEditor({ comp, onChange }: { comp: BodyComponent & { type: "hero" }
           </div>
         </>
       )}
-      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} />
+      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} brandingColors={brandingColors} />
     </div>
   );
 }
 
-function ContentEditor({ comp, onChange }: { comp: BodyComponent & { type: "content" }; onChange: (c: ContentConfig) => void }) {
+function ContentEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & { type: "content" }; onChange: (c: ContentConfig) => void; brandingColors?: BrandingColors }) {
   return (
     <div className="space-y-3">
       <div>
@@ -1474,6 +1504,7 @@ function ContentEditor({ comp, onChange }: { comp: BodyComponent & { type: "cont
           elementId={`content-title-${comp.id}`}
           defaultFontSize="32"
           defaultColor="#1f2937"
+          brandingColors={brandingColors}
         />
       </div>
       <div>
@@ -1485,6 +1516,7 @@ function ContentEditor({ comp, onChange }: { comp: BodyComponent & { type: "cont
           elementId={`content-body-${comp.id}`}
           defaultFontSize="16"
           defaultColor="#4b5563"
+          brandingColors={brandingColors}
         />
       </div>
     </div>
@@ -1793,7 +1825,7 @@ function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "grid" }
   );
 }
 
-function CtaEditor({ comp, onChange }: { comp: BodyComponent & { type: "cta" }; onChange: (c: CtaConfig) => void }) {
+function CtaEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & { type: "cta" }; onChange: (c: CtaConfig) => void; brandingColors?: BrandingColors }) {
   return (
     <div className="space-y-3">
       <div>
@@ -1805,6 +1837,7 @@ function CtaEditor({ comp, onChange }: { comp: BodyComponent & { type: "cta" }; 
           elementId={`cta-title-${comp.id}`}
           defaultFontSize="36"
           defaultColor="#ffffff"
+          brandingColors={brandingColors}
         />
       </div>
       <div>
@@ -1816,9 +1849,10 @@ function CtaEditor({ comp, onChange }: { comp: BodyComponent & { type: "cta" }; 
           elementId={`cta-content-${comp.id}`}
           defaultFontSize="18"
           defaultColor="#ffffff"
+          brandingColors={brandingColors}
         />
       </div>
-      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} />
+      <ButtonListEditor buttons={comp.config.buttons} onChange={(buttons) => onChange({ ...comp.config, buttons })} brandingColors={brandingColors} />
     </div>
   );
 }
@@ -2340,14 +2374,14 @@ function BlogSectionEditor({ comp, onChange }: { comp: BodyComponent & { type: "
   );
 }
 
-export function ComponentConfigEditor({ comp, onConfigChange }: { comp: BodyComponent; onConfigChange: (config: any) => void }) {
+export function ComponentConfigEditor({ comp, onConfigChange, brandingColors }: { comp: BodyComponent; onConfigChange: (config: any) => void; brandingColors?: BrandingColors }) {
   switch (comp.type) {
-    case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} />;
-    case "hero": return <HeroEditor comp={comp as BodyComponent & { type: "hero" }} onChange={onConfigChange} />;
-    case "content": return <ContentEditor comp={comp as BodyComponent & { type: "content" }} onChange={onConfigChange} />;
+    case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} brandingColors={brandingColors} />;
+    case "hero": return <HeroEditor comp={comp as BodyComponent & { type: "hero" }} onChange={onConfigChange} brandingColors={brandingColors} />;
+    case "content": return <ContentEditor comp={comp as BodyComponent & { type: "content" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "form": return <FormEditor comp={comp as BodyComponent & { type: "form" }} onChange={onConfigChange} />;
     case "grid": return <GridEditor comp={comp as BodyComponent & { type: "grid" }} onChange={onConfigChange} />;
-    case "cta": return <CtaEditor comp={comp as BodyComponent & { type: "cta" }} onChange={onConfigChange} />;
+    case "cta": return <CtaEditor comp={comp as BodyComponent & { type: "cta" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "testimonial": return <TestimonialEditor comp={comp as BodyComponent & { type: "testimonial" }} onChange={onConfigChange} />;
     case "feature_highlight": return <FeatureHighlightEditor comp={comp as BodyComponent & { type: "feature_highlight" }} onChange={onConfigChange} />;
     case "gallery": return <GalleryEditor comp={comp as BodyComponent & { type: "gallery" }} onChange={onConfigChange} />;
@@ -2369,9 +2403,10 @@ interface WebsiteBodyComponentsProps {
   onChange: (config: BodyComponentsConfig) => void;
   title?: string;
   description?: string;
+  brandingColors?: BrandingColors;
 }
 
-export default function WebsiteBodyComponents({ config, onChange, title, description }: WebsiteBodyComponentsProps) {
+export default function WebsiteBodyComponents({ config, onChange, title, description, brandingColors }: WebsiteBodyComponentsProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showStylesFor, setShowStylesFor] = useState<string | null>(null);
   const [showAddPicker, setShowAddPicker] = useState(false);
@@ -2564,7 +2599,7 @@ export default function WebsiteBodyComponents({ config, onChange, title, descrip
                         </div>
                       </div>
 
-                      <ComponentConfigEditor comp={comp} onConfigChange={(c) => updateComponentConfig(comp.id, c)} />
+                      <ComponentConfigEditor comp={comp} onConfigChange={(c) => updateComponentConfig(comp.id, c)} brandingColors={brandingColors} />
 
                       <div className="pt-2">
                         <Button
@@ -2579,7 +2614,7 @@ export default function WebsiteBodyComponents({ config, onChange, title, descrip
                       </div>
 
                       {isStylesOpen && (
-                        <StyleEditor styles={comp.styles} onChange={(s) => updateComponentStyles(comp.id, s)} />
+                        <StyleEditor styles={comp.styles} onChange={(s) => updateComponentStyles(comp.id, s)} brandingColors={brandingColors} />
                       )}
                     </div>
                   )}
