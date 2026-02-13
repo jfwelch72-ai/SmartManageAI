@@ -2422,7 +2422,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
         region: org.region,
         logoUrl: orgLogoProxyUrl(orgId, org.logoUrl),
       } : null,
-      pages: pages.filter(p => p.showInNavigation),
+      pages: pages.filter(p => p.showInNavigation && p.isPublished !== false),
       blogPosts,
       projects,
       socialLinks,

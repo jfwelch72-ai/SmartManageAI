@@ -89,6 +89,8 @@ interface PreviewData {
     content?: string | null;
     contentJson?: string | null;
     parentPageId?: string | null;
+    isPublished?: boolean;
+    is_published?: boolean;
   }>;
   blogPosts: Array<{
     id: string;
@@ -242,8 +244,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       { id: "home", label: "Home", slug: "home" },
     ];
     
-    // Add custom pages from database in their navigation order
-    const customPages = pages
+    const publishedPages = pages.filter(p => (p.isPublished ?? p.is_published) !== false);
+    const customPages = publishedPages
       .filter(p => p.pageSlug && !["home", "blog", "gallery", "contact"].includes(p.pageSlug.toLowerCase()))
       .sort((a, b) => (a.navigationOrder || 0) - (b.navigationOrder || 0));
     
@@ -288,7 +290,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     
     // Also attach children to built-in pages (about, services) if any page references them
     const builtInPageMap: Record<string, string> = {};
-    pages.forEach(p => {
+    publishedPages.forEach(p => {
       if (p.pageSlug?.toLowerCase() === "about" || p.pageType?.toLowerCase() === "about") builtInPageMap[p.id] = "about";
       if (p.pageSlug?.toLowerCase() === "services" || p.pageType?.toLowerCase() === "services") builtInPageMap[p.id] = "services";
     });
