@@ -1212,32 +1212,112 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
           );
         }
         case 'form': {
-          const { title, submitButtonText, fields = [] } = cfg;
+          const { title, submitButtonText, fields = [], redirectUrl, submitButtonStyle = {}, fieldStyle: globalFieldStyle = {} } = cfg as any;
+          const inputBaseStyle: React.CSSProperties = {
+            width: '100%',
+            padding: '0.5rem',
+            border: '1px solid #d1d5db',
+            borderRadius: '0.375rem',
+            fontSize: '0.875rem',
+            ...(globalFieldStyle.backgroundColor ? { backgroundColor: globalFieldStyle.backgroundColor } : {}),
+            ...(globalFieldStyle.textColor ? { color: globalFieldStyle.textColor } : {}),
+            ...(globalFieldStyle.borderColor ? { borderColor: globalFieldStyle.borderColor } : {}),
+            ...(globalFieldStyle.borderRadius ? { borderRadius: `${globalFieldStyle.borderRadius}px` } : {}),
+            ...(globalFieldStyle.fontSize ? { fontSize: `${globalFieldStyle.fontSize}px` } : {}),
+          };
+          const getFieldInputStyle = (field: any): React.CSSProperties => {
+            const s = { ...inputBaseStyle };
+            if (field.style?.backgroundColor) s.backgroundColor = field.style.backgroundColor;
+            if (field.style?.textColor) s.color = field.style.textColor;
+            if (field.style?.borderColor) s.borderColor = field.style.borderColor;
+            if (field.style?.borderRadius) s.borderRadius = `${field.style.borderRadius}px`;
+            if (field.style?.fontSize) s.fontSize = `${field.style.fontSize}px`;
+            return s;
+          };
+          const getLabelStyle = (field: any): React.CSSProperties => ({
+            display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem',
+            ...(globalFieldStyle.labelColor ? { color: globalFieldStyle.labelColor } : {}),
+            ...(field.style?.labelColor ? { color: field.style.labelColor } : {}),
+          });
+          const getLabelColorStyle = (field: any): React.CSSProperties => ({
+            ...(globalFieldStyle.labelColor ? { color: globalFieldStyle.labelColor } : {}),
+            ...(field.style?.labelColor ? { color: field.style.labelColor } : {}),
+          });
+          const submitStyle: React.CSSProperties = {
+            backgroundColor: submitButtonStyle.backgroundColor || primaryColor,
+            color: submitButtonStyle.textColor || '#fff',
+            border: submitButtonStyle.borderWidth ? `${submitButtonStyle.borderWidth}px solid ${submitButtonStyle.borderColor || 'transparent'}` : 'none',
+            padding: `${submitButtonStyle.paddingY || '10'}px ${submitButtonStyle.paddingX || '24'}px`,
+            borderRadius: submitButtonStyle.borderRadius ? `${submitButtonStyle.borderRadius}px` : '0.375rem',
+            fontWeight: submitButtonStyle.fontWeight ? Number(submitButtonStyle.fontWeight) : 600,
+            fontSize: submitButtonStyle.fontSize ? `${submitButtonStyle.fontSize}px` : undefined,
+            cursor: 'pointer',
+            width: submitButtonStyle.width === 'full' ? '100%' : undefined,
+            alignSelf: submitButtonStyle.width === 'full' ? undefined : (align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'),
+          };
           return (
             <section key={comp.id} data-testid={`body-form-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '40rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
-                <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {fields.filter((f: any) => f.enabled !== false).map((field: any) => (
-                    <div key={field.id}>
-                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>
-                        {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
-                      </label>
-                      {field.type === 'textarea' ? (
-                        <textarea placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', minHeight: '80px', fontSize: '0.875rem' }} />
-                      ) : field.type === 'select' ? (
-                        <select style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }}>
-                          <option value="">{field.placeholder || 'Select...'}</option>
-                          {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
-                        </select>
-                      ) : (
-                        <input type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }} />
-                      )}
-                    </div>
-                  ))}
-                  <button type="submit" style={{ backgroundColor: primaryColor, color: '#fff', border: 'none', padding: '0.625rem 1.5rem', borderRadius: '0.375rem', fontWeight: 600, cursor: 'pointer', alignSelf: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start' }}>
+                <form onSubmit={e => { e.preventDefault(); if (redirectUrl) { window.open(redirectUrl, '_blank'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {fields.filter((f: any) => f.enabled !== false).map((field: any) => {
+                    const fieldInputStyle = getFieldInputStyle(field);
+                    const labelStyle = getLabelStyle(field);
+                    const labelColorStyle = getLabelColorStyle(field);
+                    if (field.type === 'checkbox') {
+                      return (
+                        <div key={field.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input type="checkbox" id={field.id} style={{ width: '1rem', height: '1rem', accentColor: primaryColor }} />
+                          <label htmlFor={field.id} style={{ fontSize: '0.875rem', fontWeight: 500, ...labelColorStyle }}>{field.label}</label>
+                        </div>
+                      );
+                    }
+                    if (field.type === 'radio') {
+                      return (
+                        <div key={field.id}>
+                          <label style={labelStyle}>{field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}</label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                            {(field.options || ['Option 1', 'Option 2']).map((opt: string, optIdx: number) => (
+                              <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input type="radio" name={field.id} value={opt} style={{ accentColor: primaryColor }} />
+                                <label style={{ fontSize: '0.875rem' }}>{opt}</label>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (field.type === 'toggle') {
+                      return (
+                        <div key={field.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div style={{ position: 'relative', width: '2.75rem', height: '1.5rem', backgroundColor: '#d1d5db', borderRadius: '0.75rem', cursor: 'pointer' }}>
+                            <div style={{ position: 'absolute', top: '0.125rem', left: '0.125rem', width: '1.25rem', height: '1.25rem', backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.2s' }} />
+                          </div>
+                          <label style={{ fontSize: '0.875rem', fontWeight: 500, ...labelColorStyle }}>{field.label}</label>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={field.id}>
+                        <label style={labelStyle}>
+                          {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
+                        </label>
+                        {field.type === 'textarea' ? (
+                          <textarea placeholder={field.placeholder} style={{ ...fieldInputStyle, minHeight: '80px' }} />
+                        ) : field.type === 'select' ? (
+                          <select style={fieldInputStyle}>
+                            <option value="">{field.placeholder || 'Select...'}</option>
+                            {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : (
+                          <input type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} style={fieldInputStyle} />
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button type="submit" style={submitStyle}>
                     {submitButtonText || 'Submit'}
                   </button>
                 </form>

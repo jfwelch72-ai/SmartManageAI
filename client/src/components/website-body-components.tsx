@@ -159,9 +159,11 @@ export interface ButtonConfig {
 export interface FormFieldConfig {
   id: string;
   label: string;
-  type: "text" | "email" | "textarea" | "select" | "phone" | "number";
+  type: "text" | "email" | "textarea" | "select" | "phone" | "number" | "checkbox" | "radio" | "toggle";
   placeholder: string;
   required: boolean;
+  options?: string[];
+  style?: Record<string, string>;
 }
 
 export interface TestimonialItem {
@@ -247,6 +249,9 @@ interface FormConfig {
   title: string;
   submitButtonText: string;
   fields: FormFieldConfig[];
+  redirectUrl?: string;
+  submitButtonStyle?: Record<string, string>;
+  fieldStyle?: Record<string, string>;
 }
 
 interface GridConfig {
@@ -1523,7 +1528,7 @@ function ContentEditor({ comp, onChange, brandingColors }: { comp: BodyComponent
   );
 }
 
-function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }; onChange: (c: FormConfig) => void }) {
+function FormEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & { type: "form" }; onChange: (c: FormConfig) => void; brandingColors?: BrandingColors }) {
   const addField = () => {
     const newField: FormFieldConfig = { id: `f-${Date.now()}`, label: "New Field", type: "text", placeholder: "", required: false };
     onChange({ ...comp.config, fields: [...comp.config.fields, newField] });
@@ -1532,6 +1537,20 @@ function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }
   const updateField = (i: number, updates: Partial<FormFieldConfig>) => {
     const fields = [...comp.config.fields];
     fields[i] = { ...fields[i], ...updates };
+    onChange({ ...comp.config, fields });
+  };
+  const updateSubmitStyle = (key: string, value: string) => {
+    const current = comp.config.submitButtonStyle || {};
+    onChange({ ...comp.config, submitButtonStyle: { ...current, [key]: value } });
+  };
+  const updateFieldStyle = (key: string, value: string) => {
+    const current = comp.config.fieldStyle || {};
+    onChange({ ...comp.config, fieldStyle: { ...current, [key]: value } });
+  };
+  const updateFieldItemStyle = (i: number, key: string, value: string) => {
+    const fields = [...comp.config.fields];
+    const currentStyle = fields[i].style || {};
+    fields[i] = { ...fields[i], style: { ...currentStyle, [key]: value } };
     onChange({ ...comp.config, fields });
   };
 
@@ -1545,6 +1564,112 @@ function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }
         <Label className="text-xs">Submit Button Text</Label>
         <Input value={comp.config.submitButtonText} onChange={(e) => onChange({ ...comp.config, submitButtonText: e.target.value })} data-testid="input-form-submit" />
       </div>
+      <div>
+        <Label className="text-xs">Thank You Page URL</Label>
+        <Input value={comp.config.redirectUrl || ""} onChange={(e) => onChange({ ...comp.config, redirectUrl: e.target.value })} placeholder="https://yoursite.com/thank-you" data-testid="input-form-redirect-url" />
+      </div>
+
+      <Collapsible>
+        <CollapsibleTrigger className="flex items-center gap-1 text-xs font-semibold w-full py-1" data-testid="trigger-submit-button-style">
+          <Palette className="h-3 w-3" /> Submit Button Style <ChevronDown className="h-3 w-3 ml-auto" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-2 pt-2">
+          <div>
+            <Label className="text-xs">Background Color</Label>
+            <BrandingColorPicker value={comp.config.submitButtonStyle?.backgroundColor || ""} onChange={(v) => updateSubmitStyle("backgroundColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-submit-bg" />
+          </div>
+          <div>
+            <Label className="text-xs">Text Color</Label>
+            <BrandingColorPicker value={comp.config.submitButtonStyle?.textColor || ""} onChange={(v) => updateSubmitStyle("textColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-submit-text" />
+          </div>
+          <div>
+            <Label className="text-xs">Border Color</Label>
+            <BrandingColorPicker value={comp.config.submitButtonStyle?.borderColor || ""} onChange={(v) => updateSubmitStyle("borderColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-submit-border" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Border Width (px)</Label>
+              <Input type="number" min={0} value={comp.config.submitButtonStyle?.borderWidth || ""} onChange={(e) => updateSubmitStyle("borderWidth", e.target.value)} data-testid="input-submit-border-width" />
+            </div>
+            <div>
+              <Label className="text-xs">Border Radius (px)</Label>
+              <Input type="number" min={0} value={comp.config.submitButtonStyle?.borderRadius || ""} onChange={(e) => updateSubmitStyle("borderRadius", e.target.value)} data-testid="input-submit-border-radius" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Font Size (px)</Label>
+            <Input type="number" min={8} value={comp.config.submitButtonStyle?.fontSize || ""} onChange={(e) => updateSubmitStyle("fontSize", e.target.value)} data-testid="input-submit-font-size" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Padding X (px)</Label>
+              <Input type="number" min={0} value={comp.config.submitButtonStyle?.paddingX || ""} onChange={(e) => updateSubmitStyle("paddingX", e.target.value)} data-testid="input-submit-padding-x" />
+            </div>
+            <div>
+              <Label className="text-xs">Padding Y (px)</Label>
+              <Input type="number" min={0} value={comp.config.submitButtonStyle?.paddingY || ""} onChange={(e) => updateSubmitStyle("paddingY", e.target.value)} data-testid="input-submit-padding-y" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Font Weight</Label>
+            <Select value={comp.config.submitButtonStyle?.fontWeight || "600"} onValueChange={(v) => updateSubmitStyle("fontWeight", v)}>
+              <SelectTrigger data-testid="select-submit-font-weight"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="400">400 (Normal)</SelectItem>
+                <SelectItem value="500">500 (Medium)</SelectItem>
+                <SelectItem value="600">600 (Semi Bold)</SelectItem>
+                <SelectItem value="700">700 (Bold)</SelectItem>
+                <SelectItem value="800">800 (Extra Bold)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Width</Label>
+            <Select value={comp.config.submitButtonStyle?.width || "auto"} onValueChange={(v) => updateSubmitStyle("width", v)}>
+              <SelectTrigger data-testid="select-submit-width"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
+                <SelectItem value="full">Full Width</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      <Collapsible>
+        <CollapsibleTrigger className="flex items-center gap-1 text-xs font-semibold w-full py-1" data-testid="trigger-field-style">
+          <Palette className="h-3 w-3" /> Default Field Style <ChevronDown className="h-3 w-3 ml-auto" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-2 pt-2">
+          <div>
+            <Label className="text-xs">Background Color</Label>
+            <BrandingColorPicker value={comp.config.fieldStyle?.backgroundColor || ""} onChange={(v) => updateFieldStyle("backgroundColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-field-bg" />
+          </div>
+          <div>
+            <Label className="text-xs">Text Color</Label>
+            <BrandingColorPicker value={comp.config.fieldStyle?.textColor || ""} onChange={(v) => updateFieldStyle("textColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-field-text" />
+          </div>
+          <div>
+            <Label className="text-xs">Border Color</Label>
+            <BrandingColorPicker value={comp.config.fieldStyle?.borderColor || ""} onChange={(v) => updateFieldStyle("borderColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-field-border" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">Border Radius (px)</Label>
+              <Input type="number" min={0} value={comp.config.fieldStyle?.borderRadius || ""} onChange={(e) => updateFieldStyle("borderRadius", e.target.value)} data-testid="input-field-border-radius" />
+            </div>
+            <div>
+              <Label className="text-xs">Font Size (px)</Label>
+              <Input type="number" min={8} value={comp.config.fieldStyle?.fontSize || ""} onChange={(e) => updateFieldStyle("fontSize", e.target.value)} data-testid="input-field-font-size" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Label Color</Label>
+            <BrandingColorPicker value={comp.config.fieldStyle?.labelColor || ""} onChange={(v) => updateFieldStyle("labelColor", v)} brandingColors={brandingColors} size="sm" data-testid="color-field-label" />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Form Fields</Label>
         {comp.config.fields.map((field, i) => (
@@ -1560,6 +1685,9 @@ function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }
                   <SelectItem value="number">Number</SelectItem>
                   <SelectItem value="textarea">Textarea</SelectItem>
                   <SelectItem value="select">Dropdown</SelectItem>
+                  <SelectItem value="checkbox">Checkbox</SelectItem>
+                  <SelectItem value="radio">Radio</SelectItem>
+                  <SelectItem value="toggle">Toggle</SelectItem>
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
@@ -1570,7 +1698,54 @@ function FormEditor({ comp, onChange }: { comp: BodyComponent & { type: "form" }
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-            <Input value={field.placeholder} onChange={(e) => updateField(i, { placeholder: e.target.value })} placeholder="Placeholder text" className="text-xs" data-testid={`input-field-placeholder-${i}`} />
+            {field.type !== "checkbox" && field.type !== "toggle" && (
+              <Input value={field.placeholder} onChange={(e) => updateField(i, { placeholder: e.target.value })} placeholder="Placeholder text" className="text-xs" data-testid={`input-field-placeholder-${i}`} />
+            )}
+            {(field.type === "select" || field.type === "radio") && (
+              <div>
+                <Label className="text-xs">Options (one per line)</Label>
+                <Textarea
+                  value={(field.options || []).join("\n")}
+                  onChange={(e) => updateField(i, { options: e.target.value.split("\n") })}
+                  placeholder={"Option 1\nOption 2\nOption 3"}
+                  className="text-xs min-h-[60px]"
+                  data-testid={`textarea-field-options-${i}`}
+                />
+              </div>
+            )}
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-1 text-[10px] font-medium w-full py-0.5 text-muted-foreground" data-testid={`trigger-field-style-override-${i}`}>
+                <Palette className="h-3 w-3" /> Field Style Override <ChevronDown className="h-3 w-3 ml-auto" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-1">
+                <div>
+                  <Label className="text-xs">Background Color</Label>
+                  <BrandingColorPicker value={field.style?.backgroundColor || ""} onChange={(v) => updateFieldItemStyle(i, "backgroundColor", v)} brandingColors={brandingColors} size="sm" data-testid={`color-field-item-bg-${i}`} />
+                </div>
+                <div>
+                  <Label className="text-xs">Text Color</Label>
+                  <BrandingColorPicker value={field.style?.textColor || ""} onChange={(v) => updateFieldItemStyle(i, "textColor", v)} brandingColors={brandingColors} size="sm" data-testid={`color-field-item-text-${i}`} />
+                </div>
+                <div>
+                  <Label className="text-xs">Border Color</Label>
+                  <BrandingColorPicker value={field.style?.borderColor || ""} onChange={(v) => updateFieldItemStyle(i, "borderColor", v)} brandingColors={brandingColors} size="sm" data-testid={`color-field-item-border-${i}`} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Border Radius (px)</Label>
+                    <Input type="number" min={0} value={field.style?.borderRadius || ""} onChange={(e) => updateFieldItemStyle(i, "borderRadius", e.target.value)} data-testid={`input-field-item-border-radius-${i}`} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Font Size (px)</Label>
+                    <Input type="number" min={8} value={field.style?.fontSize || ""} onChange={(e) => updateFieldItemStyle(i, "fontSize", e.target.value)} data-testid={`input-field-item-font-size-${i}`} />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Label Color</Label>
+                  <BrandingColorPicker value={field.style?.labelColor || ""} onChange={(v) => updateFieldItemStyle(i, "labelColor", v)} brandingColors={brandingColors} size="sm" data-testid={`color-field-item-label-${i}`} />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         ))}
         <Button variant="outline" size="sm" onClick={addField} data-testid="button-add-field">
@@ -2379,7 +2554,7 @@ export function ComponentConfigEditor({ comp, onConfigChange, brandingColors }: 
     case "banner": return <BannerEditor comp={comp as BodyComponent & { type: "banner" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "hero": return <HeroEditor comp={comp as BodyComponent & { type: "hero" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "content": return <ContentEditor comp={comp as BodyComponent & { type: "content" }} onChange={onConfigChange} brandingColors={brandingColors} />;
-    case "form": return <FormEditor comp={comp as BodyComponent & { type: "form" }} onChange={onConfigChange} />;
+    case "form": return <FormEditor comp={comp as BodyComponent & { type: "form" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "grid": return <GridEditor comp={comp as BodyComponent & { type: "grid" }} onChange={onConfigChange} />;
     case "cta": return <CtaEditor comp={comp as BodyComponent & { type: "cta" }} onChange={onConfigChange} brandingColors={brandingColors} />;
     case "testimonial": return <TestimonialEditor comp={comp as BodyComponent & { type: "testimonial" }} onChange={onConfigChange} />;
