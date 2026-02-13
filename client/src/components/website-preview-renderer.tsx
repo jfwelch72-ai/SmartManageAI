@@ -762,13 +762,20 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     );
   };
 
-  const buildColumnStyle = (cs?: ColumnSettings): React.CSSProperties => {
+  const buildColumnStyle = (cs?: ColumnSettings, flexDir: 'row' | 'column' = 'column'): React.CSSProperties => {
     if (!cs) return {};
     const style: React.CSSProperties = {};
-    const justifyMap: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end', stretch: 'stretch' };
-    style.justifyContent = justifyMap[cs.alignment] || 'flex-start';
-    const vAlignMap: Record<string, string> = { top: 'flex-start', center: 'center', bottom: 'flex-end', stretch: 'stretch' };
-    style.alignItems = vAlignMap[cs.verticalAlignment || 'top'] || 'flex-start';
+    const hMap: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end', stretch: 'stretch' };
+    const vMap: Record<string, string> = { top: 'flex-start', center: 'center', bottom: 'flex-end', stretch: 'stretch' };
+    const hVal = hMap[cs.alignment] || 'flex-start';
+    const vVal = vMap[cs.verticalAlignment || 'top'] || 'flex-start';
+    if (flexDir === 'row') {
+      style.justifyContent = hVal;
+      style.alignItems = vVal;
+    } else {
+      style.alignItems = hVal;
+      style.justifyContent = vVal;
+    }
     if (cs.backgroundType === 'solid' && cs.backgroundColor) {
       style.backgroundColor = cs.backgroundColor;
     } else if (cs.backgroundType === 'gradient') {
@@ -857,15 +864,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 maxWidth: hWidth === 'boxed' ? '1200px' : '100%',
                 margin: hWidth === 'boxed' ? '0 auto' : '0',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[0]) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[0], 'row') }}>
                   {leftEls.map(e => renderHeaderElement(e))}
                 </div>
                 {centerEls.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[1]) }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[1], 'row') }}>
                     {centerEls.map(e => renderHeaderElement(e))}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[2]) }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[2], 'row') }}>
                   {rightEls.map(e => renderHeaderElement(e))}
                 </div>
               </div>
