@@ -250,6 +250,7 @@ interface FormConfig {
   submitButtonText: string;
   fields: FormFieldConfig[];
   redirectUrl?: string;
+  recipientEmail?: string;
   submitButtonStyle?: Record<string, string>;
   fieldStyle?: Record<string, string>;
 }
@@ -1567,6 +1568,17 @@ function FormEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & 
       <div>
         <Label className="text-xs">Thank You Page URL</Label>
         <Input value={comp.config.redirectUrl || ""} onChange={(e) => onChange({ ...comp.config, redirectUrl: e.target.value })} placeholder="https://yoursite.com/thank-you" data-testid="input-form-redirect-url" />
+      </div>
+      <div>
+        <Label className="text-xs">Recipient Email</Label>
+        <Input 
+          type="email"
+          value={comp.config.recipientEmail || ""} 
+          onChange={(e) => onChange({ ...comp.config, recipientEmail: e.target.value })} 
+          placeholder="recipient@example.com" 
+          data-testid="input-form-recipient-email" 
+        />
+        <p className="text-xs text-muted-foreground mt-1">Form submissions will be emailed to this address</p>
       </div>
 
       <Collapsible>

@@ -37,6 +37,7 @@ import {
   WebsiteProject
 } from "@shared/schema";
 import { requireAuth, AuthRequest } from "./auth";
+import { sendEmail } from "./services/emailService";
 import { getOrgIdForFilter, getOrgFilter } from "./orgFilter";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
@@ -2108,13 +2109,58 @@ router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Resp
 // CONTACT FORM SUBMISSIONS
 // ============================================
 
+// In-memory rate limiter for form submissions
+const formSubmissionRateLimit = new Map<string, { count: number; resetAt: number }>();
+
 // POST /api/website/contact - Submit contact form (public)
 router.post("/contact", async (req: Request, res: Response) => {
   try {
-    const { websiteId, name, email, phone, company, subject, message, serviceInterest, projectType, estimatedBudget } = req.body;
+    const { websiteId, name, email, phone, company, subject, message, serviceInterest, projectType, estimatedBudget, recipientEmail, formFields, _hp, _ts } = req.body;
 
-    if (!websiteId || !name || !email || !message) {
-      return res.status(400).json({ error: "Missing required fields" });
+    // Anti-bot: honeypot check - if honeypot field is filled, silently reject
+    if (_hp && _hp.length > 0) {
+      return res.json({ success: true, id: 'ok' });
+    }
+
+    // Anti-bot: timestamp check - reject if submitted faster than 2 seconds
+    if (_ts) {
+      const tsNum = Number(_ts);
+      if (!isNaN(tsNum) && tsNum > 0) {
+        const elapsed = Date.now() - tsNum;
+        if (elapsed >= 0 && elapsed < 2000) {
+          return res.json({ success: true, id: 'ok' });
+        }
+      }
+    }
+
+    // Rate limiting: max 5 submissions per IP per minute
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const rateEntry = formSubmissionRateLimit.get(ipAddress);
+    if (rateEntry) {
+      if (now < rateEntry.resetAt) {
+        if (rateEntry.count >= 5) {
+          return res.status(429).json({ error: "Too many submissions. Please try again later." });
+        }
+        rateEntry.count++;
+      } else {
+        formSubmissionRateLimit.set(ipAddress, { count: 1, resetAt: now + 60000 });
+      }
+    } else {
+      formSubmissionRateLimit.set(ipAddress, { count: 1, resetAt: now + 60000 });
+    }
+
+    // Clean up old rate limit entries periodically
+    if (formSubmissionRateLimit.size > 1000) {
+      const keys = Array.from(formSubmissionRateLimit.keys());
+      for (const key of keys) {
+        const val = formSubmissionRateLimit.get(key);
+        if (val && now > val.resetAt) formSubmissionRateLimit.delete(key);
+      }
+    }
+
+    if (!websiteId || !name || !email) {
+      return res.status(400).json({ error: "Missing required fields (websiteId, name, email)" });
     }
 
     // Get website and organization
@@ -2126,9 +2172,9 @@ router.post("/contact", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Website not found" });
     }
 
-    const ipAddress = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
 
+    // Save submission to database
     const [submission] = await db.insert(websiteContactSubmissions).values({
       websiteId,
       organizationId: website.organizationId,
@@ -2137,7 +2183,7 @@ router.post("/contact", async (req: Request, res: Response) => {
       phone,
       company,
       subject,
-      message,
+      message: message || (formFields ? JSON.stringify(formFields) : ''),
       serviceInterest,
       projectType,
       estimatedBudget,
@@ -2148,6 +2194,65 @@ router.post("/contact", async (req: Request, res: Response) => {
       ipAddress,
       userAgent,
     }).returning();
+
+    // HTML-escape helper to prevent XSS/injection in email
+    const escapeHtml = (str: string): string => {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    // Send email notification to recipient
+    const targetEmail = recipientEmail || website.contactEmail;
+    if (targetEmail) {
+      try {
+        let fieldsHtml = '';
+        if (formFields && typeof formFields === 'object') {
+          fieldsHtml = Object.entries(formFields)
+            .map(([label, value]) => `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;color:#374151;white-space:nowrap;">${escapeHtml(String(label))}</td><td style="padding:8px 12px;border-bottom:1px solid #eee;color:#1f2937;">${escapeHtml(String(value))}</td></tr>`)
+            .join('');
+        } else {
+          fieldsHtml = `
+            <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Name</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(name)}</td></tr>
+            <tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Email</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(email)}</td></tr>
+            ${phone ? `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Phone</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(phone)}</td></tr>` : ''}
+            ${company ? `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Company</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(company)}</td></tr>` : ''}
+            ${subject ? `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Subject</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(subject)}</td></tr>` : ''}
+            ${message ? `<tr><td style="padding:8px 12px;border-bottom:1px solid #eee;font-weight:600;">Message</td><td style="padding:8px 12px;border-bottom:1px solid #eee;">${escapeHtml(message)}</td></tr>` : ''}
+          `;
+        }
+
+        const emailHtml = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:#1f2937;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;">
+              <h2 style="margin:0;font-size:20px;">New Form Submission</h2>
+              <p style="margin:8px 0 0;opacity:0.8;font-size:14px;">From your website contact form</p>
+            </div>
+            <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;">
+              <table style="width:100%;border-collapse:collapse;">
+                ${fieldsHtml}
+              </table>
+            </div>
+            <p style="color:#6b7280;font-size:12px;margin-top:16px;text-align:center;">
+              Submitted on ${new Date().toLocaleString()} | Source: ${escapeHtml(req.body.sourcePage || 'Website')}
+            </p>
+          </div>
+        `;
+
+        await sendEmail({
+          to: targetEmail,
+          subject: `New Form Submission${subject ? ': ' + escapeHtml(subject) : ''} - Website Contact`,
+          html: emailHtml,
+          text: `New form submission from ${name} (${email}).\n\n${formFields ? Object.entries(formFields).map(([k, v]) => `${k}: ${v}`).join('\n') : message || ''}`,
+          replyTo: email,
+        });
+      } catch (emailErr) {
+        console.error("Error sending form notification email:", emailErr);
+      }
+    }
 
     res.json({ success: true, id: submission.id });
   } catch (error) {

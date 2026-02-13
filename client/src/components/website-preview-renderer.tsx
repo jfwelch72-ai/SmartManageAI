@@ -1212,7 +1212,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
           );
         }
         case 'form': {
-          const { title, submitButtonText, fields = [], redirectUrl, submitButtonStyle = {}, fieldStyle: globalFieldStyle = {} } = cfg as any;
+          const { title, submitButtonText, fields = [], redirectUrl, submitButtonStyle = {}, fieldStyle: globalFieldStyle = {}, recipientEmail } = cfg as any;
           const inputBaseStyle: React.CSSProperties = {
             width: '100%',
             padding: '0.5rem',
@@ -1255,13 +1255,84 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
             width: submitButtonStyle.width === 'full' ? '100%' : undefined,
             alignSelf: submitButtonStyle.width === 'full' ? undefined : (align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'),
           };
+          
+          const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const formEl = e.currentTarget;
+            const formData = new FormData(formEl);
+            
+            const honeypot = formData.get('_hp_website_url');
+            if (honeypot) return;
+            
+            const renderTime = formData.get('_form_render_ts');
+            if (renderTime && (Date.now() - Number(renderTime)) < 2000) return;
+            
+            const fieldData: Record<string, string> = {};
+            let nameVal = '';
+            let emailVal = '';
+            let phoneVal = '';
+            let messageVal = '';
+            
+            fields.forEach((field: any) => {
+              const val = formData.get(field.id);
+              if (val !== null) {
+                fieldData[field.label] = String(val);
+                if (field.type === 'email' || field.label.toLowerCase().includes('email')) emailVal = String(val);
+                if (field.label.toLowerCase().includes('name') && !field.label.toLowerCase().includes('company')) nameVal = String(val);
+                if (field.type === 'phone' || field.type === 'tel' || field.label.toLowerCase().includes('phone')) phoneVal = String(val);
+                if (field.type === 'textarea' || field.label.toLowerCase().includes('message')) messageVal = String(val);
+              }
+            });
+            
+            try {
+              const formWebsiteId = websiteId || '';
+              
+              await fetch('/api/website/contact', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  websiteId: formWebsiteId,
+                  name: nameVal || 'Website Visitor',
+                  email: emailVal || 'noreply@website.com',
+                  phone: phoneVal,
+                  message: messageVal || JSON.stringify(fieldData),
+                  recipientEmail,
+                  formFields: fieldData,
+                  sourcePage: window.location.pathname,
+                  _hp: String(honeypot || ''),
+                  _ts: String(renderTime || ''),
+                }),
+              });
+              
+              if (redirectUrl) {
+                window.open(redirectUrl, '_blank');
+              } else {
+                const btn = formEl.querySelector('button[type="submit"]') as HTMLButtonElement;
+                if (btn) {
+                  const origText = btn.textContent;
+                  btn.textContent = 'Submitted!';
+                  btn.disabled = true;
+                  setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 3000);
+                }
+              }
+              formEl.reset();
+            } catch (err) {
+              console.error('Form submission error:', err);
+            }
+          };
+          
           return (
             <section key={comp.id} data-testid={`body-form-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '40rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem' }}>
                 {title && <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: align as React.CSSProperties['textAlign'] }}>{title}</h2>}
-                <form onSubmit={e => { e.preventDefault(); if (redirectUrl) { window.open(redirectUrl, '_blank'); } }} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, overflow: 'hidden' }} aria-hidden="true">
+                    <input type="text" name="_hp_website_url" tabIndex={-1} autoComplete="off" />
+                  </div>
+                  <input type="hidden" name="_form_render_ts" value={String(Date.now())} />
+                  
                   {fields.filter((f: any) => f.enabled !== false).map((field: any) => {
                     const fieldInputStyle = getFieldInputStyle(field);
                     const labelStyle = getLabelStyle(field);
@@ -1269,7 +1340,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                     if (field.type === 'checkbox') {
                       return (
                         <div key={field.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <input type="checkbox" id={field.id} style={{ width: '1rem', height: '1rem', accentColor: primaryColor }} />
+                          <input type="checkbox" id={field.id} name={field.id} value="yes" style={{ width: '1rem', height: '1rem', accentColor: primaryColor }} />
                           <label htmlFor={field.id} style={{ fontSize: '0.875rem', fontWeight: 500, ...labelColorStyle }}>{field.label}</label>
                         </div>
                       );
@@ -1295,6 +1366,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                           <div style={{ position: 'relative', width: '2.75rem', height: '1.5rem', backgroundColor: '#d1d5db', borderRadius: '0.75rem', cursor: 'pointer' }}>
                             <div style={{ position: 'absolute', top: '0.125rem', left: '0.125rem', width: '1.25rem', height: '1.25rem', backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.2s' }} />
                           </div>
+                          <input type="hidden" name={field.id} value="off" />
                           <label style={{ fontSize: '0.875rem', fontWeight: 500, ...labelColorStyle }}>{field.label}</label>
                         </div>
                       );
@@ -1305,19 +1377,19 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                           {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
                         </label>
                         {field.type === 'textarea' ? (
-                          <textarea placeholder={field.placeholder} style={{ ...fieldInputStyle, minHeight: '80px' }} />
+                          <textarea name={field.id} placeholder={field.placeholder} required={field.required} style={{ ...fieldInputStyle, minHeight: '80px' }} />
                         ) : field.type === 'select' ? (
-                          <select style={fieldInputStyle}>
+                          <select name={field.id} required={field.required} style={fieldInputStyle}>
                             <option value="">{field.placeholder || 'Select...'}</option>
                             {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
                           </select>
                         ) : (
-                          <input type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} style={fieldInputStyle} />
+                          <input name={field.id} type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} required={field.required} style={fieldInputStyle} />
                         )}
                       </div>
                     );
                   })}
-                  <button type="submit" style={submitStyle}>
+                  <button type="submit" style={submitStyle} data-testid="preview-contact-submit">
                     {submitButtonText || 'Submit'}
                   </button>
                 </form>
