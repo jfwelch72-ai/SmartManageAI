@@ -432,11 +432,24 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
       : variant === 'outline' || variant === 'secondary'
       ? { backgroundColor: 'transparent', color: primaryColor, border: `2px solid ${primaryColor}` }
       : { backgroundColor: 'transparent', color: primaryColor, border: 'none', textDecoration: 'underline' };
+    const baseStyle: React.CSSProperties = { ...btnStyle, padding: '0.6rem 1.5rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' };
+    const s = btn.style;
+    if (s) {
+      if (s.backgroundColor) baseStyle.backgroundColor = s.backgroundColor;
+      if (s.textColor) baseStyle.color = s.textColor;
+      if (s.borderColor) baseStyle.borderColor = s.borderColor;
+      if (s.borderWidth) { baseStyle.borderWidth = `${s.borderWidth}px`; baseStyle.borderStyle = 'solid'; }
+      if (s.borderRadius) baseStyle.borderRadius = `${s.borderRadius}px`;
+      if (s.paddingX || s.paddingY) baseStyle.padding = `${s.paddingY || '0.6rem'}${s.paddingY ? 'px' : ''} ${s.paddingX || '1.5rem'}${s.paddingX ? 'px' : ''}`;
+      if (s.fontFamily) { loadGoogleFont(s.fontFamily); baseStyle.fontFamily = `'${s.fontFamily}', sans-serif`; }
+      if (s.fontSize) baseStyle.fontSize = `${s.fontSize}px`;
+      if (s.fontWeight) baseStyle.fontWeight = s.fontWeight as any;
+    }
     return (
       <button
         key={idx}
         data-testid={`body-button-${idx}`}
-        style={{ ...btnStyle, padding: '0.6rem 1.5rem', borderRadius: '0.375rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer' }}
+        style={baseStyle}
       >
         {btn.text || 'Click Here'}
       </button>
@@ -1050,14 +1063,14 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
       switch (comp.type) {
         case 'banner': {
-          const { title, content: text, buttons = [], sideImageUrl, contentStyle: bannerContentStyle } = cfg;
+          const { title, content: text, buttons = [], sideImageUrl, titleStyle: bannerTitleStyle, contentStyle: bannerContentStyle } = cfg;
           return (
             <section key={comp.id} data-testid={`body-banner-${comp.id}`} className={customClassName} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
-                  {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.75rem' }}>{title}</h2>}
+                  {title && <h2 style={buildBodyTextStyle(bannerTitleStyle, { fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '0.75rem' })}>{title}</h2>}
                   {text && <p style={buildBodyTextStyle(bannerContentStyle, { fontSize: '1rem', opacity: 0.9, marginBottom: '1rem' })}>{text}</p>}
                   {buttons.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>{buttons.map((b: ButtonConfig, i: number) => renderBodyButton(b, i))}</div>}
                 </div>
@@ -1067,7 +1080,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           );
         }
         case 'hero': {
-          const { title, subtitle, content: text, imageUrl, imagePosition = 'right', buttons = [], subtitleStyle: heroSubtitleStyle, contentStyle: heroContentStyle } = cfg;
+          const { title, subtitle, content: text, imageUrl, imagePosition = 'right', buttons = [], titleStyle: heroTitleStyle, subtitleStyle: heroSubtitleStyle, contentStyle: heroContentStyle } = cfg;
           const hasImage = !!imageUrl;
           return (
             <section key={comp.id} data-testid={`body-hero-${comp.id}`} className={customClassName} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
@@ -1076,7 +1089,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
               <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : imagePosition === 'left' ? 'row-reverse' : 'row', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
                   {subtitle && <p style={buildBodyTextStyle(heroSubtitleStyle, { color: primaryColor, fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', textTransform: 'uppercase' as const, letterSpacing: '0.05em' })}>{subtitle}</p>}
-                  {title && <h1 style={{ fontSize: isMobile ? '2rem' : '2.75rem', fontWeight: 800, lineHeight: 1.15, marginBottom: '1rem' }}>{title}</h1>}
+                  {title && <h1 style={buildBodyTextStyle(heroTitleStyle, { fontSize: isMobile ? '2rem' : '2.75rem', fontWeight: 800, lineHeight: 1.15, marginBottom: '1rem' })}>{title}</h1>}
                   {text && <p style={buildBodyTextStyle(heroContentStyle, { fontSize: '1.125rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.6 })}>{text}</p>}
                   {buttons.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>{buttons.map((b: ButtonConfig, i: number) => renderBodyButton(b, i))}</div>}
                 </div>
@@ -1090,13 +1103,13 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           );
         }
         case 'content': {
-          const { title, content: text, contentStyle: contentSectionStyle } = cfg;
+          const { title, content: text, titleStyle: contentTitleStyle, contentStyle: contentSectionStyle } = cfg;
           return (
             <section key={comp.id} data-testid={`body-content-${comp.id}`} className={customClassName} style={containerStyle}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '2rem 1rem' : '3rem 2rem', textAlign: align as React.CSSProperties['textAlign'] }}>
-                {title && <h2 style={{ fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' }}>{title}</h2>}
+                {title && <h2 style={buildBodyTextStyle(contentTitleStyle, { fontSize: isMobile ? '1.5rem' : '2rem', fontWeight: 700, marginBottom: '1rem' })}>{title}</h2>}
                 {text && <div style={buildBodyTextStyle(contentSectionStyle, { whiteSpace: 'pre-wrap' as const, lineHeight: 1.7, color: '#4b5563' })}>{text}</div>}
               </div>
             </section>
@@ -1210,21 +1223,34 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           );
         }
         case 'cta': {
-          const { title, content: text, buttons = [], contentStyle: ctaContentStyle } = cfg;
+          const { title, content: text, buttons = [], titleStyle: ctaTitleStyle, contentStyle: ctaContentStyle } = cfg;
           return (
             <section key={comp.id} data-testid={`body-cta-${comp.id}`} className={customClassName} style={{ ...containerStyle, background: containerStyle.background || `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`, color: '#fff', position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
               <div style={{ ...contentZStyle, maxWidth: '48rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', textAlign: 'center' }}>
-                {title && <h2 style={{ fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 800, marginBottom: '0.75rem' }}>{title}</h2>}
+                {title && <h2 style={buildBodyTextStyle(ctaTitleStyle, { fontSize: isMobile ? '1.75rem' : '2.25rem', fontWeight: 800, marginBottom: '0.75rem' })}>{title}</h2>}
                 {text && <p style={buildBodyTextStyle(ctaContentStyle, { fontSize: '1.125rem', opacity: 0.9, marginBottom: '1.5rem' })}>{text}</p>}
                 {buttons.length > 0 && (
                   <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-                    {buttons.map((b: ButtonConfig, i: number) => (
-                      <button key={i} data-testid={`cta-button-${i}`} style={{ backgroundColor: b.variant === 'secondary' ? 'transparent' : '#fff', color: b.variant === 'secondary' ? '#fff' : primaryColor, border: b.variant === 'secondary' ? '2px solid #fff' : 'none', padding: '0.75rem 2rem', borderRadius: '0.375rem', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}>
+                    {buttons.map((b: ButtonConfig, i: number) => {
+                      const ctaBtnBase: React.CSSProperties = { backgroundColor: b.variant === 'secondary' ? 'transparent' : '#fff', color: b.variant === 'secondary' ? '#fff' : primaryColor, border: b.variant === 'secondary' ? '2px solid #fff' : 'none', padding: '0.75rem 2rem', borderRadius: '0.375rem', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' };
+                      const bs = b.style;
+                      if (bs) {
+                        if (bs.backgroundColor) ctaBtnBase.backgroundColor = bs.backgroundColor;
+                        if (bs.textColor) ctaBtnBase.color = bs.textColor;
+                        if (bs.borderColor) ctaBtnBase.borderColor = bs.borderColor;
+                        if (bs.borderWidth) { ctaBtnBase.borderWidth = `${bs.borderWidth}px`; ctaBtnBase.borderStyle = 'solid'; }
+                        if (bs.borderRadius) ctaBtnBase.borderRadius = `${bs.borderRadius}px`;
+                        if (bs.paddingX || bs.paddingY) ctaBtnBase.padding = `${bs.paddingY || '12'}px ${bs.paddingX || '32'}px`;
+                        if (bs.fontFamily) { loadGoogleFont(bs.fontFamily); ctaBtnBase.fontFamily = `'${bs.fontFamily}', sans-serif`; }
+                        if (bs.fontSize) ctaBtnBase.fontSize = `${bs.fontSize}px`;
+                        if (bs.fontWeight) ctaBtnBase.fontWeight = bs.fontWeight as any;
+                      }
+                      return <button key={i} data-testid={`cta-button-${i}`} style={ctaBtnBase}>
                         {b.text || 'Get Started'}
-                      </button>
-                    ))}
+                      </button>;
+                    })}
                   </div>
                 )}
               </div>
@@ -1668,7 +1694,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
 
           if (displayPosts.length === 0) {
             return (
-              <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={{ ...sectionStyle, textAlign: 'center' as const }}>
+              <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={{ ...containerStyle, textAlign: 'center' as const }}>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem' }}>{bsTitle}</h2>
                 <p style={{ color: '#9ca3af' }}>No blog posts found matching your criteria.</p>
               </section>
@@ -1676,7 +1702,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           }
 
           return (
-            <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={sectionStyle}>
+            <section key={comp.id} data-testid={`body-blog-section-${comp.id}`} style={containerStyle}>
               <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem', textAlign: 'center' as const }}>{bsTitle}</h2>
               {layoutStyle === 'carousel' ? (
                 <div style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '0.5rem', scrollSnapType: 'x mandatory' }}>
