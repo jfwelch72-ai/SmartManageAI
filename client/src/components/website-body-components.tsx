@@ -159,7 +159,7 @@ export interface ButtonConfig {
 export interface FormFieldConfig {
   id: string;
   label: string;
-  type: "text" | "email" | "textarea" | "select" | "phone" | "number" | "checkbox" | "radio" | "toggle";
+  type: "text" | "email" | "textarea" | "select" | "phone" | "number" | "checkbox" | "radio" | "toggle" | "subject";
   placeholder: string;
   required: boolean;
   options?: string[];
@@ -1695,6 +1695,7 @@ function FormEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & 
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="phone">Phone</SelectItem>
                   <SelectItem value="number">Number</SelectItem>
+                  <SelectItem value="subject">Subject</SelectItem>
                   <SelectItem value="textarea">Textarea</SelectItem>
                   <SelectItem value="select">Dropdown</SelectItem>
                   <SelectItem value="checkbox">Checkbox</SelectItem>

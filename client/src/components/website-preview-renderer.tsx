@@ -1306,6 +1306,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
             let emailVal = '';
             let phoneVal = '';
             let messageVal = '';
+            let subjectVal = '';
             
             fields.forEach((field: any) => {
               const val = formData.get(field.id);
@@ -1315,6 +1316,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                 if (field.label.toLowerCase().includes('name') && !field.label.toLowerCase().includes('company')) nameVal = String(val);
                 if (field.type === 'phone' || field.type === 'tel' || field.label.toLowerCase().includes('phone')) phoneVal = String(val);
                 if (field.type === 'textarea' || field.label.toLowerCase().includes('message')) messageVal = String(val);
+                if (field.type === 'subject' || field.label.toLowerCase().includes('subject')) subjectVal = String(val);
               }
             });
             
@@ -1340,6 +1342,7 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                   name: nameVal || 'Website Visitor',
                   email: emailVal || 'noreply@website.com',
                   phone: phoneVal,
+                  subject: subjectVal,
                   message: messageVal || JSON.stringify(fieldData),
                   recipientEmail,
                   formFields: fieldData,
