@@ -95,6 +95,7 @@ export interface BackToTopConfig {
 
 export interface ColumnSettings {
   alignment: "left" | "center" | "right" | "stretch";
+  verticalAlignment: "top" | "center" | "bottom" | "stretch";
   backgroundColor: string;
   backgroundType: "transparent" | "solid" | "gradient";
   gradientStart: string;
@@ -112,6 +113,7 @@ export interface ColumnSettings {
 
 export const DEFAULT_COLUMN_SETTINGS: ColumnSettings = {
   alignment: "left",
+  verticalAlignment: "top",
   backgroundColor: "",
   backgroundType: "transparent",
   gradientStart: "#ffffff",
@@ -540,13 +542,25 @@ function ColumnSettingsEditor({
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 pt-2 px-1">
         <div className="space-y-1">
-          <Label className="text-[10px] font-medium">Alignment</Label>
+          <Label className="text-[10px] font-medium">Horizontal Alignment</Label>
           <Select value={settings.alignment} onValueChange={(v) => onUpdate({ alignment: v as ColumnSettings["alignment"] })}>
             <SelectTrigger className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-alignment`}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="left">Left</SelectItem>
               <SelectItem value="center">Center</SelectItem>
               <SelectItem value="right">Right</SelectItem>
+              <SelectItem value="stretch">Stretch</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium">Vertical Alignment</Label>
+          <Select value={settings.verticalAlignment || "top"} onValueChange={(v) => onUpdate({ verticalAlignment: v as ColumnSettings["verticalAlignment"] })}>
+            <SelectTrigger className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-vertical-alignment`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="top">Top</SelectItem>
+              <SelectItem value="center">Center</SelectItem>
+              <SelectItem value="bottom">Bottom</SelectItem>
               <SelectItem value="stretch">Stretch</SelectItem>
             </SelectContent>
           </Select>

@@ -767,9 +767,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     const style: React.CSSProperties = {};
     const justifyMap: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end', stretch: 'stretch' };
     style.justifyContent = justifyMap[cs.alignment] || 'flex-start';
-    if (cs.alignment === 'stretch') {
-      style.alignItems = 'stretch';
-    }
+    const vAlignMap: Record<string, string> = { top: 'flex-start', center: 'center', bottom: 'flex-end', stretch: 'stretch' };
+    style.alignItems = vAlignMap[cs.verticalAlignment || 'top'] || 'flex-start';
     if (cs.backgroundType === 'solid' && cs.backgroundColor) {
       style.backgroundColor = cs.backgroundColor;
     } else if (cs.backgroundType === 'gradient') {
