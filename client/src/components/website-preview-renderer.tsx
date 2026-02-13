@@ -42,7 +42,8 @@ import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok } from "react-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { HeaderComponentsConfig, FooterComponentsConfig, BackToTopConfig, HeaderElement, FooterElement } from "@/components/website-components-tab";
+import type { HeaderComponentsConfig, FooterComponentsConfig, BackToTopConfig, HeaderElement, FooterElement, ColumnSettings } from "@/components/website-components-tab";
+import { DEFAULT_COLUMN_SETTINGS } from "@/components/website-components-tab";
 import type { BodyComponentsConfig, BodyComponent, SharedStyles, ButtonConfig } from "@/components/website-body-components";
 import { loadGoogleFont } from "./text-style-editor";
 
@@ -761,6 +762,28 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     );
   };
 
+  const buildColumnStyle = (cs?: ColumnSettings): React.CSSProperties => {
+    if (!cs) return {};
+    const style: React.CSSProperties = {};
+    const justifyMap: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end', stretch: 'stretch' };
+    style.justifyContent = justifyMap[cs.alignment] || 'flex-start';
+    if (cs.alignment === 'stretch') {
+      style.alignItems = 'stretch';
+    }
+    if (cs.backgroundType === 'solid' && cs.backgroundColor) {
+      style.backgroundColor = cs.backgroundColor;
+    } else if (cs.backgroundType === 'gradient') {
+      style.background = `linear-gradient(${cs.gradientDirection || 'to bottom'}, ${cs.gradientStart || '#ffffff'}, ${cs.gradientEnd || '#f3f4f6'})`;
+    }
+    if (cs.paddingTop || cs.paddingRight || cs.paddingBottom || cs.paddingLeft) {
+      style.padding = `${cs.paddingTop || 0}px ${cs.paddingRight || 0}px ${cs.paddingBottom || 0}px ${cs.paddingLeft || 0}px`;
+    }
+    if (cs.marginTop || cs.marginRight || cs.marginBottom || cs.marginLeft) {
+      style.margin = `${cs.marginTop || 0}px ${cs.marginRight || 0}px ${cs.marginBottom || 0}px ${cs.marginLeft || 0}px`;
+    }
+    return style;
+  };
+
   const renderConfiguredHeader = () => {
     const config = data.headerConfig!;
     if (isMobile) {
@@ -835,15 +858,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 maxWidth: hWidth === 'boxed' ? '1200px' : '100%',
                 margin: hWidth === 'boxed' ? '0 auto' : '0',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[0]) }}>
                   {leftEls.map(e => renderHeaderElement(e))}
                 </div>
                 {centerEls.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, justifyContent: 'center', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[1]) }}>
                     {centerEls.map(e => renderHeaderElement(e))}
                   </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', ...buildColumnStyle(config.desktop.sections[sectionKey].columnSettings?.[2]) }}>
                   {rightEls.map(e => renderHeaderElement(e))}
                 </div>
               </div>
@@ -1012,11 +1035,15 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 alignItems: 'start',
               }}
             >
-              {Array.from({ length: colCount }, (_, colIdx) => (
-                <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {(columnBuckets[colIdx] || []).map(el => renderFooterElement(el))}
-                </div>
-              ))}
+              {Array.from({ length: colCount }, (_, colIdx) => {
+                const colCs = section.columnSettings?.[colIdx];
+                const colStyle = buildColumnStyle(colCs);
+                return (
+                  <div key={colIdx} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', ...colStyle }}>
+                    {(columnBuckets[colIdx] || []).map(el => renderFooterElement(el))}
+                  </div>
+                );
+              })}
             </div>
             </div>
           );

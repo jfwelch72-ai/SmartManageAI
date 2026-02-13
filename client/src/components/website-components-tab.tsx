@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Monitor,
   Smartphone,
@@ -92,6 +93,40 @@ export interface BackToTopConfig {
   borderColor: string;
 }
 
+export interface ColumnSettings {
+  alignment: "left" | "center" | "right" | "stretch";
+  backgroundColor: string;
+  backgroundType: "transparent" | "solid" | "gradient";
+  gradientStart: string;
+  gradientEnd: string;
+  gradientDirection: string;
+  paddingTop: number;
+  paddingRight: number;
+  paddingBottom: number;
+  paddingLeft: number;
+  marginTop: number;
+  marginRight: number;
+  marginBottom: number;
+  marginLeft: number;
+}
+
+export const DEFAULT_COLUMN_SETTINGS: ColumnSettings = {
+  alignment: "left",
+  backgroundColor: "",
+  backgroundType: "transparent",
+  gradientStart: "#ffffff",
+  gradientEnd: "#f3f4f6",
+  gradientDirection: "to bottom",
+  paddingTop: 0,
+  paddingRight: 0,
+  paddingBottom: 0,
+  paddingLeft: 0,
+  marginTop: 0,
+  marginRight: 0,
+  marginBottom: 0,
+  marginLeft: 0,
+};
+
 export interface FooterSectionStyle {
   columns: number;
   width: string;
@@ -163,9 +198,9 @@ export const DEFAULT_HEADER_SECTION_STYLE: HeaderSectionStyle = {
 export interface HeaderComponentsConfig {
   desktop: {
     sections: {
-      top: { columns: number; elements: HeaderElement[] };
-      middle: { columns: number; elements: HeaderElement[] };
-      bottom: { columns: number; elements: HeaderElement[] };
+      top: { columns: number; elements: HeaderElement[]; columnSettings?: ColumnSettings[] };
+      middle: { columns: number; elements: HeaderElement[]; columnSettings?: ColumnSettings[] };
+      bottom: { columns: number; elements: HeaderElement[]; columnSettings?: ColumnSettings[] };
     };
   };
   mobile: {
@@ -177,9 +212,9 @@ export interface HeaderComponentsConfig {
 export interface FooterComponentsConfig {
   desktop: {
     sections: {
-      top: { columns: number; elements: FooterElement[] };
-      middle: { columns: number; elements: FooterElement[] };
-      bottom: { columns: number; elements: FooterElement[] };
+      top: { columns: number; elements: FooterElement[]; columnSettings?: ColumnSettings[] };
+      middle: { columns: number; elements: FooterElement[]; columnSettings?: ColumnSettings[] };
+      bottom: { columns: number; elements: FooterElement[]; columnSettings?: ColumnSettings[] };
     };
   };
   mobile: {
@@ -442,6 +477,8 @@ interface WebsiteComponentsTabProps {
     sidebarWidth: number;
     pagePadding: number;
     showBreadcrumb: boolean;
+    contentColumnSettings?: ColumnSettings;
+    sidebarColumnSettings?: ColumnSettings;
   };
   onInnerPageChange?: (updates: Partial<NonNullable<WebsiteComponentsTabProps['innerPageSettings']>>) => void;
 }
@@ -477,9 +514,181 @@ const DEFAULT_INNER_PAGE = {
   sidebarWidth: 300,
   pagePadding: 32,
   showBreadcrumb: true,
+  contentColumnSettings: { ...DEFAULT_COLUMN_SETTINGS },
+  sidebarColumnSettings: { ...DEFAULT_COLUMN_SETTINGS },
 };
 
 const noop = () => {};
+
+function ColumnSettingsEditor({ 
+  settings, 
+  onUpdate, 
+  colIdx, 
+  testIdPrefix 
+}: { 
+  settings: ColumnSettings; 
+  onUpdate: (updates: Partial<ColumnSettings>) => void; 
+  colIdx: number;
+  testIdPrefix: string;
+}) {
+  return (
+    <Collapsible>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" data-testid={`${testIdPrefix}-col${colIdx}-settings-toggle`}>
+          <Settings className="h-3 w-3" />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-2 pt-2 px-1">
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium">Alignment</Label>
+          <Select value={settings.alignment} onValueChange={(v) => onUpdate({ alignment: v as ColumnSettings["alignment"] })}>
+            <SelectTrigger className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-alignment`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="left">Left</SelectItem>
+              <SelectItem value="center">Center</SelectItem>
+              <SelectItem value="right">Right</SelectItem>
+              <SelectItem value="stretch">Stretch</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium">Background</Label>
+          <Select value={settings.backgroundType} onValueChange={(v) => onUpdate({ backgroundType: v as ColumnSettings["backgroundType"] })}>
+            <SelectTrigger className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-bg-type`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="transparent">Transparent</SelectItem>
+              <SelectItem value="solid">Solid Color</SelectItem>
+              <SelectItem value="gradient">Gradient</SelectItem>
+            </SelectContent>
+          </Select>
+          {settings.backgroundType === "solid" && (
+            <div className="flex items-center gap-1">
+              <input type="color" value={settings.backgroundColor || "#ffffff"} onChange={(e) => onUpdate({ backgroundColor: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" data-testid={`${testIdPrefix}-col${colIdx}-bg-color`} />
+              <Input value={settings.backgroundColor || ""} onChange={(e) => onUpdate({ backgroundColor: e.target.value })} placeholder="#ffffff" className="h-7 text-xs flex-1" data-testid={`${testIdPrefix}-col${colIdx}-bg-color-hex`} />
+            </div>
+          )}
+          {settings.backgroundType === "gradient" && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <input type="color" value={settings.gradientStart || "#ffffff"} onChange={(e) => onUpdate({ gradientStart: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" />
+                <Input value={settings.gradientStart || ""} onChange={(e) => onUpdate({ gradientStart: e.target.value })} placeholder="Start" className="h-7 text-xs flex-1" />
+              </div>
+              <div className="flex items-center gap-1">
+                <input type="color" value={settings.gradientEnd || "#f3f4f6"} onChange={(e) => onUpdate({ gradientEnd: e.target.value })} className="w-6 h-6 rounded cursor-pointer border-0" />
+                <Input value={settings.gradientEnd || ""} onChange={(e) => onUpdate({ gradientEnd: e.target.value })} placeholder="End" className="h-7 text-xs flex-1" />
+              </div>
+              <Select value={settings.gradientDirection || "to bottom"} onValueChange={(v) => onUpdate({ gradientDirection: v })}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="to bottom">Top to Bottom</SelectItem>
+                  <SelectItem value="to right">Left to Right</SelectItem>
+                  <SelectItem value="to bottom right">Diagonal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium">Padding (px)</Label>
+          <div className="grid grid-cols-2 gap-1">
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">T</span><Input type="number" value={settings.paddingTop} onChange={(e) => onUpdate({ paddingTop: parseInt(e.target.value) || 0 })} min={0} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-pt`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">R</span><Input type="number" value={settings.paddingRight} onChange={(e) => onUpdate({ paddingRight: parseInt(e.target.value) || 0 })} min={0} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-pr`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">B</span><Input type="number" value={settings.paddingBottom} onChange={(e) => onUpdate({ paddingBottom: parseInt(e.target.value) || 0 })} min={0} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-pb`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">L</span><Input type="number" value={settings.paddingLeft} onChange={(e) => onUpdate({ paddingLeft: parseInt(e.target.value) || 0 })} min={0} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-pl`} /></div>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] font-medium">Margin (px)</Label>
+          <div className="grid grid-cols-2 gap-1">
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">T</span><Input type="number" value={settings.marginTop} onChange={(e) => onUpdate({ marginTop: parseInt(e.target.value) || 0 })} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-mt`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">R</span><Input type="number" value={settings.marginRight} onChange={(e) => onUpdate({ marginRight: parseInt(e.target.value) || 0 })} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-mr`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">B</span><Input type="number" value={settings.marginBottom} onChange={(e) => onUpdate({ marginBottom: parseInt(e.target.value) || 0 })} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-mb`} /></div>
+            <div className="flex items-center gap-1"><span className="text-[9px] text-muted-foreground w-4">L</span><Input type="number" value={settings.marginLeft} onChange={(e) => onUpdate({ marginLeft: parseInt(e.target.value) || 0 })} className="h-7 text-xs" data-testid={`${testIdPrefix}-col${colIdx}-ml`} /></div>
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function AddElementButton({ 
+  componentType, 
+  sectionKey, 
+  colIdx,
+  onAddHeader,
+  onAddFooter,
+}: { 
+  componentType: "header" | "footer";
+  sectionKey: "top" | "middle" | "bottom";
+  colIdx: number;
+  onAddHeader: (section: "top" | "middle" | "bottom", col: number, type: HeaderElement["type"]) => void;
+  onAddFooter: (section: "top" | "middle" | "bottom", col: number, type: FooterElement["type"]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  
+  const headerTypes: { type: HeaderElement["type"]; label: string; icon: typeof Image }[] = [
+    { type: "logo", label: "Logo", icon: Image },
+    { type: "navigation", label: "Navigation", icon: Navigation },
+    { type: "cta_button", label: "CTA Button", icon: MousePointer },
+    { type: "search_icon", label: "Search Icon", icon: Search },
+    { type: "login_button", label: "Login Button", icon: User },
+    { type: "social_icons", label: "Social Icons", icon: Share2 },
+    { type: "announcement_bar", label: "Announcement Bar", icon: Megaphone },
+  ];
+  
+  const footerTypes: { type: FooterElement["type"]; label: string; icon: typeof Image }[] = [
+    { type: "footer_logo", label: "Footer Logo", icon: Image },
+    { type: "social_icons", label: "Social Icons", icon: Share2 },
+    { type: "copyright", label: "Copyright Notice", icon: Copyright },
+    { type: "link_list", label: "Link List", icon: Link },
+    { type: "footer_title", label: "Footer Title", icon: Type },
+  ];
+  
+  const items = componentType === "header" ? headerTypes : footerTypes;
+  
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full border border-dashed text-[10px] text-muted-foreground gap-1"
+          data-testid={`btn-add-element-${componentType}-${sectionKey}-col${colIdx}`}
+        >
+          <Plus className="h-3 w-3" /> Add Component
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-1" align="center">
+        <div className="space-y-0.5">
+          <p className="text-[10px] font-medium text-muted-foreground px-2 py-1">Add Component</p>
+          {items.map((item) => {
+            const IconComp = item.icon;
+            return (
+              <Button
+                key={item.type}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-xs"
+                onClick={() => {
+                  if (componentType === "header") {
+                    onAddHeader(sectionKey, colIdx, item.type as HeaderElement["type"]);
+                  } else {
+                    onAddFooter(sectionKey, colIdx, item.type as FooterElement["type"]);
+                  }
+                  setOpen(false);
+                }}
+                data-testid={`btn-add-${item.type}-${sectionKey}-col${colIdx}`}
+              >
+                <IconComp className="h-3.5 w-3.5" />
+                {item.label}
+              </Button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function WebsiteComponentsTab({
   headerConfig,
@@ -637,6 +846,73 @@ export default function WebsiteComponentsTab({
       element.order = newConfig.desktop.sections[targetSection].elements.length;
       newConfig.desktop.sections[targetSection].elements.push(element);
     }
+    onFooterConfigChange(newConfig);
+  }, [footerConfig, onFooterConfigChange]);
+
+  const updateHeaderColumnSettings = useCallback((sectionKey: "top" | "middle" | "bottom", colIdx: number, updates: Partial<ColumnSettings>) => {
+    const newConfig = JSON.parse(JSON.stringify(headerConfig)) as HeaderComponentsConfig;
+    const section = newConfig.desktop.sections[sectionKey];
+    if (!section.columnSettings) {
+      section.columnSettings = Array.from({ length: section.columns || 3 }, () => ({ ...DEFAULT_COLUMN_SETTINGS }));
+    }
+    while (section.columnSettings.length < (section.columns || 3)) {
+      section.columnSettings.push({ ...DEFAULT_COLUMN_SETTINGS });
+    }
+    section.columnSettings[colIdx] = { ...section.columnSettings[colIdx], ...updates };
+    onHeaderConfigChange(newConfig);
+  }, [headerConfig, onHeaderConfigChange]);
+
+  const updateFooterColumnSettings = useCallback((sectionKey: "top" | "middle" | "bottom", colIdx: number, updates: Partial<ColumnSettings>) => {
+    const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+    const section = newConfig.desktop.sections[sectionKey];
+    if (!section.columnSettings) {
+      section.columnSettings = Array.from({ length: section.columns || 4 }, () => ({ ...DEFAULT_COLUMN_SETTINGS }));
+    }
+    while (section.columnSettings.length < (section.columns || 4)) {
+      section.columnSettings.push({ ...DEFAULT_COLUMN_SETTINGS });
+    }
+    section.columnSettings[colIdx] = { ...section.columnSettings[colIdx], ...updates };
+    onFooterConfigChange(newConfig);
+  }, [footerConfig, onFooterConfigChange]);
+
+  const addHeaderElementToColumn = useCallback((sectionKey: "top" | "middle" | "bottom", colIdx: number, elementType: HeaderElement["type"]) => {
+    const newConfig = JSON.parse(JSON.stringify(headerConfig)) as HeaderComponentsConfig;
+    const section = newConfig.desktop.sections[sectionKey];
+    const newId = `h-${elementType}-${Date.now()}`;
+    const labelMap: Record<string, string> = {
+      logo: "Logo", navigation: "Main Navigation", cta_button: "CTA Button",
+      search_icon: "Search Icon", login_button: "Login Button",
+      social_icons: "Social Icons", announcement_bar: "Announcement Bar",
+    };
+    const newElement: HeaderElement = {
+      id: newId, type: elementType, label: labelMap[elementType] || elementType,
+      enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true,
+      content: elementType === "cta_button" ? { text: "Button", url: "#" } : elementType === "announcement_bar" ? { text: "Announcement text" } : elementType === "login_button" ? { text: "Login" } : {},
+      order: section.elements.filter(e => e.column === colIdx).length,
+      section: sectionKey, column: colIdx,
+    };
+    section.elements.push(newElement);
+    newConfig.mobile.elements.push({ ...newElement });
+    onHeaderConfigChange(newConfig);
+  }, [headerConfig, onHeaderConfigChange]);
+
+  const addFooterElementToColumn = useCallback((sectionKey: "top" | "middle" | "bottom", colIdx: number, elementType: FooterElement["type"]) => {
+    const newConfig = JSON.parse(JSON.stringify(footerConfig)) as FooterComponentsConfig;
+    const section = newConfig.desktop.sections[sectionKey];
+    const newId = `f-${elementType}-${Date.now()}`;
+    const labelMap: Record<string, string> = {
+      footer_logo: "Footer Logo", social_icons: "Social Icons",
+      copyright: "Copyright Notice", link_list: "Link List", footer_title: "Footer Title",
+    };
+    const newElement: FooterElement = {
+      id: newId, type: elementType, label: labelMap[elementType] || elementType,
+      enabled: true, alignment: "left", visibleDesktop: true, visibleMobile: true,
+      content: elementType === "copyright" ? { text: "\u00a9 2026 All rights reserved." } : elementType === "footer_title" ? { text: "Title" } : elementType === "link_list" ? { orientation: "vertical" } : {},
+      order: section.elements.filter(e => e.column === colIdx).length,
+      section: sectionKey, column: colIdx,
+    };
+    section.elements.push(newElement);
+    newConfig.mobile.elements.push({ ...newElement });
     onFooterConfigChange(newConfig);
   }, [footerConfig, onFooterConfigChange]);
 
@@ -1127,37 +1403,61 @@ export default function WebsiteComponentsTab({
         <div
           className={`grid gap-3 ${gridColsClass}`}
         >
-          {columnElements.map((colElems, colIdx) => (
-            <div
-              key={colIdx}
-              className="space-y-2 p-2 border border-dashed rounded-md min-h-[60px]"
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragItem.current) {
-                  if (componentType === "header") {
-                    moveHeaderElement(dragItem.current.id, sectionKey, colIdx);
-                  } else {
-                    moveFooterElement(dragItem.current.id, sectionKey, colIdx);
+          {columnElements.map((colElems, colIdx) => {
+            const colSettings = section.columnSettings?.[colIdx] || DEFAULT_COLUMN_SETTINGS;
+            return (
+              <div
+                key={colIdx}
+                className="space-y-2 p-2 border border-dashed rounded-md min-h-[60px]"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragItem.current) {
+                    if (componentType === "header") {
+                      moveHeaderElement(dragItem.current.id, sectionKey, colIdx);
+                    } else {
+                      moveFooterElement(dragItem.current.id, sectionKey, colIdx);
+                    }
+                    dragItem.current = null;
+                    dragOverItem.current = null;
                   }
-                  dragItem.current = null;
-                  dragOverItem.current = null;
-                }
-              }}
-              data-testid={`dropzone-${componentType}-${sectionKey}-col${colIdx}`}
-            >
-              <p className="text-[10px] text-muted-foreground font-medium text-center">Col {colIdx + 1}</p>
-              {colElems.map((el, idx) =>
-                renderElementCard(el, componentType, idx, sectionKey, colElems.length)
-              )}
-              {colElems.length === 0 && (
-                <p className="text-[10px] text-muted-foreground text-center py-3">Drop here</p>
-              )}
-            </div>
-          ))}
+                }}
+                data-testid={`dropzone-${componentType}-${sectionKey}-col${colIdx}`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-[10px] text-muted-foreground font-medium">Col {colIdx + 1}</p>
+                  <ColumnSettingsEditor
+                    settings={colSettings}
+                    onUpdate={(updates) => {
+                      if (componentType === "header") {
+                        updateHeaderColumnSettings(sectionKey, colIdx, updates);
+                      } else {
+                        updateFooterColumnSettings(sectionKey, colIdx, updates);
+                      }
+                    }}
+                    colIdx={colIdx}
+                    testIdPrefix={`${componentType}-${sectionKey}`}
+                  />
+                </div>
+                {colElems.map((el, idx) =>
+                  renderElementCard(el, componentType, idx, sectionKey, colElems.length)
+                )}
+                {colElems.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground text-center py-3">Drop here</p>
+                )}
+                <AddElementButton
+                  componentType={componentType}
+                  sectionKey={sectionKey}
+                  colIdx={colIdx}
+                  onAddHeader={addHeaderElementToColumn}
+                  onAddFooter={addFooterElementToColumn}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -2408,6 +2708,30 @@ export default function WebsiteComponentsTab({
                 data-testid="switch-breadcrumb"
               />
             </div>
+
+            <div className="space-y-4">
+              <Label className="text-sm font-medium">Content Area Settings</Label>
+              <p className="text-xs text-muted-foreground">Configure alignment, background, padding and margin for the main content area</p>
+              <ColumnSettingsEditor
+                settings={innerPageSettings.contentColumnSettings || DEFAULT_COLUMN_SETTINGS}
+                onUpdate={(updates) => onInnerPageChange({ contentColumnSettings: { ...(innerPageSettings.contentColumnSettings || DEFAULT_COLUMN_SETTINGS), ...updates } })}
+                colIdx={0}
+                testIdPrefix="inner-page-content"
+              />
+            </div>
+
+            {(innerPageSettings.pageLayout === "sidebar-left" || innerPageSettings.pageLayout === "sidebar-right") && (
+              <div className="space-y-4">
+                <Label className="text-sm font-medium">Sidebar Area Settings</Label>
+                <p className="text-xs text-muted-foreground">Configure alignment, background, padding and margin for the sidebar area</p>
+                <ColumnSettingsEditor
+                  settings={innerPageSettings.sidebarColumnSettings || DEFAULT_COLUMN_SETTINGS}
+                  onUpdate={(updates) => onInnerPageChange({ sidebarColumnSettings: { ...(innerPageSettings.sidebarColumnSettings || DEFAULT_COLUMN_SETTINGS), ...updates } })}
+                  colIdx={0}
+                  testIdPrefix="inner-page-sidebar"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
