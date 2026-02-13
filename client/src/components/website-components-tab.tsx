@@ -144,6 +144,12 @@ export interface FooterSectionStyle {
   padding: number;
   margin: number;
   gap: number;
+  horizontalAlignment: "left" | "center" | "right" | "stretch";
+  verticalAlignment: "top" | "center" | "bottom" | "stretch";
+  borderWidth: number;
+  borderColor: string;
+  borderStyle: "none" | "solid" | "dashed" | "dotted";
+  borderRadius: number;
 }
 
 export const DEFAULT_FOOTER_SECTION_STYLE: FooterSectionStyle = {
@@ -161,6 +167,12 @@ export const DEFAULT_FOOTER_SECTION_STYLE: FooterSectionStyle = {
   padding: 0,
   margin: 0,
   gap: 12,
+  horizontalAlignment: "stretch",
+  verticalAlignment: "top",
+  borderWidth: 0,
+  borderColor: "#e5e7eb",
+  borderStyle: "none",
+  borderRadius: 0,
 };
 
 export interface HeaderSectionStyle {
@@ -178,6 +190,12 @@ export interface HeaderSectionStyle {
   padding: number;
   margin: number;
   gap: number;
+  horizontalAlignment: "left" | "center" | "right" | "stretch";
+  verticalAlignment: "top" | "center" | "bottom" | "stretch";
+  borderWidth: number;
+  borderColor: string;
+  borderStyle: "none" | "solid" | "dashed" | "dotted";
+  borderRadius: number;
 }
 
 export const DEFAULT_HEADER_SECTION_STYLE: HeaderSectionStyle = {
@@ -195,6 +213,12 @@ export const DEFAULT_HEADER_SECTION_STYLE: HeaderSectionStyle = {
   padding: 0,
   margin: 0,
   gap: 12,
+  horizontalAlignment: "stretch",
+  verticalAlignment: "center",
+  borderWidth: 0,
+  borderColor: "#e5e7eb",
+  borderStyle: "none",
+  borderRadius: 0,
 };
 
 export interface HeaderComponentsConfig {
@@ -2132,6 +2156,68 @@ export default function WebsiteComponentsTab({
                               <Input type="number" className="h-8" min={0} max={100} value={sectionSettings.gap} onChange={(e) => updateSection({ gap: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-gap`} />
                             </div>
                           </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Horizontal Alignment</Label>
+                              <Select value={sectionSettings.horizontalAlignment || "stretch"} onValueChange={(val) => updateSection({ horizontalAlignment: val as HeaderSectionStyle["horizontalAlignment"] })}>
+                                <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-h-align`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="left">Left</SelectItem>
+                                  <SelectItem value="center">Center</SelectItem>
+                                  <SelectItem value="right">Right</SelectItem>
+                                  <SelectItem value="stretch">Stretch</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Vertical Alignment</Label>
+                              <Select value={sectionSettings.verticalAlignment || "center"} onValueChange={(val) => updateSection({ verticalAlignment: val as HeaderSectionStyle["verticalAlignment"] })}>
+                                <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-v-align`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="top">Top</SelectItem>
+                                  <SelectItem value="center">Center</SelectItem>
+                                  <SelectItem value="bottom">Bottom</SelectItem>
+                                  <SelectItem value="stretch">Stretch</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Border Style</Label>
+                              <Select value={sectionSettings.borderStyle || "none"} onValueChange={(val) => updateSection({ borderStyle: val as HeaderSectionStyle["borderStyle"] })}>
+                                <SelectTrigger className="h-8" data-testid={`select-header-${sectionKey}-border-style`}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None</SelectItem>
+                                  <SelectItem value="solid">Solid</SelectItem>
+                                  <SelectItem value="dashed">Dashed</SelectItem>
+                                  <SelectItem value="dotted">Dotted</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Border Width (px)</Label>
+                              <Input type="number" className="h-8" min={0} max={20} value={sectionSettings.borderWidth ?? 0} onChange={(e) => updateSection({ borderWidth: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-border-width`} />
+                            </div>
+                          </div>
+
+                          {(sectionSettings.borderStyle || "none") !== "none" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Border Color</Label>
+                                <div className="flex items-center gap-1">
+                                  <input type="color" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-header-${sectionKey}-border-color`} />
+                                  <Input className="h-8 flex-1" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} placeholder="#e5e7eb" data-testid={`input-header-${sectionKey}-border-color-hex`} />
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Border Radius (px)</Label>
+                                <Input type="number" className="h-8" min={0} max={50} value={sectionSettings.borderRadius ?? 0} onChange={(e) => updateSection({ borderRadius: parseInt(e.target.value) || 0 })} data-testid={`input-header-${sectionKey}-border-radius`} />
+                              </div>
+                            </div>
+                          )}
                         </CollapsibleContent>
                       </Collapsible>
                     );
@@ -2427,6 +2513,68 @@ export default function WebsiteComponentsTab({
                                 <Input type="number" className="h-8" min={0} max={100} value={sectionSettings.gap} onChange={(e) => updateSection({ gap: parseInt(e.target.value) || 0 })} data-testid={`input-footer-${sectionKey}-gap`} />
                               </div>
                             </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Horizontal Alignment</Label>
+                                <Select value={sectionSettings.horizontalAlignment || "stretch"} onValueChange={(val) => updateSection({ horizontalAlignment: val as FooterSectionStyle["horizontalAlignment"] })}>
+                                  <SelectTrigger className="h-8" data-testid={`select-footer-${sectionKey}-h-align`}><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="left">Left</SelectItem>
+                                    <SelectItem value="center">Center</SelectItem>
+                                    <SelectItem value="right">Right</SelectItem>
+                                    <SelectItem value="stretch">Stretch</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Vertical Alignment</Label>
+                                <Select value={sectionSettings.verticalAlignment || "top"} onValueChange={(val) => updateSection({ verticalAlignment: val as FooterSectionStyle["verticalAlignment"] })}>
+                                  <SelectTrigger className="h-8" data-testid={`select-footer-${sectionKey}-v-align`}><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="top">Top</SelectItem>
+                                    <SelectItem value="center">Center</SelectItem>
+                                    <SelectItem value="bottom">Bottom</SelectItem>
+                                    <SelectItem value="stretch">Stretch</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">Border Style</Label>
+                                <Select value={sectionSettings.borderStyle || "none"} onValueChange={(val) => updateSection({ borderStyle: val as FooterSectionStyle["borderStyle"] })}>
+                                  <SelectTrigger className="h-8" data-testid={`select-footer-${sectionKey}-border-style`}><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    <SelectItem value="solid">Solid</SelectItem>
+                                    <SelectItem value="dashed">Dashed</SelectItem>
+                                    <SelectItem value="dotted">Dotted</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">Border Width (px)</Label>
+                                <Input type="number" className="h-8" min={0} max={20} value={sectionSettings.borderWidth ?? 0} onChange={(e) => updateSection({ borderWidth: parseInt(e.target.value) || 0 })} data-testid={`input-footer-${sectionKey}-border-width`} />
+                              </div>
+                            </div>
+
+                            {(sectionSettings.borderStyle || "none") !== "none" && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Border Color</Label>
+                                  <div className="flex items-center gap-1">
+                                    <input type="color" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} className="h-8 w-8 rounded border cursor-pointer" data-testid={`input-footer-${sectionKey}-border-color`} />
+                                    <Input className="h-8 flex-1" value={sectionSettings.borderColor || "#e5e7eb"} onChange={(e) => updateSection({ borderColor: e.target.value })} placeholder="#e5e7eb" data-testid={`input-footer-${sectionKey}-border-color-hex`} />
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Border Radius (px)</Label>
+                                  <Input type="number" className="h-8" min={0} max={50} value={sectionSettings.borderRadius ?? 0} onChange={(e) => updateSection({ borderRadius: parseInt(e.target.value) || 0 })} data-testid={`input-footer-${sectionKey}-border-radius`} />
+                                </div>
+                              </div>
+                            )}
                           </CollapsibleContent>
                         </Collapsible>
                       );

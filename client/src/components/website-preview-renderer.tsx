@@ -790,6 +790,25 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
     return style;
   };
 
+  const buildSectionBorderStyle = (ss?: { borderWidth?: number; borderColor?: string; borderStyle?: string; borderRadius?: number }): React.CSSProperties => {
+    if (!ss) return {};
+    const style: React.CSSProperties = {};
+    if (ss.borderStyle && ss.borderStyle !== 'none' && (ss.borderWidth ?? 0) > 0) {
+      style.borderWidth = `${ss.borderWidth}px`;
+      style.borderColor = ss.borderColor || '#e5e7eb';
+      style.borderStyle = ss.borderStyle as any;
+    }
+    if ((ss.borderRadius ?? 0) > 0) {
+      style.borderRadius = `${ss.borderRadius}px`;
+    }
+    return style;
+  };
+
+  const mapAlignment = (val?: string): string | undefined => {
+    const m: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end', stretch: 'stretch' };
+    return val ? m[val] : undefined;
+  };
+
   const renderConfiguredHeader = () => {
     const config = data.headerConfig!;
     if (isMobile) {
@@ -854,11 +873,14 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           const headerSectionBg = getHeaderSectionBackground(sectionKey);
           const hPadding = hss?.sectionPadding != null ? `${hss.sectionPadding}px` : undefined;
           const hWidth = hss?.width || 'boxed';
+          const hBorderStyle = buildSectionBorderStyle(hss);
+          const hJustify = hss?.horizontalAlignment && hss.horizontalAlignment !== 'stretch' ? mapAlignment(hss.horizontalAlignment) : 'space-between';
+          const hAlignItems = hss?.verticalAlignment ? (mapAlignment(hss.verticalAlignment) || 'center') : 'center';
           return (
-            <div key={sectionKey} style={{ ...headerSectionBg }}>
+            <div key={sectionKey} style={{ ...headerSectionBg, ...hBorderStyle }}>
               {hasAnnouncement && renderHeaderElement(hasAnnouncement)}
               <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                display: 'flex', alignItems: hAlignItems, justifyContent: hJustify,
                 padding: hPadding || (sectionKey === 'top' ? '0.25rem 1.5rem' : '0.5rem 1.5rem'),
                 gap: hss?.gap != null ? `${hss.gap}px` : '1rem',
                 maxWidth: hWidth === 'boxed' ? '1200px' : '100%',
@@ -1020,6 +1042,9 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
           const sectionMargin = ss?.margin != null ? `${ss.margin}px` : '0';
           const sectionGap = ss?.gap != null ? `${ss.gap}px` : '1.5rem';
           const sectionWidth = ss?.width || 'boxed';
+          const fBorderStyle = buildSectionBorderStyle(ss);
+          const fJustifyItems = ss?.horizontalAlignment && ss.horizontalAlignment !== 'stretch' ? mapAlignment(ss.horizontalAlignment) : undefined;
+          const fAlignItems = ss?.verticalAlignment ? (mapAlignment(ss.verticalAlignment) || 'start') : 'start';
           return (
             <div
               key={sectionKey}
@@ -1029,6 +1054,7 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 margin: sectionWidth === 'boxed' ? '0 auto' : '0',
                 borderBottom: sectionKey !== 'bottom' ? '1px solid rgba(255,255,255,0.1)' : 'none',
                 ...getSectionBackground(sectionKey),
+                ...fBorderStyle,
               }}
             >
             <div
@@ -1038,7 +1064,8 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
                 gap: sectionGap,
                 padding: sectionPadding,
                 margin: sectionMargin,
-                alignItems: 'start',
+                alignItems: fAlignItems,
+                ...(fJustifyItems ? { justifyItems: fJustifyItems } : {}),
               }}
             >
               {Array.from({ length: colCount }, (_, colIdx) => {
