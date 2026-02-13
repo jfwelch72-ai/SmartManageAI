@@ -482,6 +482,26 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
       if (s.fontSize) baseStyle.fontSize = `${s.fontSize}px`;
       if (s.fontWeight) baseStyle.fontWeight = s.fontWeight as any;
     }
+    const isSafeUrl = (url: string) => {
+      const trimmed = url.trim();
+      if (trimmed.startsWith('#') || trimmed.startsWith('/') || trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) return true;
+      try { const u = new URL(trimmed); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
+    };
+    if (btn.url && isSafeUrl(btn.url)) {
+      const isExternal = btn.url.startsWith('http');
+      return (
+        <a
+          key={idx}
+          href={btn.url}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noopener noreferrer' : undefined}
+          data-testid={`body-button-${idx}`}
+          style={{ ...baseStyle, display: 'inline-block', textDecoration: 'none' }}
+        >
+          {btn.text || 'Click Here'}
+        </a>
+      );
+    }
     return (
       <button
         key={idx}
@@ -1182,16 +1202,30 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
             <section key={comp.id} data-testid={`body-hero-${comp.id}`} className={customClassName} style={{ ...containerStyle, position: 'relative', overflow: 'hidden' }}>
               {renderVideoBackground(comp.styles)}
               {renderOverlay(comp.styles)}
-              <div style={{ ...contentZStyle, maxWidth: '72rem', margin: '0 auto', padding: isMobile ? '3rem 1rem' : '4rem 2rem', display: 'flex', flexDirection: isMobile ? 'column' : imagePosition === 'left' ? 'row-reverse' : 'row', alignItems: 'center', gap: '2rem' }}>
-                <div style={{ flex: 1, textAlign: align as React.CSSProperties['textAlign'] }}>
+              <div style={{
+                ...contentZStyle,
+                maxWidth: '72rem',
+                margin: '0 auto',
+                padding: isMobile ? '3rem 1rem' : '4rem 2rem',
+                display: 'flex',
+                flexDirection: isMobile
+                  ? (imagePosition === 'top' ? 'column-reverse' : imagePosition === 'bottom' ? 'column' : 'column')
+                  : imagePosition === 'left' ? 'row-reverse'
+                  : imagePosition === 'top' ? 'column-reverse'
+                  : imagePosition === 'bottom' ? 'column'
+                  : 'row',
+                alignItems: (imagePosition === 'top' || imagePosition === 'bottom') ? (align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start') : 'center',
+                gap: '2rem'
+              }}>
+                <div style={{ flex: (imagePosition === 'top' || imagePosition === 'bottom') ? 'none' : 1, width: (imagePosition === 'top' || imagePosition === 'bottom') ? '100%' : undefined, textAlign: align as React.CSSProperties['textAlign'] }}>
                   {subtitle && <p style={buildBodyTextStyle(heroSubtitleStyle, { color: primaryColor, fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', textTransform: 'uppercase' as const, letterSpacing: '0.05em' })}>{subtitle}</p>}
                   {title && <h1 style={buildBodyTextStyle(heroTitleStyle, { fontSize: isMobile ? '2rem' : '2.75rem', fontWeight: 800, lineHeight: 1.15, marginBottom: '1rem' })}>{title}</h1>}
                   {text && <p style={buildBodyTextStyle(heroContentStyle, { fontSize: '1.125rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.6 })}>{text}</p>}
                   {buttons.length > 0 && <div style={{ display: 'flex', gap: '0.75rem', justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>{buttons.map((b: ButtonConfig, i: number) => renderBodyButton(b, i))}</div>}
                 </div>
                 {hasImage && imagePosition !== 'background' && (
-                  <div style={{ flex: 1 }}>
-                    <img src={imageUrl} alt="" style={{ width: '100%', borderRadius: '0.75rem', objectFit: 'cover', maxHeight: '400px' }} />
+                  <div style={{ flex: (imagePosition === 'top' || imagePosition === 'bottom') ? 'none' : 1, width: (imagePosition === 'top' || imagePosition === 'bottom') ? '100%' : undefined }}>
+                    <img src={imageUrl} alt="" style={{ width: '100%', borderRadius: '0.75rem', objectFit: 'cover', maxHeight: (imagePosition === 'top' || imagePosition === 'bottom') ? '500px' : '400px' }} />
                   </div>
                 )}
               </div>

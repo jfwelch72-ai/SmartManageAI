@@ -37,6 +37,8 @@ import {
   Link2,
   Clock,
   RotateCcw,
+  Undo2,
+  Redo2,
   ExternalLink,
   ClipboardCopy,
   XCircle,
@@ -165,6 +167,8 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
   const initialized = useRef(false);
   const loadStartTime = useRef(Date.now());
   const sessionUpdatedAt = useRef<string | null>(null);
+  const undoStack = useRef<BodyComponent[][]>([]);
+  const redoStack = useRef<BodyComponent[][]>([]);
 
   const { data: pageData, isLoading } = useQuery<PageData>({
     queryKey: [`/api/website/pages/${pageId}`],
@@ -389,10 +393,56 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
     setHasUnsavedChanges(true);
   }, []);
 
+  const undoRef = useRef<() => void>(() => {});
+  const redoRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undoRef.current();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redoRef.current();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const updateComponents = useCallback((newComps: BodyComponent[]) => {
-    setComponents(newComps);
+    setComponents(prev => {
+      undoStack.current = [...undoStack.current, JSON.parse(JSON.stringify(prev))];
+      if (undoStack.current.length > 50) undoStack.current = undoStack.current.slice(-50);
+      redoStack.current = [];
+      return newComps;
+    });
     markChanged();
   }, [markChanged]);
+
+  const handleUndo = useCallback(() => {
+    if (undoStack.current.length === 0) return;
+    const previousState = undoStack.current.pop()!;
+    setComponents(prev => {
+      redoStack.current = [...redoStack.current, JSON.parse(JSON.stringify(prev))];
+      return previousState;
+    });
+    markChanged();
+  }, [markChanged]);
+
+  const handleRedo = useCallback(() => {
+    if (redoStack.current.length === 0) return;
+    const nextState = redoStack.current.pop()!;
+    setComponents(prev => {
+      undoStack.current = [...undoStack.current, JSON.parse(JSON.stringify(prev))];
+      return nextState;
+    });
+    markChanged();
+  }, [markChanged]);
+
+  useEffect(() => { undoRef.current = handleUndo; }, [handleUndo]);
+  useEffect(() => { redoRef.current = handleRedo; }, [handleRedo]);
 
   const addComponent = useCallback((type: BodyComponentType) => {
     const newComp = createDefaultComponent(type, components.length);
@@ -618,6 +668,26 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
           >
             <Settings className="h-4 w-4 mr-1" />
             Page Settings
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handleUndo}
+            disabled={undoStack.current.length === 0}
+            title="Undo (Ctrl+Z)"
+            data-testid="button-undo"
+          >
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handleRedo}
+            disabled={redoStack.current.length === 0}
+            title="Redo (Ctrl+Y)"
+            data-testid="button-redo"
+          >
+            <Redo2 className="h-4 w-4" />
           </Button>
           <Button
             size="sm"
