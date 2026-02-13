@@ -12,7 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2, UserCog } from "lucide-react";
+import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2, UserCog, ChevronDown, FileEdit } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canDeleteBids } from "@/lib/rbac";
@@ -395,12 +401,39 @@ export default function BidsPage() {
           <div className="flex gap-2">
             <AIAnalysisButton module="BIDS" />
             {canEditBids(user?.role) && (
-              <Button asChild data-testid="button-new-bid">
-                <Link href="/bids/new">
-                  <Wand2 className="w-4 h-4 mr-2" />
-                  New Bid
-                </Link>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button data-testid="button-new-bid">
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Bid
+                    <ChevronDown className="w-4 h-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem
+                    onClick={() => setLocation("/bids/new")}
+                    className="cursor-pointer py-3"
+                    data-testid="menu-item-ai-bid"
+                  >
+                    <Wand2 className="w-4 h-4 mr-3 text-primary" />
+                    <div>
+                      <div className="font-medium">AI-Enhanced Bid Wizard</div>
+                      <div className="text-xs text-muted-foreground">AI analyzes documents & extracts scope</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setShowCreateDialog(true)}
+                    className="cursor-pointer py-3"
+                    data-testid="menu-item-manual-bid"
+                  >
+                    <FileEdit className="w-4 h-4 mr-3 text-muted-foreground" />
+                    <div>
+                      <div className="font-medium">Manual Bid Entry</div>
+                      <div className="text-xs text-muted-foreground">Enter bid details & line items manually</div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
