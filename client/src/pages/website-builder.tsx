@@ -79,6 +79,7 @@ import {
   Phone
 } from "lucide-react";
 import { format } from "date-fns";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { MediaLibraryTab } from "@/components/media-library";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
 
@@ -270,6 +271,8 @@ interface AnalyticsSummary {
     pageViews: number;
     uniqueVisitors: number;
   }>;
+  topPages: Array<{ path: string; count: number }>;
+  referrers: Array<{ referrer: string; count: number }>;
 }
 
 interface AIResponse {
@@ -397,6 +400,7 @@ export default function WebsiteBuilderPage() {
   const isAdmin = !!user && ["ADMIN", "SUPER_ADMIN"].includes(user.role);
   const canEdit = !!user && ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role);
 
+  const [analyticsPeriod, setAnalyticsPeriod] = useState(30);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [websiteForm, setWebsiteForm] = useState({
     siteTitle: "",
@@ -534,7 +538,8 @@ export default function WebsiteBuilderPage() {
   });
 
   const { data: analyticsData } = useQuery<AnalyticsSummary>({
-    queryKey: ["/api/website/analytics/summary"],
+    queryKey: ["/api/website/analytics/summary", analyticsPeriod],
+    queryFn: () => fetch(`/api/website/analytics/summary?days=${analyticsPeriod}`, { credentials: 'include' }).then(r => r.json()),
     enabled: !!user && canEdit && !!websiteData?.hasWebsite
   });
 
@@ -2203,6 +2208,23 @@ export default function WebsiteBuilderPage() {
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h2 className="text-lg font-semibold">Website Analytics</h2>
+            <div className="flex items-center gap-2">
+              {[7, 30, 90].map((d) => (
+                <Button
+                  key={d}
+                  variant={analyticsPeriod === d ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAnalyticsPeriod(d)}
+                  data-testid={`button-period-${d}`}
+                >
+                  {d} days
+                </Button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4">
@@ -2213,7 +2235,7 @@ export default function WebsiteBuilderPage() {
                 <p className="text-2xl font-bold" data-testid="text-total-pageviews">
                   {analyticsData?.totals.pageViews.toLocaleString() || "0"}
                 </p>
-                <p className="text-xs text-muted-foreground">Last 30 days</p>
+                <p className="text-xs text-muted-foreground">Last {analyticsPeriod} days</p>
               </CardContent>
             </Card>
             <Card>
@@ -2225,7 +2247,7 @@ export default function WebsiteBuilderPage() {
                 <p className="text-2xl font-bold" data-testid="text-unique-visitors">
                   {analyticsData?.totals.uniqueVisitors.toLocaleString() || "0"}
                 </p>
-                <p className="text-xs text-muted-foreground">Last 30 days</p>
+                <p className="text-xs text-muted-foreground">Last {analyticsPeriod} days</p>
               </CardContent>
             </Card>
             <Card>
@@ -2237,7 +2259,7 @@ export default function WebsiteBuilderPage() {
                 <p className="text-2xl font-bold" data-testid="text-total-sessions">
                   {analyticsData?.totals.sessions.toLocaleString() || "0"}
                 </p>
-                <p className="text-xs text-muted-foreground">Last 30 days</p>
+                <p className="text-xs text-muted-foreground">Last {analyticsPeriod} days</p>
               </CardContent>
             </Card>
             <Card>
@@ -2247,20 +2269,134 @@ export default function WebsiteBuilderPage() {
                   <span className="text-sm">Contact Forms</span>
                 </div>
                 <p className="text-2xl font-bold" data-testid="text-contact-forms">
-                  {analyticsData?.totals.contactFormSubmissions || "0"}
+                  {analyticsData?.totals.contactFormSubmissions?.toLocaleString() || "0"}
                 </p>
-                <p className="text-xs text-muted-foreground">Last 30 days</p>
+                <p className="text-xs text-muted-foreground">Last {analyticsPeriod} days</p>
               </CardContent>
             </Card>
           </div>
+
+          {analyticsData?.hasData && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Traffic Overview</CardTitle>
+                  <CardDescription>Page views and unique visitors over time</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div style={{ width: "100%", height: 300 }} data-testid="chart-traffic-overview">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={analyticsData.dailyStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(val: string) => {
+                            const d = new Date(val);
+                            return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                          }}
+                          fontSize={12}
+                        />
+                        <YAxis fontSize={12} />
+                        <RechartsTooltip
+                          labelFormatter={(val: string) => {
+                            const d = new Date(val);
+                            return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+                          }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="pageViews"
+                          name="Page Views"
+                          stroke="hsl(var(--primary))"
+                          fill="hsl(var(--primary))"
+                          fillOpacity={0.15}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="uniqueVisitors"
+                          name="Unique Visitors"
+                          stroke="hsl(var(--muted-foreground))"
+                          fill="hsl(var(--muted-foreground))"
+                          fillOpacity={0.1}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Top Pages</CardTitle>
+                    <CardDescription>Most visited pages</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {analyticsData.topPages && analyticsData.topPages.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Page</TableHead>
+                            <TableHead className="text-right">Views</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analyticsData.topPages.map((page, i) => (
+                            <TableRow key={i} data-testid={`row-top-page-${i}`}>
+                              <TableCell className="font-mono text-sm">{page.path}</TableCell>
+                              <TableCell className="text-right">{page.count.toLocaleString()}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No page data available</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Top Referrers</CardTitle>
+                    <CardDescription>Where your traffic comes from</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {analyticsData.referrers && analyticsData.referrers.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Source</TableHead>
+                            <TableHead className="text-right">Visits</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analyticsData.referrers.map((ref, i) => (
+                            <TableRow key={i} data-testid={`row-referrer-${i}`}>
+                              <TableCell className="text-sm truncate max-w-[200px]">{ref.referrer}</TableCell>
+                              <TableCell className="text-right">{ref.count.toLocaleString()}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No referrer data available</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
 
           {!analyticsData?.hasData && (
             <Card className="py-12">
               <CardContent className="text-center">
                 <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">No analytics data yet</h3>
-                <p className="text-muted-foreground">
-                  Analytics will appear here once your website starts receiving traffic
+                <p className="text-muted-foreground mb-2">
+                  Analytics will appear here once your website starts receiving traffic.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Preview your website or publish it to start collecting visitor data.
                 </p>
               </CardContent>
             </Card>
@@ -2452,6 +2588,8 @@ export default function WebsiteBuilderPage() {
                         },
                       }} 
                       deviceType={previewDevice}
+                      websiteId={websiteData?.website?.id}
+                      trackingEnabled={true}
                     />
                   </div>
                 </div>

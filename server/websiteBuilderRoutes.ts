@@ -2003,42 +2003,100 @@ router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Resp
     const orgId = validateOrgAccess(req, res);
     if (orgId === null && req.user?.role !== "SUPER_ADMIN") return;
 
-    const { days = 30 } = req.query;
+    const days = Number(req.query.days) || 30;
 
-    // Get website
     const website = await db.query.organizationWebsites.findFirst({
       where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
     });
 
     if (!website) {
-      return res.json({ hasData: false });
+      return res.json({ hasData: false, period: { days, startDate: new Date().toISOString() }, totals: { pageViews: 0, uniqueVisitors: 0, sessions: 0, contactFormSubmissions: 0 }, dailyStats: [], topPages: [], referrers: [] });
     }
 
-    // Get daily analytics for the period
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - Number(days));
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString();
 
-    const dailyStats = await db.query.websiteAnalyticsDaily.findMany({
-      where: and(
-        eq(websiteAnalyticsDaily.websiteId, website.id),
-        sql`${websiteAnalyticsDaily.date} >= ${startDate.toISOString().split('T')[0]}`
-      ),
-      orderBy: [asc(websiteAnalyticsDaily.date)],
-    });
+    const totalsResult = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE event_type = 'PAGE_VIEW') AS page_views,
+        COUNT(DISTINCT visitor_id) AS unique_visitors,
+        COUNT(DISTINCT session_id) AS sessions,
+        COUNT(*) FILTER (WHERE event_type = 'FORM_SUBMIT') AS contact_form_submissions
+      FROM website_analytics_events
+      WHERE website_id = ${website.id}
+        AND created_at >= ${startDateStr}::timestamp
+    `);
 
-    // Calculate totals
-    const totals = dailyStats.reduce((acc, day) => ({
-      pageViews: acc.pageViews + (day.pageViews || 0),
-      uniqueVisitors: acc.uniqueVisitors + (day.uniqueVisitors || 0),
-      sessions: acc.sessions + (day.sessions || 0),
-      contactFormSubmissions: acc.contactFormSubmissions + (day.contactFormSubmissions || 0),
-    }), { pageViews: 0, uniqueVisitors: 0, sessions: 0, contactFormSubmissions: 0 });
+    const row = totalsResult.rows[0] || {};
+    const totals = {
+      pageViews: Number(row.page_views) || 0,
+      uniqueVisitors: Number(row.unique_visitors) || 0,
+      sessions: Number(row.sessions) || 0,
+      contactFormSubmissions: Number(row.contact_form_submissions) || 0,
+    };
+
+    const dailyResult = await db.execute(sql`
+      SELECT
+        created_at::date AS date,
+        COUNT(*) FILTER (WHERE event_type = 'PAGE_VIEW') AS page_views,
+        COUNT(DISTINCT visitor_id) AS unique_visitors
+      FROM website_analytics_events
+      WHERE website_id = ${website.id}
+        AND created_at >= ${startDateStr}::timestamp
+      GROUP BY created_at::date
+      ORDER BY created_at::date ASC
+    `);
+
+    const dailyStats = dailyResult.rows.map((r: any) => ({
+      date: r.date,
+      pageViews: Number(r.page_views) || 0,
+      uniqueVisitors: Number(r.unique_visitors) || 0,
+    }));
+
+    const topPagesResult = await db.execute(sql`
+      SELECT page_path AS path, COUNT(*) AS count
+      FROM website_analytics_events
+      WHERE website_id = ${website.id}
+        AND created_at >= ${startDateStr}::timestamp
+        AND event_type = 'PAGE_VIEW'
+        AND page_path IS NOT NULL
+      GROUP BY page_path
+      ORDER BY count DESC
+      LIMIT 10
+    `);
+
+    const topPages = topPagesResult.rows.map((r: any) => ({
+      path: r.path,
+      count: Number(r.count) || 0,
+    }));
+
+    const referrersResult = await db.execute(sql`
+      SELECT referrer, COUNT(*) AS count
+      FROM website_analytics_events
+      WHERE website_id = ${website.id}
+        AND created_at >= ${startDateStr}::timestamp
+        AND referrer IS NOT NULL
+        AND referrer != ''
+      GROUP BY referrer
+      ORDER BY count DESC
+      LIMIT 10
+    `);
+
+    const referrers = referrersResult.rows.map((r: any) => ({
+      referrer: r.referrer,
+      count: Number(r.count) || 0,
+    }));
+
+    const hasData = totals.pageViews > 0 || totals.sessions > 0;
 
     res.json({
-      hasData: dailyStats.length > 0,
-      period: { days: Number(days), startDate },
+      hasData,
+      period: { days, startDate: startDate.toISOString() },
       totals,
       dailyStats,
+      topPages,
+      referrers,
     });
   } catch (error) {
     console.error("Error fetching analytics:", error);

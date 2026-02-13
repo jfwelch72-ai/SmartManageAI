@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { useEffect, useRef } from "react";
 import { Phone, Mail, MapPin, Facebook, Twitter, Instagram, Linkedin, Youtube, Globe } from "lucide-react";
 
 interface WebsiteData {
@@ -107,6 +108,35 @@ export default function PublicWebsite() {
   }
 
   const { website, organization, pages, blogPosts, projects, socialLinks } = data;
+
+  const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const trackedRef = useRef(false);
+
+  useEffect(() => {
+    if (!data?.website?.id || trackedRef.current) return;
+    trackedRef.current = true;
+
+    let visitorId = localStorage.getItem('sma_visitor_id');
+    if (!visitorId) {
+      visitorId = `visitor_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem('sma_visitor_id', visitorId);
+    }
+
+    fetch('/api/website/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        websiteId: data.website.id,
+        sessionId: sessionIdRef.current,
+        visitorId,
+        eventType: 'PAGE_VIEW',
+        pagePath: window.location.pathname,
+        pageTitle: data.website.siteTitle || organization?.name || 'Website',
+        referrer: document.referrer || '',
+      }),
+    }).catch(() => {});
+  }, [data?.website?.id]);
+
   const siteTitle = website.siteTitle || organization?.name || "Website";
   const primaryColor = website.primaryColor || "#f97316";
   const secondaryColor = website.secondaryColor || "#1e293b";

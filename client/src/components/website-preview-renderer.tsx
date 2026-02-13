@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Phone, 
   Mail, 
@@ -162,9 +162,11 @@ type PageView = "home" | "about" | "services" | "blog" | "gallery" | "contact" |
 interface WebsitePreviewRendererProps {
   data: PreviewData;
   deviceType: "desktop" | "tablet" | "mobile";
+  websiteId?: string;
+  trackingEnabled?: boolean;
 }
 
-export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePreviewRendererProps) {
+export default function WebsitePreviewRenderer({ data, deviceType, websiteId, trackingEnabled }: WebsitePreviewRendererProps) {
   const { website, organization, socialLinks } = data;
   // Default to empty arrays to prevent crashes when data is undefined
   const pages = data.pages || [];
@@ -180,6 +182,40 @@ export default function WebsitePreviewRenderer({ data, deviceType }: WebsitePrev
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [expandedMobileMenus, setExpandedMobileMenus] = useState<Set<string>>(new Set());
   const [faqOpenItems, setFaqOpenItems] = useState<Set<string>>(new Set());
+
+  const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
+  const trackedPagesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!trackingEnabled || !websiteId) return;
+
+    const pageKey = `${currentPage}_${selectedBlogPost?.id || ''}_${selectedProject?.id || ''}`;
+    if (trackedPagesRef.current.has(pageKey)) return;
+    trackedPagesRef.current.add(pageKey);
+
+    let visitorId = localStorage.getItem('sma_visitor_id');
+    if (!visitorId) {
+      visitorId = `visitor_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      localStorage.setItem('sma_visitor_id', visitorId);
+    }
+
+    const pagePath = currentPage === 'home' ? '/' : `/${currentPage}`;
+    const pageTitle = selectedBlogPost?.title || selectedProject?.title || currentPage;
+
+    fetch('/api/website/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        websiteId,
+        sessionId: sessionIdRef.current,
+        visitorId,
+        eventType: 'PAGE_VIEW',
+        pagePath,
+        pageTitle,
+        referrer: document.referrer || '',
+      }),
+    }).catch(() => {});
+  }, [trackingEnabled, websiteId, currentPage, selectedBlogPost?.id, selectedProject?.id]);
 
   const buildTextStyle = (content: Record<string, string> | undefined, defaults: { fontSize?: string; color?: string; fontWeight?: string } = {}): React.CSSProperties => {
     if (!content) return {};
