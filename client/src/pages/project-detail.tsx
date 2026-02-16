@@ -25,6 +25,7 @@ import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
 import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
+import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
 import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -2702,6 +2703,12 @@ export default function ProjectDetailPage() {
                 Submittals
               </TabsTrigger>
             )}
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="portal-access" data-testid="tab-portal-access">
+                <ExternalLink className="h-4 w-4 mr-1" />
+                Portal Access
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -5002,6 +5009,11 @@ export default function ProjectDetailPage() {
           {hasManagementAccess(user?.role) && (
             <TabsContent value="submittals">
               <ProjectSubmittals projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            </TabsContent>
+          )}
+          {hasManagementAccess(user?.role) && (
+            <TabsContent value="portal-access">
+              <SubcontractorPortalManager projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
             </TabsContent>
           )}
         </Tabs>

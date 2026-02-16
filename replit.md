@@ -47,6 +47,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Construction Calculator Suite**: Professional construction calculator with 10 specialized tools (e.g., Concrete, Masonry, Lumber, Roofing, Tiling) including waste factor adjustment and cost estimation.
 *   **Marketing Landing Page**: Comprehensive public landing page for unauthenticated visitors, showcasing features, pricing, and AI automation.
 *   **User Profile Page**: Comprehensive profile management with editable personal info (name, phone, birthdate, timezone), profile description, skills management (add/remove with search), avatar display, organization & access level display, photo upload section, and secure password change with token version rotation.
+*   **Subcontractor Portal System**: Secure token-based portal allowing subcontractors to access project documents (RFIs, Submittals, Transmittals) without full platform accounts. Features bcrypt-hashed tokens, scoped permissions (view/comment/upload), activity logging, and email invitations via Resend. Includes GC-side management UI for inviting subs, revoking access, and monitoring portal activity. Extended with bid-phase document distribution for sending project documents to prospective subcontractors during bidding, with email tracking and optional portal access creation.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

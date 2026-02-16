@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
+import BidDocumentDistribution from "@/components/BidDocumentDistribution";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -1900,6 +1901,14 @@ export default function BidDetailPage() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Document Distribution */}
+                <BidDocumentDistribution
+                  bidId={bid?.id}
+                  projectId={bid?.projectId || undefined}
+                  projectName={bid?.name}
+                  userRole={user?.role || ""}
+                />
 
                 {/* Additional Info Cards */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

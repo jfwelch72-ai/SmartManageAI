@@ -6891,3 +6891,86 @@ export type RewardType = typeof rewardTypes.$inferSelect;
 export const insertRewardAssignmentSchema = createInsertSchema(rewardAssignments).omit({ id: true, createdAt: true });
 export type InsertRewardAssignment = z.infer<typeof insertRewardAssignmentSchema>;
 export type RewardAssignment = typeof rewardAssignments.$inferSelect;
+
+// Subcontractor Portal Tokens table
+export const subcontractorPortalTokens = pgTable("subcontractor_portal_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  contactEmail: text("contact_email").notNull(),
+  contactName: text("contact_name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  permissions: text("permissions").array().notNull().default(sql`ARRAY['view','comment','upload','acknowledge']`),
+  status: text("status").notNull().default("active"),
+  expiresAt: timestamp("expires_at").notNull(),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  invitedById: varchar("invited_by_id").references(() => users.id),
+  invitedByName: text("invited_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => ({
+  organizationIdx: index("sub_portal_tokens_org_idx").on(table.organizationId),
+  projectIdx: index("sub_portal_tokens_project_idx").on(table.projectId),
+  crmOrgIdx: index("sub_portal_tokens_crm_org_idx").on(table.crmOrganisationId),
+  tokenIdx: index("sub_portal_tokens_token_idx").on(table.tokenHash),
+  statusIdx: index("sub_portal_tokens_status_idx").on(table.status),
+}));
+
+export const insertSubcontractorPortalTokenSchema = createInsertSchema(subcontractorPortalTokens).omit({ id: true, createdAt: true });
+export type InsertSubcontractorPortalToken = z.infer<typeof insertSubcontractorPortalTokenSchema>;
+export type SubcontractorPortalToken = typeof subcontractorPortalTokens.$inferSelect;
+
+// Portal Activity Log table
+export const portalActivityLog = pgTable("portal_activity_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  portalTokenId: varchar("portal_token_id").notNull().references(() => subcontractorPortalTokens.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  entityType: text("entity_type"),
+  entityId: varchar("entity_id"),
+  details: text("details"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  tokenIdx: index("portal_activity_log_token_idx").on(table.portalTokenId),
+  actionIdx: index("portal_activity_log_action_idx").on(table.action),
+  createdAtIdx: index("portal_activity_log_created_at_idx").on(table.createdAt),
+}));
+
+export const insertPortalActivityLogSchema = createInsertSchema(portalActivityLog).omit({ id: true, createdAt: true });
+export type InsertPortalActivityLog = z.infer<typeof insertPortalActivityLogSchema>;
+export type PortalActivityLog = typeof portalActivityLog.$inferSelect;
+
+// Bid Document Distributions table
+export const bidDocumentDistributions = pgTable("bid_document_distributions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id"),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  crmOrganisationId: varchar("crm_organisation_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  contactEmail: text("contact_email").notNull(),
+  contactName: text("contact_name").notNull(),
+  documentType: text("document_type").notNull(),
+  documentId: varchar("document_id"),
+  documentTitle: text("document_title").notNull(),
+  portalTokenId: varchar("portal_token_id").references(() => subcontractorPortalTokens.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("sent"),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  viewedAt: timestamp("viewed_at"),
+  respondedAt: timestamp("responded_at"),
+  responseNotes: text("response_notes"),
+  attachmentsJson: text("attachments_json"),
+  messageBody: text("message_body"),
+  sentById: varchar("sent_by_id").references(() => users.id),
+  sentByName: text("sent_by_name"),
+}, (table) => ({
+  organizationIdx: index("bid_doc_dist_org_idx").on(table.organizationId),
+  bidIdx: index("bid_doc_dist_bid_idx").on(table.bidId),
+  crmOrgIdx: index("bid_doc_dist_crm_org_idx").on(table.crmOrganisationId),
+  statusIdx: index("bid_doc_dist_status_idx").on(table.status),
+  sentAtIdx: index("bid_doc_dist_sent_at_idx").on(table.sentAt),
+}));
+
+export const insertBidDocumentDistributionSchema = createInsertSchema(bidDocumentDistributions).omit({ id: true, sentAt: true });
+export type InsertBidDocumentDistribution = z.infer<typeof insertBidDocumentDistributionSchema>;
+export type BidDocumentDistribution = typeof bidDocumentDistributions.$inferSelect;

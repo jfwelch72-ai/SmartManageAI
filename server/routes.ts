@@ -100,6 +100,7 @@ import aiScheduleRoutes from "./aiScheduleRoutes";
 import rfiRoutes from "./rfiRoutes";
 import transmittalRoutes from "./transmittalRoutes";
 import submittalRoutes from "./submittalRoutes";
+import portalRoutes from "./portalRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
@@ -210,6 +211,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", rfiRoutes);
   app.use("/api", transmittalRoutes);
   app.use("/api", submittalRoutes);
+
+  app.use("/api", portalRoutes);
 
   app.use("/api/billing", billingRoutes);
 
