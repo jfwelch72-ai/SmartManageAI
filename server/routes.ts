@@ -21,7 +21,7 @@ import {
   insertTMDailySheetSchema, insertReceiptSchema, insertProjectNoteSchema,
   insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
   insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema,
-  crews, crewMembers, skills, userSkills, equipment,
+  crews, crewMembers, skills, userSkills, userPhotos, equipment,
   insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema,
   subcontractors, subcontractorContracts, subcontractorPayments,
   projectLaborRates, projectEmployeeRates,
@@ -578,19 +578,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/auth/avatar", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/auth/upload-avatar", requireAuth, upload.single("avatar"), async (req: AuthRequest, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const { avatarUrl } = req.body;
-      const [updated] = await db.update(users).set({ avatarUrl: avatarUrl || null, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
+      const file = req.file;
+      if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      if (!allowedTypes.includes(file.mimetype)) {
+        res.status(400).json({ error: "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed." }); return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        res.status(400).json({ error: "File too large. Maximum size is 5MB." }); return;
+      }
+
+      const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const objectId = `avatars/${userId}/${Date.now()}-${file.originalname}`;
+      const fullPath = `${privateDir}/${objectId}`;
+
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
+
+      const objectKey = `/objects/${objectId}`;
+      const [updated] = await db.update(users).set({ avatarUrl: objectKey, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
 
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      console.error("Error updating avatar:", error);
+      console.error("Error uploading avatar:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-photos", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const photos = await db.select().from(userPhotos).where(eq(userPhotos.userId, userId)).orderBy(desc(userPhotos.uploadedAt));
+      res.json(photos);
+    } catch (error) {
+      console.error("Error fetching user photos:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/upload-photos", requireAuth, upload.array("photos", 10), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) { res.status(400).json({ error: "No files uploaded" }); return; }
+
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      for (const file of files) {
+        if (!allowedTypes.includes(file.mimetype)) {
+          res.status(400).json({ error: `Invalid file type: ${file.originalname}. Only JPEG, PNG, GIF, and WebP are allowed.` }); return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          res.status(400).json({ error: `File too large: ${file.originalname}. Maximum size is 10MB.` }); return;
+        }
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const uploadedPhotos = [];
+
+      for (const file of files) {
+        const objectId = `user-photos/${userId}/${Date.now()}-${file.originalname}`;
+        const fullPath = `${privateDir}/${objectId}`;
+        const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+        const bucketName = parts[0];
+        const objectName = parts.slice(1).join("/");
+
+        const bucket = objectStorageClient.bucket(bucketName);
+        const objectFile = bucket.file(objectName);
+        await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
+
+        const objectKey = `/objects/${objectId}`;
+        const [photo] = await db.insert(userPhotos).values({
+          userId,
+          fileName: file.originalname,
+          fileUrl: objectKey,
+          objectKey,
+        }).returning();
+        uploadedPhotos.push(photo);
+      }
+
+      res.status(201).json(uploadedPhotos);
+    } catch (error) {
+      console.error("Error uploading photos:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/auth/my-photos/:photoId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { photoId } = req.params;
+      const [photo] = await db.select().from(userPhotos)
+        .where(and(eq(userPhotos.id, photoId), eq(userPhotos.userId, userId))).limit(1);
+      if (!photo) { res.status(404).json({ error: "Photo not found" }); return; }
+
+      await db.delete(userPhotos).where(eq(userPhotos.id, photoId));
+      res.json({ message: "Photo deleted" });
+    } catch (error) {
+      console.error("Error deleting photo:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

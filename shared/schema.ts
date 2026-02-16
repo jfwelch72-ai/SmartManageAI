@@ -2717,6 +2717,20 @@ export const insertUserSkillSchema = createInsertSchema(userSkills).omit({ id: t
 export type InsertUserSkill = z.infer<typeof insertUserSkillSchema>;
 export type UserSkill = typeof userSkills.$inferSelect;
 
+// User Photos table - profile photo gallery
+export const userPhotos = pgTable("user_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  objectKey: text("object_key"),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+
+export const insertUserPhotoSchema = createInsertSchema(userPhotos).omit({ id: true, uploadedAt: true });
+export type InsertUserPhoto = z.infer<typeof insertUserPhotoSchema>;
+export type UserPhoto = typeof userPhotos.$inferSelect;
+
 // Equipment table - comprehensive equipment and tool management
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
