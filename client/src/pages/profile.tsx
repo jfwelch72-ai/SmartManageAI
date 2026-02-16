@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,7 +19,9 @@ import {
   Eye,
   EyeOff,
   Upload,
-  ImageIcon
+  ImageIcon,
+  Trash2,
+  Loader2
 } from "lucide-react";
 
 interface UserSkill {
@@ -27,6 +29,15 @@ interface UserSkill {
   skillId: string;
   skillName: string;
   category: string | null;
+}
+
+interface UserPhoto {
+  id: string;
+  userId: string;
+  fileName: string;
+  fileUrl: string;
+  objectKey: string | null;
+  uploadedAt: string;
 }
 
 const TIMEZONES = [
@@ -72,6 +83,12 @@ export default function ProfilePage() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const photosInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -157,6 +174,100 @@ export default function ProfilePage() {
     },
   });
 
+  const { data: myPhotos = [], isLoading: loadingPhotos } = useQuery<UserPhoto[]>({
+    queryKey: ["/api/auth/my-photos"],
+  });
+
+  const handleAvatarUpload = useCallback(async (file: File) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only JPEG, PNG, GIF, and WebP are allowed.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum size is 5MB.", variant: "destructive" });
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append("avatar", file);
+      const res = await fetch("/api/auth/upload-avatar", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Upload failed");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Avatar updated successfully" });
+    } catch (error: any) {
+      toast({ title: "Failed to upload avatar", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }, [toast]);
+
+  const handlePhotosUpload = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    for (const file of fileArray) {
+      if (!allowedTypes.includes(file.type)) {
+        toast({ title: "Invalid file type", description: `${file.name}: Only JPEG, PNG, GIF, and WebP are allowed.`, variant: "destructive" });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${file.name}: Maximum size is 10MB.`, variant: "destructive" });
+        return;
+      }
+    }
+    setUploadingPhotos(true);
+    try {
+      const formData = new FormData();
+      fileArray.forEach(file => formData.append("photos", file));
+      const res = await fetch("/api/auth/upload-photos", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Upload failed");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-photos"] });
+      toast({ title: `${fileArray.length} photo${fileArray.length > 1 ? "s" : ""} uploaded successfully` });
+    } catch (error: any) {
+      toast({ title: "Failed to upload photos", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingPhotos(false);
+    }
+  }, [toast]);
+
+  const deletePhotoMutation = useMutation({
+    mutationFn: async (photoId: string) => {
+      return await apiRequest("DELETE", `/api/auth/my-photos/${photoId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-photos"] });
+      toast({ title: "Photo deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete photo", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) handlePhotosUpload(files);
+  }, [handlePhotosUpload]);
+
   const handleSkillKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && skillSearch.trim()) {
       e.preventDefault();
@@ -210,13 +321,27 @@ export default function ProfilePage() {
                   {initials}
                 </AvatarFallback>
               </Avatar>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleAvatarUpload(file);
+                  e.target.value = "";
+                }}
+                data-testid="input-avatar-file"
+              />
               <Button
                 size="icon"
                 variant="secondary"
                 className="absolute bottom-0 right-0 h-7 w-7 rounded-full"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploadingAvatar}
                 data-testid="button-change-avatar"
               >
-                <Camera className="h-3.5 w-3.5" />
+                {uploadingAvatar ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
               </Button>
             </div>
             {profileDescription && (
@@ -280,13 +405,69 @@ export default function ProfilePage() {
             <CardTitle className="text-base">My Photos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="border-2 border-dashed rounded-md p-6 flex flex-col items-center justify-center text-center">
-              <ImageIcon className="h-10 w-10 text-muted-foreground/50 mb-2" />
-              <p className="text-sm text-muted-foreground">Drag and drop photos here</p>
+            <input
+              ref={photosInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) handlePhotosUpload(e.target.files);
+                e.target.value = "";
+              }}
+              data-testid="input-photos-file"
+            />
+            {loadingPhotos ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : myPhotos.length > 0 ? (
+              <div className="grid grid-cols-3 gap-1.5 mb-3">
+                {myPhotos.map((photo) => (
+                  <div key={photo.id} className="relative group aspect-square rounded-md overflow-hidden" data-testid={`photo-item-${photo.id}`}>
+                    <img
+                      src={photo.fileUrl}
+                      alt={photo.fileName}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      className="absolute top-1 right-1 p-0.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => deletePhotoMutation.mutate(photo.id)}
+                      data-testid={`button-delete-photo-${photo.id}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div
+              className={`border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25"}`}
+              onClick={() => photosInputRef.current?.click()}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              data-testid="dropzone-photos"
+            >
+              {uploadingPhotos ? (
+                <Loader2 className="h-8 w-8 text-muted-foreground/50 mb-2 animate-spin" />
+              ) : (
+                <ImageIcon className="h-8 w-8 text-muted-foreground/50 mb-2" />
+              )}
+              <p className="text-sm text-muted-foreground">
+                {uploadingPhotos ? "Uploading..." : "Drag and drop photos here"}
+              </p>
               <p className="text-xs text-muted-foreground">or click to browse</p>
             </div>
-            <Button variant="outline" className="w-full mt-3" data-testid="button-upload-photos">
-              <Upload className="h-4 w-4 mr-2" />
+            <Button
+              variant="outline"
+              className="w-full mt-3"
+              onClick={() => photosInputRef.current?.click()}
+              disabled={uploadingPhotos}
+              data-testid="button-upload-photos"
+            >
+              {uploadingPhotos ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
               Upload Photos
             </Button>
           </CardContent>
