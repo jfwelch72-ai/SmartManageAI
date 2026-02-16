@@ -122,6 +122,10 @@ router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
     if (shouldFilter && orgId) {
       conditions.push(eq(projects.gcOrganizationId, orgId));
     }
+    const { projectId } = req.query;
+    if (projectId && typeof projectId === "string") {
+      conditions.push(eq(rfis.projectId, projectId));
+    }
 
     const allRfis = await db
       .select({ status: rfis.status })

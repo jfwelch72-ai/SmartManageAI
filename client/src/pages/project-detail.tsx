@@ -22,7 +22,10 @@ import TMTicketsSection from "@/components/TMTicketsSection";
 import DelaysSection from "@/components/DelaysSection";
 import InspectionsSection from "@/components/InspectionsSection";
 import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
-import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain } from "lucide-react";
+import ProjectRFIs from "@/components/ProjectRFIs";
+import ProjectTransmittals from "@/components/ProjectTransmittals";
+import ProjectSubmittals from "@/components/ProjectSubmittals";
+import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -2593,6 +2596,15 @@ export default function ProjectDetailPage() {
                 {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
                   <SelectItem value="equipment">Equipment</SelectItem>
                 )}
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="rfis">RFIs</SelectItem>
+                )}
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="transmittals">Transmittals</SelectItem>
+                )}
+                {hasManagementAccess(user?.role) && (
+                  <SelectItem value="submittals">Submittals</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -2670,6 +2682,24 @@ export default function ProjectDetailPage() {
               <TabsTrigger value="equipment" data-testid="tab-equipment">
                 <Truck className="h-4 w-4 mr-1" />
                 Equipment
+              </TabsTrigger>
+            )}
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="rfis" data-testid="tab-rfis">
+                <HelpCircle className="h-4 w-4 mr-1" />
+                RFIs
+              </TabsTrigger>
+            )}
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="transmittals" data-testid="tab-transmittals">
+                <Send className="h-4 w-4 mr-1" />
+                Transmittals
+              </TabsTrigger>
+            )}
+            {hasManagementAccess(user?.role) && (
+              <TabsTrigger value="submittals" data-testid="tab-submittals">
+                <FileCheck className="h-4 w-4 mr-1" />
+                Submittals
               </TabsTrigger>
             )}
           </TabsList>
@@ -4957,6 +4987,21 @@ export default function ProjectDetailPage() {
           {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
             <TabsContent value="equipment">
               <ProjectEquipmentTab projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            </TabsContent>
+          )}
+          {hasManagementAccess(user?.role) && (
+            <TabsContent value="rfis">
+              <ProjectRFIs projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            </TabsContent>
+          )}
+          {hasManagementAccess(user?.role) && (
+            <TabsContent value="transmittals">
+              <ProjectTransmittals projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            </TabsContent>
+          )}
+          {hasManagementAccess(user?.role) && (
+            <TabsContent value="submittals">
+              <ProjectSubmittals projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
             </TabsContent>
           )}
         </Tabs>

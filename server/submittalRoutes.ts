@@ -74,18 +74,24 @@ router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
+    const conditions: any[] = [];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+    const { projectId } = req.query;
+    if (projectId && typeof projectId === "string") {
+      conditions.push(eq(submittals.projectId, projectId));
+    }
+
     const allSubmittals = await db
       .select({
         status: submittals.status,
-        gcOrganizationId: projects.gcOrganizationId,
       })
       .from(submittals)
-      .leftJoin(projects, eq(submittals.projectId, projects.id));
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-    let filtered = allSubmittals;
-    if (shouldFilter && orgId) {
-      filtered = filtered.filter(s => s.gcOrganizationId === orgId);
-    }
+    const filtered = allSubmittals;
 
     const stats = {
       total: filtered.length,
@@ -94,6 +100,8 @@ router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
       approved: filtered.filter(s => s.status === "APPROVED" || s.status === "APPROVED_AS_NOTED").length,
       rejected: filtered.filter(s => s.status === "REJECTED").length,
       revise: filtered.filter(s => s.status === "REVISE_AND_RESUBMIT").length,
+      pendingReview: filtered.filter(s => s.status === "SUBMITTED" || s.status === "UNDER_REVIEW").length,
+      needsAction: filtered.filter(s => s.status === "REJECTED" || s.status === "REVISE_AND_RESUBMIT").length,
     };
 
     res.json(stats);
