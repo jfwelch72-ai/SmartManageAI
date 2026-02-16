@@ -30,7 +30,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
-  AlertTriangle
+  AlertTriangle,
+  Mail
 } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -57,6 +58,7 @@ interface SOVLineItem {
   balanceToFinish: string;
   retainage: string;
   sortOrder: number;
+  category: string | null;
 }
 
 interface SOV {
@@ -92,6 +94,45 @@ export default function ScheduleOfValuesPage() {
   const [showAddLineItemDialog, setShowAddLineItemDialog] = useState(false);
   const [selectedSOV, setSelectedSOV] = useState<SOV | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [billingMode, setBillingMode] = useState<"all" | "material" | "labor" | "material_labor">("all");
+  const [showSendDialog, setShowSendDialog] = useState(false);
+  const [sendEmail, setSendEmail] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const billingModeLabels: Record<string, string> = {
+    all: "All Categories",
+    material: "Material Only",
+    labor: "Labor Only",
+    material_labor: "Material + Labor",
+  };
+
+  const getFilteredLineItems = (items: SOVLineItem[], mode: string) => {
+    if (mode === "all") return items;
+    const categoryMap: Record<string, string[]> = {
+      material: ["material"],
+      labor: ["labor"],
+      material_labor: ["material", "labor"],
+    };
+    const allowedCategories = categoryMap[mode] || [];
+    return items.filter(item => {
+      const cat = item.category?.toLowerCase();
+      return cat && allowedCategories.includes(cat);
+    });
+  };
+
+  const getFilteredTotals = (items: SOVLineItem[]) => {
+    let totalScheduledValue = 0;
+    let totalPreviouslyBilled = 0;
+    let totalCurrentBilled = 0;
+    let totalBalance = 0;
+    items.forEach(item => {
+      totalScheduledValue += parseFloat(item.scheduledValue || "0");
+      totalPreviouslyBilled += parseFloat(item.previouslyBilled || "0");
+      totalCurrentBilled += parseFloat(item.currentBilled || "0");
+      totalBalance += parseFloat(item.balanceToFinish || "0");
+    });
+    return { totalScheduledValue, totalPreviouslyBilled, totalCurrentBilled, totalBalance };
+  };
 
   const [createForm, setCreateForm] = useState({
     projectId: "",
@@ -199,9 +240,27 @@ export default function ScheduleOfValuesPage() {
     }
   });
 
-  const downloadPDF = async (sovId: string) => {
+  const sendToRepMutation = useMutation({
+    mutationFn: async ({ sovId, email, billingMode }: { sovId: string; email: string; billingMode: string }) => {
+      return await apiRequest("POST", `/api/sov/${sovId}/send`, { email, billingMode });
+    },
+    onSuccess: () => {
+      toast({ title: "PDF sent successfully", description: "The billing breakdown has been emailed to the representative." });
+      setShowSendDialog(false);
+      setSendEmail("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to send", 
+        description: error.message || "An error occurred", 
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const downloadPDF = async (sovId: string, mode: string = "all") => {
     try {
-      const response = await fetch(`/api/sov/${sovId}/pdf`, {
+      const response = await fetch(`/api/sov/${sovId}/pdf?billingMode=${mode}`, {
         credentials: "include"
       });
       if (!response.ok) throw new Error("Failed to download PDF");
@@ -210,7 +269,8 @@ export default function ScheduleOfValuesPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `SOV-${selectedSOV?.sovNumber || sovId}.pdf`;
+      const modeLabel = mode === "all" ? "" : `-${mode}`;
+      a.download = `SOV-${selectedSOV?.sovNumber || sovId}${modeLabel}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -228,6 +288,7 @@ export default function ScheduleOfValuesPage() {
 
   const openDetailDialog = (sov: SOV) => {
     setSelectedSOV(sov);
+    setBillingMode("all");
     setShowDetailDialog(true);
   };
 
@@ -598,6 +659,57 @@ export default function ScheduleOfValuesPage() {
                 </Card>
               </div>
 
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Billing Breakdown</Label>
+                  <p className="text-xs text-muted-foreground">Filter line items by cost category</p>
+                </div>
+                <Select value={billingMode} onValueChange={(val: any) => setBillingMode(val)}>
+                  <SelectTrigger className="w-[200px]" data-testid="select-billing-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="material">Material Only</SelectItem>
+                    <SelectItem value="labor">Labor Only</SelectItem>
+                    <SelectItem value="material_labor">Material + Labor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {billingMode !== "all" && selectedSOV && (() => {
+                const filtered = getFilteredLineItems(selectedSOV.lineItems || [], billingMode);
+                const totals = getFilteredTotals(filtered);
+                return (
+                  <Card>
+                    <CardContent className="py-4">
+                      <div className="flex items-center gap-2 mb-3 flex-wrap">
+                        <Badge variant="secondary">{billingModeLabels[billingMode]}</Badge>
+                        <span className="text-sm text-muted-foreground">{filtered.length} of {selectedSOV.lineItems?.length || 0} line items</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scheduled Value</p>
+                          <p className="text-lg font-bold">{formatCurrency(String(totals.totalScheduledValue))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Previously Billed</p>
+                          <p className="text-lg font-bold">{formatCurrency(String(totals.totalPreviouslyBilled))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Current Period</p>
+                          <p className="text-lg font-bold">{formatCurrency(String(totals.totalCurrentBilled))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Balance to Finish</p>
+                          <p className="text-lg font-bold">{formatCurrency(String(totals.totalBalance))}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h3 className="font-semibold">Line Items</h3>
                 {canEdit && selectedSOV.status === "DRAFT" && (
@@ -628,7 +740,7 @@ export default function ScheduleOfValuesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {selectedSOV.lineItems?.map(item => (
+                  {getFilteredLineItems(selectedSOV.lineItems || [], billingMode).map(item => (
                     <TableRow key={item.id}>
                       <TableCell>{item.itemNumber}</TableCell>
                       <TableCell>{item.description}</TableCell>
@@ -654,7 +766,7 @@ export default function ScheduleOfValuesPage() {
                       )}
                     </TableRow>
                   ))}
-                  {(!selectedSOV.lineItems || selectedSOV.lineItems.length === 0) && (
+                  {getFilteredLineItems(selectedSOV.lineItems || [], billingMode).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={canEdit && selectedSOV.status === "DRAFT" ? 8 : 7} className="text-center text-muted-foreground py-8">
                         No line items yet. Add items to build your SOV.
@@ -709,14 +821,22 @@ export default function ScheduleOfValuesPage() {
                     </Button>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Button 
                     variant="outline"
-                    onClick={() => downloadPDF(selectedSOV.id)}
+                    onClick={() => downloadPDF(selectedSOV.id, billingMode)}
                     data-testid="button-download-pdf"
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Download PDF
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => setShowSendDialog(true)}
+                    data-testid="button-send-to-rep"
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send to Representative
                   </Button>
                   <Button 
                     variant="outline"
@@ -775,6 +895,51 @@ export default function ScheduleOfValuesPage() {
               data-testid="button-submit-line-item"
             >
               Add Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send to Representative</DialogTitle>
+            <DialogDescription>
+              Email the billing breakdown PDF to a representative
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Billing Type</Label>
+              <div className="text-sm">
+                <Badge variant="secondary">{billingModeLabels[billingMode]}</Badge>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Recipient Email</Label>
+              <Input
+                type="email"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                placeholder="representative@company.com"
+                data-testid="input-rep-email"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSendDialog(false)} data-testid="button-cancel-send">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => selectedSOV && sendToRepMutation.mutate({
+                sovId: selectedSOV.id,
+                email: sendEmail,
+                billingMode
+              })}
+              disabled={!sendEmail || sendToRepMutation.isPending}
+              data-testid="button-confirm-send"
+            >
+              {sendToRepMutation.isPending ? "Sending..." : "Send PDF"}
             </Button>
           </DialogFooter>
         </DialogContent>

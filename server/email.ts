@@ -2,11 +2,18 @@
 import { getResendClient } from './services/emailService';
 import { Resend } from 'resend';
 
+interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 interface EmailOptions {
   to: string | string[];
   subject: string;
   html: string;
   text?: string;
+  attachments?: EmailAttachment[];
 }
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -28,13 +35,23 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       recipients = options.to;
     }
     
-    const { data, error } = await resend.emails.send({
+    const emailPayload: any = {
       from: DEFAULT_FROM_EMAIL,
       to: recipients,
       subject: options.subject,
       text: options.text || '',
       html: options.html,
-    });
+    };
+
+    if (options.attachments && options.attachments.length > 0) {
+      emailPayload.attachments = options.attachments.map(att => ({
+        filename: att.filename,
+        content: att.content,
+        content_type: att.contentType || 'application/pdf',
+      }));
+    }
+
+    const { data, error } = await resend.emails.send(emailPayload);
     
     if (error) {
       console.error('Failed to send email via Resend:', error);

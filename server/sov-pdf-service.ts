@@ -52,6 +52,57 @@ interface SOVData {
     state?: string | null;
   };
   branding?: SOVBranding;
+  billingMode?: 'all' | 'material' | 'labor' | 'material_labor';
+}
+
+const BILLING_MODE_LABELS: Record<string, string> = {
+  all: 'All Categories',
+  material: 'Material Only',
+  labor: 'Labor Only',
+  material_labor: 'Material + Labor',
+};
+
+function filterLineItemsByBillingMode(items: SOVLineItem[], mode: string): SOVLineItem[] {
+  if (mode === 'all' || !mode) return items;
+  const categoryMap: Record<string, string[]> = {
+    material: ['material'],
+    labor: ['labor'],
+    material_labor: ['material', 'labor'],
+  };
+  const allowed = categoryMap[mode] || [];
+  return items.filter(item => {
+    const cat = item.category?.toLowerCase();
+    return cat && allowed.includes(cat);
+  });
+}
+
+function recalculateTotals(items: SOVLineItem[], retainagePercent: string | null) {
+  let totalScheduledValue = 0;
+  let totalPreviouslyCompleted = 0;
+  let totalThisPeriod = 0;
+  let totalMaterialsStored = 0;
+
+  items.forEach(item => {
+    totalScheduledValue += parseFloat(item.scheduledValue || '0');
+    totalPreviouslyCompleted += parseFloat(item.previouslyCompleted || '0');
+    totalThisPeriod += parseFloat(item.thisPeriodCompleted || '0');
+    totalMaterialsStored += parseFloat(item.materialsStored || '0');
+  });
+
+  const totalCompletedToDate = totalPreviouslyCompleted + totalThisPeriod + totalMaterialsStored;
+  const retPct = parseFloat(retainagePercent || '0') / 100;
+  const totalRetainage = totalCompletedToDate * retPct;
+  const totalEarnedLessRetainage = totalCompletedToDate - totalRetainage;
+
+  return {
+    totalScheduledValue: totalScheduledValue.toFixed(2),
+    totalPreviouslyCompleted: totalPreviouslyCompleted.toFixed(2),
+    totalThisPeriod: totalThisPeriod.toFixed(2),
+    totalCompletedToDate: totalCompletedToDate.toFixed(2),
+    totalMaterialsStored: totalMaterialsStored.toFixed(2),
+    totalRetainage: totalRetainage.toFixed(2),
+    totalEarnedLessRetainage: totalEarnedLessRetainage.toFixed(2),
+  };
 }
 
 function formatCurrency(value: string | number | null): string {
@@ -83,6 +134,11 @@ export function generateSOVPDF(data: SOVData): PassThrough {
   const stream = new PassThrough();
   doc.pipe(stream);
 
+  const billingMode = data.billingMode || 'all';
+  const filteredItems = filterLineItemsByBillingMode(data.lineItems, billingMode);
+  const isFiltered = billingMode !== 'all';
+  const filteredTotals = isFiltered ? recalculateTotals(filteredItems, data.sov.retainagePercent) : null;
+
   const primaryColor = data.branding?.primaryColor || '#1a365d';
   const accentColor = data.branding?.accentColor || '#2563eb';
   const companyName = data.branding?.organizationName || 'SmartManageAI';
@@ -91,6 +147,9 @@ export function generateSOVPDF(data: SOVData): PassThrough {
 
   doc.fontSize(20).fillColor(primaryColor).text(companyName, { align: 'center' });
   doc.fontSize(16).fillColor('#374151').text('SCHEDULE OF VALUES', { align: 'center' });
+  if (isFiltered) {
+    doc.fontSize(12).fillColor(accentColor).text(`Billing Breakdown: ${BILLING_MODE_LABELS[billingMode] || billingMode}`, { align: 'center' });
+  }
   doc.moveDown(0.3);
 
   doc.strokeColor(primaryColor).lineWidth(2)
@@ -139,7 +198,7 @@ export function generateSOVPDF(data: SOVData): PassThrough {
   let yPos = tableTop + 20;
   const maxY = 520;
 
-  data.lineItems.forEach((item, index) => {
+  filteredItems.forEach((item, index) => {
     if (yPos > maxY) {
       doc.addPage();
       yPos = 40;
@@ -198,18 +257,28 @@ export function generateSOVPDF(data: SOVData): PassThrough {
   xPos = 30;
   doc.fontSize(9).fillColor(primaryColor);
   
+  const displayTotals = filteredTotals || {
+    totalScheduledValue: data.sov.totalScheduledValue,
+    totalPreviouslyCompleted: data.sov.totalPreviouslyCompleted,
+    totalThisPeriod: data.sov.totalThisPeriod,
+    totalMaterialsStored: data.sov.totalMaterialsStored,
+    totalCompletedToDate: data.sov.totalCompletedToDate,
+    totalRetainage: data.sov.totalRetainage,
+    totalEarnedLessRetainage: data.sov.totalEarnedLessRetainage,
+  };
+
   const totals = [
     '',
     '',
     'TOTALS',
-    formatCurrency(data.sov.totalScheduledValue),
-    formatCurrency(data.sov.totalPreviouslyCompleted),
-    formatCurrency(data.sov.totalThisPeriod),
-    formatCurrency(data.sov.totalMaterialsStored),
-    formatCurrency(data.sov.totalCompletedToDate),
+    formatCurrency(displayTotals.totalScheduledValue),
+    formatCurrency(displayTotals.totalPreviouslyCompleted),
+    formatCurrency(displayTotals.totalThisPeriod),
+    formatCurrency(displayTotals.totalMaterialsStored),
+    formatCurrency(displayTotals.totalCompletedToDate),
     '',
     '',
-    formatCurrency(data.sov.totalRetainage),
+    formatCurrency(displayTotals.totalRetainage),
   ];
 
   totals.forEach((val, i) => {
@@ -230,12 +299,12 @@ export function generateSOVPDF(data: SOVData): PassThrough {
   yPos += 20;
 
   const summaryData = [
-    ['Total Scheduled Value:', formatCurrency(data.sov.totalScheduledValue)],
-    ['Work Completed - Previous Applications:', formatCurrency(data.sov.totalPreviouslyCompleted)],
-    ['Work Completed - This Period:', formatCurrency(data.sov.totalThisPeriod)],
-    ['Materials Presently Stored:', formatCurrency(data.sov.totalMaterialsStored)],
-    ['Total Completed and Stored to Date:', formatCurrency(data.sov.totalCompletedToDate)],
-    ['Less Retainage (' + formatPercent(data.sov.retainagePercent) + '):', formatCurrency(data.sov.totalRetainage)],
+    ['Total Scheduled Value:', formatCurrency(displayTotals.totalScheduledValue)],
+    ['Work Completed - Previous Applications:', formatCurrency(displayTotals.totalPreviouslyCompleted)],
+    ['Work Completed - This Period:', formatCurrency(displayTotals.totalThisPeriod)],
+    ['Materials Presently Stored:', formatCurrency(displayTotals.totalMaterialsStored)],
+    ['Total Completed and Stored to Date:', formatCurrency(displayTotals.totalCompletedToDate)],
+    ['Less Retainage (' + formatPercent(data.sov.retainagePercent) + '):', formatCurrency(displayTotals.totalRetainage)],
   ];
 
   doc.fontSize(10).fillColor('#374151');
@@ -254,7 +323,7 @@ export function generateSOVPDF(data: SOVData): PassThrough {
 
   doc.fontSize(12).fillColor(primaryColor);
   doc.text('TOTAL EARNED LESS RETAINAGE:', 30, yPos, { continued: true, width: 300 });
-  doc.text(formatCurrency(data.sov.totalEarnedLessRetainage), { align: 'right', width: 100 });
+  doc.text(formatCurrency(displayTotals.totalEarnedLessRetainage), { align: 'right', width: 100 });
 
   yPos += 40;
 
