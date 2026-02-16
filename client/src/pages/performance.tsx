@@ -80,7 +80,7 @@ function ManageCriteriaDialog() {
                     <TableCell><Input type="number" value={editMaxScore} onChange={(e) => setEditMaxScore(e.target.value)} data-testid={`input-edit-criteria-max-${c.id}`} /></TableCell>
                     <TableCell><Badge variant={c.isActive ? "default" : "secondary"}>{c.isActive ? "Active" : "Inactive"}</Badge></TableCell>
                     <TableCell><div className="flex items-center gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => updateMut.mutate({ id: c.id, data: { name: editName, weight: Number(editWeight), maxScore: Number(editMaxScore) } })} disabled={updateMut.isPending} data-testid={`button-save-criteria-${c.id}`}><Check className="w-4 h-4" /></Button>
+                      <Button size="icon" variant="ghost" onClick={() => updateMut.mutate({ id: c.id, data: { name: editName, weight: editWeight, maxScore: Number(editMaxScore) } })} disabled={updateMut.isPending} data-testid={`button-save-criteria-${c.id}`}><Check className="w-4 h-4" /></Button>
                       <Button size="icon" variant="ghost" onClick={() => setEditingId(null)} data-testid={`button-cancel-criteria-${c.id}`}><X className="w-4 h-4" /></Button>
                     </div></TableCell>
                   </>) : (<>
@@ -363,7 +363,7 @@ function RewardsTab() {
                         <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="flex-1 min-w-[100px]" data-testid={`input-edit-type-name-${t.id}`} />
                         <Input value={editCat} onChange={(e) => setEditCat(e.target.value)} className="w-24" data-testid={`input-edit-type-cat-${t.id}`} />
                         <Input type="number" value={editVal} onChange={(e) => setEditVal(e.target.value)} className="w-20" data-testid={`input-edit-type-val-${t.id}`} />
-                        <Button size="icon" variant="ghost" onClick={() => updateTypeMut.mutate({ id: t.id, data: { name: editName, category: editCat, value: Number(editVal) } })} data-testid={`button-save-type-${t.id}`}><Check className="w-4 h-4" /></Button>
+                        <Button size="icon" variant="ghost" onClick={() => updateTypeMut.mutate({ id: t.id, data: { name: editName, category: editCat, value: editVal } })} data-testid={`button-save-type-${t.id}`}><Check className="w-4 h-4" /></Button>
                         <Button size="icon" variant="ghost" onClick={() => setEditTypeId(null)} data-testid={`button-cancel-type-${t.id}`}><X className="w-4 h-4" /></Button>
                       </div>
                     ) : (<>
@@ -387,7 +387,20 @@ function RewardsTab() {
                 <form onSubmit={typeForm.handleSubmit((d) => createTypeMut.mutate(d))} className="space-y-3">
                   <FormField control={typeForm.control} name="name" render={({ field }) => (<FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} placeholder="e.g. Employee of the Month" data-testid="input-new-type-name" /></FormControl><FormMessage /></FormItem>)} />
                   <div className="grid grid-cols-2 gap-3">
-                    <FormField control={typeForm.control} name="category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><FormControl><Input {...field} placeholder="e.g. Bonus" data-testid="input-new-type-cat" /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField control={typeForm.control} name="category" render={({ field }) => (
+                      <FormItem><FormLabel>Category</FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl><SelectTrigger data-testid="select-new-type-cat"><SelectValue placeholder="Select category..." /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="RECOGNITION">Recognition</SelectItem>
+                            <SelectItem value="BONUS">Bonus</SelectItem>
+                            <SelectItem value="INCENTIVE">Incentive</SelectItem>
+                            <SelectItem value="POINTS">Points</SelectItem>
+                            <SelectItem value="CUSTOM">Custom</SelectItem>
+                          </SelectContent>
+                        </Select><FormMessage />
+                      </FormItem>
+                    )} />
                     <FormField control={typeForm.control} name="value" render={({ field }) => (<FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} data-testid="input-new-type-val" /></FormControl><FormMessage /></FormItem>)} />
                   </div>
                   <FormField control={typeForm.control} name="description" render={({ field }) => (<FormItem><FormLabel>Description</FormLabel><FormControl><Input {...field} placeholder="Optional" data-testid="input-new-type-desc" /></FormControl><FormMessage /></FormItem>)} />

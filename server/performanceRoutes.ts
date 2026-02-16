@@ -28,10 +28,11 @@ const createRatingSchema = z.object({
   })).min(1, "At least one score is required"),
 });
 
+const REWARD_CATEGORIES = ["BONUS", "INCENTIVE", "RECOGNITION", "POINTS", "CUSTOM"] as const;
 const createRewardTypeSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
-  category: z.string().min(1, "Category is required"),
+  category: z.enum(REWARD_CATEGORIES).default("CUSTOM"),
   value: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
 });
 
@@ -42,6 +43,34 @@ const assignRewardSchema = z.object({
   amount: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
   justification: z.string().optional(),
 });
+
+const PRESET_REWARD_TYPES: { name: string; description: string; category: "BONUS" | "INCENTIVE" | "RECOGNITION" | "POINTS" | "CUSTOM"; value: string }[] = [
+  { name: "Employee of the Month", description: "Outstanding overall performance and dedication during the month", category: "RECOGNITION", value: "250.00" },
+  { name: "Safety Excellence Award", description: "Exemplary adherence to safety protocols and zero incidents", category: "INCENTIVE", value: "500.00" },
+  { name: "Project Completion Bonus", description: "Successfully delivering a project on time and within budget", category: "BONUS", value: "1000.00" },
+  { name: "Perfect Attendance", description: "No unexcused absences during the evaluation period", category: "RECOGNITION", value: "150.00" },
+  { name: "Leadership Award", description: "Demonstrating exceptional leadership and mentoring of team members", category: "RECOGNITION", value: "300.00" },
+  { name: "Innovation Bonus", description: "Introducing a process improvement or cost-saving solution", category: "BONUS", value: "750.00" },
+  { name: "Team Player Award", description: "Consistently supporting teammates and fostering collaboration", category: "RECOGNITION", value: "200.00" },
+  { name: "Quality Workmanship", description: "Delivering superior craftsmanship with minimal rework or defects", category: "RECOGNITION", value: "300.00" },
+];
+
+async function seedPresetRewardTypes(orgId: string) {
+  const existing = await db.select({ id: rewardTypes.id }).from(rewardTypes)
+    .where(eq(rewardTypes.organizationId, orgId)).limit(1);
+  if (existing.length > 0) return;
+
+  const values = PRESET_REWARD_TYPES.map((preset) => ({
+    organizationId: orgId,
+    name: preset.name,
+    description: preset.description,
+    category: preset.category,
+    value: preset.value,
+    isActive: true,
+  }));
+
+  await db.insert(rewardTypes).values(values);
+}
 
 const ROLE_HIERARCHY: Record<string, string[]> = {
   "ADMIN": ["MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER"],
@@ -251,7 +280,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       for (const s of scores) {
         const criteria = criteriaMap.get(s.criteriaId)!;
-        const scoreVal = parseFloat(s.score);
+        const scoreVal = Number(s.score);
         totalScore += scoreVal;
         const weight = parseFloat(criteria.weight || "1.0");
         weightedSum += scoreVal * weight;
@@ -390,6 +419,8 @@ export function registerPerformanceRoutes(app: Express) {
     try {
       const orgId = getOrgId(req, res);
       if (!orgId) return;
+
+      await seedPresetRewardTypes(orgId);
 
       const results = await db
         .select()
