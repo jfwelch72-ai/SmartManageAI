@@ -10,6 +10,7 @@ import {
   crmOrganisations,
 } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -541,6 +542,183 @@ router.delete("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
     res.status(204).send();
   } catch (error) {
     console.error("Delete transmittal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [result] = await db
+      .select({
+        transmittal: documentTransmittals,
+        project: {
+          id: projects.id,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+      })
+      .from(documentTransmittals)
+      .leftJoin(projects, eq(documentTransmittals.projectId, projects.id))
+      .where(eq(documentTransmittals.id, id))
+      .limit(1);
+
+    if (!result) {
+      return res.status(404).json({ error: "Transmittal not found" });
+    }
+
+    if (shouldFilter && orgId && !isSuperAdmin && result.project?.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const fileSchema = z.object({
+      fileUrl: z.string(),
+      fileName: z.string(),
+      fileSize: z.number(),
+      mimeType: z.string(),
+      description: z.string().optional(),
+    });
+
+    const validationResult = fileSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ error: "Invalid file metadata", details: validationResult.error.errors });
+    }
+
+    const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(fileUrl, {
+      owner: req.user!.id,
+      organizationId: req.user!.organizationId!,
+      visibility: "private",
+    });
+
+    const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
+
+    const currentAttachments = result.transmittal.attachmentsJson
+      ? JSON.parse(result.transmittal.attachmentsJson)
+      : [];
+
+    const newAttachment = {
+      id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      fileUrl,
+      fileName,
+      fileSize,
+      mimeType,
+      description: description || "",
+      uploadedById: req.user!.id,
+      uploadedByName: `${user.firstName} ${user.lastName}`,
+      uploadedAt: new Date().toISOString(),
+      objectKey,
+    };
+
+    const updatedAttachments = [...currentAttachments, newAttachment];
+
+    await db.update(documentTransmittals).set({
+      attachmentsJson: JSON.stringify(updatedAttachments),
+      updatedAt: new Date(),
+    }).where(eq(documentTransmittals.id, id));
+
+    res.status(201).json(newAttachment);
+  } catch (error) {
+    console.error("Upload transmittal file error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [result] = await db
+      .select({
+        transmittal: documentTransmittals,
+        project: {
+          id: projects.id,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+      })
+      .from(documentTransmittals)
+      .leftJoin(projects, eq(documentTransmittals.projectId, projects.id))
+      .where(eq(documentTransmittals.id, id))
+      .limit(1);
+
+    if (!result) {
+      return res.status(404).json({ error: "Transmittal not found" });
+    }
+
+    if (shouldFilter && orgId && !isSuperAdmin && result.project?.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const attachments = result.transmittal.attachmentsJson
+      ? JSON.parse(result.transmittal.attachmentsJson)
+      : [];
+
+    res.json(attachments);
+  } catch (error) {
+    console.error("Get transmittal files error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [result] = await db
+      .select({
+        transmittal: documentTransmittals,
+        project: {
+          id: projects.id,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+      })
+      .from(documentTransmittals)
+      .leftJoin(projects, eq(documentTransmittals.projectId, projects.id))
+      .where(eq(documentTransmittals.id, id))
+      .limit(1);
+
+    if (!result) {
+      return res.status(404).json({ error: "Transmittal not found" });
+    }
+
+    if (shouldFilter && orgId && !isSuperAdmin && result.project?.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const currentAttachments = result.transmittal.attachmentsJson
+      ? JSON.parse(result.transmittal.attachmentsJson)
+      : [];
+
+    const fileIndex = currentAttachments.findIndex((f: any) => f.id === req.params.fileId);
+    if (fileIndex === -1) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const file = currentAttachments[fileIndex];
+    const userRole = req.user!.role;
+    if (file.uploadedById !== req.user!.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole)) {
+      return res.status(403).json({ error: "You don't have permission to delete this file" });
+    }
+
+    const updatedAttachments = currentAttachments.filter((_: any, i: number) => i !== fileIndex);
+
+    await db.update(documentTransmittals).set({
+      attachmentsJson: JSON.stringify(updatedAttachments),
+      updatedAt: new Date(),
+    }).where(eq(documentTransmittals.id, id));
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Delete transmittal file error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

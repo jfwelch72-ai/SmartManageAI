@@ -31,6 +31,7 @@ import {
   Search
 } from "lucide-react";
 import { format } from "date-fns";
+import DocumentAttachments from "@/components/DocumentAttachments";
 
 interface ProjectRFIsProps {
   projectId: string;
@@ -981,6 +982,14 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
                         </div>
                       </div>
                     )}
+
+                    <DocumentAttachments
+                      entityType="rfi"
+                      entityId={selectedRFI.id}
+                      canUpload={["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole)}
+                      canDelete={["ADMIN", "MANAGER"].includes(userRole)}
+                      compact
+                    />
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">

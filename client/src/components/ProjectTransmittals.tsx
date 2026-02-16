@@ -27,6 +27,7 @@ import {
   UserPlus
 } from "lucide-react";
 import { format } from "date-fns";
+import DocumentAttachments from "@/components/DocumentAttachments";
 
 interface Subcontractor {
   id: string;
@@ -667,6 +668,14 @@ export default function ProjectTransmittals({ projectId, projectCode, userRole }
                   </Button>
                 </div>
               )}
+
+              <DocumentAttachments
+                entityType="transmittals"
+                entityId={detail.id}
+                canUpload={["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole)}
+                canDelete={["ADMIN", "MANAGER"].includes(userRole)}
+                compact
+              />
 
               <DialogFooter className="gap-2 flex-wrap">
                 {detail.status === "DRAFT" && (

@@ -30,6 +30,7 @@ import {
   FileText
 } from "lucide-react";
 import { format } from "date-fns";
+import DocumentAttachments from "@/components/DocumentAttachments";
 
 interface ProjectSubmittalsProps {
   projectId: string;
@@ -761,6 +762,14 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
                   </p>
                 </div>
               )}
+
+              <DocumentAttachments
+                entityType="submittals"
+                entityId={detail.id}
+                canUpload={["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole)}
+                canDelete={["ADMIN", "MANAGER"].includes(userRole)}
+                compact
+              />
 
               <div className="flex items-center gap-2 flex-wrap border-t pt-4">
                 {detail.status === "DRAFT" && (
