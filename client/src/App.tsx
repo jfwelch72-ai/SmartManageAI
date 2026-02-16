@@ -17,6 +17,7 @@ import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
 import ImpersonatePage from "@/pages/impersonate";
 import DashboardPage from "@/pages/dashboard";
+import ProfilePage from "@/pages/profile";
 import UsersPage from "@/pages/users";
 import BidsPage from "@/pages/bids";
 import BidDetailPage from "@/pages/bid-detail";
@@ -186,6 +187,7 @@ function Router() {
       
       {/* Routes accessible to all authenticated users */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={DashboardPage} />} />
+      <Route path="/profile" component={() => <ProtectedRoute component={ProfilePage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />

@@ -1,0 +1,571 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Camera,
+  X,
+  Lock,
+  Eye,
+  EyeOff,
+  Upload,
+  ImageIcon
+} from "lucide-react";
+
+interface UserSkill {
+  id: string;
+  skillId: string;
+  skillName: string;
+  category: string | null;
+}
+
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "America/Honolulu",
+  "America/Phoenix",
+  "America/Puerto_Rico",
+  "Pacific/Guam",
+  "America/Adak",
+  "US/Samoa",
+  "Pacific/Palau",
+  "UTC",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+  "Asia/Kolkata",
+  "Australia/Sydney",
+];
+
+export default function ProfilePage() {
+  const { user, organizationName } = useAuth();
+  const { toast } = useToast();
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [birthdate, setBirthdate] = useState("");
+  const [timezone, setTimezone] = useState("");
+  const [profileDescription, setProfileDescription] = useState("");
+
+  const [skillSearch, setSkillSearch] = useState("");
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.firstName || "");
+      setLastName(user.lastName || "");
+      setEmail(user.email || "");
+      setPhone(user.phone || "");
+      setBirthdate(user.birthdate || "");
+      setTimezone(user.timezone || "");
+      setProfileDescription(user.profileDescription || "");
+    }
+  }, [user]);
+
+  const { data: mySkills = [], isLoading: loadingSkills } = useQuery<UserSkill[]>({
+    queryKey: ["/api/auth/my-skills"],
+  });
+
+  const { data: allSkills = [] } = useQuery<{ id: string; name: string; category: string | null }[]>({
+    queryKey: ["/api/skills"],
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        firstName,
+        lastName,
+        phone,
+        birthdate,
+        timezone,
+        profileDescription,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Profile updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update profile", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/auth/change-password", {
+        currentPassword,
+        newPassword,
+      });
+    },
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Password changed successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to change password", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addSkillMutation = useMutation({
+    mutationFn: async (skillName: string) => {
+      return await apiRequest("POST", "/api/auth/my-skills", { skillName });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-skills"] });
+      setSkillSearch("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add skill", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeSkillMutation = useMutation({
+    mutationFn: async (userSkillId: string) => {
+      return await apiRequest("DELETE", `/api/auth/my-skills/${userSkillId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-skills"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to remove skill", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSkillKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && skillSearch.trim()) {
+      e.preventDefault();
+      addSkillMutation.mutate(skillSearch.trim());
+    }
+  };
+
+  const handleChangePassword = () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast({ title: "All password fields are required", variant: "destructive" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: "New passwords do not match", variant: "destructive" });
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    changePasswordMutation.mutate();
+  };
+
+  const filteredSuggestions = allSkills
+    .filter(s => s.name.toLowerCase().includes(skillSearch.toLowerCase()))
+    .filter(s => !mySkills.some(ms => ms.skillId === s.id))
+    .slice(0, 8);
+
+  const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() : "";
+  const accessLevel = user?.organizationId ? "Organization" : "Platform";
+  const roleDisplay = user?.role?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "Not specified";
+
+  if (!user) {
+    return (
+      <div className="p-6 space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-6 p-4 md:p-6 max-w-7xl mx-auto overflow-auto h-full">
+      <div className="w-full lg:w-72 xl:w-80 shrink-0 space-y-4">
+        <Card>
+          <CardContent className="pt-6 flex flex-col items-center text-center">
+            <div className="relative mb-4">
+              <Avatar className="h-24 w-24 border-4 border-primary/20">
+                <AvatarImage src={user.avatarUrl || undefined} />
+                <AvatarFallback className="text-2xl font-semibold bg-primary text-primary-foreground">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute bottom-0 right-0 h-7 w-7 rounded-full"
+                data-testid="button-change-avatar"
+              >
+                <Camera className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {profileDescription && (
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {profileDescription}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Organization & Access</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Organization</p>
+              <p className="text-sm font-medium">{organizationName || "Not specified"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Role</p>
+              <p className="text-sm font-medium">{roleDisplay}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Access Level</p>
+              <Badge variant="outline" className="mt-0.5" data-testid="badge-access-level">{accessLevel}</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">My Skills</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingSkills ? (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-5 w-24" />
+              </div>
+            ) : mySkills.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No skills added yet</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {mySkills.map((skill) => (
+                  <span
+                    key={skill.id}
+                    className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground"
+                    data-testid={`text-skill-sidebar-${skill.id}`}
+                  >
+                    {skill.skillName}
+                  </span>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">My Photos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="border-2 border-dashed rounded-md p-6 flex flex-col items-center justify-center text-center">
+              <ImageIcon className="h-10 w-10 text-muted-foreground/50 mb-2" />
+              <p className="text-sm text-muted-foreground">Drag and drop photos here</p>
+              <p className="text-xs text-muted-foreground">or click to browse</p>
+            </div>
+            <Button variant="outline" className="w-full mt-3" data-testid="button-upload-photos">
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Photos
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex-1 space-y-6 min-w-0">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-profile-title">My Profile</h1>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="firstName">First Name</Label>
+            <Input
+              id="firstName"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First name"
+              data-testid="input-first-name"
+            />
+          </div>
+          <div>
+            <Label htmlFor="lastName">Last Name</Label>
+            <Input
+              id="lastName"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name"
+              data-testid="input-last-name"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="email">Email Address</Label>
+            <Input
+              id="email"
+              value={email}
+              disabled
+              className="bg-muted/50"
+              data-testid="input-email"
+            />
+          </div>
+          <div>
+            <Label htmlFor="phone">Phone (Optional)</Label>
+            <Input
+              id="phone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="111-111-111"
+              data-testid="input-phone"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="birthdate">Birthdate</Label>
+            <Input
+              id="birthdate"
+              type="date"
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+              data-testid="input-birthdate"
+            />
+          </div>
+          <div>
+            <Label htmlFor="timezone">Time Zone</Label>
+            <Select value={timezone} onValueChange={setTimezone}>
+              <SelectTrigger id="timezone" data-testid="select-timezone">
+                <SelectValue placeholder="Select timezone..." />
+              </SelectTrigger>
+              <SelectContent>
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz}>{tz.replace(/_/g, " ")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label>Organization</Label>
+            <Input
+              value={organizationName || ""}
+              disabled
+              className="bg-muted/50"
+              placeholder="Select organization"
+              data-testid="input-organization"
+            />
+          </div>
+          <div>
+            <Label>Role</Label>
+            <Input
+              value={roleDisplay}
+              disabled
+              className="bg-muted/50"
+              placeholder="Job title or role"
+              data-testid="input-role"
+            />
+          </div>
+          <div>
+            <Label>Access Level</Label>
+            <Input
+              value={accessLevel}
+              disabled
+              className="bg-muted/50"
+              data-testid="input-access-level"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label className="mb-2 block">Skills</Label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {mySkills.map((skill) => (
+              <Badge
+                key={skill.id}
+                variant="default"
+                className="gap-1 pl-3 pr-1.5 py-1"
+                data-testid={`badge-skill-${skill.id}`}
+              >
+                {skill.skillName}
+                <button
+                  onClick={() => removeSkillMutation.mutate(skill.id)}
+                  className="ml-1 rounded-full hover-elevate p-0.5"
+                  data-testid={`button-remove-skill-${skill.id}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <div className="relative">
+            <Input
+              value={skillSearch}
+              onChange={(e) => setSkillSearch(e.target.value)}
+              onKeyDown={handleSkillKeyDown}
+              placeholder="Search for skills or type to add custom ones..."
+              data-testid="input-skill-search"
+            />
+            {skillSearch.trim() && filteredSuggestions.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-auto">
+                {filteredSuggestions.map((skill) => (
+                  <button
+                    key={skill.id}
+                    className="w-full text-left px-3 py-2 text-sm hover-elevate"
+                    onClick={() => {
+                      addSkillMutation.mutate(skill.name);
+                      setSkillSearch("");
+                    }}
+                    data-testid={`button-skill-suggestion-${skill.id}`}
+                  >
+                    {skill.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Start typing to search for skills, or press Enter to add custom skills.
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="profileDescription">Profile Description</Label>
+          <Textarea
+            id="profileDescription"
+            value={profileDescription}
+            onChange={(e) => setProfileDescription(e.target.value)}
+            placeholder="Write a brief description about yourself, your experience, and expertise..."
+            rows={5}
+            className="resize-none"
+            data-testid="textarea-profile-description"
+          />
+        </div>
+
+        <Button
+          onClick={() => updateProfileMutation.mutate()}
+          disabled={updateProfileMutation.isPending}
+          data-testid="button-update-profile"
+        >
+          {updateProfileMutation.isPending ? "Updating..." : "Update Profile"}
+        </Button>
+
+        <div className="border-t pt-6 mt-6">
+          <h2 className="text-xl font-bold mb-4" data-testid="text-change-password-title">Change Password</h2>
+
+          <div className="space-y-4 max-w-lg">
+            <div>
+              <Label htmlFor="currentPassword">Current Password</Label>
+              <div className="relative">
+                <Input
+                  id="currentPassword"
+                  type={showCurrentPassword ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter your current password"
+                  data-testid="input-current-password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  data-testid="button-toggle-current-password"
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="newPassword">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="newPassword"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter your new password"
+                  data-testid="input-new-password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  data-testid="button-toggle-new-password"
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Password must be at least 8 characters with uppercase, lowercase, and number
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your new password"
+                  data-testid="input-confirm-password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  data-testid="button-toggle-confirm-password"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+
+            <Button
+              variant="destructive"
+              onClick={handleChangePassword}
+              disabled={changePasswordMutation.isPending}
+              data-testid="button-change-password"
+            >
+              <Lock className="h-4 w-4 mr-2" />
+              {changePasswordMutation.isPending ? "Changing..." : "Change Password"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

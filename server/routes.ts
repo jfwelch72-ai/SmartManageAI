@@ -504,6 +504,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/auth/profile", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const profileSchema = z.object({
+        firstName: z.string().min(1).max(100).optional(),
+        lastName: z.string().min(1).max(100).optional(),
+        phone: z.string().max(30).optional().nullable(),
+        birthdate: z.string().max(20).optional().nullable(),
+        timezone: z.string().max(100).optional().nullable(),
+        profileDescription: z.string().max(2000).optional().nullable(),
+      });
+      const parsed = profileSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
+
+      const { firstName, lastName, phone, birthdate, timezone, profileDescription } = parsed.data;
+      const updateData: Record<string, unknown> = { updatedAt: new Date() };
+      if (firstName !== undefined) updateData.firstName = firstName;
+      if (lastName !== undefined) updateData.lastName = lastName;
+      if (phone !== undefined) updateData.phone = phone || null;
+      if (birthdate !== undefined) updateData.birthdate = birthdate || null;
+      if (timezone !== undefined) updateData.timezone = timezone || null;
+      if (profileDescription !== undefined) updateData.profileDescription = profileDescription || null;
+
+      const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
+      if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+
+      await logUpdate(userId, "users", userId, req.user, updateData, req as any);
+
+      const { passwordHash, tokenVersion, ...sanitized } = updated;
+      res.json(sanitized);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/change-password", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const passwordSchema = z.object({
+        currentPassword: z.string().min(1, "Current password is required"),
+        newPassword: z.string().min(8, "Password must be at least 8 characters"),
+      });
+      const parsed = passwordSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" }); return; }
+
+      const { currentPassword, newPassword } = parsed.data;
+
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+      const isValid = await verifyPassword(currentPassword, user.passwordHash);
+      if (!isValid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
+
+      const newHash = await hashPassword(newPassword);
+      await db.update(users).set({ passwordHash: newHash, tokenVersion: sql`${users.tokenVersion} + 1`, updatedAt: new Date() }).where(eq(users.id, userId));
+
+      const newTokenVersion = (user.tokenVersion ?? 0) + 1;
+      const token = generateToken(userId, newTokenVersion);
+      setAuthCookie(res, token);
+
+      await logAudit({ userId, action: "password_change", entityType: "users", entityId: userId, oldValue: null, newValue: null }, req as any);
+
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/avatar", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { avatarUrl } = req.body;
+      const [updated] = await db.update(users).set({ avatarUrl: avatarUrl || null, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
+      if (!updated) { res.status(404).json({ error: "User not found" }); return; }
+
+      const { passwordHash, tokenVersion, ...sanitized } = updated;
+      res.json(sanitized);
+    } catch (error) {
+      console.error("Error updating avatar:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const results = await db
+        .select({ id: userSkills.id, skillId: userSkills.skillId, skillName: skills.name, category: skills.category })
+        .from(userSkills)
+        .innerJoin(skills, eq(userSkills.skillId, skills.id))
+        .where(eq(userSkills.userId, userId))
+        .orderBy(skills.name);
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching user skills:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/my-skills", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const skillSchema = z.object({ skillName: z.string().min(1).max(200).transform(v => v.trim()) });
+      const parsed = skillSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Skill name is required" }); return; }
+      const { skillName } = parsed.data;
+      if (!skillName) { res.status(400).json({ error: "Skill name is required" }); return; }
+
+      let [existingSkill] = await db.select().from(skills).where(eq(skills.name, skillName.trim())).limit(1);
+      if (!existingSkill) {
+        [existingSkill] = await db.insert(skills).values({ name: skillName.trim() }).returning();
+      }
+
+      const [existingLink] = await db.select().from(userSkills)
+        .where(and(eq(userSkills.userId, userId), eq(userSkills.skillId, existingSkill.id))).limit(1);
+      if (existingLink) { res.status(409).json({ error: "Skill already added" }); return; }
+
+      const [newUserSkill] = await db.insert(userSkills).values({ userId, skillId: existingSkill.id }).returning();
+      res.status(201).json({ id: newUserSkill.id, skillId: existingSkill.id, skillName: existingSkill.name, category: existingSkill.category });
+    } catch (error) {
+      console.error("Error adding skill:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/auth/my-skills/:userSkillId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { userSkillId } = req.params;
+      const [existing] = await db.select().from(userSkills)
+        .where(and(eq(userSkills.id, userSkillId), eq(userSkills.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Skill not found" }); return; }
+
+      await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
+      res.json({ message: "Skill removed" });
+    } catch (error) {
+      console.error("Error removing skill:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get trade features for current user's organization
   app.get("/api/trade-features", requireAuth, async (req: AuthRequest, res) => {
     try {

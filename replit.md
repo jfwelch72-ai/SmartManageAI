@@ -45,6 +45,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Subscription & Billing System**: 4-tier membership model with 6 add-ons, featuring backend and frontend feature gating.
 *   **Construction Calculator Suite**: Professional construction calculator with 10 specialized tools (e.g., Concrete, Masonry, Lumber, Roofing, Tiling) including waste factor adjustment and cost estimation.
 *   **Marketing Landing Page**: Comprehensive public landing page for unauthenticated visitors, showcasing features, pricing, and AI automation.
+*   **User Profile Page**: Comprehensive profile management with editable personal info (name, phone, birthdate, timezone), profile description, skills management (add/remove with search), avatar display, organization & access level display, photo upload section, and secure password change with token version rotation.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

@@ -192,10 +192,12 @@ export default function TopHeader() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem data-testid="menu-profile">
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
+              <Link href="/profile">
+                <DropdownMenuItem data-testid="menu-profile">
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+              </Link>
               <DropdownMenuItem onClick={handleToggleAIAssistant} data-testid="menu-toggle-ai">
                 <Bot className="mr-2 h-4 w-4" />
                 {isAIAssistantEnabled ? "Hide AI Assistant" : "Show AI Assistant"}
