@@ -288,6 +288,9 @@ export const RoutePermissions = {
   // Bid Network routes
   BID_NETWORK_GC: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
   BID_NETWORK_INBOX: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR",
+
+  // Performance & Rewards routes
+  PERFORMANCE: (role?: string) => hasContractorAccess(role),
 };
 
 /**
@@ -521,6 +524,12 @@ export const NavigationConfig = {
       label: "Website Builder",
       testId: "nav-website-builder",
       visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/performance",
+      label: "Performance & Rewards",
+      testId: "nav-performance",
+      visible: (role?: string) => hasContractorAccess(role),
     },
   ],
 

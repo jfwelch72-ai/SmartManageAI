@@ -1,0 +1,638 @@
+import type { Express, Response } from "express";
+import { requireAuth, type AuthRequest } from "./auth";
+import { db } from "./db";
+import { eq, and, desc, sql, avg, inArray } from "drizzle-orm";
+import { z } from "zod";
+import {
+  ratingCriteria, employeeRatings, ratingScores, rewardTypes, rewardAssignments, users, projects, organizations,
+  type InsertRatingCriteria, type InsertEmployeeRating, type InsertRatingScore, type InsertRewardType, type InsertRewardAssignment,
+} from "@shared/schema";
+
+const createCriteriaSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  weight: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
+  maxScore: z.coerce.number().min(1).max(100).optional(),
+  sortOrder: z.coerce.number().optional(),
+});
+
+const createRatingSchema = z.object({
+  employeeId: z.string().min(1, "Employee ID is required"),
+  projectId: z.string().optional(),
+  period: z.string().optional(),
+  comments: z.string().optional(),
+  scores: z.array(z.object({
+    criteriaId: z.string().min(1),
+    score: z.coerce.number().min(0),
+    comment: z.string().optional(),
+  })).min(1, "At least one score is required"),
+});
+
+const createRewardTypeSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  category: z.string().min(1, "Category is required"),
+  value: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
+});
+
+const assignRewardSchema = z.object({
+  employeeId: z.string().min(1, "Employee ID is required"),
+  rewardTypeId: z.string().min(1, "Reward type is required"),
+  ratingId: z.string().optional(),
+  amount: z.union([z.string(), z.number()]).transform(v => String(v)).optional(),
+  justification: z.string().optional(),
+});
+
+const ROLE_HIERARCHY: Record<string, string[]> = {
+  "ADMIN": ["MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER"],
+  "MANAGER": ["SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER"],
+  "SUPERINTENDENT": ["HOURLY_EMPLOYEE"],
+};
+
+export function registerPerformanceRoutes(app: Express) {
+  const requireAdmin = (req: AuthRequest, res: Response): boolean => {
+    if (req.user?.role !== "ADMIN") {
+      res.status(403).json({ error: "Admin access required" });
+      return false;
+    }
+    return true;
+  };
+
+  const getOrgId = (req: AuthRequest, res: Response): string | null => {
+    const orgId = req.user?.organizationId;
+    if (!orgId) {
+      res.status(400).json({ error: "Organization required" });
+      return null;
+    }
+    return orgId;
+  };
+
+  app.get("/api/performance/criteria", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const results = await db
+        .select()
+        .from(ratingCriteria)
+        .where(and(eq(ratingCriteria.organizationId, orgId), eq(ratingCriteria.isActive, true)))
+        .orderBy(ratingCriteria.sortOrder);
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching criteria:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/performance/criteria", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const parsed = createCriteriaSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+      const { name, description, weight, maxScore, sortOrder } = parsed.data;
+
+      const [created] = await db.insert(ratingCriteria).values({
+        organizationId: orgId,
+        name,
+        description: description || null,
+        weight: weight || "1.0",
+        maxScore: maxScore || 10,
+        sortOrder: sortOrder || 0,
+        isActive: true,
+      }).returning();
+
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error creating criteria:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { id } = req.params;
+      const { name, description, weight, maxScore, isActive, sortOrder } = req.body;
+
+      const [existing] = await db.select().from(ratingCriteria)
+        .where(and(eq(ratingCriteria.id, id), eq(ratingCriteria.organizationId, orgId)))
+        .limit(1);
+
+      if (!existing) { res.status(404).json({ error: "Criteria not found" }); return; }
+
+      const updateData: Record<string, unknown> = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (weight !== undefined) updateData.weight = weight;
+      if (maxScore !== undefined) updateData.maxScore = maxScore;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+
+      const [updated] = await db.update(ratingCriteria).set(updateData)
+        .where(and(eq(ratingCriteria.id, id), eq(ratingCriteria.organizationId, orgId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating criteria:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/performance/criteria/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { id } = req.params;
+
+      const [existing] = await db.select().from(ratingCriteria)
+        .where(and(eq(ratingCriteria.id, id), eq(ratingCriteria.organizationId, orgId)))
+        .limit(1);
+
+      if (!existing) { res.status(404).json({ error: "Criteria not found" }); return; }
+
+      const [updated] = await db.update(ratingCriteria)
+        .set({ isActive: false })
+        .where(and(eq(ratingCriteria.id, id), eq(ratingCriteria.organizationId, orgId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error deleting criteria:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/eligible-employees", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const userRole = req.user!.role;
+      const allowedRoles = ROLE_HIERARCHY[userRole];
+
+      if (!allowedRoles || allowedRoles.length === 0) {
+        res.json([]);
+        return;
+      }
+
+      const eligible = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          role: users.role,
+        })
+        .from(users)
+        .where(
+          and(
+            eq(users.organizationId, orgId),
+            eq(users.isActive, true),
+            inArray(users.role, allowedRoles as any)
+          )
+        );
+
+      res.json(eligible);
+    } catch (error) {
+      console.error("Error fetching eligible employees:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/performance/ratings", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const parsed = createRatingSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+      const { employeeId, projectId, period, comments, scores } = parsed.data;
+
+      const [employee] = await db.select().from(users)
+        .where(and(eq(users.id, employeeId), eq(users.organizationId, orgId)))
+        .limit(1);
+
+      if (!employee) { res.status(404).json({ error: "Employee not found in organization" }); return; }
+
+      const evaluatorRole = req.user!.role;
+      const allowedRoles = ROLE_HIERARCHY[evaluatorRole];
+      if (!allowedRoles || !allowedRoles.includes(employee.role)) {
+        res.status(403).json({ error: "You are not authorized to rate this employee" });
+        return;
+      }
+
+      const criteriaIds = scores.map((s: any) => s.criteriaId);
+      const criteriaRecords = await db.select().from(ratingCriteria)
+        .where(and(
+          eq(ratingCriteria.organizationId, orgId),
+          eq(ratingCriteria.isActive, true),
+          inArray(ratingCriteria.id, criteriaIds)
+        ));
+
+      if (criteriaRecords.length !== criteriaIds.length) {
+        res.status(400).json({ error: "One or more criteria not found or inactive" });
+        return;
+      }
+
+      const criteriaMap = new Map(criteriaRecords.map(c => [c.id, c]));
+
+      let totalScore = 0;
+      let weightedSum = 0;
+      let totalWeight = 0;
+
+      for (const s of scores) {
+        const criteria = criteriaMap.get(s.criteriaId)!;
+        const scoreVal = parseFloat(s.score);
+        totalScore += scoreVal;
+        const weight = parseFloat(criteria.weight || "1.0");
+        weightedSum += scoreVal * weight;
+        totalWeight += weight;
+      }
+
+      const overallScore = (totalScore / scores.length).toFixed(2);
+      const weightedScore = totalWeight > 0 ? (weightedSum / totalWeight).toFixed(2) : overallScore;
+
+      const [rating] = await db.insert(employeeRatings).values({
+        organizationId: orgId,
+        employeeId,
+        evaluatorId: req.user!.id,
+        projectId: projectId || null,
+        period: period || null,
+        overallScore,
+        weightedScore,
+        comments: comments || null,
+      }).returning();
+
+      const scoreInserts = scores.map((s: any) => ({
+        ratingId: rating.id,
+        criteriaId: s.criteriaId,
+        score: String(s.score),
+        comment: s.comment || null,
+      }));
+
+      const insertedScores = await db.insert(ratingScores).values(scoreInserts).returning();
+
+      res.status(201).json({ ...rating, scores: insertedScores });
+    } catch (error) {
+      console.error("Error creating rating:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/ratings/my", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const ratings = await db
+        .select()
+        .from(employeeRatings)
+        .where(and(
+          eq(employeeRatings.organizationId, orgId),
+          eq(employeeRatings.employeeId, req.user!.id)
+        ))
+        .orderBy(desc(employeeRatings.createdAt));
+
+      const ratingsWithScores = await Promise.all(
+        ratings.map(async (r) => {
+          const scores = await db.select().from(ratingScores).where(eq(ratingScores.ratingId, r.id));
+          return { ...r, scores };
+        })
+      );
+
+      res.json(ratingsWithScores);
+    } catch (error) {
+      console.error("Error fetching my ratings:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/ratings", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { employeeId } = req.query;
+
+      const conditions = [eq(employeeRatings.organizationId, orgId)];
+
+      if (employeeId) {
+        conditions.push(eq(employeeRatings.employeeId, employeeId as string));
+      }
+
+      if (req.user!.role !== "ADMIN") {
+        conditions.push(eq(employeeRatings.evaluatorId, req.user!.id));
+      }
+
+      const ratings = await db
+        .select()
+        .from(employeeRatings)
+        .where(and(...conditions))
+        .orderBy(desc(employeeRatings.createdAt));
+
+      const ratingsWithScores = await Promise.all(
+        ratings.map(async (r) => {
+          const scores = await db.select().from(ratingScores).where(eq(ratingScores.ratingId, r.id));
+          return { ...r, scores };
+        })
+      );
+
+      res.json(ratingsWithScores);
+    } catch (error) {
+      console.error("Error fetching ratings:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/leaderboard", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
+        res.status(403).json({ error: "Admin or Manager access required" });
+        return;
+      }
+
+      const leaderboard = await db
+        .select({
+          employeeId: employeeRatings.employeeId,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          role: users.role,
+          avgWeightedScore: avg(employeeRatings.weightedScore),
+          totalRatings: sql<number>`count(${employeeRatings.id})::int`,
+        })
+        .from(employeeRatings)
+        .innerJoin(users, eq(employeeRatings.employeeId, users.id))
+        .where(eq(employeeRatings.organizationId, orgId))
+        .groupBy(employeeRatings.employeeId, users.firstName, users.lastName, users.role)
+        .orderBy(desc(avg(employeeRatings.weightedScore)))
+        .limit(20);
+
+      res.json(leaderboard);
+    } catch (error) {
+      console.error("Error fetching leaderboard:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const results = await db
+        .select()
+        .from(rewardTypes)
+        .where(and(eq(rewardTypes.organizationId, orgId), eq(rewardTypes.isActive, true)));
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching reward types:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/performance/reward-types", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const parsed = createRewardTypeSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+      const { name, description, category, value } = parsed.data;
+
+      const [created] = await db.insert(rewardTypes).values({
+        organizationId: orgId,
+        name,
+        description: description || null,
+        category: category || "CUSTOM",
+        value: value || null,
+        isActive: true,
+      }).returning();
+
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error creating reward type:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { id } = req.params;
+      const { name, description, category, value, isActive } = req.body;
+
+      const [existing] = await db.select().from(rewardTypes)
+        .where(and(eq(rewardTypes.id, id), eq(rewardTypes.organizationId, orgId)))
+        .limit(1);
+
+      if (!existing) { res.status(404).json({ error: "Reward type not found" }); return; }
+
+      const updateData: Record<string, unknown> = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (category !== undefined) updateData.category = category;
+      if (value !== undefined) updateData.value = value;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const [updated] = await db.update(rewardTypes).set(updateData)
+        .where(and(eq(rewardTypes.id, id), eq(rewardTypes.organizationId, orgId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating reward type:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/performance/reward-types/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { id } = req.params;
+
+      const [existing] = await db.select().from(rewardTypes)
+        .where(and(eq(rewardTypes.id, id), eq(rewardTypes.organizationId, orgId)))
+        .limit(1);
+
+      if (!existing) { res.status(404).json({ error: "Reward type not found" }); return; }
+
+      const [updated] = await db.update(rewardTypes)
+        .set({ isActive: false })
+        .where(and(eq(rewardTypes.id, id), eq(rewardTypes.organizationId, orgId)))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error deleting reward type:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/performance/rewards", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const parsed = assignRewardSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0].message }); return; }
+      const { employeeId, rewardTypeId, ratingId, amount, justification } = parsed.data;
+      const { expiresAt } = req.body;
+
+      const [employee] = await db.select().from(users)
+        .where(and(eq(users.id, employeeId), eq(users.organizationId, orgId)))
+        .limit(1);
+
+      if (!employee) { res.status(404).json({ error: "Employee not found in organization" }); return; }
+
+      const [rewardType] = await db.select().from(rewardTypes)
+        .where(and(eq(rewardTypes.id, rewardTypeId), eq(rewardTypes.organizationId, orgId)))
+        .limit(1);
+
+      if (!rewardType) { res.status(404).json({ error: "Reward type not found" }); return; }
+
+      const [created] = await db.insert(rewardAssignments).values({
+        organizationId: orgId,
+        employeeId,
+        rewardTypeId,
+        assignedById: req.user!.id,
+        ratingId: ratingId || null,
+        amount: amount || null,
+        justification: justification || null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      }).returning();
+
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Error assigning reward:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/rewards/my", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const results = await db
+        .select({
+          reward: rewardAssignments,
+          rewardTypeName: rewardTypes.name,
+          rewardTypeCategory: rewardTypes.category,
+        })
+        .from(rewardAssignments)
+        .innerJoin(rewardTypes, eq(rewardAssignments.rewardTypeId, rewardTypes.id))
+        .where(and(
+          eq(rewardAssignments.organizationId, orgId),
+          eq(rewardAssignments.employeeId, req.user!.id)
+        ))
+        .orderBy(desc(rewardAssignments.createdAt));
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching my rewards:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/rewards/analytics", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!requireAdmin(req, res)) return;
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const totalRewards = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(rewardAssignments)
+        .where(eq(rewardAssignments.organizationId, orgId));
+
+      const byType = await db
+        .select({
+          category: rewardTypes.category,
+          name: rewardTypes.name,
+          count: sql<number>`count(*)::int`,
+          totalAmount: sql<string>`coalesce(sum(${rewardAssignments.amount}), 0)`,
+        })
+        .from(rewardAssignments)
+        .innerJoin(rewardTypes, eq(rewardAssignments.rewardTypeId, rewardTypes.id))
+        .where(eq(rewardAssignments.organizationId, orgId))
+        .groupBy(rewardTypes.category, rewardTypes.name);
+
+      const byMonth = await db
+        .select({
+          month: sql<string>`to_char(${rewardAssignments.createdAt}, 'YYYY-MM')`,
+          count: sql<number>`count(*)::int`,
+          totalAmount: sql<string>`coalesce(sum(${rewardAssignments.amount}), 0)`,
+        })
+        .from(rewardAssignments)
+        .where(eq(rewardAssignments.organizationId, orgId))
+        .groupBy(sql`to_char(${rewardAssignments.createdAt}, 'YYYY-MM')`)
+        .orderBy(desc(sql`to_char(${rewardAssignments.createdAt}, 'YYYY-MM')`));
+
+      res.json({
+        totalRewards: totalRewards[0]?.count || 0,
+        byType,
+        byMonth,
+      });
+    } catch (error) {
+      console.error("Error fetching reward analytics:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/performance/rewards", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = getOrgId(req, res);
+      if (!orgId) return;
+
+      const { employeeId } = req.query;
+      const conditions = [eq(rewardAssignments.organizationId, orgId)];
+
+      if (employeeId) {
+        if (req.user!.role !== "ADMIN" && req.user!.id !== employeeId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        conditions.push(eq(rewardAssignments.employeeId, employeeId as string));
+      } else if (req.user!.role !== "ADMIN") {
+        conditions.push(eq(rewardAssignments.employeeId, req.user!.id));
+      }
+
+      const results = await db
+        .select({
+          reward: rewardAssignments,
+          rewardTypeName: rewardTypes.name,
+          rewardTypeCategory: rewardTypes.category,
+        })
+        .from(rewardAssignments)
+        .innerJoin(rewardTypes, eq(rewardAssignments.rewardTypeId, rewardTypes.id))
+        .where(and(...conditions))
+        .orderBy(desc(rewardAssignments.createdAt));
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching rewards:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+}

@@ -18517,6 +18517,9 @@ If the make/model is unknown, provide general best practices for the equipment t
     }
   });
 
+  const { registerPerformanceRoutes } = await import("./performanceRoutes");
+  registerPerformanceRoutes(app);
+
   seedCoreTradeModifierCategories().catch(err => {
     console.error("Failed to seed core modifier categories:", err);
   });

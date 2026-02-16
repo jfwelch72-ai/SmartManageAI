@@ -6710,3 +6710,101 @@ export type Submittal = typeof submittals.$inferSelect;
 export const insertSubmittalActivitySchema = createInsertSchema(submittalActivity).omit({ id: true, createdAt: true });
 export type InsertSubmittalActivity = z.infer<typeof insertSubmittalActivitySchema>;
 export type SubmittalActivity = typeof submittalActivity.$inferSelect;
+
+// ==================== Employee Performance & Rewards System ====================
+
+export const ratingCriteria = pgTable("rating_criteria", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  weight: decimal("weight", { precision: 5, scale: 2 }).default("1.0"),
+  maxScore: integer("max_score").notNull().default(10),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("rating_criteria_org_idx").on(table.organizationId),
+  orgNameUnique: unique("rating_criteria_org_name_unique").on(table.organizationId, table.name),
+}));
+
+export const employeeRatings = pgTable("employee_ratings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  evaluatorId: varchar("evaluator_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  period: text("period"),
+  overallScore: decimal("overall_score", { precision: 5, scale: 2 }),
+  weightedScore: decimal("weighted_score", { precision: 5, scale: 2 }),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("employee_ratings_org_idx").on(table.organizationId),
+  employeeIdx: index("employee_ratings_employee_idx").on(table.employeeId),
+  evaluatorIdx: index("employee_ratings_evaluator_idx").on(table.evaluatorId),
+}));
+
+export const ratingScores = pgTable("rating_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ratingId: varchar("rating_id").notNull().references(() => employeeRatings.id, { onDelete: "cascade" }),
+  criteriaId: varchar("criteria_id").notNull().references(() => ratingCriteria.id, { onDelete: "cascade" }),
+  score: decimal("score", { precision: 5, scale: 2 }).notNull(),
+  comment: text("comment"),
+}, (table) => ({
+  ratingIdx: index("rating_scores_rating_idx").on(table.ratingId),
+  ratingCriteriaUnique: unique("rating_scores_rating_criteria_unique").on(table.ratingId, table.criteriaId),
+}));
+
+export const rewardTypeEnum = pgEnum("reward_type_enum", ["BONUS", "INCENTIVE", "RECOGNITION", "POINTS", "CUSTOM"]);
+
+export const rewardTypes = pgTable("reward_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: rewardTypeEnum("category").notNull().default("CUSTOM"),
+  value: decimal("value", { precision: 10, scale: 2 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("reward_types_org_idx").on(table.organizationId),
+  orgNameUnique: unique("reward_types_org_name_unique").on(table.organizationId, table.name),
+}));
+
+export const rewardAssignments = pgTable("reward_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  rewardTypeId: varchar("reward_type_id").notNull().references(() => rewardTypes.id, { onDelete: "cascade" }),
+  assignedById: varchar("assigned_by_id").notNull().references(() => users.id),
+  ratingId: varchar("rating_id").references(() => employeeRatings.id, { onDelete: "set null" }),
+  amount: decimal("amount", { precision: 10, scale: 2 }),
+  justification: text("justification"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("reward_assignments_org_idx").on(table.organizationId),
+  employeeIdx: index("reward_assignments_employee_idx").on(table.employeeId),
+}));
+
+export const insertRatingCriteriaSchema = createInsertSchema(ratingCriteria).omit({ id: true, createdAt: true });
+export type InsertRatingCriteria = z.infer<typeof insertRatingCriteriaSchema>;
+export type RatingCriteria = typeof ratingCriteria.$inferSelect;
+
+export const insertEmployeeRatingSchema = createInsertSchema(employeeRatings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmployeeRating = z.infer<typeof insertEmployeeRatingSchema>;
+export type EmployeeRating = typeof employeeRatings.$inferSelect;
+
+export const insertRatingScoreSchema = createInsertSchema(ratingScores).omit({ id: true });
+export type InsertRatingScore = z.infer<typeof insertRatingScoreSchema>;
+export type RatingScore = typeof ratingScores.$inferSelect;
+
+export const insertRewardTypeSchema = createInsertSchema(rewardTypes).omit({ id: true, createdAt: true });
+export type InsertRewardType = z.infer<typeof insertRewardTypeSchema>;
+export type RewardType = typeof rewardTypes.$inferSelect;
+
+export const insertRewardAssignmentSchema = createInsertSchema(rewardAssignments).omit({ id: true, createdAt: true });
+export type InsertRewardAssignment = z.infer<typeof insertRewardAssignmentSchema>;
+export type RewardAssignment = typeof rewardAssignments.$inferSelect;

@@ -95,6 +95,7 @@ import CompanyHealthPage from "@/pages/company-health";
 import ExecutiveDigestPage from "@/pages/executive-digest";
 import WhatIfSimulatorPage from "@/pages/what-if-simulator";
 import CalculatorPage from "@/pages/calculator";
+import PerformancePage from "@/pages/performance";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -257,6 +258,7 @@ function Router() {
       
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
+      <Route path="/performance" component={() => <ProtectedRoute component={PerformancePage} permission={RoutePermissions.PERFORMANCE} />} />
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/rfis" component={() => <ProtectedRoute component={RFIsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
