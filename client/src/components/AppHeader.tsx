@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -108,9 +108,10 @@ interface AppHeaderProps {
   userRole: string;
   onLogout: () => Promise<void>;
   organizationName?: string;
+  avatarUrl?: string | null;
 }
 
-export default function AppHeader({ userName, userRole, onLogout, organizationName }: AppHeaderProps) {
+export default function AppHeader({ userName, userRole, onLogout, organizationName, avatarUrl }: AppHeaderProps) {
   const displayName = organizationName || "SmartManageAI";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [timeClockOpen, setTimeClockOpen] = useState(false);
@@ -401,6 +402,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                 <div className="border-t mt-4 pt-4">
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Avatar className="w-10 h-10">
+                      {avatarUrl && <AvatarImage src={avatarUrl} alt={userName} />}
                       <AvatarFallback>{initials}</AvatarFallback>
                     </Avatar>
                     <div>
@@ -786,6 +788,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
                 <Avatar className="w-8 h-8">
+                  {avatarUrl && <AvatarImage src={avatarUrl} alt={userName} />}
                   <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="hidden md:block text-left">

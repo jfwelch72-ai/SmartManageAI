@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -181,6 +181,7 @@ export default function TopHeader() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
                 <Avatar className="w-8 h-8">
+                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={userName} />}
                   <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="hidden md:block text-left">
