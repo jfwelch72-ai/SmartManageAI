@@ -1,0 +1,95 @@
+Add Hierarchical Employee Grading / Rating System with Admin-Controlled Rewards
+
+Create an Employee Grading (Rating) System that follows the organizational hierarchy and integrates a reward mechanism.
+
+Hierarchy-Based Rating Rules:
+
+• Ratings must follow the organizational structure
+• Employees can only be rated by authorized superiors
+• Evaluator eligibility determined dynamically via reporting relationships
+• Prevent unauthorized rating actions (peer / subordinate restrictions)
+
+Organizational Dependency:
+
+• System must adapt to company roles & hierarchy
+• No hardcoded reporting chains
+• Role-driven permission validation
+
+Rating Capabilities:
+
+• Rate employees based on configurable criteria:
+
+ – Productivity
+ – Work Quality
+ – Reliability
+ – Safety Compliance
+ – Attendance
+ – Skill Level
+ – Custom metrics
+
+• Numeric rating scale
+• Optional weighted scoring
+• Overall performance score calculation
+
+Tracking & Analytics:
+
+• Rating history per employee
+• Performance trends
+• Multi-evaluator support
+• Project / period-based evaluations
+
+Add Reward System
+
+Integrate a Reward / Incentive System linked to performance ratings.
+
+Reward Control Rules (Critical):
+
+• Rewards can ONLY be created, modified, and assigned by Admin
+• Non-admin roles cannot issue rewards
+• Prevent unauthorized reward manipulation
+
+Reward Mechanism:
+
+Allow Admin to:
+
+• Define reward types:
+
+ – Bonus
+ – Incentive
+ – Recognition
+ – Points / Credits
+ – Custom rewards
+
+• Assign rewards based on:
+
+ – Performance score
+ – Manual selection
+ – Rule-based triggers
+
+Reward Features:
+
+• Reward history tracking
+• Performance-linked rewards
+• Approval / justification notes
+• Expiration rules (optional 🔥)
+
+UI Behavior:
+
+For Evaluators:
+
+• Role-aware rating interface
+• Show eligible subordinates only
+
+For Admin:
+
+• Reward management panel
+• Reward assignment controls
+• Performance-based filtering
+
+Advanced Features (Highly Recommended 😌🔥):
+
+• Automated reward triggers
+• Performance thresholds
+• Leaderboards / top performers
+• Incentive analytics
+• Bias / rating normalization
