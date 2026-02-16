@@ -615,6 +615,60 @@ export const prevailingWageRates = pgTable("prevailing_wage_rates", {
   projectIdIdx: index("prevailing_wage_rates_project_id_idx").on(table.projectId),
 }));
 
+export const salaryTypeEnum = pgEnum("salary_type", ["FIXED", "CONTRACT", "HOURLY_EQUIVALENT", "SEASONAL"]);
+
+export const annualSalaryCategories = pgTable("annual_salary_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  baseAnnualSalary: decimal("base_annual_salary", { precision: 12, scale: 2 }).notNull(),
+  salaryType: salaryTypeEnum("salary_type").default("FIXED"),
+  effectiveDate: date("effective_date").notNull().defaultNow(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgNameUnique: unique().on(table.organizationId, table.name),
+}));
+
+export const burdenRates = pgTable("burden_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  burdenPercentage: decimal("burden_percentage", { precision: 8, scale: 4 }).notNull().default("0"),
+  fixedBurdenAmount: decimal("fixed_burden_amount", { precision: 12, scale: 2 }).default("0"),
+  taxesPercent: decimal("taxes_percent", { precision: 8, scale: 4 }).default("0"),
+  benefitsPercent: decimal("benefits_percent", { precision: 8, scale: 4 }).default("0"),
+  insurancePercent: decimal("insurance_percent", { precision: 8, scale: 4 }).default("0"),
+  overheadPercent: decimal("overhead_percent", { precision: 8, scale: 4 }).default("0"),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgNameUnique: unique().on(table.organizationId, table.name),
+}));
+
+export const employeeCostAssignments = pgTable("employee_cost_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  salaryCategoryId: varchar("salary_category_id").notNull().references(() => annualSalaryCategories.id, { onDelete: "cascade" }),
+  burdenRateId: varchar("burden_rate_id").references(() => burdenRates.id, { onDelete: "set null" }),
+  workingHoursPerYear: integer("working_hours_per_year").notNull().default(2080),
+  fullyBurdenedCost: decimal("fully_burdened_cost", { precision: 14, scale: 2 }),
+  derivedHourlyRate: decimal("derived_hourly_rate", { precision: 10, scale: 4 }),
+  effectiveDate: date("effective_date").notNull().defaultNow(),
+  endDate: date("end_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userUnique: unique().on(table.userId, table.salaryCategoryId),
+  userIdIdx: index("employee_cost_assignments_user_id_idx").on(table.userId),
+}));
+
 // T&M Daily Sheets table (legacy - replaced by tmTickets)
 export const tmDailySheets = pgTable("tm_daily_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2212,6 +2266,35 @@ export type EmployeeClassification = typeof employeeClassifications.$inferSelect
 
 export type InsertPrevailingWageRate = z.infer<typeof insertPrevailingWageRateSchema>;
 export type PrevailingWageRate = typeof prevailingWageRates.$inferSelect;
+
+export const insertAnnualSalaryCategorySchema = createInsertSchema(annualSalaryCategories).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBurdenRateSchema = createInsertSchema(burdenRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmployeeCostAssignmentSchema = createInsertSchema(employeeCostAssignments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  fullyBurdenedCost: true,
+  derivedHourlyRate: true,
+});
+
+export type InsertAnnualSalaryCategory = z.infer<typeof insertAnnualSalaryCategorySchema>;
+export type AnnualSalaryCategory = typeof annualSalaryCategories.$inferSelect;
+
+export type InsertBurdenRate = z.infer<typeof insertBurdenRateSchema>;
+export type BurdenRate = typeof burdenRates.$inferSelect;
+
+export type InsertEmployeeCostAssignment = z.infer<typeof insertEmployeeCostAssignmentSchema>;
+export type EmployeeCostAssignment = typeof employeeCostAssignments.$inferSelect;
 
 export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
 export type TMDailySheet = typeof tmDailySheets.$inferSelect;
