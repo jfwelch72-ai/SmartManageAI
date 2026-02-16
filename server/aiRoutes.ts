@@ -13,6 +13,7 @@ import {
 } from "./ai/orchestrator";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
+import { seedScopeStandardizationForTrade } from "./seedTradeExpansion";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
 import { type AuthRequest } from "./auth";
@@ -1267,6 +1268,14 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest
           }).onConflictDoNothing();
         }
       }
+    }
+
+    // Seed scope standardization data (work types + modifiers) for the org's trade
+    try {
+      await seedScopeStandardizationForTrade(tradeType);
+      logInfo(`[Onboarding] Scope standardization seeded for trade: ${tradeType}`);
+    } catch (scopeErr: any) {
+      logWarn(`[Onboarding] Scope standardization seeding failed (non-fatal): ${scopeErr.message}`);
     }
 
     // If website URL provided, trigger background theme extraction (async)

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { masterSowItems, masterModifierCategories, masterModifiers } from "@shared/schema";
+import { masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
 const civilSiteSowItems = [
@@ -1511,6 +1511,958 @@ async function seedCoreTradeModifierCategories() {
   return { inserted, skipped };
 }
 
+// ============================================================
+// TRADE-SPECIFIC SCOPE WORK TYPES (for scope standardization auto-seeding)
+// ============================================================
+
+const tradeWorkTypeTemplates: Record<string, { categories: { name: string; workTypes: { name: string; code: string; requiresDimensions?: boolean; dimensionLabel?: string }[] }[] }> = {
+  CONCRETE: {
+    categories: [
+      { name: "Sidewalk", workTypes: [
+        { name: '4" Sidewalk', code: "sidewalk_4in" },
+        { name: '5" Sidewalk', code: "sidewalk_5in" },
+        { name: '6" Sidewalk', code: "sidewalk_6in" },
+      ]},
+      { name: "Driveway", workTypes: [
+        { name: '4" Driveway', code: "driveway_4in" },
+        { name: '6" Driveway', code: "driveway_6in" },
+        { name: '8" Driveway (Heavy Duty)', code: "driveway_8in" },
+      ]},
+      { name: "Curb & Gutter", workTypes: [
+        { name: "Standard Curb & Gutter", code: "curb_gutter_std" },
+        { name: "Rolled Curb", code: "curb_rolled" },
+        { name: "Mountable Curb", code: "curb_mountable" },
+        { name: "Barrier Curb", code: "curb_barrier" },
+      ]},
+      { name: "Slab on Grade", workTypes: [
+        { name: '4" Slab on Grade', code: "slab_4in" },
+        { name: '6" Slab on Grade', code: "slab_6in" },
+        { name: '8" Slab on Grade', code: "slab_8in" },
+      ]},
+      { name: "Foundation", workTypes: [
+        { name: "Continuous Footing", code: "footing_continuous", requiresDimensions: true, dimensionLabel: "L x W x D" },
+        { name: "Spread Footing", code: "footing_spread", requiresDimensions: true, dimensionLabel: "L x W x D" },
+        { name: "Grade Beam", code: "grade_beam", requiresDimensions: true, dimensionLabel: "L x W x D" },
+        { name: "Pier/Caisson", code: "pier_caisson", requiresDimensions: true, dimensionLabel: "Diameter x Depth" },
+      ]},
+      { name: "Wall", workTypes: [
+        { name: "Retaining Wall", code: "wall_retaining", requiresDimensions: true, dimensionLabel: "L x H x Thickness" },
+        { name: "Foundation Wall", code: "wall_foundation", requiresDimensions: true, dimensionLabel: "L x H x Thickness" },
+        { name: "Stem Wall", code: "wall_stem", requiresDimensions: true, dimensionLabel: "L x H x Thickness" },
+      ]},
+      { name: "Flatwork", workTypes: [
+        { name: "Patio Slab", code: "flatwork_patio" },
+        { name: "Loading Dock", code: "flatwork_loading_dock" },
+        { name: "Equipment Pad", code: "flatwork_equip_pad" },
+      ]},
+    ]
+  },
+  GENERAL_CONTRACTOR: {
+    categories: [
+      { name: "Site Work", workTypes: [
+        { name: "Site Clearing", code: "gc_site_clearing" },
+        { name: "Grading", code: "gc_grading" },
+        { name: "Excavation", code: "gc_excavation" },
+      ]},
+      { name: "Concrete", workTypes: [
+        { name: "Foundation", code: "gc_foundation" },
+        { name: "Flatwork", code: "gc_flatwork" },
+        { name: "Structural Concrete", code: "gc_structural_concrete" },
+      ]},
+      { name: "Framing", workTypes: [
+        { name: "Wood Framing", code: "gc_wood_framing" },
+        { name: "Steel Framing", code: "gc_steel_framing" },
+      ]},
+      { name: "Finishes", workTypes: [
+        { name: "Drywall", code: "gc_drywall" },
+        { name: "Painting", code: "gc_painting" },
+        { name: "Flooring", code: "gc_flooring" },
+        { name: "Tile", code: "gc_tile" },
+      ]},
+      { name: "MEP", workTypes: [
+        { name: "Electrical Rough-in", code: "gc_electrical_rough" },
+        { name: "Plumbing Rough-in", code: "gc_plumbing_rough" },
+        { name: "HVAC Installation", code: "gc_hvac_install" },
+      ]},
+    ]
+  },
+  ELECTRICAL: {
+    categories: [
+      { name: "Conduit", workTypes: [
+        { name: 'EMT Conduit - 1/2"', code: "conduit_emt_half" },
+        { name: 'EMT Conduit - 3/4"', code: "conduit_emt_3qtr" },
+        { name: 'EMT Conduit - 1"', code: "conduit_emt_1in" },
+        { name: "Rigid Conduit", code: "conduit_rigid" },
+        { name: "PVC Conduit", code: "conduit_pvc" },
+      ]},
+      { name: "Wire Pull", workTypes: [
+        { name: "#12 Wire Pull", code: "wire_12" },
+        { name: "#10 Wire Pull", code: "wire_10" },
+        { name: "#8 Wire Pull", code: "wire_8" },
+        { name: "#6 Wire Pull", code: "wire_6" },
+      ]},
+      { name: "Devices", workTypes: [
+        { name: "Receptacle Installation", code: "device_receptacle" },
+        { name: "Switch Installation", code: "device_switch" },
+        { name: "GFCI Receptacle", code: "device_gfci" },
+      ]},
+      { name: "Panels & Distribution", workTypes: [
+        { name: "Panel Installation", code: "panel_install" },
+        { name: "Transformer Installation", code: "transformer_install" },
+        { name: "Disconnect Installation", code: "disconnect_install" },
+      ]},
+      { name: "Lighting", workTypes: [
+        { name: "LED Fixture Install", code: "light_led" },
+        { name: "Recessed Light Install", code: "light_recessed" },
+        { name: "Exterior Light Install", code: "light_exterior" },
+      ]},
+    ]
+  },
+  PLUMBING: {
+    categories: [
+      { name: "Pipe - Supply", workTypes: [
+        { name: 'Copper Pipe - 1/2"', code: "pipe_copper_half" },
+        { name: 'Copper Pipe - 3/4"', code: "pipe_copper_3qtr" },
+        { name: 'PEX Pipe - 1/2"', code: "pipe_pex_half" },
+        { name: 'PEX Pipe - 3/4"', code: "pipe_pex_3qtr" },
+      ]},
+      { name: "Pipe - Drain", workTypes: [
+        { name: 'PVC DWV - 2"', code: "pipe_dwv_2in" },
+        { name: 'PVC DWV - 3"', code: "pipe_dwv_3in" },
+        { name: 'PVC DWV - 4"', code: "pipe_dwv_4in" },
+        { name: 'Cast Iron - 4"', code: "pipe_ci_4in" },
+      ]},
+      { name: "Fixtures", workTypes: [
+        { name: "Toilet Installation", code: "fixture_toilet" },
+        { name: "Sink Installation", code: "fixture_sink" },
+        { name: "Shower Valve", code: "fixture_shower" },
+        { name: "Water Heater", code: "fixture_water_heater" },
+      ]},
+    ]
+  },
+  HVAC: {
+    categories: [
+      { name: "Ductwork", workTypes: [
+        { name: "Sheet Metal Duct", code: "duct_sheet_metal" },
+        { name: "Flex Duct", code: "duct_flex" },
+        { name: "Spiral Duct", code: "duct_spiral" },
+      ]},
+      { name: "Equipment", workTypes: [
+        { name: "RTU Installation", code: "hvac_rtu" },
+        { name: "Split System Install", code: "hvac_split" },
+        { name: "Mini Split Install", code: "hvac_mini_split" },
+        { name: "Boiler Install", code: "hvac_boiler" },
+      ]},
+      { name: "Controls", workTypes: [
+        { name: "Thermostat Install", code: "hvac_thermostat" },
+        { name: "BAS Controls", code: "hvac_bas" },
+      ]},
+    ]
+  },
+  ROOFING: {
+    categories: [
+      { name: "Commercial", workTypes: [
+        { name: "TPO Single-Ply", code: "roof_tpo" },
+        { name: "EPDM Single-Ply", code: "roof_epdm" },
+        { name: "Built-Up Roofing", code: "roof_bur" },
+        { name: "Modified Bitumen", code: "roof_mod_bit" },
+      ]},
+      { name: "Residential", workTypes: [
+        { name: "Asphalt Shingle", code: "roof_shingle" },
+        { name: "Metal Standing Seam", code: "roof_metal_ss" },
+        { name: "Clay/Concrete Tile", code: "roof_tile" },
+      ]},
+      { name: "Accessories", workTypes: [
+        { name: "Flashing", code: "roof_flashing" },
+        { name: "Gutter Installation", code: "roof_gutter" },
+        { name: "Skylights", code: "roof_skylight" },
+      ]},
+    ]
+  },
+  PAINTING: {
+    categories: [
+      { name: "Interior", workTypes: [
+        { name: "Wall Paint - Flat", code: "paint_wall_flat" },
+        { name: "Wall Paint - Eggshell", code: "paint_wall_eggshell" },
+        { name: "Trim Paint", code: "paint_trim" },
+        { name: "Ceiling Paint", code: "paint_ceiling" },
+      ]},
+      { name: "Exterior", workTypes: [
+        { name: "Exterior Wall Paint", code: "paint_ext_wall" },
+        { name: "Exterior Trim", code: "paint_ext_trim" },
+        { name: "Stucco Coating", code: "paint_stucco" },
+      ]},
+      { name: "Specialty", workTypes: [
+        { name: "Epoxy Floor Coating", code: "paint_epoxy" },
+        { name: "Fireproofing", code: "paint_fireproof" },
+        { name: "Industrial Coating", code: "paint_industrial" },
+      ]},
+    ]
+  },
+  MASONRY: {
+    categories: [
+      { name: "Block", workTypes: [
+        { name: '8" CMU Block', code: "masonry_cmu_8" },
+        { name: '12" CMU Block', code: "masonry_cmu_12" },
+        { name: "Split Face Block", code: "masonry_split_face" },
+      ]},
+      { name: "Brick", workTypes: [
+        { name: "Standard Brick", code: "masonry_brick_std" },
+        { name: "Thin Brick Veneer", code: "masonry_thin_brick" },
+        { name: "Fire Brick", code: "masonry_fire_brick" },
+      ]},
+      { name: "Stone", workTypes: [
+        { name: "Natural Stone Veneer", code: "masonry_stone_veneer" },
+        { name: "Cultured Stone", code: "masonry_cultured" },
+      ]},
+    ]
+  },
+  LANDSCAPING: {
+    categories: [
+      { name: "Softscape", workTypes: [
+        { name: "Sod Installation", code: "landscape_sod" },
+        { name: "Seeding", code: "landscape_seed" },
+        { name: "Tree Planting", code: "landscape_tree" },
+        { name: "Shrub Planting", code: "landscape_shrub" },
+        { name: "Mulch Installation", code: "landscape_mulch" },
+      ]},
+      { name: "Hardscape", workTypes: [
+        { name: "Paver Installation", code: "landscape_paver" },
+        { name: "Retaining Wall", code: "landscape_retaining" },
+        { name: "Flagstone Patio", code: "landscape_flagstone" },
+      ]},
+      { name: "Irrigation", workTypes: [
+        { name: "Drip System", code: "landscape_drip" },
+        { name: "Sprinkler System", code: "landscape_sprinkler" },
+        { name: "Controller Install", code: "landscape_controller" },
+      ]},
+    ]
+  },
+  FLOORING: {
+    categories: [
+      { name: "Hard Surface", workTypes: [
+        { name: "Ceramic Tile", code: "floor_ceramic" },
+        { name: "Porcelain Tile", code: "floor_porcelain" },
+        { name: "Natural Stone", code: "floor_stone" },
+        { name: "Hardwood", code: "floor_hardwood" },
+      ]},
+      { name: "Resilient", workTypes: [
+        { name: "LVT/LVP", code: "floor_lvt" },
+        { name: "Sheet Vinyl", code: "floor_vinyl" },
+        { name: "Rubber Flooring", code: "floor_rubber" },
+      ]},
+      { name: "Carpet", workTypes: [
+        { name: "Carpet Tile", code: "floor_carpet_tile" },
+        { name: "Broadloom Carpet", code: "floor_broadloom" },
+      ]},
+    ]
+  },
+  DEMOLITION: {
+    categories: [
+      { name: "Structural", workTypes: [
+        { name: "Building Demolition", code: "demo_building" },
+        { name: "Wall Demolition", code: "demo_wall" },
+        { name: "Slab Demolition", code: "demo_slab" },
+      ]},
+      { name: "Selective", workTypes: [
+        { name: "Interior Strip-out", code: "demo_strip" },
+        { name: "Ceiling Removal", code: "demo_ceiling" },
+        { name: "Floor Removal", code: "demo_floor" },
+      ]},
+      { name: "Disposal", workTypes: [
+        { name: "Debris Hauling", code: "demo_haul" },
+        { name: "Hazmat Removal", code: "demo_hazmat" },
+      ]},
+    ]
+  },
+  DRYWALL: {
+    categories: [
+      { name: "Board", workTypes: [
+        { name: '1/2" Standard Drywall', code: "drywall_half_std" },
+        { name: '5/8" Type X Drywall', code: "drywall_5_8_x" },
+        { name: "Moisture Resistant Board", code: "drywall_mr" },
+        { name: "Abuse Resistant Board", code: "drywall_abuse" },
+      ]},
+      { name: "Finishing", workTypes: [
+        { name: "Level 3 Finish", code: "drywall_finish_l3" },
+        { name: "Level 4 Finish", code: "drywall_finish_l4" },
+        { name: "Level 5 Finish", code: "drywall_finish_l5" },
+      ]},
+      { name: "Framing", workTypes: [
+        { name: "Metal Stud Framing", code: "drywall_metal_stud" },
+        { name: "Furring Channel", code: "drywall_furring" },
+      ]},
+    ]
+  },
+  CARPENTRY: {
+    categories: [
+      { name: "Rough", workTypes: [
+        { name: "Wall Framing", code: "carp_wall_frame" },
+        { name: "Floor Framing", code: "carp_floor_frame" },
+        { name: "Roof Framing", code: "carp_roof_frame" },
+        { name: "Sheathing", code: "carp_sheathing" },
+      ]},
+      { name: "Finish", workTypes: [
+        { name: "Door Installation", code: "carp_door" },
+        { name: "Trim/Millwork", code: "carp_trim" },
+        { name: "Cabinet Installation", code: "carp_cabinet" },
+        { name: "Countertop Install", code: "carp_countertop" },
+      ]},
+    ]
+  },
+  STEEL_ERECTION: {
+    categories: [
+      { name: "Structural", workTypes: [
+        { name: "Column Erection", code: "steel_column" },
+        { name: "Beam Erection", code: "steel_beam" },
+        { name: "Joist Installation", code: "steel_joist" },
+        { name: "Decking", code: "steel_deck" },
+      ]},
+      { name: "Misc Metals", workTypes: [
+        { name: "Handrail", code: "steel_handrail" },
+        { name: "Stairs", code: "steel_stairs" },
+        { name: "Lintels", code: "steel_lintel" },
+      ]},
+    ]
+  },
+  EARTHWORK: {
+    categories: [
+      { name: "Excavation", workTypes: [
+        { name: "Mass Excavation", code: "earth_mass_exc" },
+        { name: "Trench Excavation", code: "earth_trench" },
+        { name: "Rock Excavation", code: "earth_rock" },
+      ]},
+      { name: "Fill & Compaction", workTypes: [
+        { name: "Structural Fill", code: "earth_struct_fill" },
+        { name: "Backfill", code: "earth_backfill" },
+        { name: "Compaction", code: "earth_compaction" },
+      ]},
+      { name: "Grading", workTypes: [
+        { name: "Fine Grading", code: "earth_fine_grade" },
+        { name: "Rough Grading", code: "earth_rough_grade" },
+      ]},
+    ]
+  },
+  ASPHALT_PAVING: {
+    categories: [
+      { name: "Paving", workTypes: [
+        { name: "Hot Mix Asphalt - 2 inch", code: "asphalt_hma_2" },
+        { name: "Hot Mix Asphalt - 3 inch", code: "asphalt_hma_3" },
+        { name: "Hot Mix Asphalt - 4 inch", code: "asphalt_hma_4" },
+      ]},
+      { name: "Base", workTypes: [
+        { name: "Aggregate Base", code: "asphalt_agg_base" },
+        { name: "Lime Treated Base", code: "asphalt_lime_base" },
+      ]},
+      { name: "Repair", workTypes: [
+        { name: "Mill & Overlay", code: "asphalt_mill_overlay" },
+        { name: "Crack Seal", code: "asphalt_crack_seal" },
+        { name: "Seal Coat", code: "asphalt_seal_coat" },
+        { name: "Striping", code: "asphalt_striping" },
+      ]},
+    ]
+  },
+  GLAZING: {
+    categories: [
+      { name: "Storefront", workTypes: [
+        { name: "Aluminum Storefront", code: "glaz_alum_store" },
+        { name: "Steel Storefront", code: "glaz_steel_store" },
+      ]},
+      { name: "Curtain Wall", workTypes: [
+        { name: "Stick-Built Curtain Wall", code: "glaz_stick_cw" },
+        { name: "Unitized Curtain Wall", code: "glaz_unitized_cw" },
+      ]},
+      { name: "Windows", workTypes: [
+        { name: "Fixed Window", code: "glaz_fixed_win" },
+        { name: "Operable Window", code: "glaz_oper_win" },
+        { name: "Skylight", code: "glaz_skylight" },
+      ]},
+      { name: "Doors", workTypes: [
+        { name: "Glass Entry Door", code: "glaz_entry_door" },
+        { name: "Automatic Sliding Door", code: "glaz_auto_slide" },
+        { name: "Revolving Door", code: "glaz_revolving" },
+      ]},
+    ]
+  },
+  INSULATION: {
+    categories: [
+      { name: "Batt Insulation", workTypes: [
+        { name: "Fiberglass Batt R-13", code: "insul_batt_r13" },
+        { name: "Fiberglass Batt R-19", code: "insul_batt_r19" },
+        { name: "Fiberglass Batt R-30", code: "insul_batt_r30" },
+        { name: "Mineral Wool Batt", code: "insul_batt_mineral" },
+      ]},
+      { name: "Spray Foam", workTypes: [
+        { name: "Open Cell Spray Foam", code: "insul_spray_open" },
+        { name: "Closed Cell Spray Foam", code: "insul_spray_closed" },
+      ]},
+      { name: "Rigid Board", workTypes: [
+        { name: "Polyiso Board", code: "insul_polyiso" },
+        { name: "XPS Board", code: "insul_xps" },
+        { name: "EPS Board", code: "insul_eps" },
+      ]},
+      { name: "Mechanical Insulation", workTypes: [
+        { name: "Pipe Insulation", code: "insul_pipe" },
+        { name: "Duct Wrap", code: "insul_duct_wrap" },
+        { name: "Equipment Insulation", code: "insul_equipment" },
+      ]},
+    ]
+  },
+  FIRE_PROTECTION: {
+    categories: [
+      { name: "Sprinkler Systems", workTypes: [
+        { name: "Wet Pipe System", code: "fire_wet_pipe" },
+        { name: "Dry Pipe System", code: "fire_dry_pipe" },
+        { name: "Pre-Action System", code: "fire_pre_action" },
+        { name: "Deluge System", code: "fire_deluge" },
+      ]},
+      { name: "Standpipe", workTypes: [
+        { name: "Class I Standpipe", code: "fire_standpipe_1" },
+        { name: "Class II Standpipe", code: "fire_standpipe_2" },
+        { name: "Class III Standpipe", code: "fire_standpipe_3" },
+      ]},
+      { name: "Fire Alarm", workTypes: [
+        { name: "Detection Device Install", code: "fire_detect" },
+        { name: "Notification Device Install", code: "fire_notify" },
+        { name: "Panel Installation", code: "fire_panel" },
+      ]},
+    ]
+  },
+  LOW_VOLTAGE: {
+    categories: [
+      { name: "Data/Telecom", workTypes: [
+        { name: "Cat6 Cable Pull", code: "lv_cat6" },
+        { name: "Cat6A Cable Pull", code: "lv_cat6a" },
+        { name: "Fiber Optic Cable", code: "lv_fiber" },
+        { name: "Data Jack Termination", code: "lv_jack" },
+      ]},
+      { name: "Security", workTypes: [
+        { name: "Camera Installation", code: "lv_camera" },
+        { name: "Access Control Reader", code: "lv_access" },
+        { name: "Intrusion Panel", code: "lv_intrusion" },
+      ]},
+      { name: "Audio/Visual", workTypes: [
+        { name: "Speaker Installation", code: "lv_speaker" },
+        { name: "Display Mount", code: "lv_display" },
+        { name: "AV Rack Build", code: "lv_rack" },
+      ]},
+    ]
+  },
+  SOLAR: {
+    categories: [
+      { name: "Panels", workTypes: [
+        { name: "Monocrystalline Panel Install", code: "solar_mono" },
+        { name: "Polycrystalline Panel Install", code: "solar_poly" },
+        { name: "Thin Film Panel Install", code: "solar_thin" },
+      ]},
+      { name: "Mounting", workTypes: [
+        { name: "Roof Mount (Flush)", code: "solar_roof_flush" },
+        { name: "Roof Mount (Tilted)", code: "solar_roof_tilt" },
+        { name: "Ground Mount", code: "solar_ground" },
+        { name: "Carport Mount", code: "solar_carport" },
+      ]},
+      { name: "Electrical", workTypes: [
+        { name: "String Inverter Install", code: "solar_inverter_str" },
+        { name: "Micro Inverter Install", code: "solar_inverter_micro" },
+        { name: "Battery Storage Install", code: "solar_battery" },
+      ]},
+    ]
+  },
+  WATERPROOFING: {
+    categories: [
+      { name: "Below Grade", workTypes: [
+        { name: "Sheet Membrane", code: "wtrpf_sheet_mem" },
+        { name: "Fluid Applied Membrane", code: "wtrpf_fluid_mem" },
+        { name: "Bentonite Panels", code: "wtrpf_bentonite" },
+      ]},
+      { name: "Above Grade", workTypes: [
+        { name: "Air Barrier", code: "wtrpf_air_barrier" },
+        { name: "Vapor Barrier", code: "wtrpf_vapor" },
+        { name: "Traffic Coating", code: "wtrpf_traffic" },
+      ]},
+      { name: "Drainage", workTypes: [
+        { name: "Drain Board", code: "wtrpf_drain_board" },
+        { name: "French Drain", code: "wtrpf_french_drain" },
+        { name: "Sump System", code: "wtrpf_sump" },
+      ]},
+    ]
+  },
+};
+
+const tradeModifierTemplates: Record<string, { categories: { name: string; modifiers: { name: string; code: string }[] }[] }> = {
+  CONCRETE: {
+    categories: [
+      { name: "Reinforcement", modifiers: [
+        { name: "No Reinforcement", code: "reinf_none" },
+        { name: "Rebar (#4)", code: "reinf_rebar_4" },
+        { name: "Rebar (#5)", code: "reinf_rebar_5" },
+        { name: "Wire Mesh (6x6 W1.4)", code: "reinf_mesh_6x6" },
+        { name: "Fiber Mesh", code: "reinf_fiber" },
+      ]},
+      { name: "Mix Type", modifiers: [
+        { name: "3000 PSI", code: "mix_3000" },
+        { name: "4000 PSI", code: "mix_4000" },
+        { name: "5000 PSI", code: "mix_5000" },
+        { name: "High Early", code: "mix_high_early" },
+        { name: "Flowable Fill", code: "mix_flowable" },
+      ]},
+      { name: "Finish Type", modifiers: [
+        { name: "Broom Finish", code: "finish_broom" },
+        { name: "Smooth/Steel Trowel", code: "finish_smooth" },
+        { name: "Exposed Aggregate", code: "finish_exposed" },
+        { name: "Stamped", code: "finish_stamped" },
+        { name: "Colored", code: "finish_colored" },
+      ]},
+      { name: "Thickness", modifiers: [
+        { name: '4"', code: "thick_4" },
+        { name: '5"', code: "thick_5" },
+        { name: '6"', code: "thick_6" },
+        { name: '8"', code: "thick_8" },
+        { name: '10"', code: "thick_10" },
+        { name: '12"', code: "thick_12" },
+      ]},
+    ]
+  },
+  GENERAL_CONTRACTOR: {
+    categories: [
+      { name: "Quality Level", modifiers: [
+        { name: "Standard", code: "gc_quality_std" },
+        { name: "Premium", code: "gc_quality_premium" },
+        { name: "Custom/High-End", code: "gc_quality_custom" },
+      ]},
+      { name: "Project Phase", modifiers: [
+        { name: "Pre-Construction", code: "gc_phase_precon" },
+        { name: "Rough-In", code: "gc_phase_rough" },
+        { name: "Finish", code: "gc_phase_finish" },
+        { name: "Punch List", code: "gc_phase_punch" },
+      ]},
+    ]
+  },
+  ELECTRICAL: {
+    categories: [
+      { name: "Conduit Type", modifiers: [
+        { name: "EMT", code: "elec_conduit_emt" },
+        { name: "Rigid", code: "elec_conduit_rigid" },
+        { name: "PVC", code: "elec_conduit_pvc" },
+        { name: "Flex", code: "elec_conduit_flex" },
+      ]},
+      { name: "Voltage", modifiers: [
+        { name: "120V", code: "elec_120v" },
+        { name: "208V", code: "elec_208v" },
+        { name: "277V", code: "elec_277v" },
+        { name: "480V", code: "elec_480v" },
+      ]},
+    ]
+  },
+  PLUMBING: {
+    categories: [
+      { name: "Pipe Material", modifiers: [
+        { name: "Copper", code: "plumb_copper" },
+        { name: "PEX", code: "plumb_pex" },
+        { name: "PVC", code: "plumb_pvc" },
+        { name: "Cast Iron", code: "plumb_cast_iron" },
+        { name: "CPVC", code: "plumb_cpvc" },
+      ]},
+      { name: "Pipe Size", modifiers: [
+        { name: '1/2"', code: "plumb_half" },
+        { name: '3/4"', code: "plumb_3qtr" },
+        { name: '1"', code: "plumb_1in" },
+        { name: '2"', code: "plumb_2in" },
+        { name: '3"', code: "plumb_3in" },
+        { name: '4"', code: "plumb_4in" },
+      ]},
+    ]
+  },
+  HVAC: {
+    categories: [
+      { name: "System Type", modifiers: [
+        { name: "Central Air", code: "hvac_central" },
+        { name: "Split System", code: "hvac_split_sys" },
+        { name: "VRF", code: "hvac_vrf" },
+        { name: "Package Unit", code: "hvac_package" },
+      ]},
+      { name: "Duct Material", modifiers: [
+        { name: "Sheet Metal", code: "hvac_duct_metal" },
+        { name: "Flex Duct", code: "hvac_duct_flex" },
+        { name: "Fiberglass", code: "hvac_duct_fiber" },
+      ]},
+    ]
+  },
+  ROOFING: {
+    categories: [
+      { name: "Roofing Material", modifiers: [
+        { name: "TPO 60 mil", code: "roof_tpo_60" },
+        { name: "TPO 80 mil", code: "roof_tpo_80" },
+        { name: "EPDM 45 mil", code: "roof_epdm_45" },
+        { name: "EPDM 60 mil", code: "roof_epdm_60" },
+        { name: "Architectural Shingle", code: "roof_arch_shingle" },
+      ]},
+      { name: "Roof Insulation", modifiers: [
+        { name: "R-20 Polyiso", code: "roof_r20" },
+        { name: "R-30 Polyiso", code: "roof_r30" },
+        { name: "R-38 Polyiso", code: "roof_r38" },
+      ]},
+    ]
+  },
+  MASONRY: {
+    categories: [
+      { name: "Masonry Material", modifiers: [
+        { name: "Standard CMU", code: "mason_cmu_std" },
+        { name: "Lightweight CMU", code: "mason_cmu_light" },
+        { name: "Clay Brick", code: "mason_clay" },
+      ]},
+      { name: "Mortar Type", modifiers: [
+        { name: "Type S Mortar", code: "mason_mortar_s" },
+        { name: "Type N Mortar", code: "mason_mortar_n" },
+        { name: "Type M Mortar", code: "mason_mortar_m" },
+      ]},
+    ]
+  },
+  LANDSCAPING: {
+    categories: [
+      { name: "Plant Size", modifiers: [
+        { name: '1 Gallon', code: "land_1gal" },
+        { name: '5 Gallon', code: "land_5gal" },
+        { name: '15 Gallon', code: "land_15gal" },
+        { name: '24" Box', code: "land_24box" },
+      ]},
+      { name: "Soil Type", modifiers: [
+        { name: "Topsoil", code: "land_topsoil" },
+        { name: "Amended Soil", code: "land_amended" },
+        { name: "Decomposed Granite", code: "land_dg" },
+      ]},
+    ]
+  },
+  FLOORING: {
+    categories: [
+      { name: "Flooring Material Grade", modifiers: [
+        { name: "Standard Grade", code: "floor_grade_std" },
+        { name: "Premium Grade", code: "floor_grade_prem" },
+        { name: "Commercial Grade", code: "floor_grade_comm" },
+      ]},
+      { name: "Subfloor Prep Level", modifiers: [
+        { name: "No Prep Required", code: "floor_prep_none" },
+        { name: "Level 1 - Light Prep", code: "floor_prep_l1" },
+        { name: "Level 2 - Self-Leveler", code: "floor_prep_l2" },
+        { name: "Level 3 - Full Prep", code: "floor_prep_l3" },
+      ]},
+    ]
+  },
+  DEMOLITION: {
+    categories: [
+      { name: "Demolition Method", modifiers: [
+        { name: "Mechanical", code: "demo_mech" },
+        { name: "Manual", code: "demo_manual" },
+        { name: "Controlled Explosive", code: "demo_explosive" },
+      ]},
+      { name: "Hazmat Level", modifiers: [
+        { name: "No Hazmat", code: "demo_haz_none" },
+        { name: "Asbestos Abatement", code: "demo_haz_asbestos" },
+        { name: "Lead Paint Abatement", code: "demo_haz_lead" },
+      ]},
+    ]
+  },
+  DRYWALL: {
+    categories: [
+      { name: "Board Type", modifiers: [
+        { name: "Standard Gypsum", code: "dw_std_gyp" },
+        { name: "Type X Fire Rated", code: "dw_type_x" },
+        { name: "Moisture Resistant", code: "dw_mr" },
+        { name: "Abuse Resistant", code: "dw_abuse" },
+      ]},
+      { name: "Finish Level", modifiers: [
+        { name: "Level 3", code: "dw_finish_l3" },
+        { name: "Level 4", code: "dw_finish_l4" },
+        { name: "Level 5", code: "dw_finish_l5" },
+      ]},
+    ]
+  },
+  CARPENTRY: {
+    categories: [
+      { name: "Lumber Grade", modifiers: [
+        { name: "Standard/Utility", code: "carp_grade_std" },
+        { name: "#1 Grade", code: "carp_grade_1" },
+        { name: "#2 Grade", code: "carp_grade_2" },
+        { name: "Select Structural", code: "carp_grade_sel" },
+      ]},
+      { name: "Stud Spacing", modifiers: [
+        { name: '16" O.C.', code: "carp_16oc" },
+        { name: '24" O.C.', code: "carp_24oc" },
+        { name: '12" O.C.', code: "carp_12oc" },
+      ]},
+    ]
+  },
+  STEEL_ERECTION: {
+    categories: [
+      { name: "Steel Grade", modifiers: [
+        { name: "A36", code: "steel_a36" },
+        { name: "A992", code: "steel_a992" },
+        { name: "A500", code: "steel_a500" },
+      ]},
+      { name: "Steel Connection Type", modifiers: [
+        { name: "Bolted", code: "steel_conn_bolt" },
+        { name: "Welded", code: "steel_conn_weld" },
+        { name: "Moment", code: "steel_conn_moment" },
+      ]},
+    ]
+  },
+  EARTHWORK: {
+    categories: [
+      { name: "Soil Classification", modifiers: [
+        { name: "Type A Soil", code: "earth_soil_a" },
+        { name: "Type B Soil", code: "earth_soil_b" },
+        { name: "Type C Soil", code: "earth_soil_c" },
+        { name: "Rock", code: "earth_rock_class" },
+      ]},
+      { name: "Excavation Depth", modifiers: [
+        { name: "0-4 ft", code: "earth_depth_4" },
+        { name: "4-8 ft", code: "earth_depth_8" },
+        { name: "8-16 ft", code: "earth_depth_16" },
+        { name: "16+ ft", code: "earth_depth_16plus" },
+      ]},
+    ]
+  },
+  ASPHALT_PAVING: {
+    categories: [
+      { name: "Asphalt Mix Type", modifiers: [
+        { name: "Type B", code: "asph_mix_b" },
+        { name: "Type C", code: "asph_mix_c" },
+        { name: "Type D", code: "asph_mix_d" },
+        { name: "SMA", code: "asph_mix_sma" },
+      ]},
+      { name: "Traffic Load Class", modifiers: [
+        { name: "Light Duty", code: "asph_load_light" },
+        { name: "Medium Duty", code: "asph_load_med" },
+        { name: "Heavy Duty", code: "asph_load_heavy" },
+      ]},
+    ]
+  },
+  GLAZING: {
+    categories: [
+      { name: "Glass Type", modifiers: [
+        { name: "Clear Tempered", code: "glaz_clear_temp" },
+        { name: "Low-E Insulated", code: "glaz_low_e" },
+        { name: "Laminated", code: "glaz_laminated" },
+        { name: "Spandrel", code: "glaz_spandrel" },
+      ]},
+      { name: "Frame Material", modifiers: [
+        { name: "Aluminum", code: "glaz_frame_alum" },
+        { name: "Steel", code: "glaz_frame_steel" },
+        { name: "Wood Clad", code: "glaz_frame_wood" },
+      ]},
+    ]
+  },
+  INSULATION: {
+    categories: [
+      { name: "Insulation R-Value", modifiers: [
+        { name: "R-13", code: "insul_r13" },
+        { name: "R-19", code: "insul_r19" },
+        { name: "R-30", code: "insul_r30" },
+        { name: "R-38", code: "insul_r38" },
+        { name: "R-49", code: "insul_r49" },
+      ]},
+      { name: "Insulation Application", modifiers: [
+        { name: "Wall Cavity", code: "insul_app_wall" },
+        { name: "Attic/Ceiling", code: "insul_app_attic" },
+        { name: "Pipe/Mechanical", code: "insul_app_pipe" },
+        { name: "Foundation", code: "insul_app_found" },
+      ]},
+    ]
+  },
+  FIRE_PROTECTION: {
+    categories: [
+      { name: "Hazard Class", modifiers: [
+        { name: "Light Hazard", code: "fire_haz_light" },
+        { name: "Ordinary Hazard Group 1", code: "fire_haz_oh1" },
+        { name: "Ordinary Hazard Group 2", code: "fire_haz_oh2" },
+        { name: "Extra Hazard", code: "fire_haz_extra" },
+      ]},
+      { name: "Sprinkler Pipe", modifiers: [
+        { name: "Black Steel", code: "fire_pipe_black" },
+        { name: "Galvanized", code: "fire_pipe_galv" },
+        { name: "CPVC", code: "fire_pipe_cpvc" },
+      ]},
+    ]
+  },
+  LOW_VOLTAGE: {
+    categories: [
+      { name: "Cable Type", modifiers: [
+        { name: "Cat5e", code: "lv_cable_cat5e" },
+        { name: "Cat6", code: "lv_cable_cat6" },
+        { name: "Cat6A", code: "lv_cable_cat6a" },
+        { name: "Single Mode Fiber", code: "lv_cable_sm_fiber" },
+        { name: "Multi Mode Fiber", code: "lv_cable_mm_fiber" },
+      ]},
+      { name: "Pathway Type", modifiers: [
+        { name: "J-Hook", code: "lv_path_jhook" },
+        { name: "Cable Tray", code: "lv_path_tray" },
+        { name: "Conduit", code: "lv_path_conduit" },
+      ]},
+    ]
+  },
+  SOLAR: {
+    categories: [
+      { name: "Panel Type", modifiers: [
+        { name: "Monocrystalline", code: "solar_mod_mono" },
+        { name: "Polycrystalline", code: "solar_mod_poly" },
+        { name: "Bifacial", code: "solar_mod_bifacial" },
+      ]},
+      { name: "Mounting Type", modifiers: [
+        { name: "Flush Mount", code: "solar_mount_flush" },
+        { name: "Tilt Mount", code: "solar_mount_tilt" },
+        { name: "Ground Mount", code: "solar_mount_ground" },
+        { name: "Ballasted", code: "solar_mount_ballast" },
+      ]},
+    ]
+  },
+  WATERPROOFING: {
+    categories: [
+      { name: "Waterproofing Material", modifiers: [
+        { name: "Sheet Membrane", code: "wtrpf_mod_sheet" },
+        { name: "Fluid Applied", code: "wtrpf_mod_fluid" },
+        { name: "Cementitious", code: "wtrpf_mod_cement" },
+        { name: "Bentonite", code: "wtrpf_mod_benton" },
+      ]},
+      { name: "Application Location", modifiers: [
+        { name: "Below Grade", code: "wtrpf_loc_below" },
+        { name: "Above Grade", code: "wtrpf_loc_above" },
+        { name: "Plaza Deck", code: "wtrpf_loc_plaza" },
+        { name: "Wet Area", code: "wtrpf_loc_wet" },
+      ]},
+    ]
+  },
+  PAINTING: {
+    categories: [
+      { name: "Paint Type", modifiers: [
+        { name: "Latex", code: "paint_mod_latex" },
+        { name: "Alkyd/Oil", code: "paint_mod_alkyd" },
+        { name: "Epoxy", code: "paint_mod_epoxy" },
+        { name: "Urethane", code: "paint_mod_urethane" },
+      ]},
+      { name: "Paint Finish", modifiers: [
+        { name: "Flat/Matte", code: "paint_mod_flat" },
+        { name: "Eggshell", code: "paint_mod_eggshell" },
+        { name: "Satin", code: "paint_mod_satin" },
+        { name: "Semi-Gloss", code: "paint_mod_semi" },
+        { name: "High Gloss", code: "paint_mod_gloss" },
+      ]},
+    ]
+  },
+};
+
+async function seedScopeWorkTypesForTrade(tradeType: string): Promise<{ workTypeCatsInserted: number; workTypesInserted: number }> {
+  const template = tradeWorkTypeTemplates[tradeType];
+  if (!template) return { workTypeCatsInserted: 0, workTypesInserted: 0 };
+
+  let workTypeCatsInserted = 0;
+  let workTypesInserted = 0;
+
+  for (let catIdx = 0; catIdx < template.categories.length; catIdx++) {
+    const cat = template.categories[catIdx];
+
+    const existing = await db.select().from(scopeWorkTypeCategories)
+      .where(eq(scopeWorkTypeCategories.name, cat.name)).limit(1);
+
+    let categoryId: string;
+    if (existing.length > 0) {
+      categoryId = existing[0].id;
+    } else {
+      const [inserted] = await db.insert(scopeWorkTypeCategories).values({
+        name: cat.name,
+        displayOrder: catIdx,
+        isActive: true,
+      }).returning();
+      categoryId = inserted.id;
+      workTypeCatsInserted++;
+    }
+
+    for (let wtIdx = 0; wtIdx < cat.workTypes.length; wtIdx++) {
+      const wt = cat.workTypes[wtIdx];
+      const existingWt = await db.select().from(scopeWorkTypes)
+        .where(eq(scopeWorkTypes.code, wt.code)).limit(1);
+
+      if (existingWt.length === 0) {
+        await db.insert(scopeWorkTypes).values({
+          categoryId,
+          name: wt.name,
+          code: wt.code,
+          requiresDimensions: wt.requiresDimensions || false,
+          dimensionLabel: wt.dimensionLabel || null,
+          displayOrder: wtIdx,
+          isActive: true,
+          isCustom: false,
+        });
+        workTypesInserted++;
+      }
+    }
+  }
+
+  return { workTypeCatsInserted, workTypesInserted };
+}
+
+async function seedScopeModifiersForTrade(tradeType: string): Promise<{ modCatsInserted: number; modifiersInserted: number }> {
+  const template = tradeModifierTemplates[tradeType];
+  if (!template) return { modCatsInserted: 0, modifiersInserted: 0 };
+
+  let modCatsInserted = 0;
+  let modifiersInserted = 0;
+
+  for (let catIdx = 0; catIdx < template.categories.length; catIdx++) {
+    const cat = template.categories[catIdx];
+
+    const existing = await db.select().from(scopeModifierCategories)
+      .where(eq(scopeModifierCategories.name, cat.name)).limit(1);
+
+    let categoryId: string;
+    if (existing.length > 0) {
+      categoryId = existing[0].id;
+    } else {
+      const [inserted] = await db.insert(scopeModifierCategories).values({
+        name: cat.name,
+        displayOrder: catIdx,
+        isActive: true,
+      }).returning();
+      categoryId = inserted.id;
+      modCatsInserted++;
+    }
+
+    for (let modIdx = 0; modIdx < cat.modifiers.length; modIdx++) {
+      const mod = cat.modifiers[modIdx];
+      const existingMod = await db.select().from(scopeModifiers)
+        .where(eq(scopeModifiers.code, mod.code)).limit(1);
+
+      if (existingMod.length === 0) {
+        await db.insert(scopeModifiers).values({
+          categoryId,
+          name: mod.name,
+          code: mod.code,
+          displayOrder: modIdx,
+          isActive: true,
+          isCustom: false,
+        });
+        modifiersInserted++;
+      }
+    }
+  }
+
+  return { modCatsInserted, modifiersInserted };
+}
+
+async function seedScopeStandardizationForTrade(tradeType: string) {
+  console.log(`[ScopeSeed] Seeding scope work types and modifiers for trade: ${tradeType}`);
+
+  const wtResult = await seedScopeWorkTypesForTrade(tradeType);
+  const modResult = await seedScopeModifiersForTrade(tradeType);
+
+  console.log(`[ScopeSeed] Work Type Categories: ${wtResult.workTypeCatsInserted} inserted | Work Types: ${wtResult.workTypesInserted} inserted`);
+  console.log(`[ScopeSeed] Modifier Categories: ${modResult.modCatsInserted} inserted | Modifiers: ${modResult.modifiersInserted} inserted`);
+
+  return {
+    ...wtResult,
+    ...modResult,
+  };
+}
+
 export { 
   seedConcreteSowItems, concreteSowItems,
   seedCivilSiteSowItems, civilSiteSowItems, 
@@ -1519,5 +2471,6 @@ export {
   seedSupportServicesSowItems, supportServicesSowItems,
   seedAllNewTradeSowItems,
   seedNewTradeModifiers, newTradeModifierCategories,
-  seedCoreTradeModifierCategories, coreTradeModifierCategories
+  seedCoreTradeModifierCategories, coreTradeModifierCategories,
+  seedScopeStandardizationForTrade, tradeWorkTypeTemplates, tradeModifierTemplates
 };
