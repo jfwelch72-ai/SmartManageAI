@@ -6505,3 +6505,190 @@ export const crewMarketplace = pgTable("crew_marketplace", {
 export const insertCrewMarketplaceSchema = createInsertSchema(crewMarketplace).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCrewMarketplace = z.infer<typeof insertCrewMarketplaceSchema>;
 export type CrewMarketplace = typeof crewMarketplace.$inferSelect;
+
+// ============================================================
+// RFI (Request for Information) System
+// ============================================================
+export const rfiStatusEnum = pgEnum("rfi_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "ANSWERED", "CLOSED"]);
+export const rfiPriorityEnum = pgEnum("rfi_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
+
+export const rfis = pgTable("rfis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  contractId: varchar("contract_id").references(() => subcontractorContracts.id, { onDelete: "set null" }),
+  rfiNumber: text("rfi_number").notNull(),
+  subject: text("subject").notNull(),
+  question: text("question").notNull(),
+  status: rfiStatusEnum("status").notNull().default("DRAFT"),
+  priority: rfiPriorityEnum("priority").notNull().default("MEDIUM"),
+  submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
+  submittedByName: text("submitted_by_name"),
+  subcontractorId: varchar("subcontractor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  assignedToId: varchar("assigned_to_id").references(() => users.id),
+  dateSubmitted: timestamp("date_submitted"),
+  dateRequired: timestamp("date_required"),
+  dateAnswered: timestamp("date_answered"),
+  answeredById: varchar("answered_by_id").references(() => users.id),
+  answer: text("answer"),
+  answerAttachmentsJson: text("answer_attachments_json"),
+  drawingReference: text("drawing_reference"),
+  specReference: text("spec_reference"),
+  impactDescription: text("impact_description"),
+  costImpact: boolean("cost_impact").default(false),
+  scheduleImpact: boolean("schedule_impact").default(false),
+  attachmentsJson: text("attachments_json"),
+  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
+  linkedTmTicketId: varchar("linked_tm_ticket_id").references(() => tmTickets.id, { onDelete: "set null" }),
+  closedAt: timestamp("closed_at"),
+  closedById: varchar("closed_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("rfis_org_idx").on(table.organizationId),
+  projectIdx: index("rfis_project_idx").on(table.projectId),
+  statusIdx: index("rfis_status_idx").on(table.status),
+  contractIdx: index("rfis_contract_idx").on(table.contractId),
+  subIdx: index("rfis_sub_idx").on(table.subcontractorId),
+}));
+
+export const rfiActivity = pgTable("rfi_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiId: varchar("rfi_id").notNull().references(() => rfis.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  userName: text("user_name"),
+  action: text("action").notNull(),
+  comment: text("comment"),
+  attachmentsJson: text("attachments_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  rfiIdx: index("rfi_activity_rfi_idx").on(table.rfiId),
+}));
+
+export const insertRfiSchema = createInsertSchema(rfis).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRfi = z.infer<typeof insertRfiSchema>;
+export type Rfi = typeof rfis.$inferSelect;
+
+export const insertRfiActivitySchema = createInsertSchema(rfiActivity).omit({ id: true, createdAt: true });
+export type InsertRfiActivity = z.infer<typeof insertRfiActivitySchema>;
+export type RfiActivity = typeof rfiActivity.$inferSelect;
+
+// ============================================================
+// Document Transmittal System
+// ============================================================
+export const transmittalStatusEnum = pgEnum("transmittal_status", ["DRAFT", "SENT", "ACKNOWLEDGED", "SUPERSEDED"]);
+
+export const documentTransmittals = pgTable("document_transmittals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  transmittalNumber: text("transmittal_number").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description"),
+  status: transmittalStatusEnum("status").notNull().default("DRAFT"),
+  sentById: varchar("sent_by_id").notNull().references(() => users.id),
+  sentByName: text("sent_by_name"),
+  dateSent: timestamp("date_sent"),
+  documentType: text("document_type"),
+  revisionNumber: text("revision_number"),
+  previousTransmittalId: varchar("previous_transmittal_id"),
+  attachmentsJson: text("attachments_json"),
+  recipientSubcontractorIds: text("recipient_subcontractor_ids").array(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("transmittals_org_idx").on(table.organizationId),
+  projectIdx: index("transmittals_project_idx").on(table.projectId),
+  statusIdx: index("transmittals_status_idx").on(table.status),
+}));
+
+export const transmittalRecipients = pgTable("transmittal_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  transmittalId: varchar("transmittal_id").notNull().references(() => documentTransmittals.id, { onDelete: "cascade" }),
+  subcontractorId: varchar("subcontractor_id").notNull().references(() => crmOrganisations.id, { onDelete: "cascade" }),
+  subcontractorName: text("subcontractor_name"),
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  transmittalIdx: index("transmittal_recipients_transmittal_idx").on(table.transmittalId),
+  subIdx: index("transmittal_recipients_sub_idx").on(table.subcontractorId),
+}));
+
+export const insertDocumentTransmittalSchema = createInsertSchema(documentTransmittals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDocumentTransmittal = z.infer<typeof insertDocumentTransmittalSchema>;
+export type DocumentTransmittal = typeof documentTransmittals.$inferSelect;
+
+export const insertTransmittalRecipientSchema = createInsertSchema(transmittalRecipients).omit({ id: true, createdAt: true });
+export type InsertTransmittalRecipient = z.infer<typeof insertTransmittalRecipientSchema>;
+export type TransmittalRecipient = typeof transmittalRecipients.$inferSelect;
+
+// ============================================================
+// Submittal System
+// ============================================================
+export const submittalStatusEnum = pgEnum("submittal_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "APPROVED_AS_NOTED", "REJECTED", "REVISE_AND_RESUBMIT"]);
+export const submittalPhaseEnum = pgEnum("submittal_phase", ["ESTIMATE", "AWARDED", "CONSTRUCTION"]);
+export const submittalTypeEnum = pgEnum("submittal_type", ["CONTRACTOR", "SUBCONTRACTOR"]);
+
+export const submittals = pgTable("submittals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  contractId: varchar("contract_id").references(() => subcontractorContracts.id, { onDelete: "set null" }),
+  submittalNumber: text("submittal_number").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description"),
+  submittalType: submittalTypeEnum("submittal_type").notNull().default("CONTRACTOR"),
+  phase: submittalPhaseEnum("phase").notNull().default("CONSTRUCTION"),
+  status: submittalStatusEnum("status").notNull().default("DRAFT"),
+  specSection: text("spec_section"),
+  category: text("category"),
+  subcontractorId: varchar("subcontractor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
+  submittedByName: text("submitted_by_name"),
+  dateSubmitted: timestamp("date_submitted"),
+  dateRequired: timestamp("date_required"),
+  reviewerId: varchar("reviewer_id").references(() => users.id),
+  reviewerName: text("reviewer_name"),
+  dateReviewed: timestamp("date_reviewed"),
+  reviewComments: text("review_comments"),
+  revisionNumber: integer("revision_number").notNull().default(1),
+  previousSubmittalId: varchar("previous_submittal_id"),
+  attachmentsJson: text("attachments_json"),
+  stampAction: text("stamp_action"),
+  linkedRfiId: varchar("linked_rfi_id").references(() => rfis.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("submittals_org_idx").on(table.organizationId),
+  projectIdx: index("submittals_project_idx").on(table.projectId),
+  statusIdx: index("submittals_status_idx").on(table.status),
+  typeIdx: index("submittals_type_idx").on(table.submittalType),
+  phaseIdx: index("submittals_phase_idx").on(table.phase),
+  contractIdx: index("submittals_contract_idx").on(table.contractId),
+  subIdx: index("submittals_sub_idx").on(table.subcontractorId),
+}));
+
+export const submittalActivity = pgTable("submittal_activity", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  submittalId: varchar("submittal_id").notNull().references(() => submittals.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  userName: text("user_name"),
+  action: text("action").notNull(),
+  comment: text("comment"),
+  attachmentsJson: text("attachments_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  submittalIdx: index("submittal_activity_submittal_idx").on(table.submittalId),
+}));
+
+export const insertSubmittalSchema = createInsertSchema(submittals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubmittal = z.infer<typeof insertSubmittalSchema>;
+export type Submittal = typeof submittals.$inferSelect;
+
+export const insertSubmittalActivitySchema = createInsertSchema(submittalActivity).omit({ id: true, createdAt: true });
+export type InsertSubmittalActivity = z.infer<typeof insertSubmittalActivitySchema>;
+export type SubmittalActivity = typeof submittalActivity.$inferSelect;

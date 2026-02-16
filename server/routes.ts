@@ -97,6 +97,9 @@ import delayClaimsRoutes from "./delayClaimsRoutes";
 import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import marketplaceRoutes from "./marketplaceRoutes";
 import aiScheduleRoutes from "./aiScheduleRoutes";
+import rfiRoutes from "./rfiRoutes";
+import transmittalRoutes from "./transmittalRoutes";
+import submittalRoutes from "./submittalRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
@@ -204,7 +207,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Subcontractor Bid Network routes
   app.use("/api/bid-network", bidNetworkRoutes);
 
-  // Register Billing routes
+  app.use("/api", rfiRoutes);
+  app.use("/api", transmittalRoutes);
+  app.use("/api", submittalRoutes);
+
   app.use("/api/billing", billingRoutes);
 
   // Register Weather routes (forecast and history for delay documentation)

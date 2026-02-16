@@ -556,6 +556,24 @@ export const NavigationConfig = {
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
     {
+      href: "/rfis",
+      label: "RFIs",
+      testId: "nav-rfis",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/transmittals",
+      label: "Transmittals",
+      testId: "nav-transmittals",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/submittals",
+      label: "Submittals",
+      testId: "nav-submittals",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
       href: "/delay-claims",
       label: "Delay Claims",
       testId: "nav-delay-claims",

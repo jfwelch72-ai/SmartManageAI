@@ -63,6 +63,9 @@ import AIBidAnalysisPage from "@/pages/ai-bid-analysis";
 import AIContractAnalysisPage from "@/pages/ai-contract-analysis";
 import ScheduleOfValuesPage from "@/pages/schedule-of-values";
 import SubcontractsPage from "@/pages/subcontracts";
+import RFIsPage from "@/pages/rfis";
+import TransmittalsPage from "@/pages/transmittals";
+import SubmittalsPage from "@/pages/submittals";
 import WebsiteBuilderPage from "@/pages/website-builder";
 import BidWizardPage from "@/pages/bid-wizard";
 import EmailAssistantPage from "@/pages/email-assistant";
@@ -254,6 +257,9 @@ function Router() {
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
+      <Route path="/rfis" component={() => <ProtectedRoute component={RFIsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
+      <Route path="/transmittals" component={() => <ProtectedRoute component={TransmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
+      <Route path="/submittals" component={() => <ProtectedRoute component={SubmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
