@@ -607,8 +607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const objectFile = bucket.file(objectName);
       await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
 
-      const objectKey = `/objects/${objectId}`;
-      const [updated] = await db.update(users).set({ avatarUrl: objectKey, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
+      const avatarUrl = `/api/auth/profile-files/${objectId}`;
+      const [updated] = await db.update(users).set({ avatarUrl, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
 
       const { passwordHash, tokenVersion, ...sanitized } = updated;
@@ -665,12 +665,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const objectFile = bucket.file(objectName);
         await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
 
-        const objectKey = `/objects/${objectId}`;
+        const fileUrl = `/api/auth/profile-files/${objectId}`;
         const [photo] = await db.insert(userPhotos).values({
           userId,
           fileName: file.originalname,
-          fileUrl: objectKey,
-          objectKey,
+          fileUrl,
+          objectKey: objectId,
         }).returning();
         uploadedPhotos.push(photo);
       }
@@ -697,6 +697,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting photo:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/profile-files/*", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const filePath = req.params[0];
+      if (!filePath) { res.status(400).json({ error: "File path required" }); return; }
+
+      const allowedPrefixes = ["avatars/", "user-photos/"];
+      if (!allowedPrefixes.some(p => filePath.startsWith(p))) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+
+      const pathParts = filePath.split("/");
+      if (pathParts.length < 3) { res.status(400).json({ error: "Invalid file path" }); return; }
+      const fileOwnerId = pathParts[1];
+
+      if (filePath.startsWith("user-photos/") && fileOwnerId !== req.user!.id) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const fullPath = `${privateDir}/${filePath}`;
+      const pathStr = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+      const parts = pathStr.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      const [exists] = await objectFile.exists();
+      if (!exists) { res.status(404).json({ error: "File not found" }); return; }
+
+      const [metadata] = await objectFile.getMetadata();
+      res.set({
+        "Content-Type": metadata.contentType || "application/octet-stream",
+        "Content-Length": String(metadata.size),
+        "Cache-Control": "private, max-age=3600",
+      });
+      objectFile.createReadStream().pipe(res);
+    } catch (error) {
+      console.error("Error serving profile file:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
     }
   });
 
