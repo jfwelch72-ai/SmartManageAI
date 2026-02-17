@@ -187,6 +187,7 @@ export default function ClientPortalPublic() {
       return res.json();
     },
     enabled: !!accessInfo && !!email && !!projectId,
+    refetchInterval: 10000,
   });
 
   const { data: threadMessages = [], isLoading: messagesLoading } = useQuery({
@@ -199,6 +200,7 @@ export default function ClientPortalPublic() {
       return res.json();
     },
     enabled: !!accessInfo && !!selectedThread,
+    refetchInterval: 4000,
   });
 
   const createThreadMutation = useMutation({

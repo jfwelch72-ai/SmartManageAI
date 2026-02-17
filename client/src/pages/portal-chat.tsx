@@ -75,6 +75,7 @@ export default function PortalChatPage() {
       if (!res.ok) throw new Error("Failed to load threads");
       return res.json();
     },
+    refetchInterval: 10000,
   });
 
   const { data: threadMessages = [], isLoading: messagesLoading } = useQuery({
@@ -85,10 +86,12 @@ export default function PortalChatPage() {
       return res.json();
     },
     enabled: !!selectedThread,
+    refetchInterval: 4000,
   });
 
   const { data: unreadCount } = useQuery<{ unreadCount: number }>({
     queryKey: ["/api/team/chat/unread"],
+    refetchInterval: 10000,
   });
 
   const sendMessageMutation = useMutation({
@@ -104,6 +107,7 @@ export default function PortalChatPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/team/chat/threads"] });
       queryClient.invalidateQueries({ queryKey: ["/api/team/chat/unread"] });
       setChatMessage("");
+      setIsInternalNote(false);
       toast({ title: vars.isInternal ? "Internal note added" : "Reply sent" });
     },
     onError: () => {

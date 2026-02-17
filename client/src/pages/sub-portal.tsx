@@ -260,6 +260,7 @@ export default function SubPortalPage() {
       return res.json();
     },
     enabled: !!token && !!portalInfo,
+    refetchInterval: 10000,
   });
 
   const { data: threadMessages = [], isLoading: messagesLoading } = useQuery({
@@ -272,6 +273,7 @@ export default function SubPortalPage() {
       return res.json();
     },
     enabled: !!token && !!selectedThread,
+    refetchInterval: 4000,
   });
 
   const createThreadMutation = useMutation({
