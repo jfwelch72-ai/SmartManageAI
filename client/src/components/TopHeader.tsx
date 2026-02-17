@@ -16,10 +16,11 @@ import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
 import { hasContractorAccess, isSuperAdmin } from "@/lib/rbac";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
+import { getNotificationDestination } from "@/lib/notificationDestination";
 
 const AI_ASSISTANT_STORAGE_KEY = "smartmanage-ai-assistant-enabled";
 
@@ -58,8 +59,20 @@ export default function TopHeader() {
   const unreadMessageCount = messageCountData.unreadCount || 0;
   const unreadNotifications = notifications.filter(n => !n.isRead);
 
-  const handleMarkAsRead = (id: string) => {
-    markAsRead.mutate(id);
+  const [, setLocation] = useLocation();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const handleNotificationClick = (notification: typeof notifications[0]) => {
+    if (!notification.isRead) {
+      markAsRead.mutate(notification.id);
+    }
+    const destination = getNotificationDestination(notification);
+    setNotificationsOpen(false);
+    if (destination) {
+      setTimeout(() => {
+        setLocation(destination);
+      }, 100);
+    }
   };
 
   const handleMarkAllAsRead = () => {
@@ -98,7 +111,7 @@ export default function TopHeader() {
           )}
 
           {hasContractorAccess(userRole) && (
-            <DropdownMenu>
+            <DropdownMenu open={notificationsOpen} onOpenChange={setNotificationsOpen}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications">
                   <Bell className="w-5 h-5" />
@@ -135,13 +148,11 @@ export default function TopHeader() {
                       No notifications
                     </div>
                   ) : (
-                    notifications.map((notification) => (
-                      <DropdownMenuItem
-                        key={notification.id}
-                        className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
-                        onClick={() => !notification.isRead && handleMarkAsRead(notification.id)}
-                        data-testid={`notification-${notification.id}`}
-                      >
+                    notifications.map((notification) => {
+                      const destination = getNotificationDestination(notification);
+                      const hasDestination = destination !== null;
+
+                      const notificationContent = (
                         <div className="flex items-start justify-between w-full gap-2">
                           <div className="flex-1">
                             <p className="font-medium text-sm">{notification.title}</p>
@@ -154,8 +165,46 @@ export default function TopHeader() {
                             <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />
                           )}
                         </div>
-                      </DropdownMenuItem>
-                    ))
+                      );
+
+                      if (hasDestination && destination) {
+                        return (
+                          <DropdownMenuItem
+                            key={notification.id}
+                            asChild
+                            className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
+                            data-testid={`notification-${notification.id}`}
+                          >
+                            <Link
+                              href={destination}
+                              onClick={() => {
+                                if (!notification.isRead) {
+                                  markAsRead.mutate(notification.id);
+                                }
+                                setNotificationsOpen(false);
+                              }}
+                            >
+                              {notificationContent}
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                      }
+
+                      return (
+                        <DropdownMenuItem
+                          key={notification.id}
+                          className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? "bg-accent/50" : ""}`}
+                          onSelect={() => {
+                            if (!notification.isRead) {
+                              markAsRead.mutate(notification.id);
+                            }
+                          }}
+                          data-testid={`notification-${notification.id}`}
+                        >
+                          {notificationContent}
+                        </DropdownMenuItem>
+                      );
+                    })
                   )}
                 </ScrollArea>
               </DropdownMenuContent>

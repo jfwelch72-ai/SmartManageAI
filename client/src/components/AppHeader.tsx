@@ -30,78 +30,7 @@ import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 
-// Helper function to determine navigation destination for notifications
-function getNotificationDestination(notification: {
-  type: string;
-  relatedEntityId?: string | null;
-  relatedEntityType?: string | null;
-  message?: string;
-}): string | null {
-  const { type, relatedEntityId, relatedEntityType, message } = notification;
-  
-  // Extract project code from message as fallback (e.g., "project 260017")
-  const projectCodeMatch = message?.match(/project\s+(\d+)/i);
-  const projectCode = projectCodeMatch ? projectCodeMatch[1] : null;
-  
-  // Helper to get project destination
-  const getProjectDestination = () => {
-    if (relatedEntityType === "project" && relatedEntityId) {
-      return `/projects/${relatedEntityId}`;
-    }
-    if (relatedEntityType === "PROJECT" && relatedEntityId) {
-      return `/projects/${relatedEntityId}`;
-    }
-    if (projectCode) {
-      return `/projects/${projectCode}`;
-    }
-    return "/projects";
-  };
-  
-  switch (type) {
-    case "BILLING_READY":
-      // Navigate to project detail page (SOV is a tab within project)
-      return getProjectDestination();
-      
-    case "CHANGE_ORDER_PENDING":
-      // Navigate to project detail page (change orders are a tab within project)
-      if (relatedEntityType === "changeOrder" && relatedEntityId) {
-        // Change orders are linked to projects, navigate to projects list as fallback
-        return projectCode ? `/projects/${projectCode}` : "/projects";
-      }
-      return getProjectDestination();
-      
-    case "TIME_OFF_REQUEST":
-      // Navigate to time clock manager for approvals
-      return "/time-clock-manager";
-      
-    case "MATERIAL_OVERAGE":
-      // Navigate to project detail page (materials tab)
-      return getProjectDestination();
-      
-    case "PROJECT_ASSIGNMENT":
-      // Navigate to the assigned project
-      return getProjectDestination();
-      
-    case "MAINTENANCE_REQUEST":
-    case "REPAIR_REQUEST":
-      // Navigate to equipment detail page
-      if (relatedEntityType === "equipment" && relatedEntityId) {
-        return `/equipment/${relatedEntityId}`;
-      }
-      return "/equipment";
-      
-    case "DELAY_SUBMITTED":
-    case "DELAY_ACKNOWLEDGED":
-    case "DELAY_CHANGE_ORDER_NEEDED":
-      // Navigate to delay claims page
-      return "/delay-claims";
-      
-    case "GENERAL":
-    default:
-      // No specific destination for general notifications
-      return null;
-  }
-}
+import { getNotificationDestination } from "@/lib/notificationDestination";
 
 interface AppHeaderProps {
   userName: string;

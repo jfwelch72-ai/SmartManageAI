@@ -7,9 +7,11 @@ import {
   subcontractorBidResponses,
   bidRequestClarifications,
   organizations,
-  projects
+  projects,
+  notifications,
+  users
 } from "@shared/schema";
-import { eq, and, or, desc, sql, isNull, ne } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNull, ne, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { 
@@ -894,7 +896,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
       .where(eq(subcontractorBidResponses.id, id))
       .returning();
     
-    // If awarding, update the request
+    // If awarding, update the request and notify the subcontractor
     if (status === "AWARDED") {
       await db
         .update(subcontractorBidRequests)
@@ -905,6 +907,34 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
           updatedAt: new Date()
         })
         .where(eq(subcontractorBidRequests.id, response.bidRequestId));
+
+      try {
+        const subUsers = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.organizationId, response.respondingOrganizationId),
+              eq(users.isActive, true),
+              inArray(users.role, ["ADMIN", "MANAGER", "ESTIMATOR"])
+            )
+          );
+
+        if (subUsers.length > 0) {
+          const notificationValues = subUsers.map((subUser) => ({
+            userId: subUser.id,
+            type: "BID_AWARDED" as const,
+            title: "Bid Awarded",
+            message: `Your bid for "${request.title}" has been awarded. Congratulations!`,
+            relatedEntityId: request.id,
+            relatedEntityType: "bid_request",
+          }));
+
+          await db.insert(notifications).values(notificationValues);
+        }
+      } catch (notifError) {
+        console.error("Failed to create bid award notifications:", notifError);
+      }
     }
     
     logInfo("Bid response status updated", { responseId: id, status });

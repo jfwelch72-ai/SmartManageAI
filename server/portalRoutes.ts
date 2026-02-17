@@ -5,9 +5,9 @@ import {
   rfiActivity, submittalActivity,
   subcontractorPortalTokens, portalActivityLog,
   projects, users, crmOrganisations,
-  bidDocumentDistributions
+  bidDocumentDistributions, notifications
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requirePortalAuth, requirePortalPermission, type PortalRequest } from "./portalAuth";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { generatePortalToken, hashPortalToken } from "./portalAuth";
@@ -24,6 +24,42 @@ async function logPortalActivity(portalTokenId: string, action: string, entityTy
     entityId,
     ipAddress: ipAddress || null,
   });
+}
+
+async function notifyGcTeamOfPortalActivity(
+  organizationId: string,
+  projectId: string,
+  contactName: string,
+  title: string,
+  message: string
+) {
+  try {
+    const gcTeamMembers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.organizationId, organizationId),
+          inArray(users.role, ["ADMIN", "MANAGER"]),
+          eq(users.isActive, true)
+        )
+      );
+
+    if (gcTeamMembers.length === 0) return;
+
+    const notificationValues = gcTeamMembers.map((member) => ({
+      userId: member.id,
+      type: "PORTAL_ACTIVITY" as const,
+      title,
+      message,
+      relatedEntityId: projectId,
+      relatedEntityType: "project",
+    }));
+
+    await db.insert(notifications).values(notificationValues);
+  } catch (error) {
+    console.error("Failed to create portal activity notifications:", error);
+  }
 }
 
 // ============================================================
@@ -174,6 +210,14 @@ router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermissi
 
     await logPortalActivity(token.id, "commented_on_rfi", "rfi", id, req.ip);
 
+    notifyGcTeamOfPortalActivity(
+      token.organizationId,
+      token.projectId,
+      token.contactName,
+      "Subcontractor Comment on RFI",
+      `${token.contactName} posted a comment on RFI #${rfi.rfiNumber || id}`
+    );
+
     res.status(201).json({ success: true });
   } catch (error) {
     console.error("Portal RFI comment error:", error);
@@ -296,6 +340,14 @@ router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPe
 
     await logPortalActivity(token.id, "commented_on_submittal", "submittal", id, req.ip);
 
+    notifyGcTeamOfPortalActivity(
+      token.organizationId,
+      token.projectId,
+      token.contactName,
+      "Subcontractor Comment on Submittal",
+      `${token.contactName} posted a comment on Submittal #${submittal.submittalNumber || id}`
+    );
+
     res.status(201).json({ success: true });
   } catch (error) {
     console.error("Portal submittal comment error:", error);
@@ -351,6 +403,14 @@ router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPer
     }).where(eq(submittals.id, id));
 
     await logPortalActivity(token.id, "uploaded_submittal_file", "submittal", id, req.ip);
+
+    notifyGcTeamOfPortalActivity(
+      token.organizationId,
+      token.projectId,
+      token.contactName,
+      "Subcontractor File Upload",
+      `${token.contactName} uploaded a file "${fileName}" to Submittal #${submittal.submittalNumber || id}`
+    );
 
     res.status(201).json(newAttachment);
   } catch (error) {
@@ -504,6 +564,14 @@ router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePo
       .returning();
 
     await logPortalActivity(token.id, "acknowledged_transmittal", "transmittal", id, req.ip);
+
+    notifyGcTeamOfPortalActivity(
+      token.organizationId,
+      token.projectId,
+      token.contactName,
+      "Transmittal Acknowledged",
+      `${token.contactName} acknowledged Transmittal #${result.transmittalNumber || id}`
+    );
 
     res.json(updated);
   } catch (error) {
