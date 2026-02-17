@@ -16,7 +16,7 @@ export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
 export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
 export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
 export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "DELAY_CHANGE_ORDER_NEEDED", "PORTAL_ACTIVITY", "BID_AWARDED", "PROGRESS_MILESTONE", "DAILY_PROGRESS_LOGGED", "CHANGE_ORDER_APPROVED", "SOV_ITEM_COMPLETED"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "DELAY_CHANGE_ORDER_NEEDED", "PORTAL_ACTIVITY", "BID_AWARDED", "PROGRESS_MILESTONE", "DAILY_PROGRESS_LOGGED", "CHANGE_ORDER_APPROVED", "SOV_ITEM_COMPLETED", "PORTAL_CHAT_MESSAGE"]);
 
 // Messaging enums
 export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
@@ -6974,3 +6974,65 @@ export const bidDocumentDistributions = pgTable("bid_document_distributions", {
 export const insertBidDocumentDistributionSchema = createInsertSchema(bidDocumentDistributions).omit({ id: true, sentAt: true });
 export type InsertBidDocumentDistribution = z.infer<typeof insertBidDocumentDistributionSchema>;
 export type BidDocumentDistribution = typeof bidDocumentDistributions.$inferSelect;
+
+// ============================================================
+// CLIENT PORTAL CHAT SYSTEM
+// Two-way messaging between portal users (clients/subs) and project team members
+// ============================================================
+
+export const portalChatThreadStatusEnum = pgEnum("portal_chat_thread_status", ["OPEN", "CLOSED", "ARCHIVED"]);
+export const portalChatThreadCategoryEnum = pgEnum("portal_chat_thread_category", ["PROJECT", "RFI", "SUBMITTAL", "TASK", "GENERAL"]);
+export const portalChatPriorityEnum = pgEnum("portal_chat_priority", ["NORMAL", "URGENT"]);
+
+export const portalChatThreads = pgTable("portal_chat_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  portalTokenId: varchar("portal_token_id").notNull().references(() => subcontractorPortalTokens.id, { onDelete: "cascade" }),
+  subject: text("subject").notNull(),
+  category: portalChatThreadCategoryEnum("category").notNull().default("GENERAL"),
+  linkedEntityType: text("linked_entity_type"),
+  linkedEntityId: varchar("linked_entity_id"),
+  status: portalChatThreadStatusEnum("status").notNull().default("OPEN"),
+  priority: portalChatPriorityEnum("priority").notNull().default("NORMAL"),
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  portalUnreadCount: integer("portal_unread_count").notNull().default(0),
+  teamUnreadCount: integer("team_unread_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("portal_chat_threads_org_idx").on(table.organizationId),
+  projectIdx: index("portal_chat_threads_project_idx").on(table.projectId),
+  portalTokenIdx: index("portal_chat_threads_token_idx").on(table.portalTokenId),
+  statusIdx: index("portal_chat_threads_status_idx").on(table.status),
+  lastMessageIdx: index("portal_chat_threads_last_msg_idx").on(table.lastMessageAt),
+}));
+
+export const portalChatMessages = pgTable("portal_chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  threadId: varchar("thread_id").notNull().references(() => portalChatThreads.id, { onDelete: "cascade" }),
+  senderType: text("sender_type").notNull(),
+  senderPortalTokenId: varchar("sender_portal_token_id").references(() => subcontractorPortalTokens.id, { onDelete: "set null" }),
+  senderUserId: varchar("sender_user_id").references(() => users.id, { onDelete: "set null" }),
+  senderName: text("sender_name").notNull(),
+  content: text("content").notNull(),
+  isInternal: boolean("is_internal").notNull().default(false),
+  attachmentUrl: text("attachment_url"),
+  attachmentName: text("attachment_name"),
+  attachmentType: text("attachment_type"),
+  readByPortal: boolean("read_by_portal").notNull().default(false),
+  readByTeam: boolean("read_by_team").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  threadIdx: index("portal_chat_messages_thread_idx").on(table.threadId),
+  senderTypeIdx: index("portal_chat_messages_sender_type_idx").on(table.senderType),
+  createdAtIdx: index("portal_chat_messages_created_at_idx").on(table.createdAt),
+}));
+
+export const insertPortalChatThreadSchema = createInsertSchema(portalChatThreads).omit({ id: true, createdAt: true, updatedAt: true, lastMessageAt: true, portalUnreadCount: true, teamUnreadCount: true });
+export type InsertPortalChatThread = z.infer<typeof insertPortalChatThreadSchema>;
+export type PortalChatThread = typeof portalChatThreads.$inferSelect;
+
+export const insertPortalChatMessageSchema = createInsertSchema(portalChatMessages).omit({ id: true, createdAt: true });
+export type InsertPortalChatMessage = z.infer<typeof insertPortalChatMessageSchema>;
+export type PortalChatMessage = typeof portalChatMessages.$inferSelect;

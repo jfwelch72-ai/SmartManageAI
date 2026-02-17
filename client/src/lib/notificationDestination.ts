@@ -55,6 +55,9 @@ export function getNotificationDestination(notification: {
     case "SOV_ITEM_COMPLETED":
       return getProjectDestination();
 
+    case "PORTAL_CHAT_MESSAGE":
+      return "/portal-chat";
+
     case "BID_AWARDED":
       if (relatedEntityType === "bid_request" && relatedEntityId) {
         return `/bid-inbox/${relatedEntityId}`;

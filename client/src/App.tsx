@@ -92,6 +92,7 @@ import CrewMarketplacePage from "@/pages/crew-marketplace";
 import PricebookImportPage from "@/pages/pricebook-import";
 import ClientPortalPublic from "@/pages/client-portal-public";
 import SubPortalPage from "@/pages/sub-portal";
+import PortalChatPage from "@/pages/portal-chat";
 import CompanyHealthPage from "@/pages/company-health";
 import ExecutiveDigestPage from "@/pages/executive-digest";
 import WhatIfSimulatorPage from "@/pages/what-if-simulator";
@@ -198,6 +199,7 @@ function Router() {
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
       <Route path="/messages" component={() => <ProtectedRoute component={MessagesPage} />} />
+      <Route path="/portal-chat" component={() => <ProtectedRoute component={PortalChatPage} />} />
       
       {/* Admin-only routes */}
       <Route path="/users" component={() => <ProtectedRoute component={UsersPage} permission={RoutePermissions.USERS} />} />

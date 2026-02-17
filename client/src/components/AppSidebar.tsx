@@ -295,6 +295,15 @@ export function AppSidebar() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/portal-chat")} tooltip="Portal Chat">
+                  <Link href="/portal-chat" data-testid="sidebar-portal-chat">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Portal Chat</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isActive("/tasks")} tooltip="Tasks">
                   <Link href="/tasks" data-testid="sidebar-tasks">
                     <ClipboardList className="w-4 h-4" />
