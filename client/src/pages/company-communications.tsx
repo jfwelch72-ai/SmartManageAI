@@ -181,7 +181,7 @@ export default function CompanyCommunicationsPage() {
         <div className="flex items-center gap-3">
           <MessageSquare className="w-8 h-8 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold" data-testid="heading-company-communications">Company Communications</h1>
+            <h1 className="text-3xl font-bold" data-testid="heading-company-communications">Bulletins</h1>
             <p className="text-sm text-muted-foreground">Daily updates and notes from across the company</p>
           </div>
         </div>
@@ -252,7 +252,7 @@ export default function CompanyCommunicationsPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
-          <CardTitle>Recent Communications</CardTitle>
+          <CardTitle>Recent Bulletins</CardTitle>
           <Button
             variant="outline"
             size="sm"
@@ -268,7 +268,7 @@ export default function CompanyCommunicationsPage() {
           {showFilters && (
             <div className="mb-6 p-4 border rounded-md space-y-4 bg-muted/50">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium">Filter Communications</h4>
+                <h4 className="text-sm font-medium">Filter Bulletins</h4>
                 {hasActiveFilters && (
                   <Button
                     variant="ghost"
@@ -380,13 +380,13 @@ export default function CompanyCommunicationsPage() {
           <div className="space-y-4">
             {isLoading ? (
               <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground">Loading communications...</p>
+                <p className="text-sm text-muted-foreground">Loading bulletins...</p>
               </div>
             ) : notes.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {hasActiveFilters 
-                  ? "No communications match your filters. Try adjusting or clearing them."
-                  : "No communications yet. Be the first to post an update above."}
+                  ? "No bulletins match your filters. Try adjusting or clearing them."
+                  : "No bulletins yet. Be the first to post an update above."}
               </p>
             ) : (
               notes.map((note) => {

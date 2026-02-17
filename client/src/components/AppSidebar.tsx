@@ -274,10 +274,10 @@ export function AppSidebar() {
               </SidebarMenuItem>
               
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/communications")} tooltip="Communications">
+                <SidebarMenuButton asChild isActive={isActive("/communications")} tooltip="Bulletins">
                   <Link href="/communications" data-testid="sidebar-communications">
                     <MessageSquare className="w-4 h-4" />
-                    <span>Communications</span>
+                    <span>Bulletins</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
