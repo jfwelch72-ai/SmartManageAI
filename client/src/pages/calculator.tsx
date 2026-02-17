@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeftRight,
   Box,
@@ -30,7 +31,7 @@ import ProfitMarginCalculator from "@/components/calculators/ProfitMarginCalcula
 import MarkupCalculator from "@/components/calculators/MarkupCalculator";
 import LaborCostEstimator from "@/components/calculators/LaborCostEstimator";
 
-const categories = [
+const allCategories = [
   { id: "unit-converter", label: "Unit Converter", icon: ArrowLeftRight, component: UnitConverter },
   { id: "material-estimator", label: "Concrete & Materials", icon: Box, component: MaterialEstimatorCalculator },
   { id: "masonry", label: "Masonry", icon: BrickWall, component: MasonryCalculator },
@@ -46,12 +47,55 @@ const categories = [
   { id: "labor-cost", label: "Labor Cost", icon: Users, component: LaborCostEstimator },
 ];
 
-type CategoryId = typeof categories[number]["id"];
+const UNIVERSAL_CALCULATORS = ["unit-converter", "geometry", "profit-margin", "markup", "labor-cost"];
+
+const TRADE_CALCULATOR_MAP: Record<string, string[]> = {
+  GENERAL_CONTRACTOR: allCategories.map((c) => c.id),
+  CONCRETE: ["material-estimator", "masonry", "aggregates"],
+  MASONRY: ["masonry", "material-estimator", "aggregates"],
+  ROOFING: ["roofing", "material-estimator", "lumber", "aggregates"],
+  FRAMING: ["lumber", "material-estimator", "roofing"],
+  DRYWALL: ["drywall", "paint", "material-estimator"],
+  PAINTING: ["paint", "drywall"],
+  FLOORING: ["tiling", "material-estimator"],
+  TILE: ["tiling", "material-estimator", "masonry"],
+  ELECTRICAL: ["material-estimator"],
+  PLUMBING: ["material-estimator"],
+  HVAC: ["material-estimator"],
+  LANDSCAPING: ["material-estimator", "aggregates", "masonry"],
+  DEMOLITION: ["material-estimator", "aggregates"],
+  INSULATION: ["drywall", "lumber", "material-estimator"],
+  WINDOWS_DOORS: ["lumber", "material-estimator"],
+  SIDING: ["lumber", "material-estimator", "paint"],
+  CABINETRY: ["lumber"],
+  COUNTERTOPS: ["tiling", "material-estimator"],
+  FENCING: ["material-estimator", "lumber", "aggregates"],
+  DECKING: ["lumber", "material-estimator"],
+  SOLAR: ["roofing", "material-estimator"],
+  OTHER: allCategories.map((c) => c.id),
+};
+
+function getCalculatorsForTrade(tradeType: string | null | undefined): typeof allCategories {
+  if (!tradeType) return allCategories;
+  const tradeSpecific = TRADE_CALCULATOR_MAP[tradeType] || allCategories.map((c) => c.id);
+  const allowedIds = new Set([...UNIVERSAL_CALCULATORS, ...tradeSpecific]);
+  return allCategories.filter((c) => allowedIds.has(c.id));
+}
 
 export default function CalculatorPage() {
-  const [activeCategory, setActiveCategory] = useState<CategoryId>("unit-converter");
+  const { data: tradeConfig } = useQuery<{ organization: { tradeType: string } }>({
+    queryKey: ["/api/organization/trade-config"],
+  });
 
-  const active = categories.find((c) => c.id === activeCategory) ?? categories[0];
+  const tradeType = tradeConfig?.organization?.tradeType || null;
+  const categories = useMemo(() => getCalculatorsForTrade(tradeType), [tradeType]);
+
+  const [activeCategory, setActiveCategory] = useState<string>("unit-converter");
+
+  const effectiveCategory = categories.some((c) => c.id === activeCategory)
+    ? activeCategory
+    : categories[0]?.id || "unit-converter";
+  const active = categories.find((c) => c.id === effectiveCategory) ?? categories[0];
   const ActiveComponent = active.component;
 
   return (
@@ -70,7 +114,7 @@ export default function CalculatorPage() {
           <div className="flex overflow-x-auto gap-2 pb-2 -mx-4 px-4 scrollbar-none">
             {categories.map((cat) => {
               const Icon = cat.icon;
-              const isActive = activeCategory === cat.id;
+              const isActive = effectiveCategory === cat.id;
               return (
                 <Button
                   key={cat.id}
@@ -97,7 +141,7 @@ export default function CalculatorPage() {
               <CardContent className="flex flex-col gap-1">
                 {categories.map((cat) => {
                   const Icon = cat.icon;
-                  const isActive = activeCategory === cat.id;
+                  const isActive = effectiveCategory === cat.id;
                   return (
                     <Button
                       key={cat.id}
