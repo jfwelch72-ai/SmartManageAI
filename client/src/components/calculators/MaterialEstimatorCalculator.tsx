@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const STONE_DENSITIES: Record<string, number> = {
   CRUSHED_STONE: 1.5,
@@ -71,6 +72,8 @@ const UNDERLAYMENT_TYPES: Record<string, { label: string; rollWidthFt: number; r
   VISQUEEN: { label: "Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
 };
 
+type ConcreteShape = "area" | "slab" | "footing" | "column";
+
 export default function MaterialEstimatorCalculator() {
   const [areaMode, setAreaMode] = useState<"dimensions" | "sqft">("dimensions");
   const [length, setLength] = useState("");
@@ -78,8 +81,21 @@ export default function MaterialEstimatorCalculator() {
   const [totalSqft, setTotalSqft] = useState("");
 
   const [enableConcrete, setEnableConcrete] = useState(true);
+  const [concreteShape, setConcreteShape] = useState<ConcreteShape>("area");
   const [concreteDepth, setConcreteDepth] = useState("4");
   const [concreteWaste, setConcreteWaste] = useState("10");
+
+  const [slabLength, setSlabLength] = useState("");
+  const [slabWidth, setSlabWidth] = useState("");
+  const [slabThickness, setSlabThickness] = useState("");
+
+  const [footingLength, setFootingLength] = useState("");
+  const [footingWidth, setFootingWidth] = useState("");
+  const [footingDepth, setFootingDepth] = useState("");
+
+  const [columnDiameter, setColumnDiameter] = useState("");
+  const [columnHeight, setColumnHeight] = useState("");
+  const [columnQuantity, setColumnQuantity] = useState("1");
 
   const [enableStone, setEnableStone] = useState(false);
   const [stoneType, setStoneType] = useState("CRUSHED_STONE");
@@ -119,15 +135,55 @@ export default function MaterialEstimatorCalculator() {
   }, [areaMode, length, width, totalSqft]);
 
   const concreteResult = useMemo(() => {
-    if (!enableConcrete || areaSF <= 0) return null;
-    const depth = parseFloat(concreteDepth) || 0;
-    if (depth <= 0) return null;
+    if (!enableConcrete) return null;
     const waste = parseFloat(concreteWaste) || 0;
-    const cubicFeet = areaSF * (depth / 12);
+    let cubicFeet = 0;
+    let volumePerColumn: number | null = null;
+
+    if (concreteShape === "area") {
+      if (areaSF <= 0) return null;
+      const depth = parseFloat(concreteDepth) || 0;
+      if (depth <= 0) return null;
+      cubicFeet = areaSF * (depth / 12);
+    } else if (concreteShape === "slab") {
+      const l = parseFloat(slabLength) || 0;
+      const w = parseFloat(slabWidth) || 0;
+      const t = parseFloat(slabThickness) || 0;
+      if (l <= 0 || w <= 0 || t <= 0) return null;
+      cubicFeet = l * w * (t / 12);
+    } else if (concreteShape === "footing") {
+      const l = parseFloat(footingLength) || 0;
+      const w = parseFloat(footingWidth) || 0;
+      const d = parseFloat(footingDepth) || 0;
+      if (l <= 0 || w <= 0 || d <= 0) return null;
+      cubicFeet = l * (w / 12) * (d / 12);
+    } else if (concreteShape === "column") {
+      const dia = parseFloat(columnDiameter) || 0;
+      const h = parseFloat(columnHeight) || 0;
+      const qty = parseInt(columnQuantity, 10) || 0;
+      if (dia <= 0 || h <= 0 || qty <= 0) return null;
+      const radiusFt = dia / 2 / 12;
+      volumePerColumn = Math.PI * radiusFt * radiusFt * h;
+      cubicFeet = volumePerColumn * qty;
+    }
+
+    if (cubicFeet <= 0) return null;
+
     const cubicYards = cubicFeet / 27;
     const withWaste = cubicYards * (1 + waste / 100);
-    return { cubicFeet, cubicYards, withWaste: Math.ceil(withWaste * 100) / 100 };
-  }, [enableConcrete, areaSF, concreteDepth, concreteWaste]);
+    const totalCuFt = cubicFeet * (1 + waste / 100);
+    const bags80 = Math.ceil(totalCuFt / 0.6);
+    const bags60 = Math.ceil(totalCuFt / 0.45);
+
+    return {
+      cubicFeet,
+      cubicYards,
+      withWaste: Math.ceil(withWaste * 100) / 100,
+      bags80,
+      bags60,
+      volumePerColumn,
+    };
+  }, [enableConcrete, concreteShape, areaSF, concreteDepth, concreteWaste, slabLength, slabWidth, slabThickness, footingLength, footingWidth, footingDepth, columnDiameter, columnHeight, columnQuantity]);
 
   const stoneResult = useMemo(() => {
     if (!enableStone || areaSF <= 0) return null;
@@ -205,14 +261,14 @@ export default function MaterialEstimatorCalculator() {
     return { totalSF, rolls, rollSF };
   }, [enableUnderlayment, areaSF, underlaymentType, underlaymentOverlap]);
 
-  const hasResults = areaSF > 0 && (concreteResult || stoneResult || excavationResult || reinforcementResult || sealerResult || underlaymentResult);
+  const hasResults = concreteResult || ((areaSF > 0) && (stoneResult || excavationResult || reinforcementResult || sealerResult || underlaymentResult));
 
   return (
     <Card data-testid="calculator-material-estimator">
       <CardHeader>
-        <CardTitle>Material Estimator</CardTitle>
+        <CardTitle>Concrete & Materials</CardTitle>
         <CardDescription className="text-muted-foreground">
-          Estimate concrete, stone, excavation, reinforcement, sealer, and underlayment quantities
+          Calculate concrete volumes by shape, plus stone, excavation, reinforcement, sealer, and underlayment quantities
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -295,32 +351,219 @@ export default function MaterialEstimatorCalculator() {
             />
           </div>
           {enableConcrete && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="me-concrete-depth">Depth (inches)</Label>
-                <Input
-                  id="me-concrete-depth"
-                  data-testid="input-concrete-depth"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={concreteDepth}
-                  onChange={(e) => setConcreteDepth(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="me-concrete-waste">Waste Factor (%)</Label>
-                <Input
-                  id="me-concrete-waste"
-                  data-testid="input-concrete-waste"
-                  type="number"
-                  min="0"
-                  max="50"
-                  step="1"
-                  value={concreteWaste}
-                  onChange={(e) => setConcreteWaste(e.target.value)}
-                />
-              </div>
+            <div className="space-y-4">
+              <Tabs value={concreteShape} onValueChange={(v) => setConcreteShape(v as ConcreteShape)}>
+                <TabsList className="w-full flex-wrap" data-testid="tabs-concrete-shape">
+                  <TabsTrigger value="area" data-testid="tab-concrete-area">Simple Area</TabsTrigger>
+                  <TabsTrigger value="slab" data-testid="tab-concrete-slab">Slab / Pad</TabsTrigger>
+                  <TabsTrigger value="footing" data-testid="tab-concrete-footing">Footing / Wall</TabsTrigger>
+                  <TabsTrigger value="column" data-testid="tab-concrete-column">Column / Pier</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="area" data-testid="tabcontent-concrete-area">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="me-concrete-depth">Depth (inches)</Label>
+                      <Input
+                        id="me-concrete-depth"
+                        data-testid="input-concrete-depth"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={concreteDepth}
+                        onChange={(e) => setConcreteDepth(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="me-concrete-waste-area">Waste Factor (%)</Label>
+                      <Input
+                        id="me-concrete-waste-area"
+                        data-testid="input-concrete-waste"
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="1"
+                        value={concreteWaste}
+                        onChange={(e) => setConcreteWaste(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="slab" data-testid="tabcontent-concrete-slab">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-slab-length">Length (ft)</Label>
+                        <Input
+                          id="me-slab-length"
+                          data-testid="input-slab-length"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={slabLength}
+                          onChange={(e) => setSlabLength(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-slab-width">Width (ft)</Label>
+                        <Input
+                          id="me-slab-width"
+                          data-testid="input-slab-width"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={slabWidth}
+                          onChange={(e) => setSlabWidth(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-slab-thickness">Thickness (inches)</Label>
+                        <Input
+                          id="me-slab-thickness"
+                          data-testid="input-slab-thickness"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={slabThickness}
+                          onChange={(e) => setSlabThickness(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-concrete-waste-slab">Waste Factor (%)</Label>
+                        <Input
+                          id="me-concrete-waste-slab"
+                          data-testid="input-concrete-waste-slab"
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="1"
+                          value={concreteWaste}
+                          onChange={(e) => setConcreteWaste(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="footing" data-testid="tabcontent-concrete-footing">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-footing-length">Length (ft)</Label>
+                        <Input
+                          id="me-footing-length"
+                          data-testid="input-footing-length"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={footingLength}
+                          onChange={(e) => setFootingLength(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-footing-width">Width (inches)</Label>
+                        <Input
+                          id="me-footing-width"
+                          data-testid="input-footing-width"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={footingWidth}
+                          onChange={(e) => setFootingWidth(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-footing-depth">Depth (inches)</Label>
+                        <Input
+                          id="me-footing-depth"
+                          data-testid="input-footing-depth"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={footingDepth}
+                          onChange={(e) => setFootingDepth(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-concrete-waste-footing">Waste Factor (%)</Label>
+                        <Input
+                          id="me-concrete-waste-footing"
+                          data-testid="input-concrete-waste-footing"
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="1"
+                          value={concreteWaste}
+                          onChange={(e) => setConcreteWaste(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="column" data-testid="tabcontent-concrete-column">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-column-diameter">Diameter (inches)</Label>
+                        <Input
+                          id="me-column-diameter"
+                          data-testid="input-column-diameter"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={columnDiameter}
+                          onChange={(e) => setColumnDiameter(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-column-height">Height (ft)</Label>
+                        <Input
+                          id="me-column-height"
+                          data-testid="input-column-height"
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={columnHeight}
+                          onChange={(e) => setColumnHeight(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="me-column-quantity">Quantity</Label>
+                        <Input
+                          id="me-column-quantity"
+                          data-testid="input-column-quantity"
+                          type="number"
+                          min="1"
+                          placeholder="1"
+                          value={columnQuantity}
+                          onChange={(e) => setColumnQuantity(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="me-concrete-waste-column">Waste Factor (%)</Label>
+                        <Input
+                          id="me-concrete-waste-column"
+                          data-testid="input-concrete-waste-column"
+                          type="number"
+                          min="0"
+                          max="50"
+                          step="1"
+                          value={concreteWaste}
+                          onChange={(e) => setConcreteWaste(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </div>
@@ -647,16 +890,34 @@ export default function MaterialEstimatorCalculator() {
               <CardHeader>
                 <CardTitle className="text-lg">Results Summary</CardTitle>
                 <CardDescription className="text-muted-foreground">
-                  Calculated material quantities for {areaSF.toFixed(1)} SF
+                  Calculated material quantities{areaSF > 0 ? ` for ${areaSF.toFixed(1)} SF` : ""}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {concreteResult && (
-                    <div className="flex items-center justify-between flex-wrap gap-1">
-                      <span className="text-sm text-muted-foreground">Concrete (with {concreteWaste}% waste)</span>
-                      <Badge data-testid="result-concrete-yards">{concreteResult.withWaste} cu yd</Badge>
-                    </div>
+                    <>
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="text-sm text-muted-foreground">Concrete (with {concreteWaste}% waste)</span>
+                        <Badge data-testid="result-concrete-yards">{concreteResult.withWaste} cu yd</Badge>
+                      </div>
+                      {concreteResult.volumePerColumn !== null && (
+                        <div className="flex items-center justify-between flex-wrap gap-1">
+                          <span className="text-sm text-muted-foreground">Volume per Column</span>
+                          <Badge variant="secondary" data-testid="result-volume-per-column">
+                            {concreteResult.volumePerColumn.toFixed(2)} cu ft / {(concreteResult.volumePerColumn / 27).toFixed(4)} cu yd
+                          </Badge>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="text-sm text-muted-foreground">80lb Bags (~0.6 cu ft each)</span>
+                        <Badge variant="outline" data-testid="result-bags-80">{concreteResult.bags80}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="text-sm text-muted-foreground">60lb Bags (~0.45 cu ft each)</span>
+                        <Badge variant="outline" data-testid="result-bags-60">{concreteResult.bags60}</Badge>
+                      </div>
+                    </>
                   )}
                   {stoneResult && (
                     <div className="flex items-center justify-between flex-wrap gap-1">

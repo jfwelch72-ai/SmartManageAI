@@ -12,13 +12,11 @@ import {
   Paintbrush,
   Mountain,
   Triangle,
-  Layers,
   TrendingUp,
   Calculator,
   Users,
 } from "lucide-react";
 import UnitConverter from "@/components/calculators/UnitConverter";
-import ConcreteCalculator from "@/components/calculators/ConcreteCalculator";
 import MasonryCalculator from "@/components/calculators/MasonryCalculator";
 import LumberCalculator from "@/components/calculators/LumberCalculator";
 import RoofingCalculator from "@/components/calculators/RoofingCalculator";
@@ -34,7 +32,7 @@ import LaborCostEstimator from "@/components/calculators/LaborCostEstimator";
 
 const categories = [
   { id: "unit-converter", label: "Unit Converter", icon: ArrowLeftRight, component: UnitConverter },
-  { id: "concrete", label: "Concrete", icon: Box, component: ConcreteCalculator },
+  { id: "material-estimator", label: "Concrete & Materials", icon: Box, component: MaterialEstimatorCalculator },
   { id: "masonry", label: "Masonry", icon: BrickWall, component: MasonryCalculator },
   { id: "lumber", label: "Lumber & Framing", icon: TreePine, component: LumberCalculator },
   { id: "roofing", label: "Roofing", icon: Home, component: RoofingCalculator },
@@ -43,7 +41,6 @@ const categories = [
   { id: "paint", label: "Paint & Coating", icon: Paintbrush, component: PaintCalculator },
   { id: "aggregates", label: "Aggregates", icon: Mountain, component: AggregatesCalculator },
   { id: "geometry", label: "Geometry", icon: Triangle, component: GeometryCalculator },
-  { id: "material-estimator", label: "Material Estimator", icon: Layers, component: MaterialEstimatorCalculator },
   { id: "profit-margin", label: "Profit Margin", icon: TrendingUp, component: ProfitMarginCalculator },
   { id: "markup", label: "Markup", icon: Calculator, component: MarkupCalculator },
   { id: "labor-cost", label: "Labor Cost", icon: Users, component: LaborCostEstimator },
