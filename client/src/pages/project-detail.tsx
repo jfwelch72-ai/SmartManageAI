@@ -2085,6 +2085,11 @@ export default function ProjectDetailPage() {
   const [receiptDate, setReceiptDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
+  // Timeline edit state (admin/manager only)
+  const [showTimelineEditDialog, setShowTimelineEditDialog] = useState(false);
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
+
   // Budget edit state (admin only)
   const [showBudgetEditDialog, setShowBudgetEditDialog] = useState(false);
   const [editBudget, setEditBudget] = useState("");
@@ -2372,6 +2377,29 @@ export default function ProjectDetailPage() {
       toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
     } finally {
       setIsUploadingDocument(false);
+    }
+  };
+
+  const handleTimelineUpdate = async () => {
+    try {
+      const payload: any = {};
+      if (editStartDate) {
+        payload.startDate = new Date(editStartDate).toISOString();
+      } else {
+        payload.startDate = null;
+      }
+      if (editEndDate) {
+        payload.endDate = new Date(editEndDate).toISOString();
+      } else {
+        payload.endDate = null;
+      }
+
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, payload);
+      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Success", description: "Timeline updated" });
+      setShowTimelineEditDialog(false);
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to update timeline", variant: "destructive" });
     }
   };
 
@@ -2751,19 +2779,34 @@ export default function ProjectDetailPage() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <CardTitle>Project Team & Timeline</CardTitle>
+                  {(user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditStartDate(project.startDate ? format(new Date(project.startDate), "yyyy-MM-dd") : "");
+                        setEditEndDate(project.endDate ? format(new Date(project.endDate), "yyyy-MM-dd") : "");
+                        setShowTimelineEditDialog(true);
+                      }}
+                      data-testid="button-edit-timeline"
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
                     <p className="text-sm font-medium mb-1">Start Date</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground" data-testid="text-start-date">
                       {project.startDate ? format(new Date(project.startDate), "MMM d, yyyy") : "Not set"}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm font-medium mb-1">Target End Date</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground" data-testid="text-end-date">
                       {project.endDate ? format(new Date(project.endDate), "MMM d, yyyy") : "Not set"}
                     </p>
                   </div>
@@ -5023,6 +5066,80 @@ export default function ProjectDetailPage() {
         </Tabs>
 
         {/* Budget Edit Dialog (Admin Only) */}
+        <Dialog open={showTimelineEditDialog} onOpenChange={setShowTimelineEditDialog}>
+          <DialogContent data-testid="dialog-edit-timeline">
+            <DialogHeader>
+              <DialogTitle>Edit Project Timeline</DialogTitle>
+              <DialogDescription>
+                Update the project start date and target end date.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Start Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="input-edit-start-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editStartDate ? format(new Date(editStartDate), "PPP") : "Select start date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={editStartDate ? new Date(editStartDate) : undefined}
+                      onSelect={(date) => setEditStartDate(date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div>
+                <Label>Target End Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                      data-testid="input-edit-end-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editEndDate ? format(new Date(editEndDate), "PPP") : "Select target end date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={editEndDate ? new Date(editEndDate) : undefined}
+                      onSelect={(date) => setEditEndDate(date ? format(date, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowTimelineEditDialog(false)}
+                data-testid="button-cancel-timeline-edit"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleTimelineUpdate}
+                data-testid="button-save-timeline"
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showBudgetEditDialog} onOpenChange={setShowBudgetEditDialog}>
           <DialogContent data-testid="dialog-edit-budget">
             <DialogHeader>
