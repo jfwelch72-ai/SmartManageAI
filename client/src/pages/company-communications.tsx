@@ -415,7 +415,7 @@ export default function CompanyCommunicationsPage() {
                             <div className="flex items-center gap-1 mt-1">
                               <Building2 className="w-3 h-3 text-muted-foreground" />
                               <Badge variant="outline" className="text-xs" data-testid={`note-project-${note.id}`}>
-                                {note.projectCode}
+                                {note.projectName} - {note.projectCode}
                               </Badge>
                             </div>
                           )}
