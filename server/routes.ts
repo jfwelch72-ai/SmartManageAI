@@ -5139,6 +5139,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sync material budgets with updated completed quantity
       await syncMaterialBudgetsFromScopeItem(req.params.scopeItemId, totalCompleted);
 
+      // Billing notifications for Office Manager
+      try {
+        const totalQty = parseFloat(scopeItem.totalQuantity) || 0;
+        const previousCompleted = parseFloat(scopeItem.completedQuantity) || 0;
+        const previousPercent = totalQty > 0 ? (previousCompleted / totalQty) * 100 : 0;
+        const currentPercent = totalQty > 0 ? (totalCompleted / totalQty) * 100 : 0;
+
+        const [project] = await db
+          .select({ id: projects.id, code: projects.code, gcOrganizationId: projects.gcOrganizationId })
+          .from(projects)
+          .where(eq(projects.id, scopeItem.projectId))
+          .limit(1);
+
+        if (project?.gcOrganizationId) {
+          const officeManagers = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(
+              and(
+                eq(users.organizationId, project.gcOrganizationId),
+                eq(users.role, "OFFICE_MANAGER"),
+                eq(users.isActive, true)
+              )
+            );
+
+          if (officeManagers.length > 0) {
+            const milestones = [25, 50, 75, 100];
+            const crossedMilestones = milestones.filter(
+              (m) => previousPercent < m && currentPercent >= m
+            );
+
+            if (crossedMilestones.length > 0) {
+              const milestoneNotifs = crossedMilestones.flatMap((milestone) =>
+                officeManagers.map((mgr) => ({
+                  userId: mgr.id,
+                  type: "PROGRESS_MILESTONE" as const,
+                  title: `${milestone}% Milestone Reached`,
+                  message: `"${scopeItem.description}" has reached ${milestone}% completion on project ${project.code || "Unknown"}`,
+                  relatedEntityId: project.id,
+                  relatedEntityType: "project" as const,
+                }))
+              );
+              await db.insert(notifications).values(milestoneNotifs);
+            }
+
+            const dailyNotifs = officeManagers.map((mgr) => ({
+              userId: mgr.id,
+              type: "DAILY_PROGRESS_LOGGED" as const,
+              title: "Daily Progress Logged",
+              message: `${newProgress.quantityCompleted} ${scopeItem.unit} logged for "${scopeItem.description}" on project ${project.code || "Unknown"}`,
+              relatedEntityId: project.id,
+              relatedEntityType: "project" as const,
+            }));
+            await db.insert(notifications).values(dailyNotifs);
+          }
+        }
+      } catch (notifError) {
+        console.error("Failed to create billing progress notifications:", notifError);
+      }
+
       res.status(201).json(newProgress);
     } catch (error: any) {
       console.error("Create daily progress error:", error);

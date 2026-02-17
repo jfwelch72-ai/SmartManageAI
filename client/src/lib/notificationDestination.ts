@@ -49,6 +49,10 @@ export function getNotificationDestination(notification: {
       return "/delay-claims";
 
     case "PORTAL_ACTIVITY":
+    case "PROGRESS_MILESTONE":
+    case "DAILY_PROGRESS_LOGGED":
+    case "CHANGE_ORDER_APPROVED":
+    case "SOV_ITEM_COMPLETED":
       return getProjectDestination();
 
     case "BID_AWARDED":

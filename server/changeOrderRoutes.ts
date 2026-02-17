@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { changeOrders, insertChangeOrderSchema, users, notifications, projects } from "@shared/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
@@ -329,6 +329,41 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       `Change order ${updatedOrder.changeOrderNumber} has been approved`,
       true
     );
+
+    // Notify Office Manager about approved change order affecting billing
+    try {
+      if (project?.gcOrganizationId) {
+        const officeManagers = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.organizationId, project.gcOrganizationId),
+              eq(users.role, "OFFICE_MANAGER"),
+              eq(users.isActive, true)
+            )
+          );
+
+        if (officeManagers.length > 0) {
+          const amount = Number(updatedOrder.amount || 0);
+          const formattedAmount = amount >= 0
+            ? `+$${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+            : `-$${Math.abs(amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+
+          const coNotifs = officeManagers.map((mgr) => ({
+            userId: mgr.id,
+            type: "CHANGE_ORDER_APPROVED" as const,
+            title: "Change Order Approved - Billing Impact",
+            message: `CO #${updatedOrder.changeOrderNumber} approved (${formattedAmount}): "${updatedOrder.description}"`,
+            relatedEntityId: updatedOrder.projectId,
+            relatedEntityType: "project" as const,
+          }));
+          await db.insert(notifications).values(coNotifs);
+        }
+      }
+    } catch (notifError) {
+      console.error("Failed to create CO approval billing notification:", notifError);
+    }
 
     res.json(updatedOrder);
   } catch (error: any) {

@@ -7,8 +7,10 @@ import {
   projects, 
   organizations,
   estimateLineItems,
+  notifications,
+  users,
 } from "@shared/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { generateSOVPDF } from "./sov-pdf-service";
@@ -679,6 +681,46 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
 
     const rows = result.rows as Record<string, unknown>[];
     const updated = rows[0] || lineItem;
+
+    // Notify Office Manager when SOV line item reaches 100% completion
+    const oldPercent = Number(lineItem.percentComplete || 0);
+    if (percentComplete >= 100 && oldPercent < 100) {
+      try {
+        const [project] = await db
+          .select({ id: projects.id, code: projects.code, gcOrganizationId: projects.gcOrganizationId })
+          .from(projects)
+          .where(eq(projects.id, sov.projectId))
+          .limit(1);
+
+        if (project?.gcOrganizationId) {
+          const officeManagers = await db
+            .select({ id: users.id })
+            .from(users)
+            .where(
+              and(
+                eq(users.organizationId, project.gcOrganizationId),
+                eq(users.role, "OFFICE_MANAGER"),
+                eq(users.isActive, true)
+              )
+            );
+
+          if (officeManagers.length > 0) {
+            const formattedValue = `$${Number(lineItem.scheduledValue || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+            const sovNotifs = officeManagers.map((mgr) => ({
+              userId: mgr.id,
+              type: "SOV_ITEM_COMPLETED" as const,
+              title: "SOV Line Item 100% Complete",
+              message: `"${lineItem.description}" (${formattedValue}) is fully complete on ${sov.title} - project ${project.code || "Unknown"}`,
+              relatedEntityId: project.id,
+              relatedEntityType: "project" as const,
+            }));
+            await db.insert(notifications).values(sovNotifs);
+          }
+        }
+      } catch (notifError) {
+        console.error("Failed to create SOV completion notification:", notifError);
+      }
+    }
 
     res.json(updated);
   } catch (error) {
