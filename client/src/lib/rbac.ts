@@ -391,19 +391,55 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/crm",
-      label: "CRM",
-      testId: "nav-crm",
-      visible: (role?: string) => hasManagementAccess(role),
+      href: "/messages",
+      label: "Messages",
+      testId: "nav-messages",
+      visible: (role?: string) => hasContractorAccess(role),
     },
+    {
+      href: "/tasks",
+      label: "Tasks",
+      testId: "nav-tasks",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+  ],
+
+  scheduleMenu: [
     {
       href: "/calendar",
       label: "Calendar",
       testId: "nav-calendar",
       visible: (role?: string) => hasContractorAccess(role),
     },
+    {
+      href: "/schedule-of-values",
+      label: "Schedule of Values",
+      testId: "nav-sov",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+    },
   ],
-  
+
+  biddingMenu: [
+    {
+      href: "/bids",
+      label: "Bids",
+      testId: "nav-bids",
+      visible: (role?: string) => canAccessBids(role),
+    },
+    {
+      href: "/bid-network",
+      label: "Bid Network",
+      testId: "nav-bid-network",
+      visible: (role?: string) => canAccessBidNetworkAsGC(role),
+    },
+    {
+      href: "/bid-inbox",
+      label: "Bid Inbox",
+      testId: "nav-bid-inbox",
+      visible: (role?: string) => canAccessBidNetworkAsSub(role),
+    },
+  ],
+
   timeClockMenu: [
     {
       href: "/time-clock",
@@ -434,6 +470,78 @@ export const NavigationConfig = {
       label: "T&M Billing",
       testId: "nav-tm-billing",
       visible: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
+    },
+  ],
+
+  fieldOpsMenu: [
+    {
+      href: "/equipment",
+      label: "Equipment",
+      testId: "nav-equipment",
+      visible: (role?: string) => hasEquipmentAccess(role),
+    },
+    {
+      href: "/delay-claims",
+      label: "Daily Claims",
+      testId: "nav-delay-claims",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/rfis",
+      label: "RFIs",
+      testId: "nav-rfis",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/transmittals",
+      label: "Transmittals",
+      testId: "nav-transmittals",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/submittals",
+      label: "Submittals",
+      testId: "nav-submittals",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/photo-custody",
+      label: "Photo Custody",
+      testId: "nav-photo-custody",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/communications",
+      label: "Bulletins",
+      testId: "nav-bulletins",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+  ],
+
+  financialsMenu: [
+    {
+      href: "/subcontracts",
+      label: "Subcontracts",
+      testId: "nav-subcontracts",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/subcontractor-payables",
+      label: "Subcontractor Payables",
+      testId: "nav-subcontractor-payables",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/vendor-pricing",
+      label: "Vendor Pricing Sync",
+      testId: "nav-vendor-pricing",
+      visible: (role?: string) => hasManagementAccess(role),
+    },
+    {
+      href: "/cost-rates",
+      label: "Cost Rates",
+      testId: "nav-cost-rates",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
     },
   ],
 
@@ -474,6 +582,12 @@ export const NavigationConfig = {
       testId: "nav-ai-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/email-assistant",
+      label: "Email Assistant",
+      testId: "nav-email-assistant",
+      visible: (role?: string) => hasManagementAccess(role),
+    },
   ],
 
   adminMenu: [
@@ -490,34 +604,16 @@ export const NavigationConfig = {
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/cost-rates",
-      label: "Cost Rates",
-      testId: "nav-cost-rates",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
-    },
-    {
-      href: "/subcontractor-payables",
-      label: "Subcontractor Payables",
-      testId: "nav-subcontractor-payables",
+      href: "/company-settings",
+      label: "Company Settings",
+      testId: "nav-company-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/vendor-pricing",
-      label: "Vendor Pricing Sync",
-      testId: "nav-vendor-pricing",
-      visible: (role?: string) => hasManagementAccess(role),
     },
     {
       href: "/scope-settings",
       label: "Scope Settings",
       testId: "nav-scope-settings",
       visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
-    },
-    {
-      href: "/company-settings",
-      label: "Company Settings",
-      testId: "nav-company-settings",
-      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
       href: "/website-builder",
@@ -530,6 +626,12 @@ export const NavigationConfig = {
       label: "Performance & Rewards",
       testId: "nav-performance",
       visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
+      href: "/daily-report-locks",
+      label: "Report Locks",
+      testId: "nav-report-locks",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
   ],
 
@@ -547,58 +649,10 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/equipment",
-      label: "Equipment",
-      testId: "nav-equipment",
-      visible: (role?: string) => hasEquipmentAccess(role),
-    },
-    {
-      href: "/schedule-of-values",
-      label: "Schedule of Values",
-      testId: "nav-sov",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
-    },
-    {
-      href: "/subcontracts",
-      label: "Subcontracts",
-      testId: "nav-subcontracts",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/rfis",
-      label: "RFIs",
-      testId: "nav-rfis",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/transmittals",
-      label: "Transmittals",
-      testId: "nav-transmittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/submittals",
-      label: "Submittals",
-      testId: "nav-submittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/delay-claims",
-      label: "Delay Claims",
-      testId: "nav-delay-claims",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/daily-report-locks",
-      label: "Report Locks",
-      testId: "nav-report-locks",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/photo-custody",
-      label: "Photo Custody",
-      testId: "nav-photo-custody",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      href: "/crm",
+      label: "CRM",
+      testId: "nav-crm",
+      visible: (role?: string) => hasManagementAccess(role),
     },
   ],
 };

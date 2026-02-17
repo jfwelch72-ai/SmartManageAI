@@ -56,6 +56,9 @@ import {
   Network,
   Inbox,
   ClipboardList,
+  HardHat,
+  BarChart3,
+  CalendarRange,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -85,7 +88,11 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const tour = useTour();
   
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [biddingOpen, setBiddingOpen] = useState(false);
+  const [fieldOpsOpen, setFieldOpsOpen] = useState(false);
   const [timeClockOpen, setTimeClockOpen] = useState(false);
+  const [financialsOpen, setFinancialsOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
@@ -116,12 +123,21 @@ export function AppSidebar() {
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : user.email?.substring(0, 2).toUpperCase() || "U";
 
+  const visibleScheduleItems = NavigationConfig.scheduleMenu.filter(item => item.visible(userRole));
+  const visibleBiddingItems = NavigationConfig.biddingMenu.filter(item => item.visible(userRole));
   const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
+  const visibleFieldOpsItems = NavigationConfig.fieldOpsMenu.filter(item => item.visible(userRole));
+  const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole));
   const visibleAIItems = NavigationConfig.aiMenu.filter(item => item.visible(userRole));
   const visibleAdminItems = NavigationConfig.adminMenu.filter(item => item.visible(userRole));
   const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole));
-  const hasAdminMenu = visibleAdminItems.length > 0;
+
+  const hasScheduleMenu = visibleScheduleItems.length > 0;
+  const hasBiddingMenu = visibleBiddingItems.length > 0;
+  const hasFieldOpsMenu = visibleFieldOpsItems.length > 0 || visibleTimeClockItems.length > 0;
+  const hasFinancialsMenu = visibleFinancialsItems.length > 0;
   const hasAIMenu = visibleAIItems.length > 0;
+  const hasAdminMenu = visibleAdminItems.length > 0;
   const hasToolsMenu = visibleToolsItems.length > 0;
 
   const handleLogout = async () => {
@@ -231,8 +247,8 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
+        {/* 1. Top-level: Dashboard, Projects, Messages, Tasks */}
         <SidebarGroup>
-          <SidebarGroupLabel>Main</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {isHustlerUser && (
@@ -263,27 +279,9 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              
+
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/calendar")} tooltip="Calendar">
-                  <Link href="/calendar" data-testid="sidebar-calendar">
-                    <Calendar className="w-4 h-4" />
-                    <span>Calendar</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/communications")} tooltip="Bulletins">
-                  <Link href="/communications" data-testid="sidebar-communications">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Bulletins</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/messages")} tooltip="Messages">
+                <SidebarMenuButton asChild isActive={isActive("/messages") || isActive("/portal-chat")} tooltip="Messages">
                   <Link href="/messages" data-testid="sidebar-messages">
                     <MessageCircle className="w-4 h-4" />
                     <span>Messages</span>
@@ -306,118 +304,188 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/email-assistant")} tooltip="Email Assistant">
-                  <Link href="/email-assistant" data-testid="sidebar-email-assistant">
-                    <Mail className="w-4 h-4" />
-                    <span>Email Assistant</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              
-              {canAccessBids(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/bids")} tooltip="Bids">
-                    <Link href="/bids" data-testid="sidebar-bids">
-                      <Gavel className="w-4 h-4" />
-                      <span>Bids</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              
-              {canAccessBidNetworkAsGC(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/bid-network")} tooltip="Bid Network">
-                    <Link href="/bid-network" data-testid="sidebar-bid-network">
-                      <Network className="w-4 h-4" />
-                      <span>Bid Network</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              
-              {canAccessBidNetworkAsSub(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/bid-inbox")} tooltip="Bid Inbox">
-                    <Link href="/bid-inbox" data-testid="sidebar-bid-inbox">
-                      <Inbox className="w-4 h-4" />
-                      <span>Bid Inbox</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              
-              {hasManagementAccess(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/crm")} tooltip="CRM">
-                    <Link href="/crm" data-testid="sidebar-crm">
-                      <UsersIcon className="w-4 h-4" />
-                      <span>CRM</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              
-              {hasEquipmentAccess(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/equipment")} tooltip="Equipment">
-                    <Link href="/equipment" data-testid="sidebar-equipment">
-                      <Truck className="w-4 h-4" />
-                      <span>Equipment</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
         
         <SidebarSeparator />
         
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen} className="group/collapsible">
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton tooltip="Time Clock" data-testid="sidebar-time-clock">
-                      <Clock className="w-4 h-4" />
-                      <span>Time Clock</span>
-                      <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton asChild isActive={isActive("/time-clock")}>
-                          <Link href="/time-clock" data-testid="sidebar-my-time-clock">
-                            My Time Clock
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      {visibleTimeClockItems.slice(1).map((item) => (
-                        <SidebarMenuSubItem key={item.href}>
-                          <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
-                            <Link href={item.href} data-testid={item.testId}>
-                              {item.label}
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-              
-              {hasAIMenu && (
+        {/* 2. Schedule group */}
+        {hasScheduleMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={scheduleOpen} onOpenChange={setScheduleOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Schedule" data-testid="sidebar-schedule-group">
+                        <CalendarRange className="w-4 h-4" />
+                        <span>Schedule</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleScheduleItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 3. Bidding group */}
+        {hasBiddingMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={biddingOpen} onOpenChange={setBiddingOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Bidding" data-testid="sidebar-bidding-group">
+                        <Gavel className="w-4 h-4" />
+                        <span>Bidding</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleBiddingItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 4. Field & Operations group (includes nested Time Clock) */}
+        {hasFieldOpsMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={fieldOpsOpen} onOpenChange={setFieldOpsOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Field & Operations" data-testid="sidebar-field-ops-group">
+                        <HardHat className="w-4 h-4" />
+                        <span>Field & Operations</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {/* Nested Time Clock sub-menu */}
+                        {visibleTimeClockItems.length > 0 && (
+                          <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen} className="group/timeclock">
+                            <SidebarMenuSubItem>
+                              <CollapsibleTrigger asChild>
+                                <SidebarMenuSubButton data-testid="sidebar-time-clock-group" className="cursor-pointer">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Time Clock</span>
+                                  <ChevronDown className="ml-auto w-3 h-3 transition-transform group-data-[state=open]/timeclock:rotate-180" />
+                                </SidebarMenuSubButton>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <SidebarMenuSub>
+                                  {visibleTimeClockItems.map((item) => (
+                                    <SidebarMenuSubItem key={item.href}>
+                                      <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                                        <Link href={item.href} data-testid={item.testId}>
+                                          {item.label}
+                                        </Link>
+                                      </SidebarMenuSubButton>
+                                    </SidebarMenuSubItem>
+                                  ))}
+                                </SidebarMenuSub>
+                              </CollapsibleContent>
+                            </SidebarMenuSubItem>
+                          </Collapsible>
+                        )}
+                        
+                        {/* Other Field Ops items */}
+                        {visibleFieldOpsItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 5. Financials & Cost Control group */}
+        {hasFinancialsMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={financialsOpen} onOpenChange={setFinancialsOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Financials & Cost Control" data-testid="sidebar-financials-group">
+                        <DollarSign className="w-4 h-4" />
+                        <span>Financials & Cost Control</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleFinancialsItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 6. AI & Insights group */}
+        {hasAIMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
                 <Collapsible open={aiMenuOpen} onOpenChange={setAiMenuOpen} className="group/collapsible">
                   <SidebarMenuItem>
                     <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="AI Tools">
+                      <SidebarMenuButton tooltip="AI & Insights" data-testid="sidebar-ai-group">
                         <Bot className="w-4 h-4" />
-                        <span>AI</span>
+                        <span>AI & Insights</span>
                         <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
@@ -436,15 +504,22 @@ export function AppSidebar() {
                     </CollapsibleContent>
                   </SidebarMenuItem>
                 </Collapsible>
-              )}
-              
-              {hasAdminMenu && (
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 7. Admin & Company group */}
+        {hasAdminMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
                 <Collapsible open={adminMenuOpen} onOpenChange={setAdminMenuOpen} className="group/collapsible">
                   <SidebarMenuItem>
                     <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Admin">
+                      <SidebarMenuButton tooltip="Admin & Company" data-testid="sidebar-admin-group">
                         <Shield className="w-4 h-4" />
-                        <span>Admin</span>
+                        <span>Admin & Company</span>
                         <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
                       </SidebarMenuButton>
                     </CollapsibleTrigger>
@@ -463,13 +538,20 @@ export function AppSidebar() {
                     </CollapsibleContent>
                   </SidebarMenuItem>
                 </Collapsible>
-              )}
-              
-              {hasToolsMenu && (
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {/* 8. Tools group */}
+        {hasToolsMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
                 <Collapsible open={toolsMenuOpen} onOpenChange={setToolsMenuOpen} className="group/collapsible">
                   <SidebarMenuItem>
                     <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Tools">
+                      <SidebarMenuButton tooltip="Tools" data-testid="sidebar-tools-group">
                         <Wrench className="w-4 h-4" />
                         <span>Tools</span>
                         <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
@@ -490,10 +572,10 @@ export function AppSidebar() {
                     </CollapsibleContent>
                   </SidebarMenuItem>
                 </Collapsible>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       
       <SidebarFooter className="border-t">
