@@ -165,6 +165,9 @@ export default function PortalChatPage() {
         <Card data-testid="card-thread-info">
           <CardContent className="p-4">
             <div className="flex flex-wrap items-center gap-3">
+              <Badge variant="outline" className="text-xs" data-testid="badge-thread-portal-type">
+                {selectedThread.portalType === "CLIENT" ? "Client" : "Subcontractor"}
+              </Badge>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">From:</span>
                 <span className="text-sm font-medium" data-testid="text-contact-name">{selectedThread.contactName}</span>
@@ -215,13 +218,13 @@ export default function PortalChatPage() {
                 threadMessages.map((msg: any) => (
                   <div
                     key={msg.id}
-                    className={`rounded-md p-3 text-sm ${msg.isInternal ? "bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 mr-8" : msg.senderType === "portal" ? "bg-muted mr-8" : "bg-primary/10 ml-8"}`}
+                    className={`rounded-md p-3 text-sm ${msg.isInternal ? "bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 mr-8" : (msg.senderType === "portal" || msg.senderType === "client_portal") ? "bg-muted mr-8" : "bg-primary/10 ml-8"}`}
                     data-testid={`message-${msg.id}`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
                       <span className="font-medium text-xs flex items-center gap-1" data-testid={`text-msg-sender-${msg.id}`}>
                         {msg.isInternal && <EyeOff className="h-3 w-3" />}
-                        {msg.senderName || (msg.senderType === "portal" ? selectedThread.contactName : "Team")}
+                        {msg.senderName || ((msg.senderType === "portal" || msg.senderType === "client_portal") ? selectedThread.contactName : "Team")}
                         {msg.isInternal && <span className="text-yellow-600 dark:text-yellow-400">(Internal Note)</span>}
                       </span>
                       <span className="text-xs text-muted-foreground">{formatDate(msg.createdAt)}</span>
@@ -362,6 +365,9 @@ export default function PortalChatPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="text-xs" data-testid={`badge-portal-type-${thread.id}`}>
+                        {thread.portalType === "CLIENT" ? "Client" : "Subcontractor"}
+                      </Badge>
                       <span data-testid={`text-inbox-contact-${thread.id}`}>{thread.contactName} ({thread.contactEmail})</span>
                     </div>
                     {thread.lastMessagePreview && (

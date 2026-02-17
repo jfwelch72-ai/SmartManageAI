@@ -2564,9 +2564,6 @@ export default function ProjectDetailPage() {
                   <SelectItem value="jobsite-ai">AI Jobsite</SelectItem>
                 )}
                 {hasManagementAccess(user?.role) && (
-                  <SelectItem value="client-portal">Client Portal</SelectItem>
-                )}
-                {hasManagementAccess(user?.role) && (
                   <SelectItem value="email-communications">Email</SelectItem>
                 )}
                 <SelectItem value="daily-notes">Daily Notes</SelectItem>
@@ -2641,11 +2638,6 @@ export default function ProjectDetailPage() {
             {hasManagementAccess(user?.role) && (
               <TabsTrigger value="jobsite-ai" data-testid="tab-jobsite-ai">
                 AI Jobsite
-              </TabsTrigger>
-            )}
-            {hasManagementAccess(user?.role) && (
-              <TabsTrigger value="client-portal" data-testid="tab-client-portal">
-                Client Portal
               </TabsTrigger>
             )}
             {hasManagementAccess(user?.role) && (
@@ -3317,12 +3309,6 @@ export default function ProjectDetailPage() {
             />
           </TabsContent>
 
-          <TabsContent value="client-portal">
-            <ClientPortal 
-              projectId={project.id}
-              projectName={project.name}
-            />
-          </TabsContent>
 
           <TabsContent value="email-communications">
             <ProjectEmailTab 
@@ -5013,7 +4999,25 @@ export default function ProjectDetailPage() {
           )}
           {hasManagementAccess(user?.role) && (
             <TabsContent value="portal-access">
-              <SubcontractorPortalManager projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+              <Tabs defaultValue="client-portal" className="space-y-4">
+                <TabsList>
+                  <TabsTrigger value="client-portal" data-testid="tab-portal-client">
+                    Client Portal
+                  </TabsTrigger>
+                  <TabsTrigger value="subcontractor-portal" data-testid="tab-portal-subcontractor">
+                    Subcontractor Portal
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="client-portal">
+                  <ClientPortal
+                    projectId={project.id}
+                    projectName={project.name}
+                  />
+                </TabsContent>
+                <TabsContent value="subcontractor-portal">
+                  <SubcontractorPortalManager projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+                </TabsContent>
+              </Tabs>
             </TabsContent>
           )}
         </Tabs>

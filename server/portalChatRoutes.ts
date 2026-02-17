@@ -1,6 +1,6 @@
-import { Router, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { portalChatThreads, portalChatMessages, subcontractorPortalTokens, projects, users, notifications } from "@shared/schema";
+import { portalChatThreads, portalChatMessages, subcontractorPortalTokens, clientPortalAccess, projects, users, notifications } from "@shared/schema";
 import { eq, and, desc, sql, inArray, asc, gt, or, ilike } from "drizzle-orm";
 import { requirePortalAuth, type PortalRequest } from "./portalAuth";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -36,7 +36,61 @@ async function notifyChatTeamMembers(orgId: string, projectId: string, senderNam
 }
 
 // ============================================================
-// Portal User Routes (token-based auth)
+// Client Portal Auth Middleware (email + projectId based)
+// ============================================================
+
+interface ClientPortalChatRequest extends Request {
+  clientAccess?: {
+    id: string;
+    organizationId: string;
+    projectId: string;
+    email: string;
+    name: string | null;
+  };
+}
+
+async function requireClientPortalAuth(req: ClientPortalChatRequest, res: Response, next: NextFunction): Promise<void> {
+  const clientEmail = req.headers["x-client-email"] as string;
+  const clientProjectId = req.headers["x-client-project-id"] as string;
+
+  if (!clientEmail || !clientProjectId) {
+    res.status(401).json({ error: "Client portal authentication required" });
+    return;
+  }
+
+  try {
+    const [access] = await db
+      .select()
+      .from(clientPortalAccess)
+      .where(and(
+        eq(clientPortalAccess.email, clientEmail),
+        eq(clientPortalAccess.projectId, clientProjectId),
+        eq(clientPortalAccess.isActive, true)
+      ))
+      .limit(1);
+
+    if (!access) {
+      res.status(401).json({ error: "Invalid client portal access" });
+      return;
+    }
+
+    req.clientAccess = {
+      id: access.id,
+      organizationId: access.organizationId,
+      projectId: access.projectId,
+      email: access.email,
+      name: access.name,
+    };
+
+    next();
+  } catch (error) {
+    console.error("Client portal auth error:", error);
+    res.status(500).json({ error: "Authentication failed" });
+  }
+}
+
+// ============================================================
+// Portal User Routes (token-based auth) - UNCHANGED
 // ============================================================
 
 router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest, res: Response) => {
@@ -264,7 +318,241 @@ router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req
   }
 });
 
-// Also add team-side mark read route
+// ============================================================
+// Client Portal Chat Routes (email-based auth)
+// ============================================================
+
+router.get("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+  try {
+    const access = req.clientAccess!;
+
+    const threads = await db
+      .select()
+      .from(portalChatThreads)
+      .where(eq(portalChatThreads.clientPortalAccessId, access.id))
+      .orderBy(desc(portalChatThreads.lastMessageAt));
+
+    const threadsWithPreview = await Promise.all(
+      threads.map(async (thread) => {
+        const [latestMsg] = await db
+          .select({ content: portalChatMessages.content })
+          .from(portalChatMessages)
+          .where(and(
+            eq(portalChatMessages.threadId, thread.id),
+            eq(portalChatMessages.isInternal, false)
+          ))
+          .orderBy(desc(portalChatMessages.createdAt))
+          .limit(1);
+
+        return {
+          ...thread,
+          lastMessagePreview: latestMsg ? latestMsg.content.substring(0, 100) : null,
+        };
+      })
+    );
+
+    res.json(threadsWithPreview);
+  } catch (error) {
+    console.error("Client portal chat threads list error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+  try {
+    const access = req.clientAccess!;
+    const { subject, category, priority, message } = req.body;
+
+    if (!subject || typeof subject !== "string" || subject.trim().length === 0) {
+      return res.status(400).json({ error: "Subject is required" });
+    }
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Initial message is required" });
+    }
+
+    const senderName = access.name || access.email;
+
+    const [thread] = await db.insert(portalChatThreads).values({
+      organizationId: access.organizationId,
+      projectId: access.projectId,
+      clientPortalAccessId: access.id,
+      subject: subject.trim(),
+      category: category || "GENERAL",
+      priority: priority || "NORMAL",
+      teamUnreadCount: 1,
+      portalUnreadCount: 0,
+    }).returning();
+
+    const [msg] = await db.insert(portalChatMessages).values({
+      threadId: thread.id,
+      senderType: "client_portal",
+      senderClientAccessId: access.id,
+      senderName,
+      content: message.trim(),
+      readByPortal: true,
+      readByTeam: false,
+    }).returning();
+
+    notifyChatTeamMembers(access.organizationId, access.projectId, senderName, message.trim());
+
+    res.status(201).json({ ...thread, message: msg });
+  } catch (error) {
+    console.error("Client portal chat create thread error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+  try {
+    const access = req.clientAccess!;
+    const { threadId } = req.params;
+
+    const [thread] = await db
+      .select()
+      .from(portalChatThreads)
+      .where(and(
+        eq(portalChatThreads.id, threadId),
+        eq(portalChatThreads.clientPortalAccessId, access.id)
+      ))
+      .limit(1);
+
+    if (!thread) {
+      return res.status(404).json({ error: "Thread not found" });
+    }
+
+    const messages = await db
+      .select()
+      .from(portalChatMessages)
+      .where(and(
+        eq(portalChatMessages.threadId, threadId),
+        eq(portalChatMessages.isInternal, false)
+      ))
+      .orderBy(asc(portalChatMessages.createdAt));
+
+    await db
+      .update(portalChatMessages)
+      .set({ readByPortal: true })
+      .where(and(
+        eq(portalChatMessages.threadId, threadId),
+        eq(portalChatMessages.senderType, "team"),
+        eq(portalChatMessages.readByPortal, false)
+      ));
+
+    await db
+      .update(portalChatThreads)
+      .set({ portalUnreadCount: 0 })
+      .where(eq(portalChatThreads.id, threadId));
+
+    res.json(messages);
+  } catch (error) {
+    console.error("Client portal chat get messages error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+  try {
+    const access = req.clientAccess!;
+    const { threadId } = req.params;
+    const { content, attachmentUrl, attachmentName, attachmentType } = req.body;
+
+    if (!content || typeof content !== "string" || content.trim().length === 0) {
+      return res.status(400).json({ error: "Message content is required" });
+    }
+
+    const [thread] = await db
+      .select()
+      .from(portalChatThreads)
+      .where(and(
+        eq(portalChatThreads.id, threadId),
+        eq(portalChatThreads.clientPortalAccessId, access.id)
+      ))
+      .limit(1);
+
+    if (!thread) {
+      return res.status(404).json({ error: "Thread not found" });
+    }
+
+    if (thread.status !== "OPEN") {
+      return res.status(403).json({ error: "Thread is not open for new messages" });
+    }
+
+    const senderName = access.name || access.email;
+
+    const [msg] = await db.insert(portalChatMessages).values({
+      threadId,
+      senderType: "client_portal",
+      senderClientAccessId: access.id,
+      senderName,
+      content: content.trim(),
+      attachmentUrl: attachmentUrl || null,
+      attachmentName: attachmentName || null,
+      attachmentType: attachmentType || null,
+      readByPortal: true,
+      readByTeam: false,
+    }).returning();
+
+    await db
+      .update(portalChatThreads)
+      .set({
+        lastMessageAt: new Date(),
+        teamUnreadCount: sql`${portalChatThreads.teamUnreadCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(portalChatThreads.id, threadId));
+
+    notifyChatTeamMembers(thread.organizationId, thread.projectId, senderName, content.trim());
+
+    res.status(201).json(msg);
+  } catch (error) {
+    console.error("Client portal chat send message error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+  try {
+    const access = req.clientAccess!;
+    const { threadId } = req.params;
+
+    const [thread] = await db
+      .select()
+      .from(portalChatThreads)
+      .where(and(
+        eq(portalChatThreads.id, threadId),
+        eq(portalChatThreads.clientPortalAccessId, access.id)
+      ))
+      .limit(1);
+
+    if (!thread) {
+      return res.status(404).json({ error: "Thread not found" });
+    }
+
+    await db
+      .update(portalChatMessages)
+      .set({ readByPortal: true })
+      .where(and(
+        eq(portalChatMessages.threadId, threadId),
+        eq(portalChatMessages.senderType, "team"),
+        eq(portalChatMessages.readByPortal, false)
+      ));
+
+    await db
+      .update(portalChatThreads)
+      .set({ portalUnreadCount: 0 })
+      .where(eq(portalChatThreads.id, threadId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Client portal chat mark read error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ============================================================
+// Team-side mark read route
+// ============================================================
+
 router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -292,7 +580,10 @@ router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRe
       .set({ readByTeam: true })
       .where(and(
         eq(portalChatMessages.threadId, threadId),
-        eq(portalChatMessages.senderType, "portal"),
+        or(
+          eq(portalChatMessages.senderType, "portal"),
+          eq(portalChatMessages.senderType, "client_portal")
+        ),
         eq(portalChatMessages.readByTeam, false)
       ));
 
@@ -339,21 +630,25 @@ router.get("/team/chat/threads", requireAuth, async (req: AuthRequest, res: Resp
     const results = await db
       .select({
         thread: portalChatThreads,
-        contactName: subcontractorPortalTokens.contactName,
-        contactEmail: subcontractorPortalTokens.contactEmail,
+        subContactName: subcontractorPortalTokens.contactName,
+        subContactEmail: subcontractorPortalTokens.contactEmail,
+        clientName: clientPortalAccess.name,
+        clientEmail: clientPortalAccess.email,
         projectName: projects.name,
         projectCode: projects.code,
       })
       .from(portalChatThreads)
       .leftJoin(subcontractorPortalTokens, eq(portalChatThreads.portalTokenId, subcontractorPortalTokens.id))
+      .leftJoin(clientPortalAccess, eq(portalChatThreads.clientPortalAccessId, clientPortalAccess.id))
       .leftJoin(projects, eq(portalChatThreads.projectId, projects.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(portalChatThreads.lastMessageAt));
 
     let mapped = results.map((r) => ({
       ...r.thread,
-      contactName: r.contactName,
-      contactEmail: r.contactEmail,
+      contactName: r.subContactName || r.clientName || null,
+      contactEmail: r.subContactEmail || r.clientEmail || null,
+      portalType: r.thread.clientPortalAccessId ? "CLIENT" : "SUBCONTRACTOR",
       project: {
         name: r.projectName,
         code: r.projectCode,
@@ -408,7 +703,10 @@ router.get("/team/chat/threads/:threadId/messages", requireAuth, async (req: Aut
       .set({ readByTeam: true })
       .where(and(
         eq(portalChatMessages.threadId, threadId),
-        eq(portalChatMessages.senderType, "portal"),
+        or(
+          eq(portalChatMessages.senderType, "portal"),
+          eq(portalChatMessages.senderType, "client_portal")
+        ),
         eq(portalChatMessages.readByTeam, false)
       ));
 
@@ -484,18 +782,34 @@ router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: Au
         .where(eq(portalChatThreads.id, threadId));
 
       try {
-        const [portalToken] = await db
-          .select()
-          .from(subcontractorPortalTokens)
-          .where(eq(subcontractorPortalTokens.id, thread.portalTokenId))
-          .limit(1);
+        if (thread.portalTokenId) {
+          const [portalToken] = await db
+            .select()
+            .from(subcontractorPortalTokens)
+            .where(eq(subcontractorPortalTokens.id, thread.portalTokenId))
+            .limit(1);
 
-        if (portalToken) {
-          await sendEmail({
-            to: portalToken.contactEmail,
-            subject: `New message on "${thread.subject}"`,
-            html: `<p>Hi ${portalToken.contactName},</p><p>You have a new message from the project team regarding "${thread.subject}".</p><p>Please log in to the portal to view and respond.</p>`,
-          });
+          if (portalToken) {
+            await sendEmail({
+              to: portalToken.contactEmail,
+              subject: `New message on "${thread.subject}"`,
+              html: `<p>Hi ${portalToken.contactName},</p><p>You have a new message from the project team regarding "${thread.subject}".</p><p>Please log in to the portal to view and respond.</p>`,
+            });
+          }
+        } else if (thread.clientPortalAccessId) {
+          const [clientAccess] = await db
+            .select()
+            .from(clientPortalAccess)
+            .where(eq(clientPortalAccess.id, thread.clientPortalAccessId))
+            .limit(1);
+
+          if (clientAccess) {
+            await sendEmail({
+              to: clientAccess.email,
+              subject: `New message on "${thread.subject}"`,
+              html: `<p>Hi ${clientAccess.name || "Client"},</p><p>You have a new message from the project team regarding "${thread.subject}".</p><p>Please log in to the client portal to view and respond.</p>`,
+            });
+          }
         }
       } catch (emailError) {
         console.error("Failed to send portal chat email notification:", emailError);
