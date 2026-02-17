@@ -29,7 +29,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Production Rate Tracking & Auto-Population**: Comprehensive production analytics system that tracks crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM). Integrates with AI for insights and natural language queries.
 *   **Unified SOW Tracking System**: Ensures scope of work items remain consistently linked across the entire project lifecycle (Estimate → Project → Daily Progress → Production Rates → Schedule of Values).
 *   **Scope Standardization Auto-Seeding**: During onboarding, the system automatically populates global scope work type categories, work types, modifier categories, and modifiers based on the admin's selected trade type. Covers 23 trade types with trade-specific templates. Idempotent seeding prevents duplicates across multiple org registrations.
-*   **Internal Messaging System**: Secure team communication.
+*   **Unified Messaging System**: Single "Messages" page with tabbed navigation combining Team Messages (internal communication) and Portal Chat (subcontractor/client conversations) with combined unread badges in the sidebar. Real-time polling updates messages every 4 seconds and thread lists every 10 seconds across all chat interfaces.
 *   **Equipment Management System**: Fleet and tool tracking, project assignment, repair workflows, and preventative maintenance.
 *   **White-Label Branding**: System-wide rebranding capabilities for the platform and PDF generation.
 *   **Onboarding Walkthrough System**: Role-specific onboarding walkthroughs guided by an AI Assistant.

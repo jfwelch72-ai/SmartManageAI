@@ -78,6 +78,10 @@ export function AppSidebar() {
   const { user, logout, organizationName } = useAuth();
   const [location] = useLocation();
   const { data: messageCountData = { unreadCount: 0 } } = useUnreadMessageCount();
+  const { data: portalChatUnreadData } = useQuery<{ unreadCount: number }>({
+    queryKey: ["/api/team/chat/unread"],
+    refetchInterval: 10000,
+  });
   const { state } = useSidebar();
   const tour = useTour();
   
@@ -104,7 +108,7 @@ export function AppSidebar() {
   const userRole = user.effectiveRole || user.role;
   const isHustlerUser = user.role === "HUSTLER";
   const displayName = organizationName || "SmartManageAI";
-  const unreadMessageCount = messageCountData.unreadCount || 0;
+  const unreadMessageCount = (messageCountData.unreadCount || 0) + (portalChatUnreadData?.unreadCount || 0);
 
   const isActive = (path: string) => location === path || location.startsWith(path + "/");
 
@@ -292,15 +296,6 @@ export function AppSidebar() {
                     </Badge>
                   </SidebarMenuBadge>
                 )}
-              </SidebarMenuItem>
-              
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/portal-chat")} tooltip="Portal Chat">
-                  <Link href="/portal-chat" data-testid="sidebar-portal-chat">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Portal Chat</span>
-                  </Link>
-                </SidebarMenuButton>
               </SidebarMenuItem>
 
               <SidebarMenuItem>

@@ -63,7 +63,7 @@ interface Message {
   sender: User;
 }
 
-export default function MessagesPage() {
+export function TeamMessagesContent() {
   const { user, logout, organizationName } = useAuth();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
@@ -217,18 +217,8 @@ export default function MessagesPage() {
   const showMessages = !isMobileView || selectedConversationId;
 
   return (
-    <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-8">
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground" data-testid="text-page-title">Messages</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              Team communication and direct messages
-            </p>
-          </div>
-        </div>
-
-        <Card className="h-[calc(100vh-200px)] min-h-[500px]">
+    <div data-testid="team-messages-content">
+        <Card className="h-[calc(100vh-280px)] min-h-[500px]">
           <div className="flex h-full">
             {/* Conversation List */}
             {showConversationList && (
@@ -483,7 +473,6 @@ export default function MessagesPage() {
             )}
           </div>
         </Card>
-      </main>
     </div>
   );
 }

@@ -41,7 +41,7 @@ import TasksPage from "@/pages/tasks";
 import ProductionRatesPage from "@/pages/production-rates";
 import CRMPage from "@/pages/crm";
 import ScopeSettingsPage from "@/pages/scope-settings";
-import MessagesPage from "@/pages/messages";
+import UnifiedMessagesPage from "@/pages/unified-messages";
 import EquipmentPage from "@/pages/equipment";
 import EquipmentDetailPage from "@/pages/equipment-detail";
 import OnboardingPage from "@/pages/onboarding";
@@ -92,7 +92,6 @@ import CrewMarketplacePage from "@/pages/crew-marketplace";
 import PricebookImportPage from "@/pages/pricebook-import";
 import ClientPortalPublic from "@/pages/client-portal-public";
 import SubPortalPage from "@/pages/sub-portal";
-import PortalChatPage from "@/pages/portal-chat";
 import CompanyHealthPage from "@/pages/company-health";
 import ExecutiveDigestPage from "@/pages/executive-digest";
 import WhatIfSimulatorPage from "@/pages/what-if-simulator";
@@ -198,8 +197,8 @@ function Router() {
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
-      <Route path="/messages" component={() => <ProtectedRoute component={MessagesPage} />} />
-      <Route path="/portal-chat" component={() => <ProtectedRoute component={PortalChatPage} />} />
+      <Route path="/messages" component={() => <ProtectedRoute component={UnifiedMessagesPage} />} />
+      <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} />} />
       
       {/* Admin-only routes */}
       <Route path="/users" component={() => <ProtectedRoute component={UsersPage} permission={RoutePermissions.USERS} />} />

@@ -50,7 +50,7 @@ function StatusIcon({ status }: { status: string }) {
   return <Clock className="h-3.5 w-3.5 text-blue-600" />;
 }
 
-export default function PortalChatPage() {
+export function PortalChatContent() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -158,7 +158,7 @@ export default function PortalChatPage() {
 
   if (selectedThread) {
     return (
-      <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4" data-testid="portal-chat-detail">
+      <div className="space-y-4" data-testid="portal-chat-detail">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="icon" onClick={() => setSelectedThread(null)} data-testid="button-back-threads">
             <ArrowLeft className="h-4 w-4" />
@@ -280,15 +280,7 @@ export default function PortalChatPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4" data-testid="portal-chat-inbox">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold" data-testid="text-page-title">Portal Chat Inbox</h1>
-          {(unreadCount?.unreadCount ?? 0) > 0 && (
-            <Badge variant="destructive" data-testid="badge-total-unread">{unreadCount?.unreadCount} unread</Badge>
-          )}
-        </div>
-      </div>
+    <div className="space-y-4" data-testid="portal-chat-inbox">
 
       <Card data-testid="card-filters">
         <CardContent className="p-3">
