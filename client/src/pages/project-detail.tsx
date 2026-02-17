@@ -28,6 +28,7 @@ import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
 import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -42,7 +43,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, differenceInDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -1864,6 +1865,23 @@ export default function ProjectDetailPage() {
   const { data: tmSheets = [], isLoading: tmSheetsLoading } = useProjectTMSheets(projectCode);
   const { data: receipts = [], isLoading: receiptsLoading } = useProjectReceipts(projectCode);
 
+  // Schedule data query (for duration & progress in overview)
+  const { data: scheduleData } = useQuery<{ schedule: { baselineStartDate: string; baselineEndDate?: string } | null; tasks: { percentComplete: number }[] }>({
+    queryKey: ["/api/projects", projectCode, "schedule"],
+    enabled: !!projectCode,
+  });
+
+  const scheduleDuration = scheduleData?.schedule
+    ? differenceInDays(
+        parseISO(scheduleData.schedule.baselineEndDate || scheduleData.schedule.baselineStartDate),
+        parseISO(scheduleData.schedule.baselineStartDate)
+      )
+    : null;
+
+  const scheduleProgress = scheduleData?.tasks && scheduleData.tasks.length > 0
+    ? Math.round(scheduleData.tasks.reduce((sum, t) => sum + (t.percentComplete || 0), 0) / scheduleData.tasks.length)
+    : null;
+
   // Project financials query (for detailed profit tracking)
   interface ProjectFinancials {
     budget: number;
@@ -2809,6 +2827,37 @@ export default function ProjectDetailPage() {
                     <p className="text-sm text-muted-foreground" data-testid="text-end-date">
                       {project.endDate ? format(new Date(project.endDate), "MMM d, yyyy") : "Not set"}
                     </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="p-3 rounded-lg border bg-card">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                          <CalendarIcon className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Duration</p>
+                          <p className="text-xl font-bold" data-testid="text-duration">
+                            {scheduleDuration !== null ? `${scheduleDuration} days` : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg border bg-card">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-100 dark:bg-green-950/50 rounded-lg">
+                          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Progress</p>
+                          <p className="text-xl font-bold" data-testid="text-progress">
+                            {scheduleProgress !== null ? `${scheduleProgress}%` : "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                      {scheduleProgress !== null && (
+                        <Progress value={scheduleProgress} className="mt-3 h-2" />
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
