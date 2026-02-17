@@ -400,7 +400,6 @@ export function AppSidebar() {
                             <SidebarMenuSubItem>
                               <CollapsibleTrigger asChild>
                                 <SidebarMenuSubButton data-testid="sidebar-time-clock-group" className="cursor-pointer">
-                                  <Clock className="w-3 h-3" />
                                   <span>Time Clock</span>
                                   <ChevronDown className="ml-auto w-3 h-3 transition-transform group-data-[state=open]/timeclock:rotate-180" />
                                 </SidebarMenuSubButton>
