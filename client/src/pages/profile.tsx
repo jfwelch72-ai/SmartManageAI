@@ -31,8 +31,10 @@ import {
   Star,
   ShieldCheck,
   FileText,
+  TrendingUp,
 } from "lucide-react";
 import SkillsCertificationsTab from "@/components/SkillsCertificationsTab";
+import PerformanceHistoryTab from "@/components/PerformanceHistoryTab";
 
 interface UserSkill {
   id: string;
@@ -119,7 +121,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [activeTab, setActiveTab] = useState<"profile" | "skills-certifications">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "skills-certifications" | "performance-history">("profile");
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
@@ -528,6 +530,22 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
+        <Card className="hover-elevate cursor-pointer" onClick={() => setActiveTab("performance-history")} data-testid="card-performance-history">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              <div className="flex items-center gap-1.5">
+                <TrendingUp className="h-4 w-4" />
+                Performance & History
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-muted-foreground">
+              Attendance, safety record, reviews, and productivity metrics
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">My Photos</CardTitle>
@@ -616,6 +634,21 @@ export default function ProfilePage() {
               </Button>
             </div>
             <SkillsCertificationsTab />
+          </div>
+        ) : activeTab === "performance-history" ? (
+          <div>
+            <div className="flex items-center gap-2 mb-6">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab("profile")}
+                data-testid="button-back-to-profile-from-perf"
+              >
+                Back to Profile
+              </Button>
+              <h1 className="text-xl font-bold" data-testid="text-performance-title">Performance & History</h1>
+            </div>
+            <PerformanceHistoryTab />
           </div>
         ) : (
         <div className="space-y-6">

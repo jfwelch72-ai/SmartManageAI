@@ -42,7 +42,8 @@ import {
   rentalEquipmentUsages, insertRentalEquipmentUsageSchema,
   tradeFeatures, organizations, organizationSowItems, masterSowItems,
   masterModifierCategories, masterModifiers,
-  scheduleOfValues, sovLineItems
+  scheduleOfValues, sovLineItems,
+  employeePerformanceProfiles, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -1290,6 +1291,219 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error serving certification file:", error);
       if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ==================== Performance & History Routes ====================
+
+  app.get("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const [profile] = await db.select().from(employeePerformanceProfiles).where(eq(employeePerformanceProfiles.userId, userId));
+      res.json(profile || null);
+    } catch (error) {
+      console.error("Error fetching performance profile:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.put("/api/auth/my-performance-profile", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const schema = z.object({
+        experienceLevel: z.string().max(50).optional().nullable(),
+        productivityTendencies: z.string().max(1000).optional().nullable(),
+        pastProjects: z.string().max(2000).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      const [existing] = await db.select().from(employeePerformanceProfiles).where(eq(employeePerformanceProfiles.userId, userId));
+      if (existing) {
+        const [updated] = await db.update(employeePerformanceProfiles)
+          .set({ ...parsed.data, updatedAt: new Date() })
+          .where(eq(employeePerformanceProfiles.id, existing.id))
+          .returning();
+        res.json(updated);
+      } else {
+        const [created] = await db.insert(employeePerformanceProfiles)
+          .values({ userId, organizationId: orgId || null, ...parsed.data })
+          .returning();
+        res.json(created);
+      }
+    } catch (error) {
+      console.error("Error updating performance profile:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-attendance-logs", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const logs = await db.select().from(attendanceLogs).where(eq(attendanceLogs.userId, userId)).orderBy(desc(attendanceLogs.date));
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching attendance logs:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/attendance-logs", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log attendance" }); return; }
+      const schema = z.object({
+        userId: z.string(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        status: z.enum(["PRESENT", "ABSENT", "LATE", "EXCUSED", "HALF_DAY"]),
+        notes: z.string().max(500).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      if (orgId) {
+        const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
+        if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
+      }
+      const [log] = await db.insert(attendanceLogs).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      res.json(log);
+    } catch (error) {
+      console.error("Error creating attendance log:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-safety-incidents", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const incidents = await db.select().from(safetyIncidents).where(eq(safetyIncidents.userId, userId)).orderBy(desc(safetyIncidents.date));
+      res.json(incidents);
+    } catch (error) {
+      console.error("Error fetching safety incidents:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/safety-incidents", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log safety incidents" }); return; }
+      const schema = z.object({
+        userId: z.string(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
+        description: z.string().max(2000),
+        actionTaken: z.string().max(2000).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      if (orgId) {
+        const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
+        if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
+      }
+      const [incident] = await db.insert(safetyIncidents).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      res.json(incident);
+    } catch (error) {
+      console.error("Error creating safety incident:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-quality-issues", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const issues = await db.select().from(qualityIssues).where(eq(qualityIssues.userId, userId)).orderBy(desc(qualityIssues.date));
+      res.json(issues);
+    } catch (error) {
+      console.error("Error fetching quality issues:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/quality-issues", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can log quality issues" }); return; }
+      const schema = z.object({
+        userId: z.string(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        category: z.enum(["REWORK", "DEFECT", "MATERIAL_WASTE", "SPECIFICATION_DEVIATION", "OTHER"]),
+        description: z.string().max(2000),
+        resolution: z.string().max(2000).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      if (orgId) {
+        const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
+        if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
+      }
+      const [issue] = await db.insert(qualityIssues).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      res.json(issue);
+    } catch (error) {
+      console.error("Error creating quality issue:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-performance-reviews", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const reviews = await db.select().from(performanceReviews).where(eq(performanceReviews.userId, userId)).orderBy(desc(performanceReviews.reviewDate));
+      res.json(reviews);
+    } catch (error) {
+      console.error("Error fetching performance reviews:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/performance-reviews", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      if (!managerRoles.includes(req.user?.role || "")) { res.status(403).json({ error: "Only managers can create reviews" }); return; }
+      const schema = z.object({
+        userId: z.string(),
+        reviewDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        reviewerName: z.string().max(200),
+        overallRating: z.number().min(1).max(5),
+        productivityRating: z.number().min(1).max(5).optional().nullable(),
+        qualityRating: z.number().min(1).max(5).optional().nullable(),
+        safetyRating: z.number().min(1).max(5).optional().nullable(),
+        communicationRating: z.number().min(1).max(5).optional().nullable(),
+        leadershipRating: z.number().min(1).max(5).optional().nullable(),
+        notes: z.string().max(5000).optional().nullable(),
+        scheduleAdherence: z.string().max(1000).optional().nullable(),
+        costControl: z.string().max(1000).optional().nullable(),
+        subcontractorCoordination: z.string().max(1000).optional().nullable(),
+        clientInspectionOutcomes: z.string().max(1000).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      if (orgId) {
+        const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
+        if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
+      }
+      const [review] = await db.insert(performanceReviews).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      res.json(review);
+    } catch (error) {
+      console.error("Error creating performance review:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

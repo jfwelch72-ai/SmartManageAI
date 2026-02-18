@@ -7099,3 +7099,92 @@ export type PortalChatThread = typeof portalChatThreads.$inferSelect;
 export const insertPortalChatMessageSchema = createInsertSchema(portalChatMessages).omit({ id: true, createdAt: true });
 export type InsertPortalChatMessage = z.infer<typeof insertPortalChatMessageSchema>;
 export type PortalChatMessage = typeof portalChatMessages.$inferSelect;
+
+// ==================== Performance & History System ====================
+
+export const employeePerformanceProfiles = pgTable("employee_performance_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  experienceLevel: text("experience_level"),
+  productivityTendencies: text("productivity_tendencies"),
+  pastProjects: text("past_projects"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEmployeePerformanceProfileSchema = createInsertSchema(employeePerformanceProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmployeePerformanceProfile = z.infer<typeof insertEmployeePerformanceProfileSchema>;
+export type EmployeePerformanceProfile = typeof employeePerformanceProfiles.$inferSelect;
+
+export const attendanceLogs = pgTable("attendance_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  status: text("status").notNull(),
+  notes: text("notes"),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertAttendanceLogSchema = createInsertSchema(attendanceLogs).omit({ id: true, createdAt: true });
+export type InsertAttendanceLog = z.infer<typeof insertAttendanceLogSchema>;
+export type AttendanceLog = typeof attendanceLogs.$inferSelect;
+
+export const safetyIncidents = pgTable("safety_incidents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  severity: text("severity").notNull(),
+  description: text("description").notNull(),
+  actionTaken: text("action_taken"),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSafetyIncidentSchema = createInsertSchema(safetyIncidents).omit({ id: true, createdAt: true });
+export type InsertSafetyIncident = z.infer<typeof insertSafetyIncidentSchema>;
+export type SafetyIncident = typeof safetyIncidents.$inferSelect;
+
+export const qualityIssues = pgTable("quality_issues", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  resolution: text("resolution"),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertQualityIssueSchema = createInsertSchema(qualityIssues).omit({ id: true, createdAt: true });
+export type InsertQualityIssue = z.infer<typeof insertQualityIssueSchema>;
+export type QualityIssue = typeof qualityIssues.$inferSelect;
+
+export const performanceReviews = pgTable("performance_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  reviewDate: text("review_date").notNull(),
+  reviewerName: text("reviewer_name").notNull(),
+  overallRating: integer("overall_rating").notNull(),
+  productivityRating: integer("productivity_rating"),
+  qualityRating: integer("quality_rating"),
+  safetyRating: integer("safety_rating"),
+  communicationRating: integer("communication_rating"),
+  leadershipRating: integer("leadership_rating"),
+  notes: text("notes"),
+  scheduleAdherence: text("schedule_adherence"),
+  costControl: text("cost_control"),
+  subcontractorCoordination: text("subcontractor_coordination"),
+  clientInspectionOutcomes: text("client_inspection_outcomes"),
+  recordedBy: varchar("recorded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPerformanceReviewSchema = createInsertSchema(performanceReviews).omit({ id: true, createdAt: true });
+export type InsertPerformanceReview = z.infer<typeof insertPerformanceReviewSchema>;
+export type PerformanceReview = typeof performanceReviews.$inferSelect;
