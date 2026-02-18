@@ -1631,7 +1631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const uniqueProjectIds = [...new Set([...projectIdMap.values()].filter(Boolean))] as string[];
+      const uniqueProjectIds = Array.from(new Set(Array.from(projectIdMap.values()).filter(Boolean))) as string[];
       const projectNameMap = new Map<string, string>();
       if (uniqueProjectIds.length > 0) {
         const projectRows = await db.select({ id: projects.id, name: projects.name })
@@ -1698,8 +1698,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [performanceProfile] = await db.select().from(employeePerformanceProfiles)
         .where(eq(employeePerformanceProfiles.userId, targetId)).limit(1);
 
-      const workerSkills = await db.select().from(userSkills)
+      const workerSkillsRaw = await db.select({
+        id: userSkills.id,
+        skillName: skills.name,
+        rating: userSkills.starRating,
+        isVerified: userSkills.verificationStatus,
+        verifiedByUserId: userSkills.verifiedByUserId,
+        verifiedAt: userSkills.verifiedAt,
+        createdAt: userSkills.addedAt,
+      }).from(userSkills)
+        .innerJoin(skills, eq(userSkills.skillId, skills.id))
         .where(eq(userSkills.userId, targetId));
+
+      const workerSkills = workerSkillsRaw.map(s => ({
+        ...s,
+        rating: s.rating ?? 0,
+        isVerified: s.isVerified === "verified",
+      }));
 
       const certifications = await db.select().from(userCertifications)
         .where(eq(userCertifications.userId, targetId));
