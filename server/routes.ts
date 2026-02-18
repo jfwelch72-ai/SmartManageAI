@@ -43,7 +43,8 @@ import {
   tradeFeatures, organizations, organizationSowItems, masterSowItems,
   masterModifierCategories, masterModifiers,
   scheduleOfValues, sovLineItems,
-  employeePerformanceProfiles, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews
+  employeePerformanceProfiles, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews,
+  supervisorNotes
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -1503,6 +1504,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(review);
     } catch (error) {
       console.error("Error creating performance review:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-supervisor-notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const notes = await db.select().from(supervisorNotes).where(eq(supervisorNotes.userId, userId)).orderBy(desc(supervisorNotes.createdAt));
+      res.json(notes);
+    } catch (error) {
+      console.error("Error fetching supervisor notes:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/supervisor-notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"];
+      if (!userRole || !managerRoles.includes(userRole)) { res.status(403).json({ error: "Only managers can add supervisor notes" }); return; }
+      const schema = z.object({
+        userId: z.string().min(1),
+        note: z.string().min(1).max(2000),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.errors }); return; }
+      if (orgId) {
+        const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
+        if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
+      }
+      const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Manager";
+      const [note] = await db.insert(supervisorNotes).values({
+        userId: parsed.data.userId,
+        organizationId: orgId || null,
+        note: parsed.data.note,
+        createdBy: userId,
+        createdByName: creatorName,
+      }).returning();
+      res.json(note);
+    } catch (error) {
+      console.error("Error creating supervisor note:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

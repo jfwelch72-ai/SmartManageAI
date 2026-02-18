@@ -7188,3 +7188,17 @@ export const performanceReviews = pgTable("performance_reviews", {
 export const insertPerformanceReviewSchema = createInsertSchema(performanceReviews).omit({ id: true, createdAt: true });
 export type InsertPerformanceReview = z.infer<typeof insertPerformanceReviewSchema>;
 export type PerformanceReview = typeof performanceReviews.$inferSelect;
+
+export const supervisorNotes = pgTable("supervisor_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSupervisorNoteSchema = createInsertSchema(supervisorNotes).omit({ id: true, createdAt: true });
+export type InsertSupervisorNote = z.infer<typeof insertSupervisorNoteSchema>;
+export type SupervisorNote = typeof supervisorNotes.$inferSelect;

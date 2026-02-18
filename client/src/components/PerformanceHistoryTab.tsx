@@ -20,6 +20,8 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  BarChart3,
+  MessageSquareQuote,
 } from "lucide-react";
 import type {
   EmployeePerformanceProfile,
@@ -27,6 +29,7 @@ import type {
   SafetyIncident,
   QualityIssue,
   PerformanceReview,
+  SupervisorNote,
 } from "@shared/schema";
 
 function RatingStars({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" }) {
@@ -92,6 +95,7 @@ export default function PerformanceHistoryTab() {
   const [expLevel, setExpLevel] = useState("");
   const [prodTendencies, setProdTendencies] = useState("");
   const [pastProj, setPastProj] = useState("");
+  const [newNote, setNewNote] = useState("");
 
   const { data: perfProfile, isLoading: loadingProfile } = useQuery<EmployeePerformanceProfile | null>({
     queryKey: ["/api/auth/my-performance-profile"],
@@ -111,6 +115,27 @@ export default function PerformanceHistoryTab() {
 
   const { data: perfReviews = [], isLoading: loadingReviews } = useQuery<PerformanceReview[]>({
     queryKey: ["/api/auth/my-performance-reviews"],
+  });
+
+  const { data: supervisorNotesList = [], isLoading: loadingNotes } = useQuery<SupervisorNote[]>({
+    queryKey: ["/api/auth/my-supervisor-notes"],
+  });
+
+  const addNoteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/auth/supervisor-notes", {
+        userId: user?.id,
+        note: newNote,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-supervisor-notes"] });
+      toast({ title: "Supervisor note added" });
+      setNewNote("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to add note", description: error.message, variant: "destructive" });
+    },
   });
 
   const updateProfileMutation = useMutation({
@@ -150,8 +175,152 @@ export default function PerformanceHistoryTab() {
     ? (perfReviews.reduce((sum, r) => sum + r.overallRating, 0) / perfReviews.length).toFixed(1)
     : null;
 
+  const attendanceReliability = attendanceStats.total > 0
+    ? Math.round(((attendanceStats.present + attendanceStats.late) / attendanceStats.total) * 100)
+    : null;
+
+  const productivityLabel = (() => {
+    const prodReviews = perfReviews.filter((r) => r.productivityRating);
+    if (prodReviews.length === 0) return "No Data";
+    const avg = prodReviews.reduce((s, r) => s + (r.productivityRating || 0), 0) / prodReviews.length;
+    if (avg >= 4) return "High";
+    if (avg >= 3) return "Average";
+    return "Below Average";
+  })();
+
+  const qualityLabel = (() => {
+    if (qualityIssues.length === 0) return "None";
+    if (qualityIssues.length <= 2) return "Low";
+    if (qualityIssues.length <= 5) return "Moderate";
+    return "High";
+  })();
+
+  const safetyLabel = safetyIncidents.length === 0 ? "None" : `${safetyIncidents.length}`;
+
   return (
     <div className="space-y-4">
+      <CollapsibleSection
+        title="Performance Metrics"
+        icon={BarChart3}
+        defaultOpen={true}
+        testId="section-performance-metrics"
+      >
+        {(loadingAttendance || loadingReviews || loadingQuality || loadingSafety) ? (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-3/4" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Attendance Reliability</p>
+              <p className="text-lg font-bold" data-testid="text-attendance-reliability">
+                {attendanceReliability !== null ? `${attendanceReliability}%` : "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Productivity Rating</p>
+              <div className="mt-1" data-testid="text-productivity-rating">
+                <Badge
+                  variant="secondary"
+                  className={`text-xs ${
+                    productivityLabel === "High" ? "bg-green-500/15 text-green-600 border-transparent" :
+                    productivityLabel === "Average" ? "bg-amber-500/15 text-amber-600 border-transparent" :
+                    productivityLabel === "Below Average" ? "bg-red-500/15 text-red-600 border-transparent" :
+                    ""
+                  }`}
+                >
+                  {productivityLabel}
+                </Badge>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Quality Issues</p>
+              <div className="mt-1" data-testid="text-quality-level">
+                <Badge
+                  variant="secondary"
+                  className={`text-xs ${
+                    qualityLabel === "None" ? "bg-green-500/15 text-green-600 border-transparent" :
+                    qualityLabel === "Low" ? "bg-blue-500/15 text-blue-600 border-transparent" :
+                    qualityLabel === "Moderate" ? "bg-amber-500/15 text-amber-600 border-transparent" :
+                    "bg-red-500/15 text-red-600 border-transparent"
+                  }`}
+                >
+                  {qualityLabel}
+                </Badge>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Safety Incidents</p>
+              <div className="mt-1" data-testid="text-safety-incidents">
+                <Badge
+                  variant="secondary"
+                  className={`text-xs ${
+                    safetyLabel === "None" ? "bg-green-500/15 text-green-600 border-transparent" :
+                    "bg-red-500/15 text-red-600 border-transparent"
+                  }`}
+                >
+                  {safetyLabel}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Supervisor Notes"
+        icon={MessageSquareQuote}
+        badge={supervisorNotesList.length > 0 ? `${supervisorNotesList.length}` : undefined}
+        defaultOpen={true}
+        testId="section-supervisor-notes"
+      >
+        {loadingNotes ? (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {supervisorNotesList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No supervisor notes yet.</p>
+            ) : (
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {supervisorNotesList.map((n) => (
+                  <div key={n.id} className="border-b pb-3 last:border-b-0 last:pb-0" data-testid={`row-supervisor-note-${n.id}`}>
+                    <p className="text-sm italic">&ldquo;{n.note}&rdquo;</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      &mdash; {n.createdByName}{n.createdAt ? `, ${new Date(n.createdAt).toLocaleDateString()}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {isManager && (
+              <div className="space-y-2 pt-2 border-t">
+                <Label htmlFor="supervisorNote" className="text-xs text-muted-foreground">Add a note</Label>
+                <Textarea
+                  id="supervisorNote"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="e.g. Very fast installer, minimal rework."
+                  rows={2}
+                  className="resize-none"
+                  data-testid="textarea-supervisor-note"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => addNoteMutation.mutate()}
+                  disabled={addNoteMutation.isPending || !newNote.trim()}
+                  data-testid="button-add-supervisor-note"
+                >
+                  {addNoteMutation.isPending ? "Adding..." : "Add Note"}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </CollapsibleSection>
+
       <CollapsibleSection
         title="Employee Overview"
         icon={Briefcase}
