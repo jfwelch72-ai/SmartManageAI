@@ -97,6 +97,12 @@ export default function ProfilePage() {
   const [birthdate, setBirthdate] = useState("");
   const [timezone, setTimezone] = useState("");
   const [profileDescription, setProfileDescription] = useState("");
+  const [tradeSpecialization, setTradeSpecialization] = useState("");
+  const [employmentType, setEmploymentType] = useState("");
+  const [emergencyContactName, setEmergencyContactName] = useState("");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const [emergencyContactAddress, setEmergencyContactAddress] = useState("");
+  const [emergencyContactEmail, setEmergencyContactEmail] = useState("");
 
   const [skillSearch, setSkillSearch] = useState("");
 
@@ -123,6 +129,12 @@ export default function ProfilePage() {
       setBirthdate(user.birthdate || "");
       setTimezone(user.timezone || "");
       setProfileDescription(user.profileDescription || "");
+      setTradeSpecialization(user.tradeSpecialization || "");
+      setEmploymentType(user.employmentType || "");
+      setEmergencyContactName(user.emergencyContactName || "");
+      setEmergencyContactPhone(user.emergencyContactPhone || "");
+      setEmergencyContactAddress(user.emergencyContactAddress || "");
+      setEmergencyContactEmail(user.emergencyContactEmail || "");
     }
   }, [user]);
 
@@ -147,6 +159,12 @@ export default function ProfilePage() {
         birthdate,
         timezone,
         profileDescription,
+        tradeSpecialization,
+        employmentType,
+        emergencyContactName,
+        emergencyContactPhone,
+        emergencyContactAddress,
+        emergencyContactEmail,
       });
     },
     onSuccess: () => {
@@ -705,31 +723,79 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div>
-          <Label className="mb-2 block">Skills & Certifications</Label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {mySkills.slice(0, 5).map((skill) => (
-              <Badge
-                key={skill.id}
-                variant="secondary"
-                data-testid={`badge-skill-preview-${skill.id}`}
-              >
-                {skill.skillName}
-              </Badge>
-            ))}
-            {mySkills.length > 5 && (
-              <Badge variant="outline">+{mySkills.length - 5} more</Badge>
-            )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="tradeSpecialization">Trade / Specialization</Label>
+            <Input
+              id="tradeSpecialization"
+              value={tradeSpecialization}
+              onChange={(e) => setTradeSpecialization(e.target.value)}
+              placeholder="e.g. Finish Carpentry, Electrical, Plumbing"
+              data-testid="input-trade-specialization"
+            />
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setActiveTab("skills-certifications")}
-            data-testid="button-manage-skills"
-          >
-            <Award className="h-4 w-4 mr-2" />
-            Manage Skills & Certifications
-          </Button>
+          <div>
+            <Label htmlFor="employmentType">Employment Type</Label>
+            <Select value={employmentType} onValueChange={setEmploymentType}>
+              <SelectTrigger id="employmentType" data-testid="select-employment-type">
+                <SelectValue placeholder="Select employment type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="FULL_TIME">Full Time</SelectItem>
+                <SelectItem value="PART_TIME">Part Time</SelectItem>
+                <SelectItem value="CONTRACT">Contract</SelectItem>
+                <SelectItem value="TEMPORARY">Temporary</SelectItem>
+                <SelectItem value="SEASONAL">Seasonal</SelectItem>
+                <SelectItem value="PER_DIEM">Per Diem</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="border-t pt-4 mt-2">
+          <h3 className="text-sm font-semibold mb-3" data-testid="text-emergency-contact-title">Emergency Contact</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="emergencyContactName">Name</Label>
+              <Input
+                id="emergencyContactName"
+                value={emergencyContactName}
+                onChange={(e) => setEmergencyContactName(e.target.value)}
+                placeholder="Full name"
+                data-testid="input-emergency-contact-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="emergencyContactPhone">Phone</Label>
+              <Input
+                id="emergencyContactPhone"
+                value={emergencyContactPhone}
+                onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                placeholder="Phone number"
+                data-testid="input-emergency-contact-phone"
+              />
+            </div>
+            <div>
+              <Label htmlFor="emergencyContactEmail">Email Address</Label>
+              <Input
+                id="emergencyContactEmail"
+                value={emergencyContactEmail}
+                onChange={(e) => setEmergencyContactEmail(e.target.value)}
+                placeholder="Email address"
+                data-testid="input-emergency-contact-email"
+              />
+            </div>
+            <div>
+              <Label htmlFor="emergencyContactAddress">Address</Label>
+              <Input
+                id="emergencyContactAddress"
+                value={emergencyContactAddress}
+                onChange={(e) => setEmergencyContactAddress(e.target.value)}
+                placeholder="Street address, city, state, zip"
+                data-testid="input-emergency-contact-address"
+              />
+            </div>
+          </div>
         </div>
 
         <div>

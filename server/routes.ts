@@ -522,11 +522,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         birthdate: z.string().max(20).optional().nullable(),
         timezone: z.string().max(100).optional().nullable(),
         profileDescription: z.string().max(2000).optional().nullable(),
+        tradeSpecialization: z.string().max(200).optional().nullable(),
+        employmentType: z.string().max(100).optional().nullable(),
+        emergencyContactName: z.string().max(200).optional().nullable(),
+        emergencyContactPhone: z.string().max(30).optional().nullable(),
+        emergencyContactAddress: z.string().max(500).optional().nullable(),
+        emergencyContactEmail: z.string().max(200).optional().nullable(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
 
-      const { firstName, lastName, phone, birthdate, timezone, profileDescription } = parsed.data;
+      const { firstName, lastName, phone, birthdate, timezone, profileDescription,
+        tradeSpecialization, employmentType, emergencyContactName, emergencyContactPhone,
+        emergencyContactAddress, emergencyContactEmail } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -534,6 +542,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (birthdate !== undefined) updateData.birthdate = birthdate || null;
       if (timezone !== undefined) updateData.timezone = timezone || null;
       if (profileDescription !== undefined) updateData.profileDescription = profileDescription || null;
+      if (tradeSpecialization !== undefined) updateData.tradeSpecialization = tradeSpecialization || null;
+      if (employmentType !== undefined) updateData.employmentType = employmentType || null;
+      if (emergencyContactName !== undefined) updateData.emergencyContactName = emergencyContactName || null;
+      if (emergencyContactPhone !== undefined) updateData.emergencyContactPhone = emergencyContactPhone || null;
+      if (emergencyContactAddress !== undefined) updateData.emergencyContactAddress = emergencyContactAddress || null;
+      if (emergencyContactEmail !== undefined) updateData.emergencyContactEmail = emergencyContactEmail || null;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
