@@ -24,6 +24,9 @@ import {
   Loader2,
   Pencil,
   Award,
+  Star,
+  ShieldCheck,
+  FileText,
 } from "lucide-react";
 import SkillsCertificationsTab from "@/components/SkillsCertificationsTab";
 
@@ -38,6 +41,17 @@ interface UserSkill {
   verifiedByName: string | null;
   verifiedByRole: string | null;
   verifiedAt: string | null;
+}
+
+interface UserCertification {
+  id: string;
+  userId: string;
+  certificationName: string;
+  issuedDate: string | null;
+  expiryDate: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  status: string;
 }
 
 interface UserPhoto {
@@ -114,6 +128,10 @@ export default function ProfilePage() {
 
   const { data: mySkills = [], isLoading: loadingSkills } = useQuery<UserSkill[]>({
     queryKey: ["/api/auth/my-skills"],
+  });
+
+  const { data: myCertifications = [], isLoading: loadingCerts } = useQuery<UserCertification[]>({
+    queryKey: ["/api/auth/my-certifications"],
   });
 
   const { data: allSkills = [] } = useQuery<{ id: string; name: string; category: string | null }[]>({
@@ -403,25 +421,86 @@ export default function ProfilePage() {
               <Pencil className="h-4 w-4" />
             </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {loadingSkills ? (
               <div className="space-y-2">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-3/4" />
               </div>
             ) : mySkills.length === 0 ? (
               <p className="text-sm text-muted-foreground">No skills added yet</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="space-y-2">
                 {mySkills.map((skill) => (
-                  <span
+                  <div
                     key={skill.id}
-                    className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground"
+                    className="flex items-center justify-between gap-2"
                     data-testid={`text-skill-sidebar-${skill.id}`}
                   >
-                    {skill.skillName}
-                  </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-sm truncate">{skill.skillName}</span>
+                      {skill.verificationStatus === "verified" && (
+                        <ShieldCheck className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                      )}
+                    </div>
+                    <div className="flex items-center shrink-0">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`h-3.5 w-3.5 ${
+                            star <= (skill.starRating || 0)
+                              ? "text-yellow-500 fill-yellow-500"
+                              : "text-muted-foreground/40"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
+              </div>
+            )}
+
+            {loadingCerts ? (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-full" />
+              </div>
+            ) : myCertifications.filter(c => {
+              if (!c.expiryDate) return true;
+              return new Date(c.expiryDate).getTime() > Date.now();
+            }).length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Certifications</p>
+                {myCertifications.filter(c => {
+                  if (!c.expiryDate) return true;
+                  return new Date(c.expiryDate).getTime() > Date.now();
+                }).map((cert) => {
+                  const isExpiringSoon = cert.expiryDate && (() => {
+                    const diff = (new Date(cert.expiryDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+                    return diff > 0 && diff <= 30;
+                  })();
+                  return (
+                    <div
+                      key={cert.id}
+                      className="flex items-center justify-between gap-2"
+                      data-testid={`text-cert-sidebar-${cert.id}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="text-sm truncate">{cert.certificationName}</span>
+                      </div>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          isExpiringSoon
+                            ? "bg-amber-500/15 text-amber-600 border-transparent text-xs no-default-hover-elevate"
+                            : "bg-green-500/15 text-green-600 border-transparent text-xs no-default-hover-elevate"
+                        }
+                      >
+                        {isExpiringSoon ? "Expiring Soon" : "Active"}
+                      </Badge>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
