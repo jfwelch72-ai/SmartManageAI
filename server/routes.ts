@@ -22,6 +22,7 @@ import {
   insertScopeItemSchema, insertMediaSchema, insertChangeOrderSchema,
   insertCalendarEventSchema, insertNotificationSchema, insertFilePermissionSchema,
   crews, crewMembers, skills, userSkills, userPhotos, equipment,
+  skillVerificationRequests, userCertifications, userEquipmentCompetencies,
   insertCrewSchema, insertCrewMemberSchema, insertSkillSchema, insertUserSkillSchema,
   subcontractors, subcontractorContracts, subcontractorPayments,
   projectLaborRates, projectEmployeeRates,
@@ -755,13 +756,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
       const results = await db
-        .select({ id: userSkills.id, skillId: userSkills.skillId, skillName: skills.name, category: skills.category })
+        .select({
+          id: userSkills.id,
+          skillId: userSkills.skillId,
+          skillName: skills.name,
+          category: skills.category,
+          starRating: userSkills.starRating,
+          verificationStatus: userSkills.verificationStatus,
+          verifiedByUserId: userSkills.verifiedByUserId,
+          verifiedAt: userSkills.verifiedAt,
+        })
         .from(userSkills)
         .innerJoin(skills, eq(userSkills.skillId, skills.id))
         .where(eq(userSkills.userId, userId))
         .orderBy(skills.name);
 
-      res.json(results);
+      const enrichedResults = await Promise.all(results.map(async (r) => {
+        let verifiedByName: string | null = null;
+        let verifiedByRole: string | null = null;
+        if (r.verifiedByUserId) {
+          const [verifier] = await db.select({ firstName: users.firstName, lastName: users.lastName, role: users.role })
+            .from(users).where(eq(users.id, r.verifiedByUserId)).limit(1);
+          if (verifier) {
+            verifiedByName = `${verifier.firstName || ""} ${verifier.lastName || ""}`.trim();
+            verifiedByRole = verifier.role;
+          }
+        }
+        return { ...r, verifiedByName, verifiedByRole };
+      }));
+
+      res.json(enrichedResults);
     } catch (error) {
       console.error("Error fetching user skills:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -810,6 +834,511 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Skill removed" });
     } catch (error) {
       console.error("Error removing skill:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/my-skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { userSkillId } = req.params;
+      const ratingSchema = z.object({ starRating: z.number().int().min(0).max(5) });
+      const parsed = ratingSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid rating", details: parsed.error.errors }); return; }
+
+      const [existing] = await db.select().from(userSkills)
+        .where(and(eq(userSkills.id, userSkillId), eq(userSkills.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Skill not found" }); return; }
+
+      const [updated] = await db.update(userSkills)
+        .set({ starRating: parsed.data.starRating })
+        .where(eq(userSkills.id, userSkillId))
+        .returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating skill rating:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/my-skills/:userSkillId/request-verification", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      if (!orgId) { res.status(400).json({ error: "No organization associated" }); return; }
+
+      const { userSkillId } = req.params;
+      const [existing] = await db.select().from(userSkills)
+        .where(and(eq(userSkills.id, userSkillId), eq(userSkills.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Skill not found" }); return; }
+
+      if (existing.verificationStatus === "verified") {
+        res.status(400).json({ error: "Skill is already verified" }); return;
+      }
+
+      const [existingRequest] = await db.select().from(skillVerificationRequests)
+        .where(and(
+          eq(skillVerificationRequests.userSkillId, userSkillId),
+          eq(skillVerificationRequests.status, "pending")
+        )).limit(1);
+      if (existingRequest) {
+        res.status(409).json({ error: "A verification request is already pending" }); return;
+      }
+
+      const managers = await db.select({ id: users.id }).from(users)
+        .where(and(
+          eq(users.organizationId, orgId),
+          eq(users.isActive, true),
+          inArray(users.role, ["SUPERINTENDENT", "MANAGER", "OFFICE_MANAGER", "ADMIN"])
+        ));
+
+      if (managers.length === 0) {
+        res.status(400).json({ error: "No managers available to verify skills" }); return;
+      }
+
+      const [skillInfo] = await db.select({ name: skills.name }).from(skills)
+        .where(eq(skills.id, existing.skillId)).limit(1);
+      const skillName = skillInfo?.name || "Unknown Skill";
+      const userName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim();
+
+      const createdRequests = [];
+      for (const manager of managers) {
+        const [request] = await db.insert(skillVerificationRequests).values({
+          userSkillId,
+          requestedByUserId: userId,
+          requestedToUserId: manager.id,
+          organizationId: orgId,
+          status: "pending",
+        }).returning();
+        createdRequests.push(request);
+
+        await db.insert(notifications).values({
+          userId: manager.id,
+          type: "GENERAL",
+          title: "Skill Verification Request",
+          message: `${userName} has requested verification for skill: ${skillName}`,
+        });
+      }
+
+      await db.update(userSkills)
+        .set({ verificationStatus: "pending" })
+        .where(eq(userSkills.id, userSkillId));
+
+      res.status(201).json({ message: "Verification request sent", requests: createdRequests });
+    } catch (error) {
+      console.error("Error requesting skill verification:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/skill-verification-requests", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      if (!orgId) { res.status(400).json({ error: "No organization associated" }); return; }
+
+      const requests = await db
+        .select({
+          id: skillVerificationRequests.id,
+          userSkillId: skillVerificationRequests.userSkillId,
+          requestedByUserId: skillVerificationRequests.requestedByUserId,
+          requestedToUserId: skillVerificationRequests.requestedToUserId,
+          organizationId: skillVerificationRequests.organizationId,
+          status: skillVerificationRequests.status,
+          createdAt: skillVerificationRequests.createdAt,
+          resolvedAt: skillVerificationRequests.resolvedAt,
+          skillName: skills.name,
+          skillCategory: skills.category,
+        })
+        .from(skillVerificationRequests)
+        .innerJoin(userSkills, eq(skillVerificationRequests.userSkillId, userSkills.id))
+        .innerJoin(skills, eq(userSkills.skillId, skills.id))
+        .where(and(
+          eq(skillVerificationRequests.requestedToUserId, userId),
+          eq(skillVerificationRequests.organizationId, orgId),
+          eq(skillVerificationRequests.status, "pending")
+        ))
+        .orderBy(desc(skillVerificationRequests.createdAt));
+
+      const enrichedRequests = await Promise.all(requests.map(async (r) => {
+        const [requester] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users).where(eq(users.id, r.requestedByUserId)).limit(1);
+        return {
+          ...r,
+          requesterName: requester ? `${requester.firstName} ${requester.lastName}` : "Unknown",
+        };
+      }));
+
+      res.json(enrichedRequests);
+    } catch (error) {
+      console.error("Error fetching verification requests:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/skill-verification-requests/:requestId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const allowedRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"];
+      if (!userRole || !allowedRoles.includes(userRole)) {
+        res.status(403).json({ error: "Only managers, superintendents, office managers, and admins can approve verifications" });
+        return;
+      }
+
+      const { requestId } = req.params;
+      const actionSchema = z.object({ action: z.enum(["approve", "reject"]) });
+      const parsed = actionSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid action", details: parsed.error.errors }); return; }
+
+      const [request] = await db.select().from(skillVerificationRequests)
+        .where(and(eq(skillVerificationRequests.id, requestId), eq(skillVerificationRequests.requestedToUserId, userId))).limit(1);
+      if (!request) { res.status(404).json({ error: "Verification request not found" }); return; }
+      if (request.status !== "pending") { res.status(400).json({ error: "Request already resolved" }); return; }
+
+      const newStatus = parsed.data.action === "approve" ? "approved" : "rejected";
+      await db.update(skillVerificationRequests)
+        .set({ status: newStatus, resolvedAt: new Date() })
+        .where(eq(skillVerificationRequests.id, requestId));
+
+      if (parsed.data.action === "approve") {
+        await db.update(userSkills)
+          .set({ verificationStatus: "verified", verifiedByUserId: userId, verifiedAt: new Date() })
+          .where(eq(userSkills.id, request.userSkillId));
+      } else {
+        await db.update(userSkills)
+          .set({ verificationStatus: "unverified" })
+          .where(eq(userSkills.id, request.userSkillId));
+      }
+
+      await db.update(skillVerificationRequests)
+        .set({ status: newStatus, resolvedAt: new Date() })
+        .where(and(
+          eq(skillVerificationRequests.userSkillId, request.userSkillId),
+          eq(skillVerificationRequests.status, "pending")
+        ));
+
+      const [skillInfo] = await db.select({ name: skills.name }).from(skills)
+        .innerJoin(userSkills, eq(userSkills.skillId, skills.id))
+        .where(eq(userSkills.id, request.userSkillId)).limit(1);
+
+      const verifierName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim();
+      await db.insert(notifications).values({
+        userId: request.requestedByUserId,
+        type: "GENERAL",
+        title: `Skill Verification ${parsed.data.action === "approve" ? "Approved" : "Rejected"}`,
+        message: `Your skill "${skillInfo?.name || "Unknown"}" has been ${parsed.data.action === "approve" ? "approved" : "rejected"} by ${verifierName}`,
+      });
+
+      res.json({ message: `Verification request ${newStatus}` });
+    } catch (error) {
+      console.error("Error resolving verification request:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-certifications", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const certs = await db.select().from(userCertifications)
+        .where(eq(userCertifications.userId, userId))
+        .orderBy(desc(userCertifications.createdAt));
+      res.json(certs);
+    } catch (error) {
+      console.error("Error fetching certifications:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/my-certifications", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      if (!orgId) { res.status(400).json({ error: "No organization associated" }); return; }
+
+      const certSchema = z.object({
+        certificationName: z.string().min(1).max(500),
+        issuedDate: z.string().optional().nullable(),
+        expiryDate: z.string().optional().nullable(),
+      });
+      const parsed = certSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
+
+      let fileUrl: string | null = null;
+      let fileObjectKey: string | null = null;
+      let fileName: string | null = null;
+      const file = req.file;
+
+      if (file) {
+        const { objectStorageClient } = await import("./objectStorage");
+        const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+        const objectId = `certifications/${userId}/${Date.now()}-${file.originalname}`;
+        const fullPath = `${privateDir}/${objectId}`;
+        const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+        const bucketName = parts[0];
+        const objectName = parts.slice(1).join("/");
+        const bucket = objectStorageClient.bucket(bucketName);
+        const objectFile = bucket.file(objectName);
+        await objectFile.save(file.buffer, { contentType: file.mimetype });
+        fileUrl = `/api/auth/certification-files/${objectId}`;
+        fileObjectKey = objectId;
+        fileName = file.originalname;
+      }
+
+      const [cert] = await db.insert(userCertifications).values({
+        userId,
+        organizationId: orgId,
+        certificationName: parsed.data.certificationName,
+        issuedDate: parsed.data.issuedDate ? new Date(parsed.data.issuedDate) : null,
+        expiryDate: parsed.data.expiryDate ? new Date(parsed.data.expiryDate) : null,
+        fileUrl,
+        fileObjectKey,
+        fileName,
+      }).returning();
+
+      res.status(201).json(cert);
+    } catch (error) {
+      console.error("Error adding certification:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { certId } = req.params;
+      const [existing] = await db.select().from(userCertifications)
+        .where(and(eq(userCertifications.id, certId), eq(userCertifications.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Certification not found" }); return; }
+
+      const updateSchema = z.object({
+        certificationName: z.string().min(1).max(500).optional(),
+        issuedDate: z.string().optional().nullable(),
+        expiryDate: z.string().optional().nullable(),
+        status: z.enum(["active", "expired", "revoked"]).optional(),
+      });
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
+
+      const updateData: Record<string, unknown> = { updatedAt: new Date() };
+      if (parsed.data.certificationName !== undefined) updateData.certificationName = parsed.data.certificationName;
+      if (parsed.data.issuedDate !== undefined) updateData.issuedDate = parsed.data.issuedDate ? new Date(parsed.data.issuedDate) : null;
+      if (parsed.data.expiryDate !== undefined) updateData.expiryDate = parsed.data.expiryDate ? new Date(parsed.data.expiryDate) : null;
+      if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
+
+      const [updated] = await db.update(userCertifications)
+        .set(updateData)
+        .where(eq(userCertifications.id, certId))
+        .returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating certification:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/auth/my-certifications/:certId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { certId } = req.params;
+      const [existing] = await db.select().from(userCertifications)
+        .where(and(eq(userCertifications.id, certId), eq(userCertifications.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Certification not found" }); return; }
+
+      if (existing.fileObjectKey) {
+        try {
+          const { objectStorageClient } = await import("./objectStorage");
+          const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+          const fullPath = `${privateDir}/${existing.fileObjectKey}`;
+          const pathStr = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+          const parts = pathStr.split("/");
+          const bucketName = parts[0];
+          const objectName = parts.slice(1).join("/");
+          const bucket = objectStorageClient.bucket(bucketName);
+          const objectFile = bucket.file(objectName);
+          await objectFile.delete().catch(() => {});
+        } catch (e) {
+          console.error("Error deleting certification file from storage:", e);
+        }
+      }
+
+      await db.delete(userCertifications).where(eq(userCertifications.id, certId));
+      res.json({ message: "Certification deleted" });
+    } catch (error) {
+      console.error("Error deleting certification:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/my-certifications/:certId/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { certId } = req.params;
+      const [existing] = await db.select().from(userCertifications)
+        .where(and(eq(userCertifications.id, certId), eq(userCertifications.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Certification not found" }); return; }
+
+      const file = req.file;
+      if (!file) { res.status(400).json({ error: "No file provided" }); return; }
+
+      if (existing.fileObjectKey) {
+        try {
+          const { objectStorageClient } = await import("./objectStorage");
+          const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+          const fullPath = `${privateDir}/${existing.fileObjectKey}`;
+          const pathStr = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+          const parts = pathStr.split("/");
+          const bucketName = parts[0];
+          const objectName = parts.slice(1).join("/");
+          const bucket = objectStorageClient.bucket(bucketName);
+          const objectFile = bucket.file(objectName);
+          await objectFile.delete().catch(() => {});
+        } catch (e) {
+          console.error("Error deleting old certification file:", e);
+        }
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const objectId = `certifications/${userId}/${Date.now()}-${file.originalname}`;
+      const fullPath = `${privateDir}/${objectId}`;
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      await objectFile.save(file.buffer, { contentType: file.mimetype });
+
+      const fileUrl = `/api/auth/certification-files/${objectId}`;
+      const [updated] = await db.update(userCertifications)
+        .set({ fileUrl, fileObjectKey: objectId, fileName: file.originalname, updatedAt: new Date() })
+        .where(eq(userCertifications.id, certId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error uploading certification file:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/certification-files/*", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const filePath = req.params[0];
+      if (!filePath) { res.status(400).json({ error: "File path required" }); return; }
+
+      const pathParts = filePath.split("/");
+      if (pathParts.length < 2) { res.status(400).json({ error: "Invalid file path" }); return; }
+      const fileOwnerId = pathParts[1];
+
+      if (fileOwnerId !== userId) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+
+      const { objectStorageClient } = await import("./objectStorage");
+      const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+      const fullPath = `${privateDir}/${filePath}`;
+      const pathStr = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+      const parts = pathStr.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      const [exists] = await objectFile.exists();
+      if (!exists) { res.status(404).json({ error: "File not found" }); return; }
+
+      const [metadata] = await objectFile.getMetadata();
+      res.set({
+        "Content-Type": metadata.contentType || "application/octet-stream",
+        "Content-Length": String(metadata.size),
+        "Cache-Control": "private, max-age=3600",
+      });
+      objectFile.createReadStream().pipe(res);
+    } catch (error) {
+      console.error("Error serving certification file:", error);
+      if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const competencies = await db.select().from(userEquipmentCompetencies)
+        .where(eq(userEquipmentCompetencies.userId, userId))
+        .orderBy(desc(userEquipmentCompetencies.createdAt));
+      res.json(competencies);
+    } catch (error) {
+      console.error("Error fetching equipment competencies:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/my-equipment-competencies", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      if (!orgId) { res.status(400).json({ error: "No organization associated" }); return; }
+
+      const compSchema = z.object({ equipmentName: z.string().min(1).max(500).transform(v => v.trim()) });
+      const parsed = compSchema.safeParse(req.body);
+      if (!parsed.success) { res.status(400).json({ error: "Equipment name is required" }); return; }
+
+      const [existingComp] = await db.select().from(userEquipmentCompetencies)
+        .where(and(
+          eq(userEquipmentCompetencies.userId, userId),
+          eq(userEquipmentCompetencies.equipmentName, parsed.data.equipmentName)
+        )).limit(1);
+      if (existingComp) { res.status(409).json({ error: "Equipment competency already added" }); return; }
+
+      const [comp] = await db.insert(userEquipmentCompetencies).values({
+        userId,
+        organizationId: orgId,
+        equipmentName: parsed.data.equipmentName,
+      }).returning();
+
+      res.status(201).json(comp);
+    } catch (error) {
+      console.error("Error adding equipment competency:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/auth/my-equipment-competencies/:compId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const { compId } = req.params;
+      const [existing] = await db.select().from(userEquipmentCompetencies)
+        .where(and(eq(userEquipmentCompetencies.id, compId), eq(userEquipmentCompetencies.userId, userId))).limit(1);
+      if (!existing) { res.status(404).json({ error: "Equipment competency not found" }); return; }
+
+      await db.delete(userEquipmentCompetencies).where(eq(userEquipmentCompetencies.id, compId));
+      res.json({ message: "Equipment competency removed" });
+    } catch (error) {
+      console.error("Error removing equipment competency:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -18589,6 +19118,63 @@ If the make/model is unknown, provide general best practices for the equipment t
     console.error("Failed to seed core modifier categories:", err);
   });
 
+  const cron = await import("node-cron");
+  cron.schedule("0 8 * * *", async () => {
+    try {
+      await checkCertificationExpiry();
+    } catch (err) {
+      console.error("[Cert Expiry] Scheduled check failed:", err);
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
+}
+
+async function checkCertificationExpiry() {
+  const now = new Date();
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const fiveDaysFromNow = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+  const allCerts = await db.select().from(userCertifications);
+
+  for (const cert of allCerts) {
+    if (!cert.expiryDate) continue;
+
+    const expiryTime = new Date(cert.expiryDate).getTime();
+
+    if (expiryTime < now.getTime() && cert.status !== "expired") {
+      await db.update(userCertifications)
+        .set({ status: "expired", updatedAt: now })
+        .where(eq(userCertifications.id, cert.id));
+    }
+
+    if (expiryTime <= thirtyDaysFromNow.getTime() && expiryTime > now.getTime() && !cert.expiryNotified30Days) {
+      await db.update(userCertifications)
+        .set({ expiryNotified30Days: true, updatedAt: now })
+        .where(eq(userCertifications.id, cert.id));
+
+      await db.insert(notifications).values({
+        userId: cert.userId,
+        type: "GENERAL",
+        title: "Certification Expiring Soon",
+        message: `Your certification "${cert.certificationName}" will expire on ${new Date(cert.expiryDate).toLocaleDateString()}. Please renew it.`,
+      });
+    }
+
+    if (expiryTime <= fiveDaysFromNow.getTime() && expiryTime > now.getTime() && !cert.expiryNotified5Days) {
+      await db.update(userCertifications)
+        .set({ expiryNotified5Days: true, updatedAt: now })
+        .where(eq(userCertifications.id, cert.id));
+
+      await db.insert(notifications).values({
+        userId: cert.userId,
+        type: "GENERAL",
+        title: "Certification Expiring Very Soon",
+        message: `Your certification "${cert.certificationName}" will expire in less than 5 days on ${new Date(cert.expiryDate).toLocaleDateString()}. Immediate action is required.`,
+      });
+    }
+  }
+
+  console.log(`[Cert Expiry] Checked ${allCerts.length} certifications`);
 }

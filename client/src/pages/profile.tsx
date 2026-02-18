@@ -21,14 +21,23 @@ import {
   Upload,
   ImageIcon,
   Trash2,
-  Loader2
+  Loader2,
+  Pencil,
+  Award,
 } from "lucide-react";
+import SkillsCertificationsTab from "@/components/SkillsCertificationsTab";
 
 interface UserSkill {
   id: string;
   skillId: string;
   skillName: string;
   category: string | null;
+  starRating: number | null;
+  verificationStatus: string | null;
+  verifiedByUserId: string | null;
+  verifiedByName: string | null;
+  verifiedByRole: string | null;
+  verifiedAt: string | null;
 }
 
 interface UserPhoto {
@@ -86,6 +95,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [activeTab, setActiveTab] = useState<"profile" | "skills-certifications">("profile");
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
@@ -373,8 +383,25 @@ export default function ProfilePage() {
         </Card>
 
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">My Skills</CardTitle>
+          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              <button
+                className="flex items-center gap-1.5 hover:underline text-left"
+                onClick={() => setActiveTab("skills-certifications")}
+                data-testid="link-skills-certifications"
+              >
+                <Award className="h-4 w-4" />
+                Skills & Certifications
+              </button>
+            </CardTitle>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setActiveTab("skills-certifications")}
+              data-testid="button-edit-skills"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent>
             {loadingSkills ? (
@@ -475,6 +502,22 @@ export default function ProfilePage() {
       </div>
 
       <div className="flex-1 space-y-6 min-w-0">
+        {activeTab === "skills-certifications" ? (
+          <div>
+            <div className="flex items-center gap-2 mb-6">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab("profile")}
+                data-testid="button-back-to-profile"
+              >
+                Back to Profile
+              </Button>
+            </div>
+            <SkillsCertificationsTab />
+          </div>
+        ) : (
+        <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-profile-title">My Profile</h1>
         </div>
@@ -584,55 +627,30 @@ export default function ProfilePage() {
         </div>
 
         <div>
-          <Label className="mb-2 block">Skills</Label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {mySkills.map((skill) => (
+          <Label className="mb-2 block">Skills & Certifications</Label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {mySkills.slice(0, 5).map((skill) => (
               <Badge
                 key={skill.id}
-                variant="default"
-                className="gap-1 pl-3 pr-1.5 py-1"
-                data-testid={`badge-skill-${skill.id}`}
+                variant="secondary"
+                data-testid={`badge-skill-preview-${skill.id}`}
               >
                 {skill.skillName}
-                <button
-                  onClick={() => removeSkillMutation.mutate(skill.id)}
-                  className="ml-1 rounded-full hover-elevate p-0.5"
-                  data-testid={`button-remove-skill-${skill.id}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
               </Badge>
             ))}
-          </div>
-          <div className="relative">
-            <Input
-              value={skillSearch}
-              onChange={(e) => setSkillSearch(e.target.value)}
-              onKeyDown={handleSkillKeyDown}
-              placeholder="Search for skills or type to add custom ones..."
-              data-testid="input-skill-search"
-            />
-            {skillSearch.trim() && filteredSuggestions.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-auto">
-                {filteredSuggestions.map((skill) => (
-                  <button
-                    key={skill.id}
-                    className="w-full text-left px-3 py-2 text-sm hover-elevate"
-                    onClick={() => {
-                      addSkillMutation.mutate(skill.name);
-                      setSkillSearch("");
-                    }}
-                    data-testid={`button-skill-suggestion-${skill.id}`}
-                  >
-                    {skill.name}
-                  </button>
-                ))}
-              </div>
+            {mySkills.length > 5 && (
+              <Badge variant="outline">+{mySkills.length - 5} more</Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Start typing to search for skills, or press Enter to add custom skills.
-          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setActiveTab("skills-certifications")}
+            data-testid="button-manage-skills"
+          >
+            <Award className="h-4 w-4 mr-2" />
+            Manage Skills & Certifications
+          </Button>
         </div>
 
         <div>
@@ -743,6 +761,8 @@ export default function ProfilePage() {
             </Button>
           </div>
         </div>
+        </div>
+        )}
       </div>
     </div>
   );

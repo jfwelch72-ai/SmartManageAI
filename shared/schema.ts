@@ -2791,14 +2791,69 @@ export const userSkills = pgTable("user_skills", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   skillId: varchar("skill_id").notNull().references(() => skills.id, { onDelete: "cascade" }),
   proficiencyLevel: text("proficiency_level"),
+  starRating: integer("star_rating").default(0),
   yearsExperience: integer("years_experience"),
   certifiedAt: timestamp("certified_at"),
+  verificationStatus: text("verification_status").default("unverified"),
+  verifiedByUserId: varchar("verified_by_user_id"),
+  verifiedAt: timestamp("verified_at"),
   addedAt: timestamp("added_at").notNull().defaultNow(),
 });
 
 export const insertUserSkillSchema = createInsertSchema(userSkills).omit({ id: true, addedAt: true });
 export type InsertUserSkill = z.infer<typeof insertUserSkillSchema>;
 export type UserSkill = typeof userSkills.$inferSelect;
+
+// Skill Verification Requests
+export const skillVerificationRequests = pgTable("skill_verification_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userSkillId: varchar("user_skill_id").notNull().references(() => userSkills.id, { onDelete: "cascade" }),
+  requestedByUserId: varchar("requested_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  requestedToUserId: varchar("requested_to_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const insertSkillVerificationRequestSchema = createInsertSchema(skillVerificationRequests).omit({ id: true, createdAt: true, resolvedAt: true });
+export type InsertSkillVerificationRequest = z.infer<typeof insertSkillVerificationRequestSchema>;
+export type SkillVerificationRequest = typeof skillVerificationRequests.$inferSelect;
+
+// User Certifications
+export const userCertifications = pgTable("user_certifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull(),
+  certificationName: text("certification_name").notNull(),
+  issuedDate: timestamp("issued_date"),
+  expiryDate: timestamp("expiry_date"),
+  fileUrl: text("file_url"),
+  fileObjectKey: text("file_object_key"),
+  fileName: text("file_name"),
+  status: text("status").notNull().default("active"),
+  expiryNotified30Days: boolean("expiry_notified_30_days").default(false),
+  expiryNotified5Days: boolean("expiry_notified_5_days").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertUserCertificationSchema = createInsertSchema(userCertifications).omit({ id: true, createdAt: true, updatedAt: true, expiryNotified30Days: true, expiryNotified5Days: true });
+export type InsertUserCertification = z.infer<typeof insertUserCertificationSchema>;
+export type UserCertification = typeof userCertifications.$inferSelect;
+
+// User Equipment Competencies
+export const userEquipmentCompetencies = pgTable("user_equipment_competencies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull(),
+  equipmentName: text("equipment_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertUserEquipmentCompetencySchema = createInsertSchema(userEquipmentCompetencies).omit({ id: true, createdAt: true });
+export type InsertUserEquipmentCompetency = z.infer<typeof insertUserEquipmentCompetencySchema>;
+export type UserEquipmentCompetency = typeof userEquipmentCompetencies.$inferSelect;
 
 // User Photos table - profile photo gallery
 export const userPhotos = pgTable("user_photos", {
