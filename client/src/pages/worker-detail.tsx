@@ -202,10 +202,11 @@ export default function WorkerDetailPage() {
     enabled: !!workerId,
   });
 
-  const { data: orgProjects, isLoading: projectsLoading } = useQuery<Array<{ id: string; name: string; code: string; status: string }>>({
+  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: Array<{ id: string; name: string; code: string; status: string }> }>({
     queryKey: ["/api/projects"],
     enabled: showAssignDialog,
   });
+  const orgProjects = projectsResponse?.data;
 
   const assignProjectMutation = useMutation({
     mutationFn: async () => {
