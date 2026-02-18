@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +18,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import {
   Star,
   X,
@@ -29,6 +33,7 @@ import {
   Plus,
   FileText,
   Loader2,
+  CalendarIcon,
 } from "lucide-react";
 
 interface UserSkill {
@@ -109,8 +114,8 @@ export default function SkillsCertificationsTab() {
   const [verificationDialogSkill, setVerificationDialogSkill] = useState<UserSkill | null>(null);
 
   const [certName, setCertName] = useState("");
-  const [certIssuedDate, setCertIssuedDate] = useState("");
-  const [certExpiryDate, setCertExpiryDate] = useState("");
+  const [certIssuedDate, setCertIssuedDate] = useState<Date | undefined>(undefined);
+  const [certExpiryDate, setCertExpiryDate] = useState<Date | undefined>(undefined);
   const [certFile, setCertFile] = useState<File | null>(null);
   const [addingCert, setAddingCert] = useState(false);
   const certFileInputRef = useRef<HTMLInputElement>(null);
@@ -234,8 +239,8 @@ export default function SkillsCertificationsTab() {
     try {
       const formData = new FormData();
       formData.append("certificationName", certName.trim());
-      if (certIssuedDate) formData.append("issuedDate", certIssuedDate);
-      if (certExpiryDate) formData.append("expiryDate", certExpiryDate);
+      if (certIssuedDate) formData.append("issuedDate", format(certIssuedDate, "yyyy-MM-dd"));
+      if (certExpiryDate) formData.append("expiryDate", format(certExpiryDate, "yyyy-MM-dd"));
       if (certFile) formData.append("file", certFile);
       const res = await fetch("/api/auth/my-certifications", {
         method: "POST",
@@ -248,8 +253,8 @@ export default function SkillsCertificationsTab() {
       }
       queryClient.invalidateQueries({ queryKey: ["/api/auth/my-certifications"] });
       setCertName("");
-      setCertIssuedDate("");
-      setCertExpiryDate("");
+      setCertIssuedDate(undefined);
+      setCertExpiryDate(undefined);
       setCertFile(null);
       toast({ title: "Certification added" });
     } catch (error: any) {
@@ -439,25 +444,57 @@ export default function SkillsCertificationsTab() {
                       data-testid="input-cert-name"
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="cert-issued">Issued Date</Label>
-                    <Input
-                      id="cert-issued"
-                      type="date"
-                      value={certIssuedDate}
-                      onChange={(e) => setCertIssuedDate(e.target.value)}
-                      data-testid="input-cert-issued-date"
-                    />
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Issued Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !certIssuedDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-cert-issued-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {certIssuedDate ? format(certIssuedDate, "MM/dd/yyyy") : "Select date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={certIssuedDate}
+                          onSelect={setCertIssuedDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                  <div>
-                    <Label htmlFor="cert-expiry">Expiry Date</Label>
-                    <Input
-                      id="cert-expiry"
-                      type="date"
-                      value={certExpiryDate}
-                      onChange={(e) => setCertExpiryDate(e.target.value)}
-                      data-testid="input-cert-expiry-date"
-                    />
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Expiry Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !certExpiryDate && "text-muted-foreground"
+                          )}
+                          data-testid="input-cert-expiry-date"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {certExpiryDate ? format(certExpiryDate, "MM/dd/yyyy") : "Select date"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={certExpiryDate}
+                          onSelect={setCertExpiryDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
