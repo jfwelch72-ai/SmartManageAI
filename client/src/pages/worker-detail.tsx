@@ -77,7 +77,7 @@ interface WorkerData {
   }>;
   certifications: Array<{
     id: string;
-    name: string;
+    certificationName: string;
     issuedDate: string | null;
     expiryDate: string | null;
     fileUrl: string | null;
@@ -611,7 +611,7 @@ function OverviewTab({
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm truncate">{cert.name}</span>
+                      <span className="text-sm truncate">{cert.certificationName}</span>
                     </div>
                     <Badge variant="secondary" className={`text-xs shrink-0 ${status.className}`}>
                       {status.label}
