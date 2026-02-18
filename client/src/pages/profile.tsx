@@ -688,9 +688,7 @@ export default function ProfilePage() {
                   mode="single"
                   selected={birthdate ? parse(birthdate, "yyyy-MM-dd", new Date()) : undefined}
                   onSelect={(date) => setBirthdate(date ? format(date, "yyyy-MM-dd") : "")}
-                  captionLayout="dropdown"
-                  fromYear={1940}
-                  toYear={new Date().getFullYear()}
+                  defaultMonth={birthdate ? parse(birthdate, "yyyy-MM-dd", new Date()) : new Date()}
                   initialFocus
                 />
               </PopoverContent>
