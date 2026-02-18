@@ -138,6 +138,7 @@ interface WorkerData {
   timeClockShifts: Array<{
     id: string;
     projectId: string;
+    projectName: string | null;
     clockIn: string;
     clockOut: string | null;
     totalHours: number | null;
@@ -146,6 +147,7 @@ interface WorkerData {
   currentShift: {
     id: string;
     projectId: string;
+    projectName: string | null;
     clockIn: string;
   } | null;
 }
@@ -362,6 +364,16 @@ export default function WorkerDetailPage() {
     return groups;
   })();
 
+  const projectNameMap = (() => {
+    const map: Record<string, string> = {};
+    for (const shift of timeClockShifts) {
+      if (shift.projectName && !map[shift.projectId]) {
+        map[shift.projectId] = shift.projectName;
+      }
+    }
+    return map;
+  })();
+
   const tabs: { key: TabKey; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "skills", label: "Skills & Competencies" },
@@ -562,6 +574,7 @@ export default function WorkerDetailPage() {
           {activeTab === "projects" && (
             <ProjectsTab
               projectGroups={projectGroups}
+              projectNameMap={projectNameMap}
               currentShift={currentShift}
               expandedProjects={expandedProjects}
               toggleProject={toggleProject}
@@ -982,11 +995,13 @@ function PerformanceTab({
 
 function ProjectsTab({
   projectGroups,
+  projectNameMap,
   currentShift,
   expandedProjects,
   toggleProject,
 }: {
   projectGroups: Record<string, WorkerData["timeClockShifts"]>;
+  projectNameMap: Record<string, string>;
   currentShift: WorkerData["currentShift"];
   expandedProjects: Set<string>;
   toggleProject: (pid: string) => void;
@@ -1030,7 +1045,7 @@ function ProjectsTab({
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-medium truncate">Project {pid.substring(0, 8)}</span>
+                  <span className="text-sm font-medium truncate">{projectNameMap[pid] || `Project ${pid.substring(0, 8)}`}</span>
                   {isCurrent ? (
                     <Badge variant="secondary" className="text-xs bg-green-500/15 text-green-600 border-transparent shrink-0">
                       Current

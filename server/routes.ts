@@ -1745,12 +1745,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .orderBy(desc(workerLogs.createdAt))
         .limit(50);
 
-      const recentShifts = await db.select().from(timeClockShifts)
+      const recentShiftsRaw = await db.select({
+        id: timeClockShifts.id,
+        userId: timeClockShifts.userId,
+        projectId: timeClockShifts.projectId,
+        projectName: projects.name,
+        clockIn: timeClockShifts.clockIn,
+        clockOut: timeClockShifts.clockOut,
+        totalHours: timeClockShifts.totalHours,
+        notes: timeClockShifts.notes,
+      }).from(timeClockShifts)
+        .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
         .where(eq(timeClockShifts.userId, targetId))
         .orderBy(desc(timeClockShifts.clockIn))
         .limit(20);
 
-      const [currentShift] = await db.select().from(timeClockShifts)
+      const [currentShiftRaw] = await db.select({
+        id: timeClockShifts.id,
+        userId: timeClockShifts.userId,
+        projectId: timeClockShifts.projectId,
+        projectName: projects.name,
+        clockIn: timeClockShifts.clockIn,
+        clockOut: timeClockShifts.clockOut,
+        totalHours: timeClockShifts.totalHours,
+        notes: timeClockShifts.notes,
+      }).from(timeClockShifts)
+        .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
         .where(and(
           eq(timeClockShifts.userId, targetId),
           isNull(timeClockShifts.clockOut)
@@ -1769,8 +1789,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         performanceReviews: workerPerformanceReviews,
         supervisorNotes: workerSupervisorNotes,
         workerLogs: workerLogEntries,
-        timeClockShifts: recentShifts,
-        currentShift: currentShift || null,
+        timeClockShifts: recentShiftsRaw,
+        currentShift: currentShiftRaw || null,
       });
     } catch (error) {
       console.error("Error fetching worker profile:", error);
