@@ -291,6 +291,9 @@ export const RoutePermissions = {
 
   // Performance & Rewards routes
   PERFORMANCE: (role?: string) => hasContractorAccess(role),
+
+  // Manage Workers routes
+  MANAGE_WORKERS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
 };
 
 /**
@@ -591,6 +594,12 @@ export const NavigationConfig = {
   ],
 
   adminMenu: [
+    {
+      href: "/manage-workers",
+      label: "Manage Workers",
+      testId: "nav-manage-workers",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
+    },
     {
       href: "/users",
       label: "Users",

@@ -44,7 +44,7 @@ import {
   masterModifierCategories, masterModifiers,
   scheduleOfValues, sovLineItems,
   employeePerformanceProfiles, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews,
-  supervisorNotes
+  supervisorNotes, workerLogs
 } from "@shared/schema";
 import { 
   authMiddleware, 
@@ -1549,6 +1549,363 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(note);
     } catch (error) {
       console.error("Error creating supervisor note:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====================
+  // Manage Workers Routes
+  // ====================
+
+  app.get("/api/auth/manage-workers", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const { project, trade, role, employmentType } = req.query as Record<string, string | undefined>;
+
+      const conditions: SQL[] = [eq(users.organizationId, orgId)];
+      if (trade) conditions.push(eq(users.tradeSpecialization, trade));
+      if (role) conditions.push(eq(users.role, role as any));
+      if (employmentType) conditions.push(eq(users.employmentType, employmentType));
+
+      const orgUsers = await db.select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        phone: users.phone,
+        role: users.role,
+        isActive: users.isActive,
+        avatarUrl: users.avatarUrl,
+        tradeSpecialization: users.tradeSpecialization,
+        employmentType: users.employmentType,
+        createdAt: users.createdAt,
+      }).from(users).where(and(...conditions));
+
+      const workerIds = orgUsers.map(u => u.id);
+      if (workerIds.length === 0) {
+        res.json([]);
+        return;
+      }
+
+      const openShifts = await db.select().from(timeClockShifts)
+        .where(and(
+          inArray(timeClockShifts.userId, workerIds),
+          isNull(timeClockShifts.clockOut)
+        ));
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayAttendance = await db.select().from(attendanceLogs)
+        .where(and(
+          inArray(attendanceLogs.userId, workerIds),
+          eq(attendanceLogs.date, todayStr)
+        ));
+
+      const perfProfiles = await db.select().from(employeePerformanceProfiles)
+        .where(inArray(employeePerformanceProfiles.userId, workerIds));
+
+      const recentShifts = await db.select().from(timeClockShifts)
+        .where(and(
+          inArray(timeClockShifts.userId, workerIds),
+          sql`${timeClockShifts.projectId} IS NOT NULL`
+        ))
+        .orderBy(desc(timeClockShifts.clockIn));
+
+      const openShiftMap = new Map(openShifts.map(s => [s.userId, s]));
+      const attendanceMap = new Map(todayAttendance.map(a => [a.userId, a]));
+      const perfMap = new Map(perfProfiles.map(p => [p.userId, p]));
+      const projectIdMap = new Map<string, string | null>();
+      for (const shift of recentShifts) {
+        if (!projectIdMap.has(shift.userId)) {
+          projectIdMap.set(shift.userId, shift.projectId);
+        }
+      }
+
+      const uniqueProjectIds = [...new Set([...projectIdMap.values()].filter(Boolean))] as string[];
+      const projectNameMap = new Map<string, string>();
+      if (uniqueProjectIds.length > 0) {
+        const projectRows = await db.select({ id: projects.id, name: projects.name })
+          .from(projects)
+          .where(inArray(projects.id, uniqueProjectIds));
+        for (const p of projectRows) {
+          projectNameMap.set(p.id, p.name);
+        }
+      }
+
+      let results = orgUsers.map(u => {
+        let clockStatus = "INACTIVE";
+        if (openShiftMap.has(u.id)) {
+          clockStatus = "ON_DUTY";
+        } else if (attendanceMap.has(u.id)) {
+          clockStatus = attendanceMap.get(u.id)!.status;
+        }
+        const perf = perfMap.get(u.id);
+        const projId = projectIdMap.get(u.id) || null;
+        return {
+          ...u,
+          clockStatus,
+          experienceLevel: perf?.experienceLevel || null,
+          currentProjectId: projId,
+          currentProject: projId ? (projectNameMap.get(projId) || null) : null,
+        };
+      });
+
+      if (project) {
+        results = results.filter(w => w.currentProjectId === project);
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching manage-workers list:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/manage-workers/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const { passwordHash, tokenVersion, ...userInfo } = targetUser;
+
+      const [performanceProfile] = await db.select().from(employeePerformanceProfiles)
+        .where(eq(employeePerformanceProfiles.userId, targetId)).limit(1);
+
+      const workerSkills = await db.select().from(userSkills)
+        .where(eq(userSkills.userId, targetId));
+
+      const certifications = await db.select().from(userCertifications)
+        .where(eq(userCertifications.userId, targetId));
+
+      const recentAttendance = await db.select().from(attendanceLogs)
+        .where(eq(attendanceLogs.userId, targetId))
+        .orderBy(desc(attendanceLogs.createdAt))
+        .limit(30);
+
+      const workerSafetyIncidents = await db.select().from(safetyIncidents)
+        .where(eq(safetyIncidents.userId, targetId))
+        .orderBy(desc(safetyIncidents.createdAt));
+
+      const workerQualityIssues = await db.select().from(qualityIssues)
+        .where(eq(qualityIssues.userId, targetId))
+        .orderBy(desc(qualityIssues.createdAt));
+
+      const workerPerformanceReviews = await db.select().from(performanceReviews)
+        .where(eq(performanceReviews.userId, targetId))
+        .orderBy(desc(performanceReviews.createdAt));
+
+      const workerSupervisorNotes = await db.select().from(supervisorNotes)
+        .where(eq(supervisorNotes.userId, targetId))
+        .orderBy(desc(supervisorNotes.createdAt));
+
+      const workerLogEntries = await db.select().from(workerLogs)
+        .where(eq(workerLogs.userId, targetId))
+        .orderBy(desc(workerLogs.createdAt))
+        .limit(50);
+
+      const recentShifts = await db.select().from(timeClockShifts)
+        .where(eq(timeClockShifts.userId, targetId))
+        .orderBy(desc(timeClockShifts.clockIn))
+        .limit(20);
+
+      const [currentShift] = await db.select().from(timeClockShifts)
+        .where(and(
+          eq(timeClockShifts.userId, targetId),
+          isNull(timeClockShifts.clockOut)
+        ))
+        .orderBy(desc(timeClockShifts.clockIn))
+        .limit(1);
+
+      res.json({
+        user: userInfo,
+        performanceProfile: performanceProfile || null,
+        skills: workerSkills,
+        certifications,
+        attendanceLogs: recentAttendance,
+        safetyIncidents: workerSafetyIncidents,
+        qualityIssues: workerQualityIssues,
+        performanceReviews: workerPerformanceReviews,
+        supervisorNotes: workerSupervisorNotes,
+        workerLogs: workerLogEntries,
+        timeClockShifts: recentShifts,
+        currentShift: currentShift || null,
+      });
+    } catch (error) {
+      console.error("Error fetching worker profile:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/manage-workers/:id/logs", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const logSchema = z.object({
+        note: z.string().min(1, "Note is required"),
+        category: z.enum(["GENERAL", "COMMENDATION", "INCIDENT", "ATTENDANCE", "OTHER"]).default("GENERAL"),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd format"),
+      });
+
+      const parsed = logSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Manager";
+      const [newLog] = await db.insert(workerLogs).values({
+        userId: targetId,
+        organizationId: orgId,
+        date: parsed.data.date,
+        note: parsed.data.note,
+        category: parsed.data.category,
+        createdBy: userId,
+        createdByName: creatorName,
+      }).returning();
+
+      res.status(201).json(newLog);
+    } catch (error) {
+      console.error("Error creating worker log:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/manage-workers/:id/notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const noteSchema = z.object({
+        note: z.string().min(1, "Note is required"),
+      });
+
+      const parsed = noteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Supervisor";
+      const [newNote] = await db.insert(supervisorNotes).values({
+        userId: targetId,
+        organizationId: orgId,
+        note: parsed.data.note,
+        createdBy: userId,
+        createdByName: creatorName,
+      }).returning();
+
+      res.status(201).json(newNote);
+    } catch (error) {
+      console.error("Error creating supervisor note:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/manage-workers/:id/status", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const statusSchema = z.object({
+        isActive: z.boolean(),
+      });
+
+      const parsed = statusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const [updated] = await db.update(users)
+        .set({ isActive: parsed.data.isActive, updatedAt: new Date() })
+        .where(eq(users.id, targetId))
+        .returning();
+
+      if (!updated) { res.status(404).json({ error: "Worker not found" }); return; }
+
+      const { passwordHash, tokenVersion, ...sanitized } = updated;
+      res.json(sanitized);
+    } catch (error) {
+      console.error("Error updating worker status:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

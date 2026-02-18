@@ -7202,3 +7202,19 @@ export const supervisorNotes = pgTable("supervisor_notes", {
 export const insertSupervisorNoteSchema = createInsertSchema(supervisorNotes).omit({ id: true, createdAt: true });
 export type InsertSupervisorNote = z.infer<typeof insertSupervisorNoteSchema>;
 export type SupervisorNote = typeof supervisorNotes.$inferSelect;
+
+export const workerLogs = pgTable("worker_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(),
+  note: text("note").notNull(),
+  category: text("category").notNull().default("GENERAL"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertWorkerLogSchema = createInsertSchema(workerLogs).omit({ id: true, createdAt: true });
+export type InsertWorkerLog = z.infer<typeof insertWorkerLogSchema>;
+export type WorkerLog = typeof workerLogs.$inferSelect;
