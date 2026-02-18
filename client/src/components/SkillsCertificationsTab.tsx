@@ -122,6 +122,12 @@ export default function SkillsCertificationsTab() {
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCertId, setUploadingCertId] = useState<string | null>(null);
 
+  const [editingCert, setEditingCert] = useState<UserCertification | null>(null);
+  const [editCertName, setEditCertName] = useState("");
+  const [editCertIssuedDate, setEditCertIssuedDate] = useState<Date | undefined>(undefined);
+  const [editCertExpiryDate, setEditCertExpiryDate] = useState<Date | undefined>(undefined);
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const [equipmentInput, setEquipmentInput] = useState("");
 
   const { data: mySkills = [], isLoading: loadingSkills } = useQuery<UserSkill[]>({
@@ -286,6 +292,32 @@ export default function SkillsCertificationsTab() {
       setUploadingCertId(null);
     }
   }, [toast]);
+
+  const openEditCert = useCallback((cert: UserCertification) => {
+    setEditingCert(cert);
+    setEditCertName(cert.certificationName);
+    setEditCertIssuedDate(cert.issuedDate ? new Date(cert.issuedDate) : undefined);
+    setEditCertExpiryDate(cert.expiryDate ? new Date(cert.expiryDate) : undefined);
+  }, []);
+
+  const handleSaveEditCert = useCallback(async () => {
+    if (!editingCert || !editCertName.trim()) return;
+    setSavingEdit(true);
+    try {
+      await apiRequest("PATCH", `/api/auth/my-certifications/${editingCert.id}`, {
+        certificationName: editCertName.trim(),
+        issuedDate: editCertIssuedDate ? format(editCertIssuedDate, "yyyy-MM-dd") : null,
+        expiryDate: editCertExpiryDate ? format(editCertExpiryDate, "yyyy-MM-dd") : null,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/my-certifications"] });
+      setEditingCert(null);
+      toast({ title: "Certification updated" });
+    } catch (error: any) {
+      toast({ title: "Failed to update certification", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editingCert, editCertName, editCertIssuedDate, editCertExpiryDate, toast]);
 
   const handleSkillKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && skillSearch.trim()) {
@@ -550,69 +582,78 @@ export default function SkillsCertificationsTab() {
                     return (
                       <div
                         key={cert.id}
-                        className="flex items-center gap-3 p-3 rounded-md border flex-wrap"
+                        className="flex items-center gap-3 p-3 rounded-md border"
                         data-testid={`row-cert-${cert.id}`}
                       >
-                        <div className="min-w-[140px]">
-                          <p className="text-sm font-medium" data-testid={`text-cert-name-${cert.id}`}>{cert.certificationName}</p>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium" data-testid={`text-cert-name-${cert.id}`}>{cert.certificationName}</p>
+                            <Badge className={status.className} data-testid={`badge-cert-status-${cert.id}`}>
+                              {status.label}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1 flex-wrap">
                             {cert.issuedDate && <span>Issued: {new Date(cert.issuedDate).toLocaleDateString()}</span>}
                             {cert.expiryDate && <span>Expires: {new Date(cert.expiryDate).toLocaleDateString()}</span>}
                           </div>
+                          {cert.fileName && cert.fileUrl ? (
+                            <a
+                              href={cert.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:underline mt-1 w-fit"
+                              data-testid={`link-cert-file-${cert.id}`}
+                            >
+                              <FileText className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{cert.fileName}</span>
+                              <Download className="h-3 w-3 shrink-0" />
+                            </a>
+                          ) : (
+                            <div className="mt-1">
+                              <input
+                                ref={cert.id === uploadingCertId ? uploadFileInputRef : undefined}
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleUploadCertFile(cert.id, file);
+                                  e.target.value = "";
+                                }}
+                                data-testid={`input-cert-upload-${cert.id}`}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setUploadingCertId(cert.id);
+                                  setTimeout(() => {
+                                    const input = document.querySelector(`[data-testid="input-cert-upload-${cert.id}"]`) as HTMLInputElement;
+                                    input?.click();
+                                  }, 0);
+                                }}
+                                disabled={uploadingCertId === cert.id}
+                                data-testid={`button-upload-cert-file-${cert.id}`}
+                              >
+                                {uploadingCertId === cert.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Upload className="h-3 w-3" />
+                                )}
+                                <span className="text-xs ml-1">Attach file</span>
+                              </Button>
+                            </div>
+                          )}
                         </div>
 
-                        <Badge className={status.className} data-testid={`badge-cert-status-${cert.id}`}>
-                          {status.label}
-                        </Badge>
-
-                        {cert.fileName && cert.fileUrl ? (
-                          <a
-                            href={cert.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                            data-testid={`link-cert-file-${cert.id}`}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => openEditCert(cert)}
+                            data-testid={`button-edit-cert-${cert.id}`}
                           >
-                            <FileText className="h-3 w-3" />
-                            {cert.fileName}
-                            <Download className="h-3 w-3" />
-                          </a>
-                        ) : (
-                          <>
-                            <input
-                              ref={cert.id === uploadingCertId ? uploadFileInputRef : undefined}
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleUploadCertFile(cert.id, file);
-                                e.target.value = "";
-                              }}
-                              data-testid={`input-cert-upload-${cert.id}`}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setUploadingCertId(cert.id);
-                                setTimeout(() => {
-                                  const input = document.querySelector(`[data-testid="input-cert-upload-${cert.id}"]`) as HTMLInputElement;
-                                  input?.click();
-                                }, 0);
-                              }}
-                              disabled={uploadingCertId === cert.id}
-                              data-testid={`button-upload-cert-file-${cert.id}`}
-                            >
-                              {uploadingCertId === cert.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Upload className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </>
-                        )}
-
-                        <div className="flex items-center gap-1 ml-auto">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <Button
                             size="icon"
                             variant="ghost"
@@ -727,6 +768,94 @@ export default function SkillsCertificationsTab() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editingCert}
+        onOpenChange={(open) => { if (!open) setEditingCert(null); }}
+      >
+        <DialogContent data-testid="dialog-edit-certification">
+          <DialogHeader>
+            <DialogTitle>Edit Certification</DialogTitle>
+            <DialogDescription>
+              Update the details for this certification.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label htmlFor="edit-cert-name">Certification Name</Label>
+              <Input
+                id="edit-cert-name"
+                value={editCertName}
+                onChange={(e) => setEditCertName(e.target.value)}
+                data-testid="input-edit-cert-name"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label>Issued Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "justify-start text-left font-normal",
+                        !editCertIssuedDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-edit-cert-issued-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editCertIssuedDate ? format(editCertIssuedDate, "MM/dd/yyyy") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editCertIssuedDate}
+                      onSelect={setEditCertIssuedDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Expiry Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "justify-start text-left font-normal",
+                        !editCertExpiryDate && "text-muted-foreground"
+                      )}
+                      data-testid="input-edit-cert-expiry-date"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {editCertExpiryDate ? format(editCertExpiryDate, "MM/dd/yyyy") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editCertExpiryDate}
+                      onSelect={setEditCertExpiryDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditingCert(null)} data-testid="button-cancel-edit-cert">
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEditCert} disabled={savingEdit || !editCertName.trim()} data-testid="button-save-edit-cert">
+                {savingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Save
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
