@@ -37,6 +37,8 @@ import {
   Shield,
   MessageSquareQuote,
   Loader2,
+  X,
+  Plus,
 } from "lucide-react";
 
 type TabKey = "overview" | "skills" | "performance" | "projects" | "logs";
@@ -169,6 +171,36 @@ function RatingStars({ rating, max = 5 }: { rating: number; max?: number }) {
   );
 }
 
+function StarRatingInput({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
+  return (
+    <div className="space-y-1" data-testid={`star-rating-input-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <Label className="text-sm">{label}</Label>
+      <div className="flex items-center gap-0.5">
+        {Array.from({ length: 5 }, (_, i) => {
+          const starValue = i + 1;
+          return (
+            <button
+              key={i}
+              type="button"
+              className="cursor-pointer p-0.5"
+              onClick={() => onChange(value === starValue ? 0 : starValue)}
+              data-testid={`star-${label.toLowerCase().replace(/\s+/g, "-")}-${starValue}`}
+            >
+              <Star
+                className={`h-5 w-5 ${
+                  starValue <= value
+                    ? "text-yellow-500 fill-yellow-500"
+                    : "text-muted-foreground/40"
+                }`}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function getCertStatus(expiryDate: string | null): { label: string; className: string } {
   if (!expiryDate) return { label: "Active", className: "bg-green-500/15 text-green-600 border-transparent" };
   const now = Date.now();
@@ -198,6 +230,24 @@ export default function WorkerDetailPage() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [assignNotes, setAssignNotes] = useState("");
+
+  const [showEvalDialog, setShowEvalDialog] = useState(false);
+  const [evalReviewerName, setEvalReviewerName] = useState("");
+  const [evalReviewDate, setEvalReviewDate] = useState(new Date().toISOString().split("T")[0]);
+  const [evalOverallRating, setEvalOverallRating] = useState(0);
+  const [evalProductivityRating, setEvalProductivityRating] = useState(0);
+  const [evalQualityRating, setEvalQualityRating] = useState(0);
+  const [evalSafetyRating, setEvalSafetyRating] = useState(0);
+  const [evalCommunicationRating, setEvalCommunicationRating] = useState(0);
+  const [evalLeadershipRating, setEvalLeadershipRating] = useState(0);
+  const [evalNotes, setEvalNotes] = useState("");
+  const [evalScheduleAdherence, setEvalScheduleAdherence] = useState("");
+  const [evalCostControl, setEvalCostControl] = useState("");
+  const [evalSubCoordination, setEvalSubCoordination] = useState("");
+  const [evalInspectionOutcomes, setEvalInspectionOutcomes] = useState("");
+
+  const [showSkillsDialog, setShowSkillsDialog] = useState(false);
+  const [newSkillName, setNewSkillName] = useState("");
 
   const { data, isLoading, error } = useQuery<WorkerData>({
     queryKey: ["/api/auth/manage-workers", workerId],
@@ -277,6 +327,88 @@ export default function WorkerDetailPage() {
     },
     onError: (err: Error) => {
       toast({ title: "Failed to add log", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const evalMutation = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = {
+        userId: data?.user?.id,
+        reviewDate: evalReviewDate,
+        reviewerName: evalReviewerName,
+        overallRating: evalOverallRating,
+      };
+      if (evalProductivityRating > 0) body.productivityRating = evalProductivityRating;
+      if (evalQualityRating > 0) body.qualityRating = evalQualityRating;
+      if (evalSafetyRating > 0) body.safetyRating = evalSafetyRating;
+      if (evalCommunicationRating > 0) body.communicationRating = evalCommunicationRating;
+      if (evalLeadershipRating > 0) body.leadershipRating = evalLeadershipRating;
+      if (evalNotes.trim()) body.notes = evalNotes.trim();
+      if (evalScheduleAdherence.trim()) body.scheduleAdherence = evalScheduleAdherence.trim();
+      if (evalCostControl.trim()) body.costControl = evalCostControl.trim();
+      if (evalSubCoordination.trim()) body.subcontractorCoordination = evalSubCoordination.trim();
+      if (evalInspectionOutcomes.trim()) body.clientInspectionOutcomes = evalInspectionOutcomes.trim();
+      return await apiRequest("POST", "/api/auth/performance-reviews", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
+      toast({ title: "Evaluation added successfully" });
+      setShowEvalDialog(false);
+      setEvalReviewerName("");
+      setEvalReviewDate(new Date().toISOString().split("T")[0]);
+      setEvalOverallRating(0);
+      setEvalProductivityRating(0);
+      setEvalQualityRating(0);
+      setEvalSafetyRating(0);
+      setEvalCommunicationRating(0);
+      setEvalLeadershipRating(0);
+      setEvalNotes("");
+      setEvalScheduleAdherence("");
+      setEvalCostControl("");
+      setEvalSubCoordination("");
+      setEvalInspectionOutcomes("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to add evaluation", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addSkillMutation = useMutation({
+    mutationFn: async (skillName: string) => {
+      return await apiRequest("POST", `/api/auth/manage-workers/${workerId}/skills`, { skillName });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
+      toast({ title: "Skill added" });
+      setNewSkillName("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to add skill", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const removeSkillMutation = useMutation({
+    mutationFn: async (userSkillId: string) => {
+      return await apiRequest("DELETE", `/api/auth/manage-workers/${workerId}/skills/${userSkillId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
+      toast({ title: "Skill removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to remove skill", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateSkillRatingMutation = useMutation({
+    mutationFn: async ({ userSkillId, starRating }: { userSkillId: string; starRating: number }) => {
+      return await apiRequest("PATCH", `/api/auth/manage-workers/${workerId}/skills/${userSkillId}/rating`, { starRating });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update rating", description: err.message, variant: "destructive" });
     },
   });
 
@@ -455,7 +587,7 @@ export default function WorkerDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => toast({ title: "Coming soon", description: "Evaluation feature is coming soon." })}
+            onClick={() => setShowEvalDialog(true)}
             data-testid="button-add-evaluation"
           >
             <ClipboardList className="h-4 w-4 mr-1" />
@@ -464,7 +596,7 @@ export default function WorkerDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => toast({ title: "Coming soon", description: "Skills update is coming soon." })}
+            onClick={() => setShowSkillsDialog(true)}
             data-testid="button-update-skills"
           >
             <Wrench className="h-4 w-4 mr-1" />
@@ -594,6 +726,209 @@ export default function WorkerDetailPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={showEvalDialog} onOpenChange={setShowEvalDialog}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Performance Evaluation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="eval-reviewer">Reviewer Name</Label>
+              <Input
+                id="eval-reviewer"
+                value={evalReviewerName}
+                onChange={(e) => setEvalReviewerName(e.target.value)}
+                placeholder="Enter reviewer name"
+                data-testid="input-eval-reviewer"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="eval-date">Review Date</Label>
+              <Input
+                id="eval-date"
+                type="date"
+                value={evalReviewDate}
+                onChange={(e) => setEvalReviewDate(e.target.value)}
+                data-testid="input-eval-date"
+              />
+            </div>
+            <StarRatingInput label="Overall Rating" value={evalOverallRating} onChange={setEvalOverallRating} />
+            <StarRatingInput label="Productivity" value={evalProductivityRating} onChange={setEvalProductivityRating} />
+            <StarRatingInput label="Quality" value={evalQualityRating} onChange={setEvalQualityRating} />
+            <StarRatingInput label="Safety" value={evalSafetyRating} onChange={setEvalSafetyRating} />
+            <StarRatingInput label="Communication" value={evalCommunicationRating} onChange={setEvalCommunicationRating} />
+            <StarRatingInput label="Leadership" value={evalLeadershipRating} onChange={setEvalLeadershipRating} />
+            <div className="space-y-2">
+              <Label htmlFor="eval-notes">Notes (optional)</Label>
+              <Textarea
+                id="eval-notes"
+                value={evalNotes}
+                onChange={(e) => setEvalNotes(e.target.value)}
+                placeholder="Additional notes..."
+                className="resize-none"
+                data-testid="textarea-eval-notes"
+              />
+            </div>
+            {user.role === "SUPERINTENDENT" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="eval-schedule">Schedule Adherence</Label>
+                  <Input
+                    id="eval-schedule"
+                    value={evalScheduleAdherence}
+                    onChange={(e) => setEvalScheduleAdherence(e.target.value)}
+                    placeholder="Schedule adherence notes"
+                    data-testid="input-eval-schedule"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="eval-cost">Cost Control</Label>
+                  <Input
+                    id="eval-cost"
+                    value={evalCostControl}
+                    onChange={(e) => setEvalCostControl(e.target.value)}
+                    placeholder="Cost control notes"
+                    data-testid="input-eval-cost"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="eval-sub-coord">Subcontractor Coordination</Label>
+                  <Input
+                    id="eval-sub-coord"
+                    value={evalSubCoordination}
+                    onChange={(e) => setEvalSubCoordination(e.target.value)}
+                    placeholder="Subcontractor coordination notes"
+                    data-testid="input-eval-sub-coord"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="eval-inspection">Client Inspection Outcomes</Label>
+                  <Input
+                    id="eval-inspection"
+                    value={evalInspectionOutcomes}
+                    onChange={(e) => setEvalInspectionOutcomes(e.target.value)}
+                    placeholder="Inspection outcomes"
+                    data-testid="input-eval-inspection"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowEvalDialog(false)}
+              data-testid="button-cancel-eval"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => evalMutation.mutate()}
+              disabled={!evalReviewerName.trim() || !evalReviewDate || evalOverallRating === 0 || evalMutation.isPending}
+              data-testid="button-submit-eval"
+            >
+              {evalMutation.isPending ? "Submitting..." : "Submit Evaluation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSkillsDialog} onOpenChange={setShowSkillsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Skills</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-end gap-2" data-testid="add-skill-form">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="new-skill-name">Add New Skill</Label>
+                <Input
+                  id="new-skill-name"
+                  value={newSkillName}
+                  onChange={(e) => setNewSkillName(e.target.value)}
+                  placeholder="Enter skill name"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newSkillName.trim()) {
+                      addSkillMutation.mutate(newSkillName.trim());
+                    }
+                  }}
+                  data-testid="input-new-skill"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => addSkillMutation.mutate(newSkillName.trim())}
+                disabled={!newSkillName.trim() || addSkillMutation.isPending}
+                data-testid="button-add-skill"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+            {skills.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-skills-dialog">
+                No skills recorded yet. Add one above.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-[40vh] overflow-y-auto">
+                {skills.map((skill) => (
+                  <div
+                    key={skill.id}
+                    className="flex items-center justify-between gap-2 py-1.5 border-b last:border-b-0"
+                    data-testid={`skill-manage-row-${skill.id}`}
+                  >
+                    <span className="text-sm truncate min-w-0 flex-1">{skill.skillName}</span>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: 5 }, (_, i) => {
+                        const starVal = i + 1;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            className="cursor-pointer p-0.5"
+                            onClick={() => updateSkillRatingMutation.mutate({
+                              userSkillId: skill.id,
+                              starRating: skill.rating === starVal ? 0 : starVal,
+                            })}
+                            data-testid={`star-skill-${skill.id}-${starVal}`}
+                          >
+                            <Star
+                              className={`h-4 w-4 ${
+                                starVal <= skill.rating
+                                  ? "text-yellow-500 fill-yellow-500"
+                                  : "text-muted-foreground/40"
+                              }`}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeSkillMutation.mutate(skill.id)}
+                      disabled={removeSkillMutation.isPending}
+                      data-testid={`button-remove-skill-${skill.id}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSkillsDialog(false)}
+              data-testid="button-close-skills"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
         <DialogContent>

@@ -1981,6 +1981,150 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/auth/manage-workers/:id/skills", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const addSkillSchema = z.object({
+        skillName: z.string().min(1, "Skill name is required").max(200),
+        starRating: z.number().min(0).max(5).optional().default(0),
+      });
+
+      const parsed = addSkillSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      let [existingSkill] = await db.select().from(skills).where(eq(skills.name, parsed.data.skillName)).limit(1);
+      if (!existingSkill) {
+        [existingSkill] = await db.insert(skills).values({ name: parsed.data.skillName }).returning();
+      }
+
+      const [newUserSkill] = await db.insert(userSkills).values({
+        userId: targetId,
+        skillId: existingSkill.id,
+        starRating: parsed.data.starRating,
+      }).returning();
+
+      res.status(201).json({ userSkill: newUserSkill, skillName: existingSkill.name });
+    } catch (error) {
+      console.error("Error adding skill to worker:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/auth/manage-workers/:id/skills/:userSkillId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const userSkillId = req.params.userSkillId;
+
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const [existingUserSkill] = await db.select().from(userSkills).where(
+        and(eq(userSkills.id, userSkillId), eq(userSkills.userId, targetId))
+      ).limit(1);
+      if (!existingUserSkill) {
+        res.status(404).json({ error: "Skill not found for this worker" });
+        return;
+      }
+
+      await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing skill from worker:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/auth/manage-workers/:id/skills/:userSkillId/rating", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const userSkillId = req.params.userSkillId;
+
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const ratingSchema = z.object({
+        starRating: z.number().min(0).max(5),
+      });
+      const parsed = ratingSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const [existingUserSkill] = await db.select().from(userSkills).where(
+        and(eq(userSkills.id, userSkillId), eq(userSkills.userId, targetId))
+      ).limit(1);
+      if (!existingUserSkill) {
+        res.status(404).json({ error: "Skill not found for this worker" });
+        return;
+      }
+
+      const [updated] = await db.update(userSkills)
+        .set({ starRating: parsed.data.starRating })
+        .where(eq(userSkills.id, userSkillId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating skill rating:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.patch("/api/auth/manage-workers/:id/status", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user?.id;
