@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -192,9 +193,38 @@ export default function WorkerDetailPage() {
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [assignNotes, setAssignNotes] = useState("");
+
   const { data, isLoading, error } = useQuery<WorkerData>({
     queryKey: ["/api/auth/manage-workers", workerId],
     enabled: !!workerId,
+  });
+
+  const { data: orgProjects, isLoading: projectsLoading } = useQuery<Array<{ id: string; name: string; code: string; status: string }>>({
+    queryKey: ["/api/projects"],
+    enabled: showAssignDialog,
+  });
+
+  const assignProjectMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/auth/manage-workers/${workerId}/assign-project`, {
+        projectId: selectedProjectId,
+        notes: assignNotes || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers"] });
+      toast({ title: "Worker assigned to project successfully" });
+      setShowAssignDialog(false);
+      setSelectedProjectId("");
+      setAssignNotes("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to assign project", description: err.message, variant: "destructive" });
+    },
   });
 
   const statusMutation = useMutation({
@@ -394,7 +424,7 @@ export default function WorkerDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => toast({ title: "Coming soon", description: "Project assignment is coming soon." })}
+            onClick={() => setShowAssignDialog(true)}
             data-testid="button-assign-project"
           >
             <UserPlus className="h-4 w-4 mr-1" />
@@ -1086,6 +1116,69 @@ function LogsTab({
             ))}
         </div>
       )}
+
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign to Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Project</Label>
+              {projectsLoading ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                  <SelectTrigger data-testid="select-assign-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const activeProjects = (orgProjects || []).filter(
+                        (p) => p.status !== "COMPLETED" && p.status !== "CANCELLED"
+                      );
+                      if (activeProjects.length === 0) {
+                        return <SelectItem value="__none" disabled>No active projects available</SelectItem>;
+                      }
+                      return activeProjects.map((p) => (
+                        <SelectItem key={p.id} value={p.id} data-testid={`option-project-${p.id}`}>
+                          {p.name}{p.code ? ` (${p.code})` : ""}
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="assign-notes">Notes (optional)</Label>
+              <Textarea
+                id="assign-notes"
+                value={assignNotes}
+                onChange={(e) => setAssignNotes(e.target.value)}
+                placeholder="Add assignment notes..."
+                data-testid="input-assign-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAssignDialog(false)}
+              data-testid="button-cancel-assign"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => assignProjectMutation.mutate()}
+              disabled={!selectedProjectId || assignProjectMutation.isPending || projectsLoading}
+              data-testid="button-confirm-assign"
+            >
+              {assignProjectMutation.isPending ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

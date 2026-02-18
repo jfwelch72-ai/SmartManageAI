@@ -1878,6 +1878,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/auth/manage-workers/:id/assign-project", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "SUPERINTENDENT"];
+      if (!userRole || !managerRoles.includes(userRole)) {
+        res.status(403).json({ error: "Insufficient permissions" });
+        return;
+      }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const targetId = req.params.id;
+      const [targetUser] = await db.select().from(users).where(eq(users.id, targetId)).limit(1);
+      if (!targetUser) { res.status(404).json({ error: "Worker not found" }); return; }
+      if (targetUser.organizationId !== orgId) {
+        res.status(403).json({ error: "Worker not in your organization" });
+        return;
+      }
+
+      const assignSchema = z.object({
+        projectId: z.string().min(1, "Project is required"),
+        notes: z.string().optional(),
+      });
+
+      const parsed = assignSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+        return;
+      }
+
+      const [project] = await db.select().from(projects).where(
+        and(eq(projects.id, parsed.data.projectId), eq(projects.gcOrganizationId, orgId))
+      ).limit(1);
+      if (!project) { res.status(404).json({ error: "Project not found in your organization" }); return; }
+
+      const inactiveStatuses = ["COMPLETED", "CANCELLED", "CLOSED"];
+      if (project.status && inactiveStatuses.includes(project.status)) {
+        res.status(400).json({ error: `Cannot assign to a ${project.status.toLowerCase()} project` });
+        return;
+      }
+
+      const now = new Date();
+      const openShifts = await db.select().from(timeClockShifts).where(
+        and(eq(timeClockShifts.userId, targetId), isNull(timeClockShifts.clockOut))
+      );
+      for (const shift of openShifts) {
+        const clockInTime = new Date(shift.clockIn);
+        const diffMs = now.getTime() - clockInTime.getTime();
+        const hours = (diffMs / (1000 * 60 * 60)).toFixed(2);
+        await db.update(timeClockShifts)
+          .set({ clockOut: now, totalHours: hours })
+          .where(eq(timeClockShifts.id, shift.id));
+      }
+
+      const [newShift] = await db.insert(timeClockShifts).values({
+        userId: targetId,
+        projectId: parsed.data.projectId,
+        clockIn: new Date(),
+        notes: parsed.data.notes || `Assigned to ${project.name} by manager`,
+        organizationId: orgId,
+      }).returning();
+
+      const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Manager";
+      await db.insert(workerLogs).values({
+        userId: targetId,
+        organizationId: orgId,
+        date: new Date().toISOString().slice(0, 10),
+        note: `Assigned to project: ${project.name}${parsed.data.notes ? ` - ${parsed.data.notes}` : ""}`,
+        category: "GENERAL",
+        createdBy: userId,
+        createdByName: creatorName,
+      });
+
+      res.status(201).json({ shift: newShift, projectName: project.name });
+    } catch (error) {
+      console.error("Error assigning worker to project:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.patch("/api/auth/manage-workers/:id/status", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user?.id;
