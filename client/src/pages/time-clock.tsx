@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,16 +17,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { 
   useCurrentShift, 
   useClockIn, 
   useClockOut, 
   useMyShifts, 
-  useProjects 
+  useProjects,
+  useOvertimeApprovers,
+  useOvertimeRequestsByShifts,
+  useCreateOvertimeRequest,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, MapPin, Calendar, Briefcase, LogIn, LogOut, AlertCircle } from "lucide-react";
+import { Clock, MapPin, Calendar, Briefcase, LogIn, LogOut, AlertCircle, Timer, Send } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockPage() {
@@ -36,16 +48,33 @@ export default function TimeClockPage() {
   const [gpsError, setGpsError] = useState<string>("");
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  const [otDialogOpen, setOtDialogOpen] = useState(false);
+  const [otShift, setOtShift] = useState<any>(null);
+  const [otSuperintendentId, setOtSuperintendentId] = useState<string>("");
+  const [otNotes, setOtNotes] = useState<string>("");
+
   const { data: currentShift, isLoading: currentShiftLoading } = useCurrentShift();
   const { data: myShifts = [], isLoading: shiftsLoading } = useMyShifts();
   const { data: projects = [] } = useProjects();
   const clockIn = useClockIn();
   const clockOut = useClockOut();
 
+  const shiftIds = useMemo(() => myShifts.map((s: any) => s.id), [myShifts]);
+  const { data: otRequests = [] } = useOvertimeRequestsByShifts(shiftIds);
+  const { data: approvers = [] } = useOvertimeApprovers();
+  const createOtRequest = useCreateOvertimeRequest();
+
+  const otRequestMap = useMemo(() => {
+    const map = new Map<string, any>();
+    otRequests.forEach((req: any) => {
+      map.set(req.shiftId, req);
+    });
+    return map;
+  }, [otRequests]);
+
   const isClockedIn = !!currentShift?.shift;
   const shouldShowClockControls = user?.role !== "ADMIN";
 
-  // Get GPS coordinates
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -114,13 +143,102 @@ export default function TimeClockPage() {
     }
   };
 
-  const getShiftDuration = (clockIn: string, clockOut?: string) => {
-    const start = new Date(clockIn);
-    const end = clockOut ? new Date(clockOut) : new Date();
+  const getShiftDuration = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
     const hours = Math.floor(durationMs / (1000 * 60 * 60));
     const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
     return `${hours}h ${minutes}m`;
+  };
+
+  const getRegularDuration = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    const cappedMs = Math.min(totalHours, 8) * (1000 * 60 * 60);
+    const hours = Math.floor(cappedMs / (1000 * 60 * 60));
+    const minutes = Math.floor((cappedMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
+  const getOvertimeDuration = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    if (totalHours <= 8) return "\u2014";
+    const excessMs = (totalHours - 8) * (1000 * 60 * 60);
+    const hours = Math.floor(excessMs / (1000 * 60 * 60));
+    const minutes = Math.floor((excessMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
+  const getRegularHours = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    const cappedMs = Math.min(totalHours, 8) * (1000 * 60 * 60);
+    const hours = Math.floor(cappedMs / (1000 * 60 * 60));
+    const minutes = Math.floor((cappedMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
+  const getOvertimeHours = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    if (totalHours <= 8) return null;
+    const excessMs = (totalHours - 8) * (1000 * 60 * 60);
+    const hours = Math.floor(excessMs / (1000 * 60 * 60));
+    const minutes = Math.floor((excessMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  };
+
+  const getOvertimeDecimal = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    if (totalHours <= 8) return "0.00";
+    return (totalHours - 8).toFixed(2);
+  };
+
+  const hasOvertime = (clockInTime: string, clockOutTime?: string) => {
+    const start = new Date(clockInTime);
+    const end = clockOutTime ? new Date(clockOutTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    const totalHours = durationMs / (1000 * 60 * 60);
+    return totalHours > 8;
+  };
+
+  const handleSubmitOtRequest = async () => {
+    if (!otShift || !otSuperintendentId) return;
+    try {
+      await createOtRequest.mutateAsync({
+        shiftId: otShift.id,
+        requestedHours: getOvertimeDecimal(otShift.clockIn, otShift.clockOut),
+        superintendentId: otSuperintendentId,
+        notes: otNotes || undefined,
+      });
+      toast({
+        title: "OT Request Submitted",
+        description: "Your overtime request has been submitted for approval",
+      });
+      setOtDialogOpen(false);
+      setOtShift(null);
+      setOtSuperintendentId("");
+      setOtNotes("");
+    } catch (error: any) {
+      toast({
+        title: "OT Request Failed",
+        description: error.message || "Failed to submit overtime request",
+        variant: "destructive",
+      });
+    }
   };
 
   const getApprovalBadge = (status: string) => {
@@ -145,7 +263,6 @@ export default function TimeClockPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Clock In/Out Card - Hidden for Admins */}
           {shouldShowClockControls && (
             <Card className="lg:col-span-2" data-testid="card-clock-control">
             <CardHeader>
@@ -256,7 +373,6 @@ export default function TimeClockPage() {
             </Card>
           )}
 
-          {/* Quick Stats Card */}
           <Card className={shouldShowClockControls ? "" : "lg:col-span-3"} data-testid="card-quick-stats">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -289,7 +405,6 @@ export default function TimeClockPage() {
           </Card>
         </div>
 
-        {/* Shift History */}
         <Card data-testid="card-shift-history">
           <CardHeader>
             <CardTitle>Shift History</CardTitle>
@@ -313,11 +428,15 @@ export default function TimeClockPage() {
                       <TableHead className="whitespace-nowrap">Clock In</TableHead>
                       <TableHead className="whitespace-nowrap">Clock Out</TableHead>
                       <TableHead className="whitespace-nowrap">Duration</TableHead>
+                      <TableHead className="whitespace-nowrap">OT</TableHead>
+                      <TableHead className="whitespace-nowrap">Action</TableHead>
                       <TableHead className="whitespace-nowrap">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                 <TableBody>
-                  {myShifts.map((shift: any) => (
+                  {myShifts.map((shift: any) => {
+                    const existingOtRequest = otRequestMap.get(shift.id);
+                    return (
                     <TableRow key={shift.id} data-testid={`row-shift-${shift.id}`}>
                       <TableCell data-testid={`cell-date-${shift.id}`}>
                         {format(new Date(shift.clockIn), "MMM d, yyyy")}
@@ -337,13 +456,53 @@ export default function TimeClockPage() {
                         {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "-"}
                       </TableCell>
                       <TableCell data-testid={`cell-duration-${shift.id}`}>
-                        {shift.clockOut ? getShiftDuration(shift.clockIn, shift.clockOut) : "In Progress"}
+                        {shift.clockOut ? getRegularDuration(shift.clockIn, shift.clockOut) : "In Progress"}
+                      </TableCell>
+                      <TableCell data-testid={`cell-ot-${shift.id}`}>
+                        {existingOtRequest?.status === "APPROVED" ? (
+                          <Badge className="bg-green-600 text-white no-default-hover-elevate" data-testid={`badge-ot-approved-${shift.id}`}>
+                            <Timer className="w-3 h-3 mr-1" />
+                            {existingOtRequest.approvedHours || existingOtRequest.requestedHours}h
+                          </Badge>
+                        ) : existingOtRequest?.status === "PENDING" ? (
+                          <Badge className="bg-orange-500 text-white no-default-hover-elevate" data-testid={`badge-ot-pending-${shift.id}`}>
+                            <Timer className="w-3 h-3 mr-1" />
+                            {existingOtRequest.requestedHours}h
+                          </Badge>
+                        ) : shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut) ? (
+                          <span className="text-muted-foreground text-sm" data-testid={`text-ot-excess-${shift.id}`}>
+                            {getOvertimeDuration(shift.clockIn, shift.clockOut)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">{"\u2014"}</span>
+                        )}
+                      </TableCell>
+                      <TableCell data-testid={`cell-action-${shift.id}`}>
+                        {shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut) && !existingOtRequest ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setOtShift(shift);
+                              setOtDialogOpen(true);
+                            }}
+                            data-testid={`button-request-ot-${shift.id}`}
+                          >
+                            <Send className="w-3 h-3 mr-1" />
+                            Request OT
+                          </Button>
+                        ) : existingOtRequest?.status === "PENDING" ? (
+                          <Badge variant="secondary" data-testid={`badge-ot-action-pending-${shift.id}`}>Pending</Badge>
+                        ) : existingOtRequest?.status === "REJECTED" ? (
+                          <Badge variant="destructive" data-testid={`badge-ot-action-rejected-${shift.id}`}>Rejected</Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell data-testid={`cell-status-${shift.id}`}>
                         {getApprovalBadge(shift.approvalStatus)}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
               </div>
@@ -351,6 +510,95 @@ export default function TimeClockPage() {
           </CardContent>
         </Card>
       </main>
+
+      <Dialog open={otDialogOpen} onOpenChange={setOtDialogOpen}>
+        <DialogContent data-testid="dialog-ot-request">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Timer className="w-5 h-5" />
+              Request Overtime
+            </DialogTitle>
+          </DialogHeader>
+          {otShift && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Date:</span>{" "}
+                  <span className="font-medium" data-testid="text-ot-date">
+                    {format(new Date(otShift.clockIn), "MMM d, yyyy")}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Project:</span>{" "}
+                  <span className="font-medium" data-testid="text-ot-project">
+                    {otShift.project?.name || "Unknown"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-sm">Excess Hours</Label>
+                <div className="flex items-center gap-2 p-2 rounded-md bg-accent/50" data-testid="text-ot-excess-hours">
+                  <Timer className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium">
+                    {getOvertimeDuration(otShift.clockIn, otShift.clockOut)} ({getOvertimeDecimal(otShift.clockIn, otShift.clockOut)} hrs)
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="ot-approver" className="text-sm">Approver</Label>
+                <Select value={otSuperintendentId} onValueChange={setOtSuperintendentId}>
+                  <SelectTrigger data-testid="select-ot-approver">
+                    <SelectValue placeholder="Select approver..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {approvers.map((approver: any) => (
+                      <SelectItem key={approver.id} value={approver.id} data-testid={`select-option-approver-${approver.id}`}>
+                        {approver.firstName} {approver.lastName} ({approver.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="ot-notes" className="text-sm">Reason / Notes</Label>
+                <Textarea
+                  id="ot-notes"
+                  value={otNotes}
+                  onChange={(e) => setOtNotes(e.target.value)}
+                  placeholder="Explain why overtime is needed..."
+                  className="resize-none"
+                  data-testid="textarea-ot-notes"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOtDialogOpen(false);
+                setOtShift(null);
+                setOtSuperintendentId("");
+                setOtNotes("");
+              }}
+              data-testid="button-ot-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitOtRequest}
+              disabled={!otSuperintendentId || createOtRequest.isPending}
+              data-testid="button-ot-submit"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {createOtRequest.isPending ? "Submitting..." : "Submit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

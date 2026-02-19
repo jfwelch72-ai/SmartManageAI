@@ -35,9 +35,12 @@ import {
   useApproveTimeEntry,
   useRejectTimeEntry,
   useBulkApproveTimeEntries,
+  usePendingOvertimeRequests,
+  useApproveOvertimeRequest,
+  useRejectOvertimeRequest,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase, Search, X, FileText, DollarSign } from "lucide-react";
+import { Clock, Users, CheckCircle, XCircle, Edit, MapPin, Briefcase, Search, X, FileText, DollarSign, Timer } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
 export default function TimeClockManagerPage() {
@@ -71,6 +74,23 @@ export default function TimeClockManagerPage() {
   const approveTimeEntry = useApproveTimeEntry();
   const rejectTimeEntry = useRejectTimeEntry();
   const bulkApproveTimeEntries = useBulkApproveTimeEntries();
+  const { data: pendingOtRequests = [], isLoading: otLoading, refetch: refetchOt } = usePendingOvertimeRequests();
+  const approveOtRequest = useApproveOvertimeRequest();
+  const rejectOtRequest = useRejectOvertimeRequest();
+  const [otRejectDialogOpen, setOtRejectDialogOpen] = useState(false);
+  const [selectedOtRequest, setSelectedOtRequest] = useState<any>(null);
+  const [otRejectReason, setOtRejectReason] = useState("");
+  const [otSearchTerm, setOtSearchTerm] = useState("");
+
+  const filteredOtRequests = useMemo(() => {
+    if (!otSearchTerm) return pendingOtRequests;
+    const searchLower = otSearchTerm.toLowerCase();
+    return pendingOtRequests.filter((req: any) => {
+      const employeeName = `${req.user?.firstName ?? ""} ${req.user?.lastName ?? ""}`.toLowerCase();
+      const projectName = (req.project?.name ?? "").toLowerCase();
+      return employeeName.includes(searchLower) || projectName.includes(searchLower);
+    });
+  }, [pendingOtRequests, otSearchTerm]);
 
   const isManager = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT";
 
@@ -409,7 +429,7 @@ export default function TimeClockManagerPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Total Pending</p>
-                  <p className="text-xl font-bold" data-testid="stat-total-pending">{pendingShifts.length + pendingEntries.length}</p>
+                  <p className="text-xl font-bold" data-testid="stat-total-pending">{pendingShifts.length + pendingEntries.length + pendingOtRequests.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -437,6 +457,15 @@ export default function TimeClockManagerPage() {
               {pendingEntries.length > 0 && (
                 <Badge variant="destructive" className="ml-2" data-testid="badge-entry-count">
                   {pendingEntries.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="overtime" data-testid="tab-overtime">
+              <Timer className="w-4 h-4 mr-2" />
+              OT Requests
+              {pendingOtRequests.length > 0 && (
+                <Badge variant="destructive" className="ml-2" data-testid="badge-ot-count">
+                  {pendingOtRequests.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -903,7 +932,200 @@ export default function TimeClockManagerPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Overtime Requests Tab */}
+          <TabsContent value="overtime" data-testid="content-overtime">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+                <CardTitle className="flex items-center gap-2">
+                  <Timer className="w-5 h-5" />
+                  Pending Overtime Requests ({filteredOtRequests.length})
+                </CardTitle>
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name or project..."
+                    value={otSearchTerm}
+                    onChange={(e) => setOtSearchTerm(e.target.value)}
+                    className="pl-9"
+                    data-testid="input-ot-search"
+                  />
+                  {otSearchTerm && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="absolute right-1 top-1/2 -translate-y-1/2"
+                      onClick={() => setOtSearchTerm("")}
+                      data-testid="button-clear-ot-search"
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {otLoading ? (
+                  <div className="text-center py-8 text-muted-foreground" data-testid="ot-loading">
+                    Loading overtime requests...
+                  </div>
+                ) : filteredOtRequests.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground" data-testid="ot-empty">
+                    <Timer className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-lg font-medium">No Pending OT Requests</p>
+                    <p className="text-sm">All overtime requests have been processed.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Shift Date</TableHead>
+                        <TableHead>Regular Hours</TableHead>
+                        <TableHead>OT Requested</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead>Requested</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOtRequests.map((req: any) => {
+                        const shiftDate = req.shift?.clockIn ? format(new Date(req.shift.clockIn), "MMM d, yyyy") : "N/A";
+                        const employeeName = req.user ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() : "Unknown";
+                        const projectName = req.project?.name ?? "N/A";
+                        const requestedAt = req.createdAt ? formatDistanceToNow(new Date(req.createdAt), { addSuffix: true }) : "N/A";
+
+                        return (
+                          <TableRow key={req.id} data-testid={`row-ot-${req.id}`}>
+                            <TableCell className="font-medium" data-testid={`text-ot-employee-${req.id}`}>
+                              {employeeName}
+                            </TableCell>
+                            <TableCell data-testid={`text-ot-project-${req.id}`}>
+                              <Badge variant="outline">{projectName}</Badge>
+                            </TableCell>
+                            <TableCell data-testid={`text-ot-date-${req.id}`}>{shiftDate}</TableCell>
+                            <TableCell data-testid={`text-ot-regular-${req.id}`}>8.00h</TableCell>
+                            <TableCell data-testid={`text-ot-requested-${req.id}`}>
+                              <Badge variant="secondary">
+                                +{Number(req.requestedHours).toFixed(2)}h
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate" data-testid={`text-ot-notes-${req.id}`}>
+                              {req.notes || "—"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground" data-testid={`text-ot-requested-at-${req.id}`}>
+                              {requestedAt}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => {
+                                    approveOtRequest.mutate(
+                                      { id: req.id, approvedHours: String(req.requestedHours) },
+                                      {
+                                        onSuccess: () => {
+                                          toast({ title: "Overtime approved" });
+                                          refetchOt();
+                                        },
+                                        onError: (err: any) => {
+                                          toast({ title: "Error", description: err.message, variant: "destructive" });
+                                        },
+                                      }
+                                    );
+                                  }}
+                                  disabled={approveOtRequest.isPending}
+                                  data-testid={`button-approve-ot-${req.id}`}
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => {
+                                    setSelectedOtRequest(req);
+                                    setOtRejectReason("");
+                                    setOtRejectDialogOpen(true);
+                                  }}
+                                  data-testid={`button-reject-ot-${req.id}`}
+                                >
+                                  <XCircle className="w-4 h-4 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+
+        {/* OT Reject Dialog */}
+        <Dialog open={otRejectDialogOpen} onOpenChange={setOtRejectDialogOpen}>
+          <DialogContent data-testid="dialog-reject-ot">
+            <DialogHeader>
+              <DialogTitle>Reject Overtime Request</DialogTitle>
+              <DialogDescription>
+                Please provide a reason for rejecting this overtime request. The employee will be notified.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {selectedOtRequest && (
+                <div className="space-y-1 text-sm">
+                  <p><span className="text-muted-foreground">Employee:</span> {selectedOtRequest.user ? `${selectedOtRequest.user.firstName ?? ""} ${selectedOtRequest.user.lastName ?? ""}`.trim() : "Unknown"}</p>
+                  <p><span className="text-muted-foreground">Requested OT:</span> +{Number(selectedOtRequest.requestedHours).toFixed(2)}h</p>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="ot-reject-reason">Reason for Rejection</Label>
+                <Textarea
+                  id="ot-reject-reason"
+                  placeholder="e.g., Overtime not pre-authorized for this project..."
+                  value={otRejectReason}
+                  onChange={(e) => setOtRejectReason(e.target.value)}
+                  data-testid="textarea-ot-reject-reason"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOtRejectDialogOpen(false)} data-testid="button-cancel-ot-reject">
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (!selectedOtRequest) return;
+                  rejectOtRequest.mutate(
+                    { id: selectedOtRequest.id, reason: otRejectReason },
+                    {
+                      onSuccess: () => {
+                        toast({ title: "Overtime request rejected" });
+                        setOtRejectDialogOpen(false);
+                        setSelectedOtRequest(null);
+                        setOtRejectReason("");
+                        refetchOt();
+                      },
+                      onError: (err: any) => {
+                        toast({ title: "Error", description: err.message, variant: "destructive" });
+                      },
+                    }
+                  );
+                }}
+                disabled={!otRejectReason.trim() || rejectOtRequest.isPending}
+                data-testid="button-confirm-ot-reject"
+              >
+                {rejectOtRequest.isPending ? "Rejecting..." : "Reject Request"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Reject Shift Dialog */}
         <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>

@@ -1503,6 +1503,31 @@ export const timeClockEvents = pgTable("time_clock_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Overtime Request Status enum
+export const overtimeRequestStatusEnum = pgEnum("overtime_request_status", ["PENDING", "APPROVED", "REJECTED"]);
+
+// Overtime Requests table
+export const overtimeRequests = pgTable("overtime_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shiftId: varchar("shift_id").notNull().references(() => timeClockShifts.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  organizationId: varchar("organization_id").notNull(),
+  requestedHours: decimal("requested_hours", { precision: 6, scale: 2 }).notNull(),
+  approvedHours: decimal("approved_hours", { precision: 6, scale: 2 }),
+  superintendentId: varchar("superintendent_id").notNull().references(() => users.id),
+  status: overtimeRequestStatusEnum("status").notNull().default("PENDING"),
+  notes: text("notes"),
+  rejectionReason: text("rejection_reason"),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("overtime_requests_user_idx").on(table.userId),
+  shiftIdx: index("overtime_requests_shift_idx").on(table.shiftId),
+  statusIdx: index("overtime_requests_status_idx").on(table.status),
+  orgIdx: index("overtime_requests_org_idx").on(table.organizationId),
+}));
+
 // AI Settings table
 export const aiSettings = pgTable("ai_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2681,6 +2706,18 @@ export type InsertTimeClockShift = z.infer<typeof insertTimeClockShiftSchema>;
 export type TimeClockShift = typeof timeClockShifts.$inferSelect;
 
 export type InsertTimeClockEvent = z.infer<typeof insertTimeClockEventSchema>;
+
+export const insertOvertimeRequestSchema = createInsertSchema(overtimeRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+  approvedHours: true,
+  rejectionReason: true,
+  status: true,
+});
+export type InsertOvertimeRequest = z.infer<typeof insertOvertimeRequestSchema>;
+export type OvertimeRequest = typeof overtimeRequests.$inferSelect;
 export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
 
 export const insertAISettingsSchema = createInsertSchema(aiSettings).omit({

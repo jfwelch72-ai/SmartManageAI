@@ -728,6 +728,71 @@ export function useMyShifts() {
   });
 }
 
+export function useOvertimeApprovers() {
+  return useQuery<any[]>({
+    queryKey: ["/api/overtime-requests/approvers"],
+  });
+}
+
+export function useOvertimeRequestsByShifts(shiftIds: string[]) {
+  return useQuery<any[]>({
+    queryKey: ["/api/overtime-requests/by-shifts", shiftIds],
+    queryFn: async () => {
+      if (shiftIds.length === 0) return [];
+      const response = await apiRequest("POST", "/api/overtime-requests/by-shifts", { shiftIds });
+      return response.json();
+    },
+    enabled: shiftIds.length > 0,
+  });
+}
+
+export function useCreateOvertimeRequest() {
+  return useMutation({
+    mutationFn: async (data: { shiftId: string; requestedHours: string; superintendentId: string; notes?: string }) => {
+      const response = await apiRequest("POST", "/api/overtime-requests", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests/by-shifts"] });
+    },
+  });
+}
+
+export function usePendingOvertimeRequests() {
+  return useQuery<any[]>({
+    queryKey: ["/api/overtime-requests/pending"],
+  });
+}
+
+export function useApproveOvertimeRequest() {
+  return useMutation({
+    mutationFn: async ({ id, approvedHours }: { id: string; approvedHours?: string }) => {
+      const response = await apiRequest("POST", `/api/overtime-requests/${id}/approve`, { approvedHours });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests/by-shifts"] });
+    },
+  });
+}
+
+export function useRejectOvertimeRequest() {
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const response = await apiRequest("POST", `/api/overtime-requests/${id}/reject`, { reason });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-requests/by-shifts"] });
+    },
+  });
+}
+
 export function useActiveShifts() {
   return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/active-shifts"],
