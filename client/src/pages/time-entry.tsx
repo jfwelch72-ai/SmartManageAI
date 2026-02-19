@@ -334,7 +334,28 @@ export default function TimeEntryPage() {
     if (statusFilter !== "ALL") params.status = statusFilter;
 
     const exportUrl = "/api/time-entries/export?" + new URLSearchParams(params).toString();
-    window.open(exportUrl, "_blank");
+    fetch(exportUrl, { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Export failed" }));
+          throw new Error(err.error || "Export failed");
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `time-entries-${format(new Date(), "yyyy-MM-dd")}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast({ title: "Export Complete", description: "CSV file downloaded successfully" });
+      })
+      .catch((err) => {
+        toast({ title: "Export Failed", description: err.message, variant: "destructive" });
+      });
   };
 
   const toggleSelectEntry = (id: string) => {
