@@ -632,10 +632,9 @@ export function registerTimeClockRoutes(app: Express): void {
       const projectIds = [...new Set(shifts.filter(s => s.projectId).map(s => s.projectId!))];
       let projectMap = new Map<string, { id: string; name: string; code: string | null }>();
       if (projectIds.length > 0) {
-        const orgId = req.user!.organizationId;
         const projectRows = await db.select({ id: projects.id, name: projects.name, code: projects.code })
           .from(projects)
-          .where(sql`${projects.id} IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)}) AND ${projects.organizationId} = ${orgId}`);
+          .where(and(inArray(projects.id, projectIds), eq(projects.gcOrganizationId, req.user!.organizationId)));
         projectMap = new Map(projectRows.map(p => [p.id, p]));
       }
 
