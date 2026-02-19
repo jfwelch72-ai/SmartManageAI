@@ -12683,13 +12683,32 @@ SmartManageAI Construction Management Platform
         .where(conditions.length > 0 ? and(...conditions) : sql`true`);
       const totalCount = totalResult[0]?.count || 0;
 
-      // Get paginated entries
-      let query = db.select().from(timeEntries);
+      // Get paginated entries with user info
+      const baseQuery = db
+        .select({
+          id: timeEntries.id,
+          userId: timeEntries.userId,
+          userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unknown')`,
+          projectId: timeEntries.projectId,
+          date: timeEntries.date,
+          hoursRegular: timeEntries.hoursRegular,
+          hoursOvertime: timeEntries.hoursOvertime,
+          notes: timeEntries.notes,
+          approvedById: timeEntries.approvedById,
+          approvedAt: timeEntries.approvedAt,
+          organizationId: timeEntries.organizationId,
+          shiftId: timeEntries.shiftId,
+          createdAt: timeEntries.createdAt,
+        })
+        .from(timeEntries)
+        .leftJoin(users, eq(timeEntries.userId, users.id));
+
+      let query = baseQuery;
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
 
-      const entries = await query
+      const entries = await (query as any)
         .orderBy(desc(timeEntries.date))
         .limit(limitNum)
         .offset(offset);

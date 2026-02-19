@@ -594,7 +594,7 @@ export default function TimeEntryPage() {
                               </TableCell>
                               {isManager && (
                                 <TableCell data-testid={`text-employee-${entry.id}`}>
-                                  {entry.userId}
+                                  {(entry as any).userName || entry.userId}
                                 </TableCell>
                               )}
                               <TableCell data-testid={`text-project-${entry.id}`}>
