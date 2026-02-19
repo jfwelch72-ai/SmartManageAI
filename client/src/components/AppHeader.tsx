@@ -119,8 +119,8 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
 
   // Filter navigation items based on user role
   const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
-  const visibleAIItems = NavigationConfig.aiMenu.filter(item => item.visible(userRole));
-  const visibleAdminItems = NavigationConfig.adminMenu.filter(item => item.visible(userRole));
+  const visibleAIItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole));
+  const visibleAdminItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole));
   const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole));
   const hasAdminMenu = visibleAdminItems.length > 0;
   const hasAIMenu = visibleAIItems.length > 0;

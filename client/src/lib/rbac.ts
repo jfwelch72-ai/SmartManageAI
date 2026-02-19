@@ -385,9 +385,18 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/projects",
-      label: "Projects",
-      testId: "nav-projects",
+      href: "/communications",
+      label: "Bulletins",
+      testId: "nav-bulletins",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+  ],
+
+  projectsMenu: [
+    {
+      href: "/calendar",
+      label: "Calendar",
+      testId: "nav-calendar",
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
@@ -397,46 +406,16 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
+      href: "/projects",
+      label: "Projects",
+      testId: "nav-projects",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
       href: "/tasks",
       label: "Tasks",
       testId: "nav-tasks",
       visible: (role?: string) => hasContractorAccess(role),
-    },
-  ],
-
-  scheduleMenu: [
-    {
-      href: "/calendar",
-      label: "Calendar",
-      testId: "nav-calendar",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
-      href: "/schedule-of-values",
-      label: "Schedule of Values",
-      testId: "nav-sov",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
-    },
-  ],
-
-  biddingMenu: [
-    {
-      href: "/bids",
-      label: "Bids",
-      testId: "nav-bids",
-      visible: (role?: string) => canAccessBids(role),
-    },
-    {
-      href: "/bid-network",
-      label: "Bid Network",
-      testId: "nav-bid-network",
-      visible: (role?: string) => canAccessBidNetworkAsGC(role),
-    },
-    {
-      href: "/bid-inbox",
-      label: "Bid Inbox",
-      testId: "nav-bid-inbox",
-      visible: (role?: string) => canAccessBidNetworkAsSub(role),
     },
   ],
 
@@ -465,15 +444,9 @@ export const NavigationConfig = {
       testId: "nav-tm-daily",
       visible: (role?: string) => hasManagementAccess(role),
     },
-    {
-      href: "/tm-billing",
-      label: "T&M Billing",
-      testId: "nav-tm-billing",
-      visible: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
-    },
   ],
 
-  fieldOpsMenu: [
+  operationsMenu: [
     {
       href: "/equipment",
       label: "Equipment",
@@ -510,15 +483,48 @@ export const NavigationConfig = {
       testId: "nav-photo-custody",
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
+  ],
+
+  preconstructionMenu: [
     {
-      href: "/communications",
-      label: "Bulletins",
-      testId: "nav-bulletins",
-      visible: (role?: string) => hasContractorAccess(role),
+      href: "/bids",
+      label: "Bids",
+      testId: "nav-bids",
+      visible: (role?: string) => canAccessBids(role),
+    },
+    {
+      href: "/bid-network",
+      label: "Bid Network",
+      testId: "nav-bid-network",
+      visible: (role?: string) => canAccessBidNetworkAsGC(role),
+    },
+    {
+      href: "/bid-inbox",
+      label: "Bid Inbox",
+      testId: "nav-bid-inbox",
+      visible: (role?: string) => canAccessBidNetworkAsSub(role),
     },
   ],
 
   financialsMenu: [
+    {
+      href: "/cfo",
+      label: "CFO Dashboard",
+      testId: "nav-cfo",
+      visible: (role?: string) => isAdminOrManager(role),
+    },
+    {
+      href: "/cost-rates",
+      label: "Cost Rates",
+      testId: "nav-cost-rates",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
+    },
+    {
+      href: "/schedule-of-values",
+      label: "Schedule of Values",
+      testId: "nav-sov",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+    },
     {
       href: "/subcontracts",
       label: "Subcontracts",
@@ -532,32 +538,20 @@ export const NavigationConfig = {
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
+      href: "/tm-billing",
+      label: "T&M Billing",
+      testId: "nav-tm-billing",
+      visible: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
+    },
+    {
       href: "/vendor-pricing",
       label: "Vendor Pricing Sync",
       testId: "nav-vendor-pricing",
       visible: (role?: string) => hasManagementAccess(role),
     },
-    {
-      href: "/cost-rates",
-      label: "Cost Rates",
-      testId: "nav-cost-rates",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
-    },
   ],
 
-  aiMenu: [
-    {
-      href: "/ai-pm",
-      label: "AI Project Manager",
-      testId: "nav-ai-pm",
-      visible: (role?: string) => hasManagementAccess(role),
-    },
-    {
-      href: "/cfo",
-      label: "CFO Dashboard",
-      testId: "nav-cfo",
-      visible: (role?: string) => isAdminOrManager(role),
-    },
+  insightsMenu: [
     {
       href: "/ai-bid-analysis",
       label: "AI Bid Analysis",
@@ -571,16 +565,22 @@ export const NavigationConfig = {
       visible: (role?: string) => isAdminOrManager(role),
     },
     {
-      href: "/production-rates",
-      label: "Production Rates",
-      testId: "nav-production-rates",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+      href: "/ai-pm",
+      label: "AI Project Manager",
+      testId: "nav-ai-pm",
+      visible: (role?: string) => hasManagementAccess(role),
     },
     {
       href: "/ai-settings",
       label: "AI Settings",
       testId: "nav-ai-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/production-rates",
+      label: "Production Rates",
+      testId: "nav-production-rates",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
     },
     {
       href: "/email-assistant",
@@ -590,17 +590,11 @@ export const NavigationConfig = {
     },
   ],
 
-  adminMenu: [
+  administrationMenu: [
     {
-      href: "/manage-workers",
-      label: "Workforce Management",
-      testId: "nav-manage-workers",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
-      href: "/users",
-      label: "Users",
-      testId: "nav-users",
+      href: "/company-settings",
+      label: "Company Settings",
+      testId: "nav-company-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
@@ -610,10 +604,10 @@ export const NavigationConfig = {
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/company-settings",
-      label: "Company Settings",
-      testId: "nav-company-settings",
-      visible: (role?: string) => isOrganizationAdmin(role),
+      href: "/daily-report-locks",
+      label: "Report Locks",
+      testId: "nav-report-locks",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
     {
       href: "/scope-settings",
@@ -622,16 +616,22 @@ export const NavigationConfig = {
       visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
     },
     {
+      href: "/users",
+      label: "Users & Roles",
+      testId: "nav-users",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
       href: "/website-builder",
       label: "Website Builder",
       testId: "nav-website-builder",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/daily-report-locks",
-      label: "Report Locks",
-      testId: "nav-report-locks",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      href: "/manage-workers",
+      label: "Workforce Management",
+      testId: "nav-manage-workers",
+      visible: (role?: string) => hasContractorAccess(role),
     },
   ],
 
@@ -643,16 +643,16 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/mobile-sync",
-      label: "Mobile Sync Status",
-      testId: "nav-mobile-sync",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
       href: "/crm",
       label: "CRM",
       testId: "nav-crm",
       visible: (role?: string) => hasManagementAccess(role),
+    },
+    {
+      href: "/mobile-sync",
+      label: "Mobile Sync Status",
+      testId: "nav-mobile-sync",
+      visible: (role?: string) => hasContractorAccess(role),
     },
   ],
 };
