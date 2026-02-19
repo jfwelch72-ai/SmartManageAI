@@ -3,14 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -435,92 +427,98 @@ export default function TimeClockPage() {
                 No shifts recorded yet
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <Table className="min-w-[600px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">Date</TableHead>
-                      <TableHead className="whitespace-nowrap">Project</TableHead>
-                      <TableHead className="whitespace-nowrap">Clock In</TableHead>
-                      <TableHead className="whitespace-nowrap">Clock Out</TableHead>
-                      <TableHead className="whitespace-nowrap">Duration</TableHead>
-                      <TableHead className="whitespace-nowrap">OT</TableHead>
-                      <TableHead className="whitespace-nowrap">Action</TableHead>
-                      <TableHead className="whitespace-nowrap">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                <TableBody>
-                  {myShifts.map((shift: any) => {
-                    const existingOtRequest = otRequestMap.get(shift.id);
-                    return (
-                    <TableRow key={shift.id} data-testid={`row-shift-${shift.id}`}>
-                      <TableCell data-testid={`cell-date-${shift.id}`}>
-                        {format(new Date(shift.clockIn), "MMM d, yyyy")}
-                      </TableCell>
-                      <TableCell data-testid={`cell-project-${shift.id}`}>
-                        <div className="space-y-1">
-                          <p className="font-medium">{shift.project?.name || "Unknown"}</p>
-                          {shift.project?.code && (
-                            <Badge variant="outline">{shift.project.code}</Badge>
-                          )}
+              <div className="space-y-3">
+                {myShifts.map((shift: any) => {
+                  const existingOtRequest = otRequestMap.get(shift.id);
+                  return (
+                    <div
+                      key={shift.id}
+                      className="p-4 rounded-md border"
+                      data-testid={`row-shift-${shift.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm" data-testid={`cell-date-${shift.id}`}>
+                              {format(new Date(shift.clockIn), "EEE, MMM d, yyyy")}
+                            </span>
+                            {getApprovalBadge(shift.approvalStatus)}
+                            {!shift.clockOut && (
+                              <Badge variant="outline" className="text-green-600 border-green-600 dark:text-green-400 dark:border-green-400">
+                                In Progress
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                            <div className="flex items-center gap-1 flex-wrap" data-testid={`cell-project-${shift.id}`}>
+                              <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate max-w-[200px]">{shift.project?.name || "Unknown"}</span>
+                              {shift.project?.code && (
+                                <Badge variant="outline" className="text-xs ml-1">{shift.project.code}</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <Clock className="w-3.5 h-3.5 shrink-0" />
+                              <span data-testid={`cell-clock-in-${shift.id}`}>
+                                {format(new Date(shift.clockIn), "h:mm a")}
+                              </span>
+                              <span>-</span>
+                              <span data-testid={`cell-clock-out-${shift.id}`}>
+                                {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "Now"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {existingOtRequest?.status === "APPROVED" && (
+                              <Badge className="bg-green-600 dark:bg-green-700 text-white no-default-hover-elevate" data-testid={`badge-ot-approved-${shift.id}`}>
+                                <Timer className="w-3 h-3 mr-1" />
+                                OT {existingOtRequest.approvedHours || existingOtRequest.requestedHours}h
+                              </Badge>
+                            )}
+                            {existingOtRequest?.status === "PENDING" && (
+                              <Badge className="bg-orange-500 dark:bg-orange-600 text-white no-default-hover-elevate" data-testid={`badge-ot-pending-${shift.id}`}>
+                                <Timer className="w-3 h-3 mr-1" />
+                                OT Pending
+                              </Badge>
+                            )}
+                            {existingOtRequest?.status === "REJECTED" && (
+                              <Badge variant="destructive" data-testid={`badge-ot-action-rejected-${shift.id}`}>
+                                OT Rejected
+                              </Badge>
+                            )}
+                            {shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut) && !existingOtRequest && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setOtShift(shift);
+                                  setOtDialogOpen(true);
+                                }}
+                                data-testid={`button-request-ot-${shift.id}`}
+                              >
+                                <Send className="w-3.5 h-3.5 mr-1" />
+                                Request OT
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </TableCell>
-                      <TableCell data-testid={`cell-clock-in-${shift.id}`}>
-                        {format(new Date(shift.clockIn), "h:mm a")}
-                      </TableCell>
-                      <TableCell data-testid={`cell-clock-out-${shift.id}`}>
-                        {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "-"}
-                      </TableCell>
-                      <TableCell data-testid={`cell-duration-${shift.id}`}>
-                        {shift.clockOut ? getRegularDuration(shift.clockIn, shift.clockOut) : "In Progress"}
-                      </TableCell>
-                      <TableCell data-testid={`cell-ot-${shift.id}`}>
-                        {existingOtRequest?.status === "APPROVED" ? (
-                          <Badge className="bg-green-600 text-white no-default-hover-elevate" data-testid={`badge-ot-approved-${shift.id}`}>
-                            <Timer className="w-3 h-3 mr-1" />
-                            {existingOtRequest.approvedHours || existingOtRequest.requestedHours}h
-                          </Badge>
-                        ) : existingOtRequest?.status === "PENDING" ? (
-                          <Badge className="bg-orange-500 text-white no-default-hover-elevate" data-testid={`badge-ot-pending-${shift.id}`}>
-                            <Timer className="w-3 h-3 mr-1" />
-                            {existingOtRequest.requestedHours}h
-                          </Badge>
-                        ) : shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut) ? (
-                          <span className="text-muted-foreground text-sm" data-testid={`text-ot-excess-${shift.id}`}>
-                            {getOvertimeDuration(shift.clockIn, shift.clockOut)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">{"\u2014"}</span>
-                        )}
-                      </TableCell>
-                      <TableCell data-testid={`cell-action-${shift.id}`}>
-                        {shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut) && !existingOtRequest ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setOtShift(shift);
-                              setOtDialogOpen(true);
-                            }}
-                            data-testid={`button-request-ot-${shift.id}`}
-                          >
-                            <Send className="w-3 h-3 mr-1" />
-                            Request OT
-                          </Button>
-                        ) : existingOtRequest?.status === "PENDING" ? (
-                          <Badge variant="secondary" data-testid={`badge-ot-action-pending-${shift.id}`}>Pending</Badge>
-                        ) : existingOtRequest?.status === "REJECTED" ? (
-                          <Badge variant="destructive" data-testid={`badge-ot-action-rejected-${shift.id}`}>Rejected</Badge>
-                        ) : null}
-                      </TableCell>
-                      <TableCell data-testid={`cell-status-${shift.id}`}>
-                        {getApprovalBadge(shift.approvalStatus)}
-                      </TableCell>
-                    </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+
+                        <div className="text-right shrink-0">
+                          <p className="text-lg font-bold" data-testid={`cell-duration-${shift.id}`}>
+                            {shift.clockOut ? getRegularDuration(shift.clockIn, shift.clockOut) : "..."}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {shift.clockOut && hasOvertime(shift.clockIn, shift.clockOut)
+                              ? `+${getOvertimeDuration(shift.clockIn, shift.clockOut)} OT`
+                              : "total"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
