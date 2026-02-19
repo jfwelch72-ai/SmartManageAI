@@ -1032,7 +1032,13 @@ export function registerTimeClockRoutes(app: Express): void {
       let timeEntryId: string | null = null;
       if (data.createTimeEntry && shift.projectId) {
         try {
-          const totalHours = parseFloat(shift.totalHours || "0");
+          let totalHours = parseFloat(shift.totalHours || "0");
+          if (totalHours > 24) {
+            totalHours = 24;
+          }
+          if (totalHours < 0) {
+            totalHours = 0;
+          }
           const regularHours = Math.min(totalHours, 8);
           const overtimeHours = Math.max(0, totalHours - 8);
 
@@ -1631,6 +1637,79 @@ export function registerTimeClockRoutes(app: Express): void {
       });
     } catch (error) {
       console.error("Bulk approve time entries error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Export time entries as CSV
+  app.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { startDate, endDate, projectId, userId: filterUserId, status } = req.query;
+
+      const conditions: any[] = [];
+
+      if (startDate) {
+        conditions.push(gte(timeEntries.date, new Date(startDate as string)));
+      }
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        conditions.push(lte(timeEntries.date, end));
+      }
+      if (projectId) {
+        conditions.push(eq(timeEntries.projectId, projectId as string));
+      }
+      if (filterUserId) {
+        conditions.push(eq(timeEntries.userId, filterUserId as string));
+      }
+      if (status === "approved") {
+        conditions.push(sql`${timeEntries.approvedById} IS NOT NULL`);
+      } else if (status === "pending") {
+        conditions.push(sql`${timeEntries.approvedById} IS NULL AND ${timeEntries.rejectedById} IS NULL`);
+      } else if (status === "rejected") {
+        conditions.push(sql`${timeEntries.rejectedById} IS NOT NULL`);
+      }
+
+      const entries = await db
+        .select({
+          entry: timeEntries,
+          userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unknown')`,
+          userEmail: users.email,
+          projectName: projects.name,
+          projectCode: projects.code,
+        })
+        .from(timeEntries)
+        .leftJoin(users, eq(timeEntries.userId, users.id))
+        .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .where(conditions.length > 0 ? and(...conditions) : sql`true`)
+        .orderBy(desc(timeEntries.date));
+
+      const csvHeader = "Date,Employee,Email,Project,Project Code,Regular Hours,Overtime Hours,Total Hours,Cost Code,Status,Notes\n";
+      const csvRows = entries.map(row => {
+        const e = row.entry;
+        const regular = parseFloat(e.hoursRegular || "0");
+        const overtime = parseFloat(e.hoursOvertime || "0");
+        const total = regular + overtime;
+        const entryStatus = e.approvedById ? "Approved" : e.rejectedById ? "Rejected" : "Pending";
+        const date = e.date ? new Date(e.date).toLocaleDateString("en-US") : "";
+        const escapeCsv = (val: string | null | undefined) => {
+          if (!val) return "";
+          const str = val.replace(/"/g, '""');
+          return str.includes(",") || str.includes('"') || str.includes("\n") ? `"${str}"` : str;
+        };
+        return `${date},${escapeCsv(row.userName)},${escapeCsv(row.userEmail)},${escapeCsv(row.projectName)},${escapeCsv(row.projectCode)},${regular.toFixed(2)},${overtime.toFixed(2)},${total.toFixed(2)},${escapeCsv(e.costCode)},${entryStatus},${escapeCsv(e.notes)}`;
+      }).join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename=time-entries-export-${new Date().toISOString().split('T')[0]}.csv`);
+      res.send(csvHeader + csvRows);
+    } catch (error) {
+      console.error("Export time entries error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

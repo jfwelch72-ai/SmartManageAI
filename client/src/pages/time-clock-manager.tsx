@@ -361,6 +361,61 @@ export default function TimeClockManagerPage() {
           </p>
         </div>
 
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-primary/10">
+                  <Users className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Active Shifts</p>
+                  <p className="text-xl font-bold" data-testid="stat-active-shifts">{activeShifts.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-orange-500/10">
+                  <Clock className="w-4 h-4 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Pending Shifts</p>
+                  <p className="text-xl font-bold" data-testid="stat-pending-shifts">{pendingShifts.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-blue-500/10">
+                  <FileText className="w-4 h-4 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Pending Entries</p>
+                  <p className="text-xl font-bold" data-testid="stat-pending-entries">{pendingEntries.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-green-500/10">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Total Pending</p>
+                  <p className="text-xl font-bold" data-testid="stat-total-pending">{pendingShifts.length + pendingEntries.length}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         <Tabs defaultValue="live" className="space-y-6">
           <TabsList data-testid="tabs-manager">
             <TabsTrigger value="live" data-testid="tab-live">

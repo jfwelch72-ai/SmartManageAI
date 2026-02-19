@@ -284,6 +284,29 @@ export function useApproveTimeEntry() {
   });
 }
 
+export function useUpdateTimeEntry() {
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; date?: string; hoursRegular?: string; hoursOvertime?: string; costCode?: string; notes?: string; adminOverride?: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/time-entries/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+    },
+  });
+}
+
+export function useDeleteTimeEntry() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/time-entries/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+    },
+  });
+}
+
 // T&M Daily Sheets
 export function useProjectTMSheets(code: string) {
   return useQuery<TMDailySheet[]>({
