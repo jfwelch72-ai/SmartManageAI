@@ -730,12 +730,7 @@ export function useMyShifts(params?: { startDate?: string; endDate?: string; pag
   const qs = queryParams.toString();
   const url = `/api/time-clock/my-shifts${qs ? `?${qs}` : ""}`;
   return useQuery<TimeClockShift[]>({
-    queryKey: ["/api/time-clock/my-shifts", params],
-    queryFn: async () => {
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch shifts");
-      return res.json();
-    },
+    queryKey: [url],
   });
 }
 

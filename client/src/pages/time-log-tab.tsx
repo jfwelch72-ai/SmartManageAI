@@ -47,6 +47,7 @@ import {
   Pencil,
   Send,
   TrendingUp,
+  Download,
 } from "lucide-react";
 import {
   format,
@@ -211,6 +212,47 @@ export default function TimeLogTab() {
     }
   };
 
+  const csvEscape = (val: string) => `"${String(val).replace(/"/g, '""')}"`;
+
+  const handleExportCsv = () => {
+    if (shifts.length === 0) {
+      toast({ title: "Nothing to export", description: "No shifts match your current filters", variant: "destructive" });
+      return;
+    }
+    const headers = ["Date", "Project", "Clock In", "Clock Out", "Duration", "Status", "Notes", "Overtime", "OT Status"];
+    const rows = shifts.map((s: any) => {
+      const projectName = s.project?.name || "Unknown";
+      const clockIn = format(new Date(s.clockIn), "h:mm a");
+      const clockOut = s.clockOut ? format(new Date(s.clockOut), "h:mm a") : "In Progress";
+      const duration = getShiftDuration(s.clockIn, s.clockOut);
+      const status = getStatusLabel(s.approvalStatus);
+      const notes = s.notes || "";
+      const ot = s.clockOut && hasOvertime(s.clockIn, s.clockOut) ? (getOvertimeDuration(s.clockIn, s.clockOut) || "") : "";
+      const otReq = otRequestMap.get(s.id);
+      const otStatus = otReq ? otReq.status : "";
+      return [
+        csvEscape(format(new Date(s.clockIn), "yyyy-MM-dd")),
+        csvEscape(projectName),
+        csvEscape(clockIn),
+        csvEscape(clockOut),
+        csvEscape(duration),
+        csvEscape(status),
+        csvEscape(notes),
+        csvEscape(ot),
+        csvEscape(otStatus),
+      ].join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `time-log-${filterPeriod}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${shifts.length} shifts exported to CSV` });
+  };
+
   const filterButtons: { label: string; value: FilterPeriod }[] = [
     { label: "Today", value: "today" },
     { label: "Week", value: "week" },
@@ -291,6 +333,17 @@ export default function TimeLogTab() {
               ))}
             </SelectContent>
           </Select>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={shifts.length === 0}
+            data-testid="button-export-csv"
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            Export CSV
+          </Button>
         </div>
       </div>
 
