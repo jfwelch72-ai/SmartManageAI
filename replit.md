@@ -64,5 +64,6 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Recharts**: Library for data visualization charts.
 
 ## Recent Changes
-*   **2026-02-19**: Added KPI Dashboard to Manage Workers page with summary cards (total workers, active, on-duty, attendance rate, avg rating), attendance distribution pie chart, performance trend line chart (monthly averages), safety & quality bar chart, and top performers list. Backend aggregation endpoint: `GET /api/auth/manage-workers/kpi-dashboard`. Dashboard is collapsible via toggle button.
-*   **2026-02-19**: Made "Add Evaluation" and "Update Skills" buttons functional on worker detail page. Add Evaluation uses multi-dimension star ratings (overall, productivity, quality, safety, communication, leadership). Update Skills allows managers to add/remove/rate worker skills via new backend endpoints (`POST/DELETE/PATCH /api/auth/manage-workers/:id/skills`).
+*   **2026-02-19**: Merged "Manage Workers" and "Performance & Rewards" into unified "Workforce Management" page at `/manage-workers`. Tabbed layout: Workers (roster + KPI, managers only), Ratings, Rewards, Analytics. Sidebar entry renamed to "Workforce Management" with access broadened to all contractor roles. Old `/performance` route removed.
+*   **2026-02-19**: Added KPI Dashboard to Workers tab with summary cards, attendance distribution pie chart, performance trend line chart, safety & quality bar chart, and top performers list. Backend endpoint: `GET /api/auth/manage-workers/kpi-dashboard`.
+*   **2026-02-19**: Made "Add Evaluation" and "Update Skills" buttons functional on worker detail page. Add Evaluation uses multi-dimension star ratings. Update Skills via `POST/DELETE/PATCH /api/auth/manage-workers/:id/skills`.

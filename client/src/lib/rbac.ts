@@ -289,11 +289,8 @@ export const RoutePermissions = {
   BID_NETWORK_GC: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
   BID_NETWORK_INBOX: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR",
 
-  // Performance & Rewards routes
-  PERFORMANCE: (role?: string) => hasContractorAccess(role),
-
-  // Manage Workers routes
-  MANAGE_WORKERS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
+  // Workforce Management (merged Manage Workers + Performance & Rewards)
+  MANAGE_WORKERS: (role?: string) => hasContractorAccess(role),
 };
 
 /**
@@ -596,9 +593,9 @@ export const NavigationConfig = {
   adminMenu: [
     {
       href: "/manage-workers",
-      label: "Manage Workers",
+      label: "Workforce Management",
       testId: "nav-manage-workers",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string) => hasContractorAccess(role),
     },
     {
       href: "/users",
@@ -629,12 +626,6 @@ export const NavigationConfig = {
       label: "Website Builder",
       testId: "nav-website-builder",
       visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/performance",
-      label: "Performance & Rewards",
-      testId: "nav-performance",
-      visible: (role?: string) => hasContractorAccess(role),
     },
     {
       href: "/daily-report-locks",
