@@ -12683,38 +12683,33 @@ SmartManageAI Construction Management Platform
         .where(conditions.length > 0 ? and(...conditions) : sql`true`);
       const totalCount = totalResult[0]?.count || 0;
 
-      // Get paginated entries with user info
-      const baseQuery = db
-        .select({
-          id: timeEntries.id,
-          userId: timeEntries.userId,
-          userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unknown')`,
-          projectId: timeEntries.projectId,
-          date: timeEntries.date,
-          hoursRegular: timeEntries.hoursRegular,
-          hoursOvertime: timeEntries.hoursOvertime,
-          notes: timeEntries.notes,
-          approvedById: timeEntries.approvedById,
-          approvedAt: timeEntries.approvedAt,
-          organizationId: timeEntries.organizationId,
-          shiftId: timeEntries.shiftId,
-          createdAt: timeEntries.createdAt,
-        })
-        .from(timeEntries)
-        .leftJoin(users, eq(timeEntries.userId, users.id));
-
-      let query = baseQuery;
+      // Get paginated entries
+      let query = db.select().from(timeEntries);
       if (conditions.length > 0) {
         query = query.where(and(...conditions)) as any;
       }
 
-      const entries = await (query as any)
+      const entries = await query
         .orderBy(desc(timeEntries.date))
         .limit(limitNum)
         .offset(offset);
 
+      // Batch-fetch user names for all entries
+      const userIds = [...new Set(entries.map(e => e.userId))];
+      const userRows = userIds.length > 0
+        ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+            .from(users)
+            .where(sql`${users.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`)
+        : [];
+      const userMap = new Map(userRows.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+
+      const enrichedEntries = entries.map(e => ({
+        ...e,
+        userName: userMap.get(e.userId) || 'Unknown',
+      }));
+
       res.json({
-        data: entries,
+        data: enrichedEntries,
         pagination: {
           page: pageNum,
           limit: limitNum,
