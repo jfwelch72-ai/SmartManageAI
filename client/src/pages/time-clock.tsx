@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Table,
   TableBody,
@@ -38,8 +39,9 @@ import {
   useCreateOvertimeRequest,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Clock, MapPin, Calendar, Briefcase, LogIn, LogOut, AlertCircle, Timer, Send } from "lucide-react";
+import { Clock, MapPin, Calendar, Briefcase, LogIn, LogOut, AlertCircle, Timer, Send, History } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import TimeLogTab from "./time-log-tab";
 
 export default function TimeClockPage() {
   const { user, logout, organizationName } = useAuth();
@@ -255,12 +257,26 @@ export default function TimeClockPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground mb-1">Time Clock</h1>
           <p className="text-sm text-muted-foreground">
             Clock in and out of your shifts
           </p>
         </div>
+
+        <Tabs defaultValue="clock" className="space-y-6">
+          <TabsList data-testid="tabs-time-clock">
+            <TabsTrigger value="clock" data-testid="tab-clock">
+              <Clock className="w-4 h-4 mr-1.5" />
+              Clock In/Out
+            </TabsTrigger>
+            <TabsTrigger value="log" data-testid="tab-time-log">
+              <History className="w-4 h-4 mr-1.5" />
+              Time Log
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="clock" className="space-y-6 mt-0">
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {shouldShowClockControls && (
@@ -509,6 +525,13 @@ export default function TimeClockPage() {
             )}
           </CardContent>
         </Card>
+
+          </TabsContent>
+
+          <TabsContent value="log" className="mt-0">
+            <TimeLogTab />
+          </TabsContent>
+        </Tabs>
       </main>
 
       <Dialog open={otDialogOpen} onOpenChange={setOtDialogOpen}>
