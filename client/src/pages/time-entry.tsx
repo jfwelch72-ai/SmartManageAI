@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -864,11 +865,10 @@ export default function TimeEntryPage() {
 
                     <div className="space-y-2 md:col-span-2">
                       <Label htmlFor="new-cost-code">Cost Code</Label>
-                      <Input
+                      <CostCodeCombobox
                         id="new-cost-code"
-                        placeholder="e.g., 03-300 - Concrete"
                         value={newCostCode}
-                        onChange={(e) => setNewCostCode(e.target.value)}
+                        onChange={setNewCostCode}
                         data-testid="input-new-cost-code"
                       />
                     </div>
@@ -946,10 +946,10 @@ export default function TimeEntryPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-cost-code">Cost Code</Label>
-                <Input
+                <CostCodeCombobox
                   id="edit-cost-code"
                   value={editCostCode}
-                  onChange={(e) => setEditCostCode(e.target.value)}
+                  onChange={setEditCostCode}
                   data-testid="input-edit-cost-code"
                 />
               </div>

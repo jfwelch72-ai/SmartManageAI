@@ -12628,6 +12628,25 @@ SmartManageAI Construction Management Platform
   });
 
   // ====================
+  // Cost Codes Route
+  // ====================
+
+  app.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { getCostCodesForTrade } = await import("@shared/costCodes");
+      const { organizations } = await import("@shared/schema");
+      const orgId = req.user!.organizationId;
+      const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+      const tradeType = org?.tradeType || "OTHER";
+      const codes = getCostCodesForTrade(tradeType);
+      res.json(codes);
+    } catch (error) {
+      console.error("Error fetching cost codes:", error);
+      res.status(500).json({ error: "Failed to fetch cost codes" });
+    }
+  });
+
+  // ====================
   // Time Entry Routes
   // ====================
 
