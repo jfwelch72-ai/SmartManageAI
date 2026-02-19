@@ -612,7 +612,6 @@ export function registerTimeClockRoutes(app: Express): void {
       const pageSizeNum = parseInt(pageSize as string);
       const offset = (pageNum - 1) * pageSizeNum;
 
-      // Build conditions array to avoid query chaining issues
       const conditions = [eq(timeClockShifts.userId, req.user!.id)];
       
       if (startDate) {
@@ -630,7 +629,20 @@ export function registerTimeClockRoutes(app: Express): void {
         .limit(pageSizeNum)
         .offset(offset);
 
-      res.json(shifts);
+      const projectIds = [...new Set(shifts.filter(s => s.projectId).map(s => s.projectId!))];
+      let projectMap = new Map<string, { id: string; name: string; code: string | null }>();
+      if (projectIds.length > 0) {
+        const projectRows = await db.select({ id: projects.id, name: projects.name, code: projects.code })
+          .from(projects).where(and(inArray(projects.id, projectIds), eq(projects.organizationId, req.user!.organizationId)));
+        projectMap = new Map(projectRows.map(p => [p.id, p]));
+      }
+
+      const enriched = shifts.map(s => ({
+        ...s,
+        project: s.projectId ? projectMap.get(s.projectId) || null : null,
+      }));
+
+      res.json(enriched);
     } catch (error) {
       console.error("Get my shifts error:", error);
       res.status(500).json({ error: "Internal server error" });
