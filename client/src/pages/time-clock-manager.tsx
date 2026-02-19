@@ -3,14 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -532,62 +524,50 @@ export default function TimeClockManagerPage() {
                     {activeSearchTerm ? "No shifts match your search" : "No active shifts at the moment"}
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Clock In</TableHead>
-                        <TableHead>Duration</TableHead>
-                        <TableHead>Location</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredActiveShifts.map((shift: any) => (
-                        <TableRow key={shift.id} data-testid={`row-active-${shift.id}`}>
-                          <TableCell data-testid={`cell-employee-${shift.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">
+                  <div className="space-y-3">
+                    {filteredActiveShifts.map((shift: any) => (
+                      <div key={shift.id} className="p-4 rounded-md border" data-testid={`row-active-${shift.id}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-employee-${shift.id}`}>
+                              <span className="font-medium">
                                 {shift.user?.firstName} {shift.user?.lastName}
-                              </p>
-                              <p className="text-sm text-muted-foreground">{shift.user?.role}</p>
+                              </span>
+                              <Badge variant="secondary" className="text-xs">{shift.user?.role}</Badge>
                             </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-project-${shift.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">{shift.project?.name || "Unknown"}</p>
-                              {shift.project?.code && (
-                                <Badge variant="outline">{shift.project.code}</Badge>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                              <div className="flex items-center gap-1 flex-wrap" data-testid={`cell-project-${shift.id}`}>
+                                <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                                <span>{shift.project?.name || "Unknown"}</span>
+                                {shift.project?.code && (
+                                  <Badge variant="outline" className="text-xs ml-1">{shift.project.code}</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1" data-testid={`cell-clock-in-${shift.id}`}>
+                                <Clock className="w-3.5 h-3.5 shrink-0" />
+                                <span>{format(new Date(shift.clockIn), "h:mm a")}</span>
+                                <span className="text-xs">({formatDistanceToNow(new Date(shift.clockIn))} ago)</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-location-${shift.id}`}>
+                              {shift.clockInLatitude && shift.clockInLongitude ? (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <MapPin className="w-3 h-3 shrink-0" />
+                                  <span>{shift.clockInLatitude.toFixed(4)}, {shift.clockInLongitude.toFixed(4)}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No GPS</span>
                               )}
                             </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-clock-in-${shift.id}`}>
-                            <div className="space-y-1">
-                              <p>{format(new Date(shift.clockIn), "h:mm a")}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatDistanceToNow(new Date(shift.clockIn))} ago
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-duration-${shift.id}`}>
-                            <span className="font-medium">{getShiftDuration(shift.clockIn)}</span>
-                          </TableCell>
-                          <TableCell data-testid={`cell-location-${shift.id}`}>
-                            {shift.clockInLatitude && shift.clockInLongitude ? (
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <MapPin className="w-3 h-3" />
-                                <span>
-                                  {shift.clockInLatitude.toFixed(4)}, {shift.clockInLongitude.toFixed(4)}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">No GPS</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                          </div>
+                          <div className="text-right shrink-0" data-testid={`cell-duration-${shift.id}`}>
+                            <p className="text-lg font-bold">{getShiftDuration(shift.clockIn)}</p>
+                            <p className="text-xs text-muted-foreground">active</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -653,51 +633,42 @@ export default function TimeClockManagerPage() {
                     {pendingSearchTerm ? "No approvals match your search" : "No pending approvals"}
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Clock In</TableHead>
-                        <TableHead>Clock Out</TableHead>
-                        <TableHead>Duration</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredPendingShifts.map((shift: any) => (
-                        <TableRow key={shift.id} data-testid={`row-pending-${shift.id}`}>
-                          <TableCell data-testid={`cell-employee-${shift.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">
+                  <div className="space-y-3">
+                    {filteredPendingShifts.map((shift: any) => (
+                      <div key={shift.id} className="p-4 rounded-md border" data-testid={`row-pending-${shift.id}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-employee-${shift.id}`}>
+                              <span className="font-medium">
                                 {shift.user?.firstName} {shift.user?.lastName}
-                              </p>
-                              <p className="text-sm text-muted-foreground">{shift.user?.role}</p>
+                              </span>
+                              <Badge variant="secondary" className="text-xs">{shift.user?.role}</Badge>
                             </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-project-${shift.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">{shift.project?.name || "Unknown"}</p>
-                              {shift.project?.code && (
-                                <Badge variant="outline">{shift.project.code}</Badge>
-                              )}
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                              <div className="flex items-center gap-1 flex-wrap" data-testid={`cell-project-${shift.id}`}>
+                                <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                                <span>{shift.project?.name || "Unknown"}</span>
+                                {shift.project?.code && (
+                                  <Badge variant="outline" className="text-xs ml-1">{shift.project.code}</Badge>
+                                )}
+                              </div>
+                              <span data-testid={`cell-date-${shift.id}`}>
+                                {format(new Date(shift.clockIn), "MMM d, yyyy")}
+                              </span>
                             </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-date-${shift.id}`}>
-                            {format(new Date(shift.clockIn), "MMM d, yyyy")}
-                          </TableCell>
-                          <TableCell data-testid={`cell-clock-in-${shift.id}`}>
-                            {format(new Date(shift.clockIn), "h:mm a")}
-                          </TableCell>
-                          <TableCell data-testid={`cell-clock-out-${shift.id}`}>
-                            {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "-"}
-                          </TableCell>
-                          <TableCell data-testid={`cell-duration-${shift.id}`}>
-                            {shift.clockOut ? getShiftDuration(shift.clockIn, shift.clockOut) : "In Progress"}
-                          </TableCell>
-                          <TableCell data-testid={`cell-actions-${shift.id}`}>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                              <div className="flex items-center gap-1">
+                                <Clock className="w-3.5 h-3.5 shrink-0" />
+                                <span data-testid={`cell-clock-in-${shift.id}`}>
+                                  {format(new Date(shift.clockIn), "h:mm a")}
+                                </span>
+                                <span>-</span>
+                                <span data-testid={`cell-clock-out-${shift.id}`}>
+                                  {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "Now"}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-actions-${shift.id}`}>
                               <Button
                                 size="sm"
                                 variant="default"
@@ -729,11 +700,19 @@ export default function TimeClockManagerPage() {
                                 Reject
                               </Button>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                          </div>
+                          <div className="text-right shrink-0" data-testid={`cell-duration-${shift.id}`}>
+                            <p className="text-lg font-bold">
+                              {shift.clockOut ? getShiftDuration(shift.clockIn, shift.clockOut) : "..."}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {shift.clockOut ? "total" : "in progress"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
 
                 {/* Time Entry Option */}
@@ -825,74 +804,70 @@ export default function TimeClockManagerPage() {
                     {entrySearchTerm ? "No entries match your search" : "No pending time entry approvals"}
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10">
-                          <Checkbox
-                            checked={selectedEntryIds.length === filteredPendingEntries.length && filteredPendingEntries.length > 0}
-                            onCheckedChange={toggleAllEntries}
-                            data-testid="checkbox-select-all"
-                          />
-                        </TableHead>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Regular</TableHead>
-                        <TableHead>Overtime</TableHead>
-                        <TableHead>Notes</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredPendingEntries.map((entry: any) => (
-                        <TableRow key={entry.id} data-testid={`row-entry-${entry.id}`}>
-                          <TableCell>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap mb-3">
+                      <Checkbox
+                        checked={selectedEntryIds.length === filteredPendingEntries.length && filteredPendingEntries.length > 0}
+                        onCheckedChange={toggleAllEntries}
+                        data-testid="checkbox-select-all"
+                      />
+                      <span className="text-sm text-muted-foreground">Select all</span>
+                    </div>
+                    <div className="space-y-3">
+                    {filteredPendingEntries.map((entry: any) => (
+                      <div key={entry.id} className="p-4 rounded-md border" data-testid={`row-entry-${entry.id}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="pt-1">
                             <Checkbox
                               checked={selectedEntryIds.includes(entry.id)}
                               onCheckedChange={() => toggleEntrySelection(entry.id)}
                               data-testid={`checkbox-entry-${entry.id}`}
                             />
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-employee-${entry.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">{entry.userName}</p>
-                              <p className="text-sm text-muted-foreground">{entry.userRole}</p>
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-2 flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-entry-employee-${entry.id}`}>
+                                  <span className="font-medium">{entry.userName}</span>
+                                  <Badge variant="secondary" className="text-xs">{entry.userRole}</Badge>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                                  <div className="flex items-center gap-1 flex-wrap" data-testid={`cell-entry-project-${entry.id}`}>
+                                    <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{entry.projectName || "Unknown"}</span>
+                                    {entry.projectCode && (
+                                      <Badge variant="outline" className="text-xs ml-1">{entry.projectCode}</Badge>
+                                    )}
+                                  </div>
+                                  <span data-testid={`cell-entry-date-${entry.id}`}>
+                                    {format(new Date(entry.date), "MMM d, yyyy")}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <div className="flex items-center gap-1 text-sm" data-testid={`cell-entry-regular-${entry.id}`}>
+                                    <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                    <span>{entry.hoursRegular || "0"}h regular</span>
+                                  </div>
+                                  {entry.hoursOvertime && parseFloat(entry.hoursOvertime) > 0 && (
+                                    <Badge variant="outline" className="text-amber-600 dark:text-amber-400" data-testid={`cell-entry-overtime-${entry.id}`}>
+                                      +{entry.hoursOvertime}h OT
+                                    </Badge>
+                                  )}
+                                </div>
+                                {entry.notes && (
+                                  <p className="text-sm text-muted-foreground truncate max-w-[300px]" data-testid={`cell-entry-notes-${entry.id}`}>
+                                    {entry.notes}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-lg font-bold">
+                                  {entry.hoursRegular || "0"}h
+                                </p>
+                                <p className="text-xs text-muted-foreground">regular</p>
+                              </div>
                             </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-project-${entry.id}`}>
-                            <div className="space-y-1">
-                              <p className="font-medium">{entry.projectName || "Unknown"}</p>
-                              {entry.projectCode && (
-                                <Badge variant="outline">{entry.projectCode}</Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-date-${entry.id}`}>
-                            {format(new Date(entry.date), "MMM d, yyyy")}
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-regular-${entry.id}`}>
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              {entry.hoursRegular || "0"}h
-                            </div>
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-overtime-${entry.id}`}>
-                            {entry.hoursOvertime && parseFloat(entry.hoursOvertime) > 0 ? (
-                              <Badge variant="outline" className="text-amber-600">
-                                +{entry.hoursOvertime}h OT
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-notes-${entry.id}`}>
-                            <span className="text-sm text-muted-foreground max-w-[200px] truncate block">
-                              {entry.notes || "-"}
-                            </span>
-                          </TableCell>
-                          <TableCell data-testid={`cell-entry-actions-${entry.id}`}>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-entry-actions-${entry.id}`}>
                               <Button
                                 size="sm"
                                 variant="default"
@@ -914,11 +889,12 @@ export default function TimeClockManagerPage() {
                                 Reject
                               </Button>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    </div>
+                  </div>
                 )}
 
                 {pendingEntries.length > 0 && (
@@ -975,49 +951,32 @@ export default function TimeClockManagerPage() {
                     <p className="text-sm">All overtime requests have been processed.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Shift Date</TableHead>
-                        <TableHead>Regular Hours</TableHead>
-                        <TableHead>OT Requested</TableHead>
-                        <TableHead>Notes</TableHead>
-                        <TableHead>Requested</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredOtRequests.map((req: any) => {
-                        const shiftDate = req.shift?.clockIn ? format(new Date(req.shift.clockIn), "MMM d, yyyy") : "N/A";
-                        const employeeName = req.user ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() : "Unknown";
-                        const projectName = req.project?.name ?? "N/A";
-                        const requestedAt = req.createdAt ? formatDistanceToNow(new Date(req.createdAt), { addSuffix: true }) : "N/A";
+                  <div className="space-y-3">
+                    {filteredOtRequests.map((req: any) => {
+                      const shiftDate = req.shift?.clockIn ? format(new Date(req.shift.clockIn), "MMM d, yyyy") : "N/A";
+                      const employeeName = req.user ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() : "Unknown";
+                      const projectName = req.project?.name ?? "N/A";
+                      const requestedAt = req.createdAt ? formatDistanceToNow(new Date(req.createdAt), { addSuffix: true }) : "N/A";
 
-                        return (
-                          <TableRow key={req.id} data-testid={`row-ot-${req.id}`}>
-                            <TableCell className="font-medium" data-testid={`text-ot-employee-${req.id}`}>
-                              {employeeName}
-                            </TableCell>
-                            <TableCell data-testid={`text-ot-project-${req.id}`}>
-                              <Badge variant="outline">{projectName}</Badge>
-                            </TableCell>
-                            <TableCell data-testid={`text-ot-date-${req.id}`}>{shiftDate}</TableCell>
-                            <TableCell data-testid={`text-ot-regular-${req.id}`}>8.00h</TableCell>
-                            <TableCell data-testid={`text-ot-requested-${req.id}`}>
-                              <Badge variant="secondary">
-                                +{Number(req.requestedHours).toFixed(2)}h
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="max-w-[200px] truncate" data-testid={`text-ot-notes-${req.id}`}>
-                              {req.notes || "—"}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground" data-testid={`text-ot-requested-at-${req.id}`}>
-                              {requestedAt}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
+                      return (
+                        <div key={req.id} className="p-4 rounded-md border" data-testid={`row-ot-${req.id}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0 space-y-2">
+                              <div className="flex items-center gap-2 flex-wrap" data-testid={`text-ot-employee-${req.id}`}>
+                                <span className="font-medium">{employeeName}</span>
+                                <Badge variant="outline" className="text-xs" data-testid={`text-ot-project-${req.id}`}>{projectName}</Badge>
+                              </div>
+                              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                                <span data-testid={`text-ot-date-${req.id}`}>{shiftDate}</span>
+                                <span data-testid={`text-ot-regular-${req.id}`}>8.00h regular</span>
+                                <span className="text-xs" data-testid={`text-ot-requested-at-${req.id}`}>{requestedAt}</span>
+                              </div>
+                              {req.notes && (
+                                <p className="text-sm text-muted-foreground truncate max-w-[300px]" data-testid={`text-ot-notes-${req.id}`}>
+                                  {req.notes}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <Button
                                   size="sm"
                                   variant="default"
@@ -1055,12 +1014,16 @@ export default function TimeClockManagerPage() {
                                   Reject
                                 </Button>
                               </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                            </div>
+                            <div className="text-right shrink-0" data-testid={`text-ot-requested-${req.id}`}>
+                              <p className="text-lg font-bold">+{Number(req.requestedHours).toFixed(1)}h</p>
+                              <p className="text-xs text-muted-foreground">OT requested</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
