@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,7 +15,37 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { Search, Eye, MessageSquare, UserPlus, Users } from "lucide-react";
+import {
+  Search,
+  Eye,
+  MessageSquare,
+  UserPlus,
+  Users,
+  BarChart3,
+  TrendingUp,
+  HardHat,
+  ShieldAlert,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  Clock,
+} from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
 
 interface Worker {
   id: string;
@@ -32,6 +62,38 @@ interface Worker {
   clockStatus: string | null;
   experienceLevel: string | null;
   currentProject: string | null;
+}
+
+interface KpiDashboardData {
+  summary: {
+    totalWorkers: number;
+    activeWorkers: number;
+    onDutyNow: number;
+    avgAttendanceRate: number;
+    avgOverallRating: number;
+  };
+  attendanceDistribution: Array<{ status: string; count: number }>;
+  performanceTrend: Array<{
+    month: string;
+    overall: number;
+    productivity: number | null;
+    quality: number | null;
+    safety: number | null;
+  }>;
+  safetyQualityOverview: Array<{
+    month: string;
+    safetyIncidents: number;
+    qualityIssues: number;
+    criticalIncidents: number;
+  }>;
+  topPerformers: Array<{
+    userId: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    avgRating: number;
+    reviewCount: number;
+  }>;
 }
 
 const ROLE_OPTIONS = [
@@ -60,6 +122,22 @@ const ROLE_LABELS: Record<string, string> = {
   OFFICE_MANAGER: "Office Manager",
   HOURLY_EMPLOYEE: "Hourly Employee",
   MAINTENANCE_MANAGER: "Maintenance Manager",
+};
+
+const ATTENDANCE_COLORS: Record<string, string> = {
+  PRESENT: "hsl(142, 71%, 45%)",
+  LATE: "hsl(48, 96%, 53%)",
+  ABSENT: "hsl(0, 84%, 60%)",
+  EXCUSED: "hsl(217, 91%, 60%)",
+  HALF_DAY: "hsl(280, 67%, 55%)",
+};
+
+const ATTENDANCE_LABELS: Record<string, string> = {
+  PRESENT: "Present",
+  LATE: "Late",
+  ABSENT: "Absent",
+  EXCUSED: "Excused",
+  HALF_DAY: "Half Day",
 };
 
 function getStatusColor(clockStatus: string | null): string {
@@ -106,6 +184,318 @@ function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }
 
+function formatMonth(month: string): string {
+  if (!month || month === "unknown") return month;
+  const [year, m] = month.split("-");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[parseInt(m, 10) - 1]} ${year.slice(2)}`;
+}
+
+function KpiSummaryCards({ summary }: { summary: KpiDashboardData["summary"] }) {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4" data-testid="kpi-summary-cards">
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">Total Workers</p>
+          </div>
+          <p className="text-2xl font-bold" data-testid="kpi-total-workers">{summary.totalWorkers}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="h-4 w-4 text-green-600" />
+            <p className="text-xs text-muted-foreground">Active</p>
+          </div>
+          <p className="text-2xl font-bold" data-testid="kpi-active-workers">{summary.activeWorkers}</p>
+          <p className="text-xs text-muted-foreground">
+            {summary.totalWorkers > 0 ? `${Math.round((summary.activeWorkers / summary.totalWorkers) * 100)}%` : "0%"} of total
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Clock className="h-4 w-4 text-blue-600" />
+            <p className="text-xs text-muted-foreground">On Duty Now</p>
+          </div>
+          <p className="text-2xl font-bold" data-testid="kpi-on-duty">{summary.onDutyNow}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <HardHat className="h-4 w-4 text-amber-600" />
+            <p className="text-xs text-muted-foreground">Attendance Rate</p>
+          </div>
+          <p className="text-2xl font-bold" data-testid="kpi-attendance-rate">{summary.avgAttendanceRate}%</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Star className="h-4 w-4 text-yellow-500" />
+            <p className="text-xs text-muted-foreground">Avg Rating</p>
+          </div>
+          <p className="text-2xl font-bold" data-testid="kpi-avg-rating">
+            {summary.avgOverallRating > 0 ? `${summary.avgOverallRating}/5` : "N/A"}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AttendanceChart({ data }: { data: KpiDashboardData["attendanceDistribution"] }) {
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <HardHat className="h-4 w-4" />
+            Attendance Distribution
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-48">
+          <p className="text-sm text-muted-foreground" data-testid="text-no-attendance-data">No attendance data available</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const chartData = data.map(d => ({
+    name: ATTENDANCE_LABELS[d.status] || d.status,
+    value: d.count,
+    fill: ATTENDANCE_COLORS[d.status] || "hsl(var(--muted-foreground))",
+  }));
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <HardHat className="h-4 w-4" />
+          Attendance Distribution
+        </CardTitle>
+      </CardHeader>
+      <CardContent data-testid="chart-attendance">
+        <ResponsiveContainer width="100%" height={220}>
+          <PieChart>
+            <Pie
+              data={chartData}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              innerRadius={40}
+              paddingAngle={2}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value: number) => [value, "Records"]} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PerformanceTrendChart({ data }: { data: KpiDashboardData["performanceTrend"] }) {
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Performance Trend
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-48">
+          <p className="text-sm text-muted-foreground" data-testid="text-no-performance-data">No performance review data available</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const chartData = data.map(d => ({
+    ...d,
+    month: formatMonth(d.month),
+  }));
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <TrendingUp className="h-4 w-4" />
+          Performance Trend (Monthly Avg)
+        </CardTitle>
+      </CardHeader>
+      <CardContent data-testid="chart-performance-trend">
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+            <YAxis domain={[0, 5]} tick={{ fontSize: 11 }} />
+            <Tooltip />
+            <Line type="monotone" dataKey="overall" stroke="hsl(217, 91%, 60%)" strokeWidth={2} name="Overall" dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="productivity" stroke="hsl(142, 71%, 45%)" strokeWidth={1.5} name="Productivity" dot={{ r: 2 }} connectNulls />
+            <Line type="monotone" dataKey="quality" stroke="hsl(280, 67%, 55%)" strokeWidth={1.5} name="Quality" dot={{ r: 2 }} connectNulls />
+            <Line type="monotone" dataKey="safety" stroke="hsl(48, 96%, 53%)" strokeWidth={1.5} name="Safety" dot={{ r: 2 }} connectNulls />
+            <Legend />
+          </LineChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SafetyQualityChart({ data }: { data: KpiDashboardData["safetyQualityOverview"] }) {
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4" />
+            Safety & Quality Overview
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-48">
+          <p className="text-sm text-muted-foreground" data-testid="text-no-safety-data">No safety or quality data available</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const chartData = data.map(d => ({
+    ...d,
+    month: formatMonth(d.month),
+  }));
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <ShieldAlert className="h-4 w-4" />
+          Safety & Quality Issues (Monthly)
+        </CardTitle>
+      </CardHeader>
+      <CardContent data-testid="chart-safety-quality">
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+            <Tooltip />
+            <Bar dataKey="safetyIncidents" fill="hsl(0, 84%, 60%)" name="Safety Incidents" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="qualityIssues" fill="hsl(48, 96%, 53%)" name="Quality Issues" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="criticalIncidents" fill="hsl(0, 72%, 40%)" name="Critical" radius={[2, 2, 0, 0]} />
+            <Legend />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TopPerformers({ data }: { data: KpiDashboardData["topPerformers"] }) {
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            Top Performers
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center h-48">
+          <p className="text-sm text-muted-foreground" data-testid="text-no-top-performers">No performance data available</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <Star className="h-4 w-4" />
+          Top Performers
+        </CardTitle>
+      </CardHeader>
+      <CardContent data-testid="list-top-performers">
+        <div className="space-y-3">
+          {data.map((performer, idx) => (
+            <Link key={performer.userId} href={`/manage-workers/${performer.userId}`}>
+              <div
+                className="flex items-center justify-between gap-3 py-2 border-b last:border-b-0 hover-elevate rounded-md px-2 cursor-pointer"
+                data-testid={`top-performer-${performer.userId}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-sm font-bold text-muted-foreground w-5">{idx + 1}</span>
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs">
+                      {getInitials(performer.firstName, performer.lastName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{performer.firstName} {performer.lastName}</p>
+                    <p className="text-xs text-muted-foreground">{ROLE_LABELS[performer.role] || performer.role}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Star
+                        key={i}
+                        className={`h-3 w-3 ${i < Math.round(performer.avgRating) ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs font-medium ml-1">{performer.avgRating}</span>
+                  <span className="text-xs text-muted-foreground ml-1">({performer.reviewCount})</span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function KpiDashboardSkeleton() {
+  return (
+    <div className="space-y-4" data-testid="kpi-loading">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="pt-4 pb-3 space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-8 w-16" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardContent className="pt-4">
+              <Skeleton className="h-4 w-40 mb-4" />
+              <Skeleton className="h-48 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function WorkerCardSkeleton() {
   return (
     <Card className="rounded-md">
@@ -139,6 +529,7 @@ export default function ManageWorkersPage() {
   const [tradeFilter, setTradeFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [employmentTypeFilter, setEmploymentTypeFilter] = useState("ALL");
+  const [showKpiDashboard, setShowKpiDashboard] = useState(true);
 
   const queryParams = new URLSearchParams();
   if (tradeFilter) queryParams.set("trade", tradeFilter);
@@ -148,6 +539,10 @@ export default function ManageWorkersPage() {
 
   const { data: workers = [], isLoading } = useQuery<Worker[]>({
     queryKey: ["/api/auth/manage-workers", queryString ? `?${queryString}` : ""],
+  });
+
+  const { data: kpiData, isLoading: kpiLoading } = useQuery<KpiDashboardData>({
+    queryKey: ["/api/auth/manage-workers/kpi-dashboard"],
   });
 
   const filteredWorkers = searchTerm
@@ -175,7 +570,35 @@ export default function ManageWorkersPage() {
               </p>
             </div>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowKpiDashboard(!showKpiDashboard)}
+            data-testid="button-toggle-kpi"
+          >
+            <BarChart3 className="h-4 w-4 mr-1" />
+            {showKpiDashboard ? "Hide" : "Show"} KPI Dashboard
+            {showKpiDashboard ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
+          </Button>
         </div>
+
+        {showKpiDashboard && (
+          <div className="space-y-4" data-testid="kpi-dashboard-section">
+            {kpiLoading ? (
+              <KpiDashboardSkeleton />
+            ) : kpiData ? (
+              <>
+                <KpiSummaryCards summary={kpiData.summary} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <AttendanceChart data={kpiData.attendanceDistribution} />
+                  <PerformanceTrendChart data={kpiData.performanceTrend} />
+                  <SafetyQualityChart data={kpiData.safetyQualityOverview} />
+                  <TopPerformers data={kpiData.topPerformers} />
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">

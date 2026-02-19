@@ -1671,6 +1671,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/auth/manage-workers/kpi-dashboard", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      const orgId = req.user?.organizationId;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+      const managerRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"];
+      if (!userRole || !managerRoles.includes(userRole)) { res.status(403).json({ error: "Insufficient permissions" }); return; }
+      if (!orgId) { res.status(400).json({ error: "No organization assigned" }); return; }
+
+      const orgUsers = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role, isActive: users.isActive })
+        .from(users).where(eq(users.organizationId, orgId));
+      const workerIds = orgUsers.map(u => u.id);
+      if (workerIds.length === 0) {
+        res.json({ summary: { totalWorkers: 0, activeWorkers: 0, onDutyNow: 0, avgAttendanceRate: 0, avgOverallRating: 0 }, attendanceDistribution: [], performanceTrend: [], safetyQualityOverview: [], topPerformers: [] });
+        return;
+      }
+
+      const totalWorkers = orgUsers.length;
+      const activeWorkers = orgUsers.filter(u => u.isActive).length;
+
+      const openShifts = await db.select({ userId: timeClockShifts.userId }).from(timeClockShifts)
+        .where(and(inArray(timeClockShifts.userId, workerIds), isNull(timeClockShifts.clockOut)));
+      const onDutyNow = new Set(openShifts.map(s => s.userId)).size;
+
+      const allAttendance = await db.select({ status: attendanceLogs.status, date: attendanceLogs.date })
+        .from(attendanceLogs).where(inArray(attendanceLogs.userId, workerIds));
+
+      const attendanceCounts: Record<string, number> = { PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 0, HALF_DAY: 0 };
+      for (const a of allAttendance) {
+        const key = a.status || "ABSENT";
+        attendanceCounts[key] = (attendanceCounts[key] || 0) + 1;
+      }
+      const totalAttendanceRecords = allAttendance.length;
+      const presentAndLate = (attendanceCounts["PRESENT"] || 0) + (attendanceCounts["LATE"] || 0);
+      const avgAttendanceRate = totalAttendanceRecords > 0 ? Math.round((presentAndLate / totalAttendanceRecords) * 100) : 0;
+
+      const attendanceDistribution = Object.entries(attendanceCounts)
+        .filter(([, count]) => count > 0)
+        .map(([status, count]) => ({ status, count }));
+
+      const allReviews = await db.select({
+        userId: performanceReviews.userId,
+        overallRating: performanceReviews.overallRating,
+        productivityRating: performanceReviews.productivityRating,
+        qualityRating: performanceReviews.qualityRating,
+        safetyRating: performanceReviews.safetyRating,
+        communicationRating: performanceReviews.communicationRating,
+        leadershipRating: performanceReviews.leadershipRating,
+        reviewDate: performanceReviews.reviewDate,
+      }).from(performanceReviews).where(inArray(performanceReviews.userId, workerIds));
+
+      const avgOverallRating = allReviews.length > 0
+        ? Math.round((allReviews.reduce((s, r) => s + r.overallRating, 0) / allReviews.length) * 10) / 10
+        : 0;
+
+      const monthlyReviews: Record<string, { sum: number; count: number; prod: number; prodC: number; qual: number; qualC: number; safe: number; safeC: number }> = {};
+      for (const r of allReviews) {
+        const month = r.reviewDate ? r.reviewDate.substring(0, 7) : "unknown";
+        if (!monthlyReviews[month]) monthlyReviews[month] = { sum: 0, count: 0, prod: 0, prodC: 0, qual: 0, qualC: 0, safe: 0, safeC: 0 };
+        monthlyReviews[month].sum += r.overallRating;
+        monthlyReviews[month].count++;
+        if (r.productivityRating) { monthlyReviews[month].prod += r.productivityRating; monthlyReviews[month].prodC++; }
+        if (r.qualityRating) { monthlyReviews[month].qual += r.qualityRating; monthlyReviews[month].qualC++; }
+        if (r.safetyRating) { monthlyReviews[month].safe += r.safetyRating; monthlyReviews[month].safeC++; }
+      }
+      const performanceTrend = Object.entries(monthlyReviews)
+        .filter(([month]) => month !== "unknown")
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-12)
+        .map(([month, d]) => ({
+          month,
+          overall: Math.round((d.sum / d.count) * 10) / 10,
+          productivity: d.prodC > 0 ? Math.round((d.prod / d.prodC) * 10) / 10 : null,
+          quality: d.qualC > 0 ? Math.round((d.qual / d.qualC) * 10) / 10 : null,
+          safety: d.safeC > 0 ? Math.round((d.safe / d.safeC) * 10) / 10 : null,
+        }));
+
+      const allSafety = await db.select({ severity: safetyIncidents.severity, date: safetyIncidents.date })
+        .from(safetyIncidents).where(inArray(safetyIncidents.userId, workerIds));
+      const allQuality = await db.select({ category: qualityIssues.category, date: qualityIssues.date })
+        .from(qualityIssues).where(inArray(qualityIssues.userId, workerIds));
+
+      const monthlySafetyQuality: Record<string, { safetyCount: number; qualityCount: number; critical: number }> = {};
+      for (const s of allSafety) {
+        const m = s.date ? s.date.substring(0, 7) : "unknown";
+        if (!monthlySafetyQuality[m]) monthlySafetyQuality[m] = { safetyCount: 0, qualityCount: 0, critical: 0 };
+        monthlySafetyQuality[m].safetyCount++;
+        if (s.severity === "Critical" || s.severity === "High") monthlySafetyQuality[m].critical++;
+      }
+      for (const q of allQuality) {
+        const m = q.date ? q.date.substring(0, 7) : "unknown";
+        if (!monthlySafetyQuality[m]) monthlySafetyQuality[m] = { safetyCount: 0, qualityCount: 0, critical: 0 };
+        monthlySafetyQuality[m].qualityCount++;
+      }
+      const safetyQualityOverview = Object.entries(monthlySafetyQuality)
+        .filter(([month]) => month !== "unknown")
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-12)
+        .map(([month, d]) => ({ month, safetyIncidents: d.safetyCount, qualityIssues: d.qualityCount, criticalIncidents: d.critical }));
+
+      const workerRatings: Record<string, { sum: number; count: number }> = {};
+      for (const r of allReviews) {
+        if (!workerRatings[r.userId]) workerRatings[r.userId] = { sum: 0, count: 0 };
+        workerRatings[r.userId].sum += r.overallRating;
+        workerRatings[r.userId].count++;
+      }
+      const topPerformers = Object.entries(workerRatings)
+        .map(([uid, d]) => ({ userId: uid, avgRating: Math.round((d.sum / d.count) * 10) / 10, reviewCount: d.count }))
+        .sort((a, b) => b.avgRating - a.avgRating || b.reviewCount - a.reviewCount)
+        .slice(0, 5)
+        .map(tp => {
+          const u = orgUsers.find(u => u.id === tp.userId);
+          return { ...tp, firstName: u?.firstName || "", lastName: u?.lastName || "", role: u?.role || "" };
+        });
+
+      res.json({
+        summary: { totalWorkers, activeWorkers, onDutyNow, avgAttendanceRate, avgOverallRating },
+        attendanceDistribution,
+        performanceTrend,
+        safetyQualityOverview,
+        topPerformers,
+      });
+    } catch (error) {
+      console.error("Error fetching KPI dashboard:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   app.get("/api/auth/manage-workers/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user?.id;
