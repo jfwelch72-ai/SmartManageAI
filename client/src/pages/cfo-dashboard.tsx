@@ -543,7 +543,7 @@ export default function CFODashboard() {
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 pt-[10px] pb-[10px]">
             <h2 className="text-2xl font-bold">Project Profitability</h2>
 
             {profitability && profitability.length > 0 ? (
