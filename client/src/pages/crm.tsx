@@ -51,7 +51,7 @@ import {
   UserPlus,
   Store
 } from "lucide-react";
-import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog } from "@shared/schema";
+import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog, Project } from "@shared/schema";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -308,6 +308,7 @@ export default function CRMPage() {
     equipmentCategory: "",
     rentalTerms: "",
     companyRepresented: "",
+    activeProjectIds: [] as string[],
   });
   
   const [newContact, setNewContact] = useState({
@@ -332,6 +333,11 @@ export default function CRMPage() {
   const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
     queryKey: ["/api/crm/organisations"],
   });
+
+  const { data: projectsResponse } = useQuery<{ data: Project[] }>({
+    queryKey: ["/api/projects"],
+  });
+  const allProjects = projectsResponse?.data || [];
   
   const { data: orgDetail, isLoading: orgDetailLoading } = useQuery<OrganizationWithContacts>({
     queryKey: [`/api/crm/organisations/${selectedOrg?.id}`],
@@ -834,6 +840,7 @@ export default function CRMPage() {
       equipmentCategory: "",
       rentalTerms: "",
       companyRepresented: "",
+      activeProjectIds: [],
     });
   };
   
@@ -876,7 +883,7 @@ export default function CRMPage() {
   
   const orgCounts = {
     total: organizations?.length || 0,
-    activeOnProjects: organizations?.filter(o => o.crmStatus === "ACTIVE").length || 0,
+    activeOnProjects: organizations?.filter(o => (o.activeProjectIds?.length || 0) > 0).length || 0,
     complianceIssues: organizations?.filter(o => o.crmStatus === "COMPLIANCE_ISSUE").length || 0,
     inactive: organizations?.filter(o => o.crmStatus === "INACTIVE").length || 0,
   };
@@ -909,6 +916,7 @@ export default function CRMPage() {
       equipmentCategory: org.equipmentCategory || "",
       rentalTerms: org.rentalTerms || "",
       companyRepresented: org.companyRepresented || "",
+      activeProjectIds: org.activeProjectIds || [],
     });
     setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
@@ -1162,6 +1170,12 @@ export default function CRMPage() {
                               <div className="flex items-center gap-1.5 text-muted-foreground">
                                 <Package className="w-3.5 h-3.5 shrink-0" />
                                 <span className="truncate">{typeSpecificInfo}</span>
+                              </div>
+                            )}
+                            {(org.activeProjectIds?.length || 0) > 0 && (
+                              <div className="flex items-center gap-1.5 text-muted-foreground">
+                                <Building2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>Projects: {org.activeProjectIds!.length} Active</span>
                               </div>
                             )}
                           </div>
@@ -1438,6 +1452,61 @@ export default function CRMPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Active on Projects</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal" data-testid="select-org-projects">
+                    {newOrg.activeProjectIds.length > 0
+                      ? `${newOrg.activeProjectIds.length} project${newOrg.activeProjectIds.length > 1 ? "s" : ""} selected`
+                      : "Select projects..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search projects..." />
+                    <CommandList>
+                      <CommandEmpty>No projects found.</CommandEmpty>
+                      <CommandGroup>
+                        {allProjects.map((project) => (
+                          <CommandItem
+                            key={project.id}
+                            value={project.name}
+                            onSelect={() => {
+                              const ids = newOrg.activeProjectIds.includes(project.id)
+                                ? newOrg.activeProjectIds.filter(id => id !== project.id)
+                                : [...newOrg.activeProjectIds, project.id];
+                              setNewOrg({ ...newOrg, activeProjectIds: ids });
+                            }}
+                            data-testid={`option-project-${project.id}`}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", newOrg.activeProjectIds.includes(project.id) ? "opacity-100" : "opacity-0")} />
+                            <div className="flex flex-col">
+                              <span className="text-sm">{project.name}</span>
+                              <span className="text-xs text-muted-foreground">{project.code}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {newOrg.activeProjectIds.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {newOrg.activeProjectIds.map(id => {
+                    const proj = allProjects.find(p => p.id === id);
+                    return proj ? (
+                      <Badge key={id} variant="secondary" className="gap-1 text-xs">
+                        {proj.name}
+                        <X className="w-3 h-3 cursor-pointer" onClick={() => setNewOrg({ ...newOrg, activeProjectIds: newOrg.activeProjectIds.filter(pid => pid !== id) })} />
+                      </Badge>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label>Notes</Label>
               <Textarea
                 value={newOrg.notes}
@@ -1701,6 +1770,61 @@ export default function CRMPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Active on Projects</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between font-normal" data-testid="select-edit-org-projects">
+                    {newOrg.activeProjectIds.length > 0
+                      ? `${newOrg.activeProjectIds.length} project${newOrg.activeProjectIds.length > 1 ? "s" : ""} selected`
+                      : "Select projects..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search projects..." />
+                    <CommandList>
+                      <CommandEmpty>No projects found.</CommandEmpty>
+                      <CommandGroup>
+                        {allProjects.map((project) => (
+                          <CommandItem
+                            key={project.id}
+                            value={project.name}
+                            onSelect={() => {
+                              const ids = newOrg.activeProjectIds.includes(project.id)
+                                ? newOrg.activeProjectIds.filter(id => id !== project.id)
+                                : [...newOrg.activeProjectIds, project.id];
+                              setNewOrg({ ...newOrg, activeProjectIds: ids });
+                            }}
+                            data-testid={`option-edit-project-${project.id}`}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", newOrg.activeProjectIds.includes(project.id) ? "opacity-100" : "opacity-0")} />
+                            <div className="flex flex-col">
+                              <span className="text-sm">{project.name}</span>
+                              <span className="text-xs text-muted-foreground">{project.code}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {newOrg.activeProjectIds.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {newOrg.activeProjectIds.map(id => {
+                    const proj = allProjects.find(p => p.id === id);
+                    return proj ? (
+                      <Badge key={id} variant="secondary" className="gap-1 text-xs">
+                        {proj.name}
+                        <X className="w-3 h-3 cursor-pointer" onClick={() => setNewOrg({ ...newOrg, activeProjectIds: newOrg.activeProjectIds.filter(pid => pid !== id) })} />
+                      </Badge>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label>Notes</Label>
               <Textarea
                 value={newOrg.notes}
@@ -1914,6 +2038,22 @@ export default function CRMPage() {
                 </div>
               )}
               
+              {selectedOrg?.activeProjectIds && selectedOrg.activeProjectIds.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Active Projects</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedOrg.activeProjectIds.map((projId: string) => {
+                      const proj = allProjects.find(p => p.id === projId);
+                      return proj ? (
+                        <Badge key={projId} variant="secondary">{proj.name}</Badge>
+                      ) : (
+                        <Badge key={projId} variant="outline" className="text-muted-foreground">{projId}</Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {selectedOrg?.specialties && selectedOrg.specialties.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">Specialties</p>

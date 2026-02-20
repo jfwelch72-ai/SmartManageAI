@@ -3179,6 +3179,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   equipmentCategory: text("equipment_category"),
   rentalTerms: text("rental_terms"),
   companyRepresented: text("company_represented"),
+  activeProjectIds: text("active_project_ids").array(),
   notes: text("notes"),
   crmStatus: crmOrgStatusEnum("crm_status").notNull().default("ACTIVE"),
   isActive: boolean("is_active").notNull().default(true),
