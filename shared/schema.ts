@@ -39,6 +39,7 @@ export const taskSourceTypeEnum = pgEnum("task_source_type", ["MANUAL", "EMAIL",
 
 // CRM Enums
 export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR"]);
+export const crmOrgStatusEnum = pgEnum("crm_org_status", ["ACTIVE", "PREQUALIFIED", "COMPLIANCE_ISSUE", "INACTIVE"]);
 export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
 export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
 export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
@@ -3171,6 +3172,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   taxId: text("tax_id"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
+  crmStatus: crmOrgStatusEnum("crm_status").notNull().default("ACTIVE"),
   isActive: boolean("is_active").notNull().default(true),
   legacySubcontractorId: varchar("legacy_subcontractor_id"),
   createdById: varchar("created_by_id").references(() => users.id),

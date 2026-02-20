@@ -297,6 +297,7 @@ export default function CRMPage() {
     specialties: [] as string[],
     paymentTerms: "",
     notes: "",
+    crmStatus: "ACTIVE" as "ACTIVE" | "PREQUALIFIED" | "COMPLIANCE_ISSUE" | "INACTIVE",
   });
   
   const [newContact, setNewContact] = useState({
@@ -812,6 +813,7 @@ export default function CRMPage() {
       specialties: [],
       paymentTerms: "",
       notes: "",
+      crmStatus: "ACTIVE",
     });
   };
   
@@ -878,6 +880,7 @@ export default function CRMPage() {
       specialties: org.specialties || [],
       paymentTerms: org.paymentTerms || "",
       notes: org.notes || "",
+      crmStatus: (org.crmStatus as "ACTIVE" | "PREQUALIFIED" | "COMPLIANCE_ISSUE" | "INACTIVE") || "ACTIVE",
     });
     setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
@@ -1121,6 +1124,7 @@ export default function CRMPage() {
                           <TableHead className="whitespace-nowrap">Type</TableHead>
                           <TableHead className="whitespace-nowrap">Location</TableHead>
                           <TableHead className="whitespace-nowrap">Specialties</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
                           <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1150,6 +1154,29 @@ export default function CRMPage() {
                                 <Badge variant="outline" className="text-xs">+{(org.specialties?.length || 0) - 3}</Badge>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                org.crmStatus === "ACTIVE" ? "border-green-500/50 text-green-700 dark:text-green-400" :
+                                org.crmStatus === "PREQUALIFIED" ? "border-yellow-500/50 text-yellow-700 dark:text-yellow-400" :
+                                org.crmStatus === "COMPLIANCE_ISSUE" ? "border-orange-500/50 text-orange-700 dark:text-orange-400" :
+                                "border-red-500/50 text-red-700 dark:text-red-400"
+                              }
+                              data-testid={`badge-org-status-${org.id}`}
+                            >
+                              <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${
+                                org.crmStatus === "ACTIVE" ? "bg-green-500" :
+                                org.crmStatus === "PREQUALIFIED" ? "bg-yellow-500" :
+                                org.crmStatus === "COMPLIANCE_ISSUE" ? "bg-orange-500" :
+                                "bg-red-500"
+                              }`} />
+                              {org.crmStatus === "ACTIVE" ? "Active" :
+                               org.crmStatus === "PREQUALIFIED" ? "Prequalified" :
+                               org.crmStatus === "COMPLIANCE_ISSUE" ? "Compliance Issue" :
+                               "Inactive"}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -1214,6 +1241,20 @@ export default function CRMPage() {
                   data-testid="input-org-name"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={newOrg.crmStatus} onValueChange={(v) => setNewOrg({ ...newOrg, crmStatus: v as typeof newOrg.crmStatus })}>
+                <SelectTrigger data-testid="select-org-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="PREQUALIFIED">Prequalified</SelectItem>
+                  <SelectItem value="COMPLIANCE_ISSUE">Compliance Issue</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Address</Label>
@@ -1342,6 +1383,20 @@ export default function CRMPage() {
                   data-testid="input-edit-org-name"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={newOrg.crmStatus} onValueChange={(v) => setNewOrg({ ...newOrg, crmStatus: v as typeof newOrg.crmStatus })}>
+                <SelectTrigger data-testid="select-edit-org-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="PREQUALIFIED">Prequalified</SelectItem>
+                  <SelectItem value="COMPLIANCE_ISSUE">Compliance Issue</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Address</Label>
