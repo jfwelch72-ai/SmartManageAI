@@ -298,6 +298,16 @@ export default function CRMPage() {
     paymentTerms: "",
     notes: "",
     crmStatus: "ACTIVE" as "ACTIVE" | "PREQUALIFIED" | "COMPLIANCE_ISSUE" | "INACTIVE",
+    licenseNumber: "",
+    bondingCapacity: "",
+    insuranceExpiration: "",
+    tradeSpecialty: "",
+    materialCategories: [] as string[],
+    serviceCategory: "",
+    contractExpiration: "",
+    equipmentCategory: "",
+    rentalTerms: "",
+    companyRepresented: "",
   });
   
   const [newContact, setNewContact] = useState({
@@ -814,6 +824,16 @@ export default function CRMPage() {
       paymentTerms: "",
       notes: "",
       crmStatus: "ACTIVE",
+      licenseNumber: "",
+      bondingCapacity: "",
+      insuranceExpiration: "",
+      tradeSpecialty: "",
+      materialCategories: [],
+      serviceCategory: "",
+      contractExpiration: "",
+      equipmentCategory: "",
+      rentalTerms: "",
+      companyRepresented: "",
     });
   };
   
@@ -855,12 +875,10 @@ export default function CRMPage() {
   }) || [];
   
   const orgCounts = {
-    total: organizations?.filter(o => o.isActive).length || 0,
-    contractors: organizations?.filter(o => o.type === "CONTRACTOR" && o.isActive).length || 0,
-    subcontractors: organizations?.filter(o => o.type === "SUBCONTRACTOR" && o.isActive).length || 0,
-    suppliers: organizations?.filter(o => o.type === "SUPPLIER" && o.isActive).length || 0,
-    vendors: organizations?.filter(o => o.type === "VENDOR" && o.isActive).length || 0,
-    ownerReps: organizations?.filter(o => o.type === "OWNER_REP" && o.isActive).length || 0,
+    total: organizations?.length || 0,
+    activeOnProjects: organizations?.filter(o => o.crmStatus === "ACTIVE").length || 0,
+    complianceIssues: organizations?.filter(o => o.crmStatus === "COMPLIANCE_ISSUE").length || 0,
+    inactive: organizations?.filter(o => o.crmStatus === "INACTIVE").length || 0,
   };
 
   const openOrgDetail = (org: CrmOrganization) => {
@@ -881,6 +899,16 @@ export default function CRMPage() {
       paymentTerms: org.paymentTerms || "",
       notes: org.notes || "",
       crmStatus: (org.crmStatus as "ACTIVE" | "PREQUALIFIED" | "COMPLIANCE_ISSUE" | "INACTIVE") || "ACTIVE",
+      licenseNumber: org.licenseNumber || "",
+      bondingCapacity: org.bondingCapacity || "",
+      insuranceExpiration: org.insuranceExpiration ? new Date(org.insuranceExpiration).toISOString().split('T')[0] : "",
+      tradeSpecialty: org.tradeSpecialty || "",
+      materialCategories: org.materialCategories || [],
+      serviceCategory: org.serviceCategory || "",
+      contractExpiration: org.contractExpiration ? new Date(org.contractExpiration).toISOString().split('T')[0] : "",
+      equipmentCategory: org.equipmentCategory || "",
+      rentalTerms: org.rentalTerms || "",
+      companyRepresented: org.companyRepresented || "",
     });
     setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
@@ -926,7 +954,7 @@ export default function CRMPage() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("all")} data-testid="card-total-count">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -935,72 +963,46 @@ export default function CRMPage() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold">{orgCounts.total}</p>
-                    <p className="text-sm text-muted-foreground">Total</p>
+                    <p className="text-sm text-muted-foreground">Total Orgs</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("CONTRACTOR")} data-testid="card-contractor-count">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900">
-                    <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{orgCounts.contractors}</p>
-                    <p className="text-sm text-muted-foreground">Contractors</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("SUBCONTRACTOR")} data-testid="card-subcontractor-count">
+            <Card className="hover-elevate cursor-pointer" data-testid="card-active-count">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-md bg-green-100 dark:bg-green-900">
-                    <Users className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    <Building2 className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{orgCounts.subcontractors}</p>
-                    <p className="text-sm text-muted-foreground">Subcontractors</p>
+                    <p className="text-2xl font-bold">{orgCounts.activeOnProjects}</p>
+                    <p className="text-sm text-muted-foreground">Active on Projects</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("SUPPLIER")} data-testid="card-supplier-count">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-md bg-purple-100 dark:bg-purple-900">
-                    <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{orgCounts.suppliers}</p>
-                    <p className="text-sm text-muted-foreground">Suppliers</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("VENDOR")} data-testid="card-vendor-count">
+            <Card className="hover-elevate cursor-pointer" data-testid="card-compliance-count">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-md bg-orange-100 dark:bg-orange-900">
-                    <Building2 className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                    <AlertCircle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{orgCounts.vendors}</p>
-                    <p className="text-sm text-muted-foreground">Vendors</p>
+                    <p className="text-2xl font-bold">{orgCounts.complianceIssues}</p>
+                    <p className="text-sm text-muted-foreground">Compliance Issues</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card className="hover-elevate cursor-pointer" onClick={() => setSelectedType("OWNER_REP")} data-testid="card-owner-rep-count">
+            <Card className="hover-elevate cursor-pointer" data-testid="card-inactive-count">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-md bg-cyan-100 dark:bg-cyan-900">
-                    <Shield className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                  <div className="p-2 rounded-md bg-gray-100 dark:bg-gray-900">
+                    <Building2 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold">{orgCounts.ownerReps}</p>
-                    <p className="text-sm text-muted-foreground">Owner Reps</p>
+                    <p className="text-2xl font-bold">{orgCounts.inactive}</p>
+                    <p className="text-sm text-muted-foreground">Inactive</p>
                   </div>
                 </div>
               </CardContent>
@@ -1115,90 +1117,81 @@ export default function CRMPage() {
                   <p className="text-sm">Try adjusting your search or filters</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
-                  <ScrollArea className="h-[500px]">
-                    <Table className="min-w-[600px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="whitespace-nowrap">Name</TableHead>
-                          <TableHead className="whitespace-nowrap">Type</TableHead>
-                          <TableHead className="whitespace-nowrap">Location</TableHead>
-                          <TableHead className="whitespace-nowrap">Specialties</TableHead>
-                          <TableHead className="whitespace-nowrap">Status</TableHead>
-                          <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                    <TableBody>
-                      {filteredOrganizations.map((org) => (
-                        <TableRow 
-                          key={org.id} 
-                          className="cursor-pointer hover-elevate"
-                          onClick={() => openOrgDetail(org)}
-                          data-testid={`row-org-${org.id}`}
-                        >
-                          <TableCell className="font-medium">{org.name}</TableCell>
-                          <TableCell>
-                            <Badge className={TYPE_COLORS[org.type as OrganizationType]}>
-                              {TYPE_LABELS[org.type as OrganizationType]}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {org.city && org.state ? `${org.city}, ${org.state}` : org.city || org.state || "-"}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {org.specialties?.slice(0, 3).map((s, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">{s}</Badge>
-                              ))}
-                              {(org.specialties?.length || 0) > 3 && (
-                                <Badge variant="outline" className="text-xs">+{(org.specialties?.length || 0) - 3}</Badge>
-                              )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredOrganizations.map((org) => {
+                    const statusColor = org.crmStatus === "ACTIVE" ? "bg-green-500" :
+                      org.crmStatus === "PREQUALIFIED" ? "bg-blue-500" :
+                      org.crmStatus === "COMPLIANCE_ISSUE" ? "bg-orange-500" : "bg-gray-400";
+                    const statusLabel = org.crmStatus === "ACTIVE" ? "Active" :
+                      org.crmStatus === "PREQUALIFIED" ? "Prequalified" :
+                      org.crmStatus === "COMPLIANCE_ISSUE" ? "Compliance Issue" : "Inactive";
+                    const typeSpecificInfo = org.type === "CONTRACTOR" ? (org.bondingCapacity ? `Bonding: ${org.bondingCapacity}` : null) :
+                      org.type === "SUBCONTRACTOR" ? (org.tradeSpecialty || (org.specialties?.length ? org.specialties[0] : null)) :
+                      org.type === "SUPPLIER" ? (org.materialCategories?.length ? org.materialCategories[0] : null) :
+                      org.type === "VENDOR" ? (org.serviceCategory || null) :
+                      org.type === "RENTAL_VENDOR" ? (org.equipmentCategory || null) :
+                      org.type === "OWNER_REP" ? (org.companyRepresented || null) : null;
+                    
+                    return (
+                      <Card 
+                        key={org.id} 
+                        className="hover-elevate cursor-pointer transition-all"
+                        onClick={() => openOrgDetail(org)}
+                        data-testid={`card-org-${org.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-block w-2.5 h-2.5 rounded-full ${statusColor}`} />
+                              <h3 className="font-semibold text-foreground truncate">{org.name}</h3>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={
-                                org.crmStatus === "ACTIVE" ? "border-green-500/50 text-green-700 dark:text-green-400" :
-                                org.crmStatus === "PREQUALIFIED" ? "border-yellow-500/50 text-yellow-700 dark:text-yellow-400" :
-                                org.crmStatus === "COMPLIANCE_ISSUE" ? "border-orange-500/50 text-orange-700 dark:text-orange-400" :
-                                "border-red-500/50 text-red-700 dark:text-red-400"
-                              }
-                              data-testid={`badge-org-status-${org.id}`}
-                            >
-                              <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${
-                                org.crmStatus === "ACTIVE" ? "bg-green-500" :
-                                org.crmStatus === "PREQUALIFIED" ? "bg-yellow-500" :
-                                org.crmStatus === "COMPLIANCE_ISSUE" ? "bg-orange-500" :
-                                "bg-red-500"
-                              }`} />
-                              {org.crmStatus === "ACTIVE" ? "Active" :
-                               org.crmStatus === "PREQUALIFIED" ? "Prequalified" :
-                               org.crmStatus === "COMPLIANCE_ISSUE" ? "Compliance Issue" :
-                               "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
+                          </div>
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex items-center gap-1.5">
+                              <Badge className={`${TYPE_COLORS[org.type as OrganizationType]} text-xs`}>
+                                {TYPE_LABELS[org.type as OrganizationType]}
+                              </Badge>
+                            </div>
+                            {(org.city || org.state) && (
+                              <div className="flex items-center gap-1.5 text-muted-foreground">
+                                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                <span>{org.city && org.state ? `${org.city}, ${org.state}` : org.city || org.state}</span>
+                              </div>
+                            )}
+                            {typeSpecificInfo && (
+                              <div className="flex items-center gap-1.5 text-muted-foreground">
+                                <Package className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">{typeSpecificInfo}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                            <span className="text-xs text-muted-foreground">{statusLabel}</span>
+                            <div className="flex items-center gap-1">
                               <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditOrg(org);
-                                }}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={(e) => { e.stopPropagation(); openOrgDetail(org); }}
+                                data-testid={`button-view-org-${org.id}`}
+                              >
+                                View
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={(e) => { e.stopPropagation(); openEditOrg(org); }}
                                 data-testid={`button-edit-org-${org.id}`}
                               >
-                                <Edit className="w-4 h-4" />
+                                Edit
                               </Button>
-                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -1256,6 +1249,127 @@ export default function CRMPage() {
                 </SelectContent>
               </Select>
             </div>
+            {(newOrg.type === "CONTRACTOR" || newOrg.type === "SUBCONTRACTOR") && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>License #</Label>
+                  <Input
+                    value={newOrg.licenseNumber}
+                    onChange={(e) => setNewOrg({ ...newOrg, licenseNumber: e.target.value })}
+                    placeholder="License number"
+                    data-testid="input-org-license"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Insurance Expiration</Label>
+                  <Input
+                    type="date"
+                    value={newOrg.insuranceExpiration}
+                    onChange={(e) => setNewOrg({ ...newOrg, insuranceExpiration: e.target.value })}
+                    data-testid="input-org-insurance-exp"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "CONTRACTOR" && (
+              <div className="space-y-2">
+                <Label>Bonding Capacity</Label>
+                <Input
+                  value={newOrg.bondingCapacity}
+                  onChange={(e) => setNewOrg({ ...newOrg, bondingCapacity: e.target.value })}
+                  placeholder="e.g. $5,000,000"
+                  data-testid="input-org-bonding"
+                />
+              </div>
+            )}
+            {newOrg.type === "SUBCONTRACTOR" && (
+              <div className="space-y-2">
+                <Label>Trade Specialty</Label>
+                <Input
+                  value={newOrg.tradeSpecialty}
+                  onChange={(e) => setNewOrg({ ...newOrg, tradeSpecialty: e.target.value })}
+                  placeholder="e.g. Electrical, Plumbing"
+                  data-testid="input-org-trade-specialty"
+                />
+              </div>
+            )}
+            {newOrg.type === "SUPPLIER" && (
+              <div className="space-y-2">
+                <Label>Material Categories (comma-separated)</Label>
+                <Input
+                  value={newOrg.materialCategories.join(", ")}
+                  onChange={(e) => setNewOrg({ ...newOrg, materialCategories: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
+                  placeholder="Lumber, Concrete, Steel"
+                  data-testid="input-org-material-cats"
+                />
+              </div>
+            )}
+            {newOrg.type === "VENDOR" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Service Category</Label>
+                  <Input
+                    value={newOrg.serviceCategory}
+                    onChange={(e) => setNewOrg({ ...newOrg, serviceCategory: e.target.value })}
+                    placeholder="e.g. Waste Management"
+                    data-testid="input-org-service-cat"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Contract Expiration</Label>
+                  <Input
+                    type="date"
+                    value={newOrg.contractExpiration}
+                    onChange={(e) => setNewOrg({ ...newOrg, contractExpiration: e.target.value })}
+                    data-testid="input-org-contract-exp"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "RENTAL_VENDOR" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Equipment Category</Label>
+                  <Input
+                    value={newOrg.equipmentCategory}
+                    onChange={(e) => setNewOrg({ ...newOrg, equipmentCategory: e.target.value })}
+                    placeholder="e.g. Heavy Equipment"
+                    data-testid="input-org-equip-cat"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rental Terms</Label>
+                  <Input
+                    value={newOrg.rentalTerms}
+                    onChange={(e) => setNewOrg({ ...newOrg, rentalTerms: e.target.value })}
+                    placeholder="e.g. Daily/Weekly/Monthly"
+                    data-testid="input-org-rental-terms"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "RENTAL_VENDOR" && (
+              <div className="space-y-2">
+                <Label>Insurance Expiration</Label>
+                <Input
+                  type="date"
+                  value={newOrg.insuranceExpiration}
+                  onChange={(e) => setNewOrg({ ...newOrg, insuranceExpiration: e.target.value })}
+                  data-testid="input-org-rental-insurance-exp"
+                />
+              </div>
+            )}
+            {newOrg.type === "OWNER_REP" && (
+              <div className="space-y-2">
+                <Label>Company Represented</Label>
+                <Input
+                  value={newOrg.companyRepresented}
+                  onChange={(e) => setNewOrg({ ...newOrg, companyRepresented: e.target.value })}
+                  placeholder="Company name they represent"
+                  data-testid="input-org-company-rep"
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Address</Label>
               <Input
@@ -1338,7 +1452,7 @@ export default function CRMPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => createOrgMutation.mutate(newOrg)}
+              onClick={() => createOrgMutation.mutate({...newOrg, insuranceExpiration: newOrg.insuranceExpiration ? new Date(newOrg.insuranceExpiration) : undefined, contractExpiration: newOrg.contractExpiration ? new Date(newOrg.contractExpiration) : undefined} as any)}
               disabled={!newOrg.name || createOrgMutation.isPending}
               data-testid="button-save-org"
             >
@@ -1398,6 +1512,127 @@ export default function CRMPage() {
                 </SelectContent>
               </Select>
             </div>
+            {(newOrg.type === "CONTRACTOR" || newOrg.type === "SUBCONTRACTOR") && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>License #</Label>
+                  <Input
+                    value={newOrg.licenseNumber}
+                    onChange={(e) => setNewOrg({ ...newOrg, licenseNumber: e.target.value })}
+                    placeholder="License number"
+                    data-testid="input-edit-org-license"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Insurance Expiration</Label>
+                  <Input
+                    type="date"
+                    value={newOrg.insuranceExpiration}
+                    onChange={(e) => setNewOrg({ ...newOrg, insuranceExpiration: e.target.value })}
+                    data-testid="input-edit-org-insurance-exp"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "CONTRACTOR" && (
+              <div className="space-y-2">
+                <Label>Bonding Capacity</Label>
+                <Input
+                  value={newOrg.bondingCapacity}
+                  onChange={(e) => setNewOrg({ ...newOrg, bondingCapacity: e.target.value })}
+                  placeholder="e.g. $5,000,000"
+                  data-testid="input-edit-org-bonding"
+                />
+              </div>
+            )}
+            {newOrg.type === "SUBCONTRACTOR" && (
+              <div className="space-y-2">
+                <Label>Trade Specialty</Label>
+                <Input
+                  value={newOrg.tradeSpecialty}
+                  onChange={(e) => setNewOrg({ ...newOrg, tradeSpecialty: e.target.value })}
+                  placeholder="e.g. Electrical, Plumbing"
+                  data-testid="input-edit-org-trade-specialty"
+                />
+              </div>
+            )}
+            {newOrg.type === "SUPPLIER" && (
+              <div className="space-y-2">
+                <Label>Material Categories (comma-separated)</Label>
+                <Input
+                  value={newOrg.materialCategories.join(", ")}
+                  onChange={(e) => setNewOrg({ ...newOrg, materialCategories: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })}
+                  placeholder="Lumber, Concrete, Steel"
+                  data-testid="input-edit-org-material-cats"
+                />
+              </div>
+            )}
+            {newOrg.type === "VENDOR" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Service Category</Label>
+                  <Input
+                    value={newOrg.serviceCategory}
+                    onChange={(e) => setNewOrg({ ...newOrg, serviceCategory: e.target.value })}
+                    placeholder="e.g. Waste Management"
+                    data-testid="input-edit-org-service-cat"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Contract Expiration</Label>
+                  <Input
+                    type="date"
+                    value={newOrg.contractExpiration}
+                    onChange={(e) => setNewOrg({ ...newOrg, contractExpiration: e.target.value })}
+                    data-testid="input-edit-org-contract-exp"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "RENTAL_VENDOR" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Equipment Category</Label>
+                  <Input
+                    value={newOrg.equipmentCategory}
+                    onChange={(e) => setNewOrg({ ...newOrg, equipmentCategory: e.target.value })}
+                    placeholder="e.g. Heavy Equipment"
+                    data-testid="input-edit-org-equip-cat"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rental Terms</Label>
+                  <Input
+                    value={newOrg.rentalTerms}
+                    onChange={(e) => setNewOrg({ ...newOrg, rentalTerms: e.target.value })}
+                    placeholder="e.g. Daily/Weekly/Monthly"
+                    data-testid="input-edit-org-rental-terms"
+                  />
+                </div>
+              </div>
+            )}
+            {newOrg.type === "RENTAL_VENDOR" && (
+              <div className="space-y-2">
+                <Label>Insurance Expiration</Label>
+                <Input
+                  type="date"
+                  value={newOrg.insuranceExpiration}
+                  onChange={(e) => setNewOrg({ ...newOrg, insuranceExpiration: e.target.value })}
+                  data-testid="input-edit-org-rental-insurance-exp"
+                />
+              </div>
+            )}
+            {newOrg.type === "OWNER_REP" && (
+              <div className="space-y-2">
+                <Label>Company Represented</Label>
+                <Input
+                  value={newOrg.companyRepresented}
+                  onChange={(e) => setNewOrg({ ...newOrg, companyRepresented: e.target.value })}
+                  placeholder="Company name they represent"
+                  data-testid="input-edit-org-company-rep"
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Address</Label>
               <Input
@@ -1480,7 +1715,7 @@ export default function CRMPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => selectedOrg && updateOrgMutation.mutate({ id: selectedOrg.id, ...newOrg })}
+              onClick={() => selectedOrg && updateOrgMutation.mutate({ id: selectedOrg.id, ...newOrg, insuranceExpiration: newOrg.insuranceExpiration ? new Date(newOrg.insuranceExpiration) : undefined, contractExpiration: newOrg.contractExpiration ? new Date(newOrg.contractExpiration) : undefined } as any)}
               disabled={!newOrg.name || updateOrgMutation.isPending}
               data-testid="button-update-org"
             >
@@ -1585,7 +1820,99 @@ export default function CRMPage() {
                     </div>
                   </div>
                 )}
+                {selectedOrg?.licenseNumber && (
+                  <div className="flex items-start gap-2">
+                    <FileText className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">License #</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.licenseNumber}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.bondingCapacity && (
+                  <div className="flex items-start gap-2">
+                    <Shield className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Bonding Capacity</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.bondingCapacity}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.insuranceExpiration && (
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Insurance Expiration</p>
+                      <p className="text-sm text-muted-foreground">{new Date(selectedOrg.insuranceExpiration).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.tradeSpecialty && (
+                  <div className="flex items-start gap-2">
+                    <Package className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Trade Specialty</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.tradeSpecialty}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.serviceCategory && (
+                  <div className="flex items-start gap-2">
+                    <Package className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Service Category</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.serviceCategory}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.contractExpiration && (
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Contract Expiration</p>
+                      <p className="text-sm text-muted-foreground">{new Date(selectedOrg.contractExpiration).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.equipmentCategory && (
+                  <div className="flex items-start gap-2">
+                    <Truck className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Equipment Category</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.equipmentCategory}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.rentalTerms && (
+                  <div className="flex items-start gap-2">
+                    <FileText className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Rental Terms</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.rentalTerms}</p>
+                    </div>
+                  </div>
+                )}
+                {selectedOrg?.companyRepresented && (
+                  <div className="flex items-start gap-2">
+                    <Building2 className="w-4 h-4 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Company Represented</p>
+                      <p className="text-sm text-muted-foreground">{selectedOrg.companyRepresented}</p>
+                    </div>
+                  </div>
+                )}
               </div>
+              
+              {selectedOrg?.materialCategories && selectedOrg.materialCategories.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Material Categories</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedOrg.materialCategories.map((cat: string, i: number) => (
+                      <Badge key={i} variant="secondary">{cat}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               {selectedOrg?.specialties && selectedOrg.specialties.length > 0 && (
                 <div>
