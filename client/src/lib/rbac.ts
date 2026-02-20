@@ -436,12 +436,6 @@ export const NavigationConfig = {
       visible: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
     },
     {
-      href: "/payroll-management?tab=time-entries",
-      label: "Time Entries",
-      testId: "nav-time-entry",
-      visible: (role?: string) => hasManagementAccess(role),
-    },
-    {
       href: "/tm-daily",
       label: "T&M Daily Sheets",
       testId: "nav-tm-daily",
