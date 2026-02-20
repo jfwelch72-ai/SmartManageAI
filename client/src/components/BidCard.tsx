@@ -37,10 +37,12 @@ export default function BidCard({
   estimateData,
 }: BidCardProps) {
   const isAwarded = status === "AWARDED";
+  const isLost = status === "LOST";
+  const isCancelled = status === "CANCELLED";
   
   return (
     <Card
-      className={`p-6 hover-elevate cursor-pointer ${isAwarded ? "border-green-500/50 bg-green-50/30 dark:bg-green-900/10" : ""}`}
+      className={`p-6 hover-elevate cursor-pointer ${isAwarded ? "border-green-500/50 bg-green-50/30 dark:bg-green-900/10" : isLost ? "border-red-500/30 opacity-75" : isCancelled ? "border-gray-500/30 opacity-60" : ""}`}
       onClick={onClick}
       data-testid={`card-bid-${code}`}
     >
@@ -55,6 +57,14 @@ export default function BidCard({
                 <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 gap-1">
                   <Award className="w-3 h-3" />
                   AWARDED
+                </Badge>
+              ) : status === "LOST" ? (
+                <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                  LOST
+                </Badge>
+              ) : status === "CANCELLED" ? (
+                <Badge className="bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">
+                  CANCELLED
                 </Badge>
               ) : status === "DRAFT" ? (
                 <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
