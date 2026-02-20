@@ -325,7 +325,7 @@ export const insertWeeklyPayrollReportSchema = createInsertSchema(weeklyPayrollR
 export type InsertWeeklyPayrollReport = z.infer<typeof insertWeeklyPayrollReportSchema>;
 export type WeeklyPayrollReport = typeof weeklyPayrollReports.$inferSelect;
 
-export const payRunStatusEnum = pgEnum("pay_run_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PROCESSING", "PAID", "VOIDED"]);
+export const payRunStatusEnum = pgEnum("pay_run_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PROCESSING", "PAID", "VOIDED", "ARCHIVED"]);
 
 export const payRuns = pgTable("pay_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

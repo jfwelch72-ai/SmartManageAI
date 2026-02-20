@@ -30,6 +30,8 @@ import {
   Receipt,
   TrendingUp,
   ClipboardList,
+  Trash2,
+  Archive,
 } from "lucide-react";
 
 interface PayrollOverview {
@@ -109,6 +111,7 @@ const STATUS_COLORS: Record<string, string> = {
   PROCESSING: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
   PAID: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
   VOIDED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+  ARCHIVED: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -118,6 +121,7 @@ const STATUS_LABELS: Record<string, string> = {
   PROCESSING: "Processing",
   PAID: "Paid",
   VOIDED: "Voided",
+  ARCHIVED: "Archived",
 };
 
 const APPROVAL_COLORS: Record<string, string> = {
@@ -218,8 +222,10 @@ export default function PayrollManagementPage() {
   });
 
   const filteredPayRuns = payRunsList?.filter(pr =>
-    statusFilter === "all" || pr.status === statusFilter
+    pr.status !== "ARCHIVED" && (statusFilter === "all" || pr.status === statusFilter)
   ) || [];
+
+  const archivedPayRuns = payRunsList?.filter(pr => pr.status === "ARCHIVED") || [];
 
   const filteredEntries = timeEntries?.filter(e =>
     entryStatusFilter === "all" || e.approvalStatus === entryStatusFilter
@@ -259,7 +265,7 @@ export default function PayrollManagementPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="overview" data-testid="tab-overview">
             <TrendingUp className="w-4 h-4 mr-1.5" />
             Overview
@@ -275,6 +281,10 @@ export default function PayrollManagementPage() {
           <TabsTrigger value="pay-runs" data-testid="tab-pay-runs">
             <Receipt className="w-4 h-4 mr-1.5" />
             Pay Runs
+          </TabsTrigger>
+          <TabsTrigger value="archived" data-testid="tab-archived">
+            <Archive className="w-4 h-4 mr-1.5" />
+            Archived
           </TabsTrigger>
         </TabsList>
 
@@ -609,11 +619,82 @@ export default function PayrollManagementPage() {
                                     {next.label}
                                   </Button>
                                 )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground hover:text-red-500"
+                                  onClick={() => updateStatusMutation.mutate({ id: pr.id, status: "ARCHIVED" })}
+                                  disabled={updateStatusMutation.isPending}
+                                  data-testid={`button-archive-run-${pr.id}`}
+                                  title="Archive"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
                         );
                       })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="archived" className="mt-6 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Archived Pay Runs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {payRunsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : archivedPayRuns.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Archive className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>No archived pay runs</p>
+                  <p className="text-sm">Archived pay runs will appear here</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Run #</TableHead>
+                        <TableHead>Pay Period</TableHead>
+                        <TableHead>Workers</TableHead>
+                        <TableHead>Regular Hrs</TableHead>
+                        <TableHead>OT Hrs</TableHead>
+                        <TableHead>Total Cost</TableHead>
+                        <TableHead>Previous Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {archivedPayRuns.map(pr => (
+                        <TableRow key={pr.id} data-testid={`row-archived-run-${pr.id}`}>
+                          <TableCell className="font-medium">{pr.runNumber || "—"}</TableCell>
+                          <TableCell className="text-sm">
+                            {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                          </TableCell>
+                          <TableCell>{pr.totalWorkers}</TableCell>
+                          <TableCell>{formatHours(pr.totalRegularHours)}</TableCell>
+                          <TableCell>{parseFloat(pr.totalOvertimeHours) > 0 ? formatHours(pr.totalOvertimeHours) : "—"}</TableCell>
+                          <TableCell className="font-semibold">{formatCurrency(pr.totalLaborCost)}</TableCell>
+                          <TableCell>
+                            <Badge className={STATUS_COLORS["ARCHIVED"]}>{STATUS_LABELS["ARCHIVED"]}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-detail-archived-${pr.id}`}>
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </div>

@@ -271,12 +271,13 @@ export function registerPayrollManagementRoutes(app: Express) {
 
       const { status } = req.body;
       const validTransitions: Record<string, string[]> = {
-        DRAFT: ["PENDING_APPROVAL", "VOIDED"],
-        PENDING_APPROVAL: ["APPROVED", "DRAFT", "VOIDED"],
-        APPROVED: ["PROCESSING", "VOIDED"],
-        PROCESSING: ["PAID", "VOIDED"],
-        PAID: [],
-        VOIDED: [],
+        DRAFT: ["PENDING_APPROVAL", "VOIDED", "ARCHIVED"],
+        PENDING_APPROVAL: ["APPROVED", "DRAFT", "VOIDED", "ARCHIVED"],
+        APPROVED: ["PROCESSING", "VOIDED", "ARCHIVED"],
+        PROCESSING: ["PAID", "VOIDED", "ARCHIVED"],
+        PAID: ["ARCHIVED"],
+        VOIDED: ["ARCHIVED"],
+        ARCHIVED: [],
       };
 
       const [existing] = await db.select().from(payRuns)
