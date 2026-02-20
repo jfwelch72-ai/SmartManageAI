@@ -140,6 +140,27 @@ export default function BidDetailPage() {
   const { data: bid, isLoading } = useBid(bidCode);
   const convertBid = useConvertBidToProject();
 
+  const updateBidStatus = useMutation({
+    mutationFn: async (newStatus: string) => {
+      await apiRequest("PATCH", `/api/bids/${bidCode}`, { status: newStatus });
+    },
+    onSuccess: (_data, newStatus) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      toast({
+        title: "Status Updated",
+        description: `Bid status changed to ${newStatus}.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update bid status",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Fetch bid quotes
   const { data: quotes = [], isLoading: quotesLoading} = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidCode, "quotes"],
@@ -1093,9 +1114,41 @@ export default function BidDetailPage() {
               <Badge variant="outline" className="font-mono">
                 {bid.code}
               </Badge>
-              <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                BID IN PROGRESS
-              </Badge>
+              {canEditBids(user?.role) ? (
+                <Select
+                  value={bid.status}
+                  onValueChange={(value) => {
+                    if (value === "AWARDED") {
+                      setShowAwardDialog(true);
+                    } else {
+                      updateBidStatus.mutate(value);
+                    }
+                  }}
+                  disabled={updateBidStatus.isPending}
+                  data-testid="select-bid-status"
+                >
+                  <SelectTrigger className="w-[140px]" data-testid="select-bid-status-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DRAFT" data-testid="select-bid-status-draft">Draft</SelectItem>
+                    <SelectItem value="ACTIVE" data-testid="select-bid-status-active">Active</SelectItem>
+                    <SelectItem value="AWARDED" data-testid="select-bid-status-awarded">Awarded</SelectItem>
+                    <SelectItem value="LOST" data-testid="select-bid-status-lost">Lost</SelectItem>
+                    <SelectItem value="CANCELLED" data-testid="select-bid-status-cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge className={
+                  bid.status === "AWARDED" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" :
+                  bid.status === "LOST" ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" :
+                  bid.status === "CANCELLED" ? "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300" :
+                  bid.status === "ACTIVE" ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" :
+                  "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                }>
+                  {bid.status}
+                </Badge>
+              )}
             </div>
             <h1 className="text-2xl font-bold text-foreground mb-2">{bid.name}</h1>
             <p className="text-sm text-muted-foreground">{bid.clientName} • {locationString}</p>
@@ -1106,9 +1159,11 @@ export default function BidDetailPage() {
                 <Edit className="w-4 h-4 mr-2" />
                 Edit Bid Info
               </Button>
-              <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
-                Mark as Awarded
-              </Button>
+              {bid.status !== "AWARDED" && (
+                <Button onClick={handleMarkAsAwarded} data-testid="button-mark-awarded">
+                  Mark as Awarded
+                </Button>
+              )}
             </div>
           )}
         </div>
