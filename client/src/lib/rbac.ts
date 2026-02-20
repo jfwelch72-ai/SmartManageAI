@@ -291,6 +291,9 @@ export const RoutePermissions = {
 
   // Workforce Management (merged Manage Workers + Performance & Rewards)
   MANAGE_WORKERS: (role?: string) => hasContractorAccess(role),
+
+  // Payroll Management
+  PAYROLL_MANAGEMENT: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
 };
 
 /**
@@ -632,6 +635,12 @@ export const NavigationConfig = {
       label: "Workforce Management",
       testId: "nav-manage-workers",
       visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
+      href: "/payroll-management",
+      label: "Payroll Management",
+      testId: "nav-payroll-management",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
     },
   ],
 

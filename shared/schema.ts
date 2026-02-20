@@ -325,6 +325,60 @@ export const insertWeeklyPayrollReportSchema = createInsertSchema(weeklyPayrollR
 export type InsertWeeklyPayrollReport = z.infer<typeof insertWeeklyPayrollReportSchema>;
 export type WeeklyPayrollReport = typeof weeklyPayrollReports.$inferSelect;
 
+export const payRunStatusEnum = pgEnum("pay_run_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PROCESSING", "PAID", "VOIDED"]);
+
+export const payRuns = pgTable("pay_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  payPeriodStart: date("pay_period_start").notNull(),
+  payPeriodEnd: date("pay_period_end").notNull(),
+  runNumber: text("run_number"),
+  status: payRunStatusEnum("status").notNull().default("DRAFT"),
+  totalRegularHours: decimal("total_regular_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalOvertimeHours: decimal("total_overtime_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalWorkers: integer("total_workers").notNull().default(0),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("pay_runs_org_idx").on(table.organizationId),
+  statusIdx: index("pay_runs_status_idx").on(table.status),
+  periodIdx: index("pay_runs_period_idx").on(table.payPeriodStart, table.payPeriodEnd),
+}));
+
+export const insertPayRunSchema = createInsertSchema(payRuns).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPayRun = z.infer<typeof insertPayRunSchema>;
+export type PayRun = typeof payRuns.$inferSelect;
+
+export const payRunLineItems = pgTable("pay_run_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  payRunId: varchar("pay_run_id").notNull().references(() => payRuns.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  costCode: text("cost_code"),
+  regularHours: decimal("regular_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  overtimeHours: decimal("overtime_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  timeEntryIds: text("time_entry_ids").array(),
+  wageType: text("wage_type").default("STANDARD"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  payRunIdx: index("pay_run_line_items_pay_run_idx").on(table.payRunId),
+  userIdx: index("pay_run_line_items_user_idx").on(table.userId),
+  projectIdx: index("pay_run_line_items_project_idx").on(table.projectId),
+}));
+
+export const insertPayRunLineItemSchema = createInsertSchema(payRunLineItems).omit({ id: true, createdAt: true });
+export type InsertPayRunLineItem = z.infer<typeof insertPayRunLineItemSchema>;
+export type PayRunLineItem = typeof payRunLineItems.$inferSelect;
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

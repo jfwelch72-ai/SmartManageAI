@@ -66,6 +66,7 @@ import { validateFileExists, validateMimeType, validateFileSize } from "./fileVa
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { registerTimeClockRoutes } from "./timeClockRoutes";
 import { registerPayrollSettingsRoutes } from "./payrollSettingsRoutes";
+import { registerPayrollManagementRoutes } from "./payrollManagementRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
@@ -125,6 +126,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Register payroll settings routes (work week config, weekly reports)
   registerPayrollSettingsRoutes(app);
+
+  // Register payroll management routes (pay runs, workers, time entries)
+  registerPayrollManagementRoutes(app);
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);

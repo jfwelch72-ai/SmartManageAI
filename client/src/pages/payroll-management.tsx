@@ -1,0 +1,799 @@
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format } from "date-fns";
+import {
+  DollarSign,
+  Clock,
+  AlertTriangle,
+  CalendarDays,
+  Plus,
+  Users,
+  FileText,
+  CheckCircle,
+  XCircle,
+  ArrowRight,
+  Loader2,
+  Receipt,
+  TrendingUp,
+  ClipboardList,
+} from "lucide-react";
+
+interface PayrollOverview {
+  currentPeriod: { start: string; end: string; workWeekStart: string };
+  metrics: { totalRegularHours: number; totalOvertimeHours: number; totalLaborCost: number; unapprovedEntries: number };
+  recentPayRuns: PayRun[];
+}
+
+interface PayRun {
+  id: string;
+  organizationId: string;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  runNumber: string | null;
+  status: string;
+  totalRegularHours: string;
+  totalOvertimeHours: string;
+  totalLaborCost: string;
+  totalWorkers: number;
+  notes: string | null;
+  createdById: string;
+  approvedById: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lineItems?: PayRunLineItem[];
+}
+
+interface PayRunLineItem {
+  lineItem: {
+    id: string;
+    payRunId: string;
+    userId: string;
+    projectId: string;
+    costCode: string | null;
+    regularHours: string;
+    overtimeHours: string;
+    regularRate: string;
+    overtimeRate: string;
+    totalAmount: string;
+    wageType: string | null;
+  };
+  userName: string;
+  projectName: string;
+}
+
+interface PayrollWorker {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  totalRegularHours: string;
+  totalOvertimeHours: string;
+  totalEntries: number;
+}
+
+interface PayrollTimeEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  projectId: string;
+  projectName: string;
+  date: string;
+  hoursRegular: string;
+  hoursOvertime: string;
+  costCode: string | null;
+  approvalStatus: string;
+  notes: string | null;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  DRAFT: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
+  APPROVED: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+  PROCESSING: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+  PAID: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+  VOIDED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Draft",
+  PENDING_APPROVAL: "Pending Approval",
+  APPROVED: "Approved",
+  PROCESSING: "Processing",
+  PAID: "Paid",
+  VOIDED: "Voided",
+};
+
+const APPROVAL_COLORS: Record<string, string> = {
+  PENDING: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
+  APPROVED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+};
+
+export default function PayrollManagementPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedPayRun, setSelectedPayRun] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [entryStatusFilter, setEntryStatusFilter] = useState("all");
+
+  const today = new Date();
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 7);
+  const [newPayRun, setNewPayRun] = useState({
+    payPeriodStart: weekAgo.toISOString().split("T")[0],
+    payPeriodEnd: today.toISOString().split("T")[0],
+    notes: "",
+  });
+
+  const { data: overview, isLoading: overviewLoading } = useQuery<PayrollOverview>({
+    queryKey: ["/api/payroll/overview"],
+  });
+
+  const { data: payRunsList, isLoading: payRunsLoading } = useQuery<PayRun[]>({
+    queryKey: ["/api/payroll/pay-runs"],
+  });
+
+  const { data: payRunDetail, isLoading: detailLoading } = useQuery<PayRun>({
+    queryKey: ["/api/payroll/pay-runs", selectedPayRun],
+    enabled: !!selectedPayRun && detailDialogOpen,
+  });
+
+  const { data: workers, isLoading: workersLoading } = useQuery<PayrollWorker[]>({
+    queryKey: ["/api/payroll/workers"],
+    enabled: activeTab === "workers",
+  });
+
+  const { data: timeEntries, isLoading: entriesLoading } = useQuery<PayrollTimeEntry[]>({
+    queryKey: ["/api/payroll/time-entries", entryStatusFilter],
+    enabled: activeTab === "time-entries",
+  });
+
+  const createPayRunMutation = useMutation({
+    mutationFn: async (data: typeof newPayRun) => {
+      return await apiRequest("POST", "/api/payroll/pay-runs", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/pay-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/overview"] });
+      setCreateDialogOpen(false);
+      setNewPayRun({ payPeriodStart: weekAgo.toISOString().split("T")[0], payPeriodEnd: today.toISOString().split("T")[0], notes: "" });
+      toast({ title: "Pay run created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to create pay run", variant: "destructive" });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return await apiRequest("PUT", `/api/payroll/pay-runs/${id}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/pay-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/overview"] });
+      if (selectedPayRun) {
+        queryClient.invalidateQueries({ queryKey: ["/api/payroll/pay-runs", selectedPayRun] });
+      }
+      toast({ title: "Pay run status updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update status", variant: "destructive" });
+    },
+  });
+
+  const deletePayRunMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/payroll/pay-runs/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/pay-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/overview"] });
+      setDetailDialogOpen(false);
+      setSelectedPayRun(null);
+      toast({ title: "Pay run deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to delete pay run", variant: "destructive" });
+    },
+  });
+
+  const filteredPayRuns = payRunsList?.filter(pr =>
+    statusFilter === "all" || pr.status === statusFilter
+  ) || [];
+
+  const filteredEntries = timeEntries?.filter(e =>
+    entryStatusFilter === "all" || e.approvalStatus === entryStatusFilter
+  ) || [];
+
+  const getNextStatus = (current: string): { label: string; status: string } | null => {
+    switch (current) {
+      case "DRAFT": return { label: "Submit for Approval", status: "PENDING_APPROVAL" };
+      case "PENDING_APPROVAL": return { label: "Approve", status: "APPROVED" };
+      case "APPROVED": return { label: "Start Processing", status: "PROCESSING" };
+      case "PROCESSING": return { label: "Mark as Paid", status: "PAID" };
+      default: return null;
+    }
+  };
+
+  const formatCurrency = (val: string | number) => {
+    const num = typeof val === "string" ? parseFloat(val) : val;
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(num || 0);
+  };
+
+  const formatHours = (val: string | number) => {
+    const num = typeof val === "string" ? parseFloat(val) : val;
+    return (num || 0).toFixed(1);
+  };
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-payroll-title">Payroll Management</h1>
+          <p className="text-muted-foreground text-sm">Manage pay runs, time entries, and labor costs</p>
+        </div>
+        <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-pay-run">
+          <Plus className="w-4 h-4 mr-2" />
+          Create Pay Run
+        </Button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+          <TabsTrigger value="overview" data-testid="tab-overview">
+            <TrendingUp className="w-4 h-4 mr-1.5" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="time-entries" data-testid="tab-time-entries">
+            <Clock className="w-4 h-4 mr-1.5" />
+            Time Entries
+          </TabsTrigger>
+          <TabsTrigger value="workers" data-testid="tab-workers">
+            <Users className="w-4 h-4 mr-1.5" />
+            Workers
+          </TabsTrigger>
+          <TabsTrigger value="pay-runs" data-testid="tab-pay-runs">
+            <Receipt className="w-4 h-4 mr-1.5" />
+            Pay Runs
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-6 space-y-6">
+          {overviewLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-28" />)}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card data-testid="card-current-period">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900">
+                        <CalendarDays className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Current Pay Period</p>
+                        <p className="font-semibold text-sm" data-testid="text-current-period">
+                          {overview?.currentPeriod ? `${format(new Date(overview.currentPeriod.start + "T00:00:00"), "MMM d")} - ${format(new Date(overview.currentPeriod.end + "T00:00:00"), "MMM d")}` : "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card data-testid="card-total-labor">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-green-100 dark:bg-green-900">
+                        <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total Labor Cost</p>
+                        <p className="text-xl font-bold" data-testid="text-total-labor">
+                          {formatCurrency(overview?.metrics.totalLaborCost || 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card data-testid="card-overtime-hours">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-orange-100 dark:bg-orange-900">
+                        <Clock className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Overtime Hours</p>
+                        <p className="text-xl font-bold" data-testid="text-overtime-hours">
+                          {formatHours(overview?.metrics.totalOvertimeHours || 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card data-testid="card-unapproved">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-red-100 dark:bg-red-900">
+                        <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Unapproved Entries</p>
+                        <p className="text-xl font-bold" data-testid="text-unapproved">
+                          {overview?.metrics.unapprovedEntries || 0}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Recent Pay Runs</CardTitle>
+                    <Button variant="outline" size="sm" onClick={() => setActiveTab("pay-runs")} data-testid="button-view-all-runs">
+                      View All
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {(overview?.recentPayRuns?.length || 0) === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Receipt className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p>No pay runs yet</p>
+                      <p className="text-sm">Create your first pay run to get started</p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Run #</TableHead>
+                          <TableHead>Period</TableHead>
+                          <TableHead>Workers</TableHead>
+                          <TableHead>Total Hours</TableHead>
+                          <TableHead>Total Cost</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {overview?.recentPayRuns?.slice(0, 5).map(pr => (
+                          <TableRow key={pr.id} data-testid={`row-pay-run-${pr.id}`}>
+                            <TableCell className="font-medium">{pr.runNumber || "—"}</TableCell>
+                            <TableCell className="text-sm">
+                              {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                            </TableCell>
+                            <TableCell>{pr.totalWorkers}</TableCell>
+                            <TableCell>{formatHours(parseFloat(pr.totalRegularHours) + parseFloat(pr.totalOvertimeHours))}</TableCell>
+                            <TableCell className="font-medium">{formatCurrency(pr.totalLaborCost)}</TableCell>
+                            <TableCell>
+                              <Badge className={STATUS_COLORS[pr.status]}>{STATUS_LABELS[pr.status]}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-view-run-${pr.id}`}>
+                                View
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="time-entries" className="mt-6 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="text-lg">Time Entries for Payroll</CardTitle>
+                <Select value={entryStatusFilter} onValueChange={setEntryStatusFilter}>
+                  <SelectTrigger className="w-[180px]" data-testid="select-entry-status">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="REJECTED">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {entriesLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : filteredEntries.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>No time entries found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Worker</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Regular</TableHead>
+                        <TableHead>OT</TableHead>
+                        <TableHead>Cost Code</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEntries.map(entry => (
+                        <TableRow key={entry.id} data-testid={`row-entry-${entry.id}`}>
+                          <TableCell className="font-medium">{entry.userName}</TableCell>
+                          <TableCell className="text-sm">{entry.projectName}</TableCell>
+                          <TableCell className="text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</TableCell>
+                          <TableCell>{formatHours(entry.hoursRegular)}</TableCell>
+                          <TableCell>{parseFloat(entry.hoursOvertime) > 0 ? formatHours(entry.hoursOvertime) : "—"}</TableCell>
+                          <TableCell className="text-xs">{entry.costCode || "—"}</TableCell>
+                          <TableCell>
+                            <Badge className={APPROVAL_COLORS[entry.approvalStatus] || ""}>{entry.approvalStatus}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="workers" className="mt-6 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Payroll Workers</CardTitle>
+              <p className="text-sm text-muted-foreground">Internal employees eligible for payroll processing</p>
+            </CardHeader>
+            <CardContent>
+              {workersLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : (workers?.length || 0) === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Users className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>No workers found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Regular Hours</TableHead>
+                        <TableHead>OT Hours</TableHead>
+                        <TableHead>Total Entries</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {workers?.map(worker => (
+                        <TableRow key={worker.id} data-testid={`row-worker-${worker.id}`}>
+                          <TableCell className="font-medium">{worker.firstName} {worker.lastName}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{worker.email}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">{worker.role}</Badge>
+                          </TableCell>
+                          <TableCell>{formatHours(worker.totalRegularHours)}</TableCell>
+                          <TableCell>{parseFloat(worker.totalOvertimeHours) > 0 ? formatHours(worker.totalOvertimeHours) : "—"}</TableCell>
+                          <TableCell>{worker.totalEntries}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pay-runs" className="mt-6 space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <CardTitle className="text-lg">All Pay Runs</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[180px]" data-testid="select-run-status">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
+                      <SelectItem value="APPROVED">Approved</SelectItem>
+                      <SelectItem value="PROCESSING">Processing</SelectItem>
+                      <SelectItem value="PAID">Paid</SelectItem>
+                      <SelectItem value="VOIDED">Voided</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={() => setCreateDialogOpen(true)} size="sm" data-testid="button-create-pay-run-tab">
+                    <Plus className="w-4 h-4 mr-1" />
+                    New Pay Run
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {payRunsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : filteredPayRuns.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Receipt className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>No pay runs found</p>
+                  <p className="text-sm">Create a pay run to generate payroll from approved time entries</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Run #</TableHead>
+                        <TableHead>Pay Period</TableHead>
+                        <TableHead>Workers</TableHead>
+                        <TableHead>Regular Hrs</TableHead>
+                        <TableHead>OT Hrs</TableHead>
+                        <TableHead>Total Cost</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPayRuns.map(pr => {
+                        const next = getNextStatus(pr.status);
+                        return (
+                          <TableRow key={pr.id} data-testid={`row-pay-run-${pr.id}`}>
+                            <TableCell className="font-medium">{pr.runNumber || "—"}</TableCell>
+                            <TableCell className="text-sm">
+                              {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                            </TableCell>
+                            <TableCell>{pr.totalWorkers}</TableCell>
+                            <TableCell>{formatHours(pr.totalRegularHours)}</TableCell>
+                            <TableCell>{parseFloat(pr.totalOvertimeHours) > 0 ? formatHours(pr.totalOvertimeHours) : "—"}</TableCell>
+                            <TableCell className="font-semibold">{formatCurrency(pr.totalLaborCost)}</TableCell>
+                            <TableCell>
+                              <Badge className={STATUS_COLORS[pr.status]}>{STATUS_LABELS[pr.status]}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-detail-run-${pr.id}`}>
+                                  View
+                                </Button>
+                                {next && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs"
+                                    onClick={() => updateStatusMutation.mutate({ id: pr.id, status: next.status })}
+                                    disabled={updateStatusMutation.isPending}
+                                    data-testid={`button-advance-run-${pr.id}`}
+                                  >
+                                    {next.label}
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Pay Run</DialogTitle>
+            <DialogDescription>Generate a pay run from approved time entries for the selected period.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="period-start">Period Start</Label>
+                <Input
+                  id="period-start"
+                  type="date"
+                  value={newPayRun.payPeriodStart}
+                  onChange={(e) => setNewPayRun(prev => ({ ...prev, payPeriodStart: e.target.value }))}
+                  data-testid="input-period-start"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="period-end">Period End</Label>
+                <Input
+                  id="period-end"
+                  type="date"
+                  value={newPayRun.payPeriodEnd}
+                  onChange={(e) => setNewPayRun(prev => ({ ...prev, payPeriodEnd: e.target.value }))}
+                  data-testid="input-period-end"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pay-run-notes">Notes (optional)</Label>
+              <Textarea
+                id="pay-run-notes"
+                placeholder="Add any notes about this pay run..."
+                value={newPayRun.notes}
+                onChange={(e) => setNewPayRun(prev => ({ ...prev, notes: e.target.value }))}
+                data-testid="input-pay-run-notes"
+              />
+            </div>
+            <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+              <p>This will pull all <strong>approved</strong> time entries within the selected date range and generate line items grouped by worker, project, and cost code.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)} data-testid="button-cancel-create">Cancel</Button>
+            <Button
+              onClick={() => createPayRunMutation.mutate(newPayRun)}
+              disabled={createPayRunMutation.isPending}
+              data-testid="button-confirm-create"
+            >
+              {createPayRunMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Create Pay Run
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailDialogOpen} onOpenChange={(open) => { setDetailDialogOpen(open); if (!open) setSelectedPayRun(null); }}>
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-y-auto">
+          {detailLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : payRunDetail ? (
+            <>
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="text-xl">Pay Run {payRunDetail.runNumber}</DialogTitle>
+                  <Badge className={STATUS_COLORS[payRunDetail.status]}>{STATUS_LABELS[payRunDetail.status]}</Badge>
+                </div>
+                <DialogDescription>
+                  {format(new Date(payRunDetail.payPeriodStart + "T00:00:00"), "MMM d, yyyy")} - {format(new Date(payRunDetail.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-4">
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Workers</p>
+                  <p className="text-lg font-bold">{payRunDetail.totalWorkers}</p>
+                </div>
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Regular Hours</p>
+                  <p className="text-lg font-bold">{formatHours(payRunDetail.totalRegularHours)}</p>
+                </div>
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">OT Hours</p>
+                  <p className="text-lg font-bold">{formatHours(payRunDetail.totalOvertimeHours)}</p>
+                </div>
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Total Cost</p>
+                  <p className="text-lg font-bold">{formatCurrency(payRunDetail.totalLaborCost)}</p>
+                </div>
+              </div>
+
+              {payRunDetail.notes && (
+                <div className="bg-muted rounded-md p-3 text-sm">
+                  <p className="font-medium mb-1">Notes</p>
+                  <p className="text-muted-foreground">{payRunDetail.notes}</p>
+                </div>
+              )}
+
+              {payRunDetail.lineItems && payRunDetail.lineItems.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Line Items</h3>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Worker</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>Cost Code</TableHead>
+                          <TableHead>Regular</TableHead>
+                          <TableHead>OT</TableHead>
+                          <TableHead>Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {payRunDetail.lineItems.map((li: PayRunLineItem) => (
+                          <TableRow key={li.lineItem.id} data-testid={`row-line-item-${li.lineItem.id}`}>
+                            <TableCell className="font-medium">{li.userName}</TableCell>
+                            <TableCell className="text-sm">{li.projectName}</TableCell>
+                            <TableCell className="text-xs">{li.lineItem.costCode || "—"}</TableCell>
+                            <TableCell>{formatHours(li.lineItem.regularHours)}</TableCell>
+                            <TableCell>{parseFloat(li.lineItem.overtimeHours) > 0 ? formatHours(li.lineItem.overtimeHours) : "—"}</TableCell>
+                            <TableCell className="font-medium">{formatCurrency(li.lineItem.totalAmount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="flex-wrap gap-2">
+                {payRunDetail.status !== "PAID" && payRunDetail.status !== "VOIDED" && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Are you sure you want to void this pay run?")) {
+                        updateStatusMutation.mutate({ id: payRunDetail.id, status: "VOIDED" });
+                      }
+                    }}
+                    data-testid="button-void-run"
+                  >
+                    <XCircle className="w-4 h-4 mr-1" />
+                    Void
+                  </Button>
+                )}
+                {(() => {
+                  const next = getNextStatus(payRunDetail.status);
+                  return next ? (
+                    <Button
+                      onClick={() => updateStatusMutation.mutate({ id: payRunDetail.id, status: next.status })}
+                      disabled={updateStatusMutation.isPending}
+                      data-testid="button-advance-detail"
+                    >
+                      {updateStatusMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />}
+                      {next.label}
+                    </Button>
+                  ) : null;
+                })()}
+              </DialogFooter>
+            </>
+          ) : (
+            <p className="text-muted-foreground">Pay run not found</p>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

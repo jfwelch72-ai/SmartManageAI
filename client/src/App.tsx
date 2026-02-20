@@ -98,6 +98,7 @@ import WhatIfSimulatorPage from "@/pages/what-if-simulator";
 import CalculatorPage from "@/pages/calculator";
 import ManageWorkersPage from "@/pages/manage-workers";
 import WorkerDetailPage from "@/pages/worker-detail";
+import PayrollManagementPage from "@/pages/payroll-management";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -264,6 +265,7 @@ function Router() {
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} />} />
+      <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} />} />
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/rfis" component={() => <ProtectedRoute component={RFIsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
