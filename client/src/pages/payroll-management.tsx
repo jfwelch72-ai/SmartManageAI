@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
+import TimeEntryContent from "@/components/TimeEntryContent";
 import {
   DollarSign,
   Clock,
@@ -29,7 +31,6 @@ import {
   Loader2,
   Receipt,
   TrendingUp,
-  ClipboardList,
   Trash2,
   Archive,
 } from "lucide-react";
@@ -90,20 +91,6 @@ interface PayrollWorker {
   totalEntries: number;
 }
 
-interface PayrollTimeEntry {
-  id: string;
-  userId: string;
-  userName: string;
-  projectId: string;
-  projectName: string;
-  date: string;
-  hoursRegular: string;
-  hoursOvertime: string;
-  costCode: string | null;
-  approvalStatus: string;
-  notes: string | null;
-}
-
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
   PENDING_APPROVAL: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
@@ -124,21 +111,16 @@ const STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Archived",
 };
 
-const APPROVAL_COLORS: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  APPROVED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-};
-
 export default function PayrollManagementPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("overview");
+  const searchString = useSearch();
+  const urlTab = useMemo(() => new URLSearchParams(searchString).get("tab"), [searchString]);
+  const [activeTab, setActiveTab] = useState(urlTab || "overview");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedPayRun, setSelectedPayRun] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [entryStatusFilter, setEntryStatusFilter] = useState("all");
 
   const today = new Date();
   const weekAgo = new Date(today);
@@ -148,6 +130,12 @@ export default function PayrollManagementPage() {
     payPeriodEnd: today.toISOString().split("T")[0],
     notes: "",
   });
+
+  useEffect(() => {
+    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "archived"].includes(urlTab)) {
+      setActiveTab(urlTab);
+    }
+  }, [urlTab]);
 
   const { data: overview, isLoading: overviewLoading } = useQuery<PayrollOverview>({
     queryKey: ["/api/payroll/overview"],
@@ -167,10 +155,6 @@ export default function PayrollManagementPage() {
     enabled: activeTab === "workers",
   });
 
-  const { data: timeEntries, isLoading: entriesLoading } = useQuery<PayrollTimeEntry[]>({
-    queryKey: ["/api/payroll/time-entries", entryStatusFilter],
-    enabled: activeTab === "time-entries",
-  });
 
   const createPayRunMutation = useMutation({
     mutationFn: async (data: typeof newPayRun) => {
@@ -226,10 +210,6 @@ export default function PayrollManagementPage() {
   ) || [];
 
   const archivedPayRuns = payRunsList?.filter(pr => pr.status === "ARCHIVED") || [];
-
-  const filteredEntries = timeEntries?.filter(e =>
-    entryStatusFilter === "all" || e.approvalStatus === entryStatusFilter
-  ) || [];
 
   const getNextStatus = (current: string): { label: string; status: string } | null => {
     switch (current) {
@@ -419,68 +399,8 @@ export default function PayrollManagementPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="time-entries" className="mt-6 space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <CardTitle className="text-lg">Time Entries for Payroll</CardTitle>
-                <Select value={entryStatusFilter} onValueChange={setEntryStatusFilter}>
-                  <SelectTrigger className="w-[180px]" data-testid="select-entry-status">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="APPROVED">Approved</SelectItem>
-                    <SelectItem value="REJECTED">Rejected</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {entriesLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
-                </div>
-              ) : filteredEntries.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                  <p>No time entries found</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Worker</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Regular</TableHead>
-                        <TableHead>OT</TableHead>
-                        <TableHead>Cost Code</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredEntries.map(entry => (
-                        <TableRow key={entry.id} data-testid={`row-entry-${entry.id}`}>
-                          <TableCell className="font-medium">{entry.userName}</TableCell>
-                          <TableCell className="text-sm">{entry.projectName}</TableCell>
-                          <TableCell className="text-sm">{format(new Date(entry.date), "MMM d, yyyy")}</TableCell>
-                          <TableCell>{formatHours(entry.hoursRegular)}</TableCell>
-                          <TableCell>{parseFloat(entry.hoursOvertime) > 0 ? formatHours(entry.hoursOvertime) : "—"}</TableCell>
-                          <TableCell className="text-xs">{entry.costCode || "—"}</TableCell>
-                          <TableCell>
-                            <Badge className={APPROVAL_COLORS[entry.approvalStatus] || ""}>{entry.approvalStatus}</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="time-entries" className="mt-6">
+          <TimeEntryContent />
         </TabsContent>
 
         <TabsContent value="workers" className="mt-6 space-y-4">
