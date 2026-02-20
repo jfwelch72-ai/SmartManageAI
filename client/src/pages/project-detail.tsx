@@ -55,6 +55,7 @@ import { ChangeOrderDialog } from "@/components/ChangeOrderDialog";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Link } from "wouter";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkles, RefreshCw, Loader2, MessageSquare, UserIcon } from "lucide-react";
 
 // Email types for the project email tab
