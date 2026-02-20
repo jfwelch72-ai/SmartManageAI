@@ -1143,11 +1143,11 @@ export default function CRMPage() {
                     return (
                       <Card 
                         key={org.id} 
-                        className="hover-elevate cursor-pointer transition-all"
+                        className="hover-elevate cursor-pointer transition-all flex flex-col"
                         onClick={() => openOrgDetail(org)}
                         data-testid={`card-org-${org.id}`}
                       >
-                        <CardContent className="p-4">
+                        <CardContent className="p-4 flex flex-col flex-1">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <span className={`inline-block w-2.5 h-2.5 rounded-full ${statusColor}`} />
@@ -1179,9 +1179,9 @@ export default function CRMPage() {
                               </div>
                             )}
                           </div>
-                          <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                          <div className="flex items-center mt-auto pt-3 border-t">
                             <span className="text-xs text-muted-foreground">{statusLabel}</span>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 ml-auto">
                               <Button
                                 variant="outline"
                                 size="sm"
