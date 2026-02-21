@@ -99,6 +99,9 @@ import CalculatorPage from "@/pages/calculator";
 import ManageWorkersPage from "@/pages/manage-workers";
 import WorkerDetailPage from "@/pages/worker-detail";
 import PayrollManagementPage from "@/pages/payroll-management";
+import IntegrationsPage from "@/pages/integrations";
+import ApprovalsPage from "@/pages/approvals";
+import AIGovernancePage from "@/pages/ai-governance";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -209,6 +212,9 @@ function Router() {
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} />} />
       <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} permission={RoutePermissions.SUBCONTRACTOR_PAYABLES} />} />
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/integrations" component={() => <ProtectedRoute component={IntegrationsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/approvals" component={() => <ProtectedRoute component={ApprovalsPage} />} />
+      <Route path="/ai-governance" component={() => <ProtectedRoute component={AIGovernancePage} permission={RoutePermissions.AI_SETTINGS} />} />
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />

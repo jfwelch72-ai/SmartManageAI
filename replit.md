@@ -56,6 +56,21 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Overtime Request System**: Allows workers to request overtime with manager approval workflow and status tracking.
 *   **Trade-Specific Cost Code Preset System**: CSI-based cost codes for 23 trade types, integrated via a reusable `CostCodeCombobox` component.
 
+### Enterprise Upgrade Wave (February 2026)
+
+*   **Integration Hub**: Provider-agnostic framework at `/server/integrations/` with centralized connection management, event outbox pattern, webhook delivery, and provider registry. Supports QBO, Google, Microsoft, and DocuSign providers. 11 new feature flags (all default OFF, org-scoped, SUPER_ADMIN toggleable). 8 new database tables. Routes at `/api/integrations/*`. UI at `/integrations`.
+*   **QuickBooks Online Sync**: OAuth 2.0 connection flow, Chart of Accounts import, Customer export, Invoice export from SOV, Payment status import. Dry-run and scheduled sync modes. Provider at `/server/integrations/providers/qbo/`.
+*   **Google Workspace Integration**: OAuth 2.0 for Gmail + Calendar. Cursor-based incremental email ingestion. Provider at `/server/integrations/providers/google/`.
+*   **Microsoft 365 Integration**: OAuth 2.0 for Mail + Calendar via Graph API. Delta query sync. Provider at `/server/integrations/providers/microsoft/`.
+*   **E-Sign Integration**: DocuSign OAuth provider for sending COs and Subcontracts for signature. Status tracking, signed PDF storage as document revision. Provider at `/server/integrations/providers/esign/`.
+*   **AI Governance System**: Centralized `executeAiAction()` wrapper with per-org daily limits (actions, tokens, cost by plan tier), audit trail in `ai_action_audit` table, safe modes (draft-only, approval-required). Service at `/server/services/aiGovernance.ts`. Routes at `/api/ai-governance/*`. UI at `/ai-governance`.
+*   **Approval Workflows Framework**: Generic approval system for COs, SOV/Pay Apps, Time, Vendor Bills, E-sign, QBO exports. Service at `/server/services/approvalService.ts`. Routes at `/api/approvals/*`. UI at `/approvals`.
+*   **Document Control & Revisioning**: Sequential revision numbering, active/superseded status, source tracking (upload/email/import/esign). Service at `/server/services/documentRevisionService.ts`. Routes at `/api/documents/*`.
+*   **Project Health Score**: Deterministic 0-100 score from weighted inputs (schedule, budget, RFI/submittal, CO, safety). Snapshots for trending. Service at `/server/services/projectHealthService.ts`. Routes at `/api/project-health/*`.
+*   **Background Jobs Framework**: node-cron based job runner at `/server/jobs/` with outbox dispatcher polling every 2 minutes.
+*   **Planning Documentation**: 12 specification documents in `/planning/` directory covering architecture decisions (8 ADRs), per-module specs, security/test plan, and rollout strategy.
+*   **Test Harness**: Skeleton test files in `/audit/tests/integrations/` and `/audit/tests/rbac/` for org isolation, RBAC matrix, outbox dispatcher, QBO sync, email ingestion, document revisions, and approvals.
+
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
 *   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.

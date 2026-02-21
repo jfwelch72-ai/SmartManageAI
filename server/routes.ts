@@ -106,6 +106,11 @@ import transmittalRoutes from "./transmittalRoutes";
 import submittalRoutes from "./submittalRoutes";
 import portalRoutes from "./portalRoutes";
 import portalChatRoutes from "./portalChatRoutes";
+import integrationRoutes from "./integrationRoutes";
+import approvalRoutes from "./approvalRoutes";
+import aiGovernanceRoutes from "./aiGovernanceRoutes";
+import documentRevisionRoutes from "./documentRevisionRoutes";
+import projectHealthRoutes from "./projectHealthRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
@@ -225,11 +230,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api/billing", billingRoutes);
 
-  // Register Weather routes (forecast and history for delay documentation)
+  app.use("/api/integrations", integrationRoutes);
+
   app.use("/api/weather", weatherRoutes);
 
   // Register Vendor Pricebook routes (PDF upload and AI extraction)
   app.use("/api/vendor", vendorPricebookRoutes);
+
+  app.use("/api/approvals", approvalRoutes);
+  app.use("/api/ai-governance", aiGovernanceRoutes);
+  app.use("/api/documents", documentRevisionRoutes);
+  app.use("/api/project-health", projectHealthRoutes);
 
   // ====================
   // Auth Routes

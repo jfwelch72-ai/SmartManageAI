@@ -181,7 +181,7 @@ export const planTierEnum = pgEnum("plan_tier", ["free", "starter", "professiona
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled"]);
 export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual"]);
 export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
-export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision"]);
+export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision", "integration_qbo", "integration_esign", "ai_governance_pack"]);
 export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs"]);
 
 // Pricebook Import Job Status Enum
@@ -7320,3 +7320,201 @@ export const workerLogs = pgTable("worker_logs", {
 export const insertWorkerLogSchema = createInsertSchema(workerLogs).omit({ id: true, createdAt: true });
 export type InsertWorkerLog = z.infer<typeof insertWorkerLogSchema>;
 export type WorkerLog = typeof workerLogs.$inferSelect;
+
+// ============ UPGRADE WAVE: Integration Hub + AI Governance + Approvals + Document Control + Health ============
+
+export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign"]);
+export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
+export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
+export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
+export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT"]);
+export const documentRevisionStatusEnum = pgEnum("document_revision_status", ["active", "superseded"]);
+export const documentRevisionSourceEnum = pgEnum("document_revision_source", ["upload", "email", "import", "esign"]);
+
+// Table 1: integration_connections
+export const integrationConnections = pgTable("integration_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  provider: integrationProviderEnum("provider").notNull(),
+  status: integrationConnectionStatusEnum("status").notNull().default("pending"),
+  displayName: text("display_name"),
+  metadata: json("metadata"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncError: text("last_sync_error"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_connections_org_idx").on(table.organizationId),
+  providerIdx: index("integration_connections_provider_idx").on(table.provider),
+}));
+
+export const insertIntegrationConnectionSchema = createInsertSchema(integrationConnections).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationConnection = z.infer<typeof insertIntegrationConnectionSchema>;
+export type IntegrationConnection = typeof integrationConnections.$inferSelect;
+
+// Table 2: integration_events_outbox
+export const integrationEventsOutbox = pgTable("integration_events_outbox", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  payload: json("payload").notNull(),
+  status: integrationEventStatusEnum("status").notNull().default("queued"),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastError: text("last_error"),
+  idempotencyKey: varchar("idempotency_key"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_events_org_idx").on(table.organizationId),
+  statusIdx: index("integration_events_status_idx").on(table.status),
+  idempotencyIdx: unique("integration_events_idempotency").on(table.idempotencyKey),
+}));
+
+export const insertIntegrationEventsOutboxSchema = createInsertSchema(integrationEventsOutbox).omit({ id: true, createdAt: true });
+export type InsertIntegrationEventsOutbox = z.infer<typeof insertIntegrationEventsOutboxSchema>;
+export type IntegrationEventsOutbox = typeof integrationEventsOutbox.$inferSelect;
+
+// Table 3: integration_webhook_subscriptions
+export const integrationWebhookSubscriptions = pgTable("integration_webhook_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  targetUrl: text("target_url").notNull(),
+  secret: text("secret"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_webhooks_org_idx").on(table.organizationId),
+  connectionIdx: index("integration_webhooks_connection_idx").on(table.connectionId),
+}));
+
+export const insertIntegrationWebhookSubscriptionSchema = createInsertSchema(integrationWebhookSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationWebhookSubscription = z.infer<typeof insertIntegrationWebhookSubscriptionSchema>;
+export type IntegrationWebhookSubscription = typeof integrationWebhookSubscriptions.$inferSelect;
+
+// Table 4: integration_sync_state
+export const integrationSyncState = pgTable("integration_sync_state", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  cursor: text("cursor"),
+  lastSyncAt: timestamp("last_sync_at"),
+  metadata: json("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_sync_state_org_idx").on(table.organizationId),
+  connectionEntityIdx: unique("integration_sync_connection_entity").on(table.connectionId, table.entityType),
+}));
+
+export const insertIntegrationSyncStateSchema = createInsertSchema(integrationSyncState).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationSyncState = z.infer<typeof insertIntegrationSyncStateSchema>;
+export type IntegrationSyncState = typeof integrationSyncState.$inferSelect;
+
+// Table 5: ai_action_audit
+export const aiActionAudit = pgTable("ai_action_audit", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  actorUserId: varchar("actor_user_id").references(() => users.id),
+  actionType: text("action_type").notNull(),
+  model: text("model"),
+  tokensIn: integer("tokens_in"),
+  tokensOut: integer("tokens_out"),
+  costEstimate: decimal("cost_estimate", { precision: 10, scale: 6 }),
+  inputRefs: json("input_refs"),
+  outputRefs: json("output_refs"),
+  rationale: text("rationale"),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  approvalStatus: text("approval_status"),
+  approvedByUserId: varchar("approved_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  durationMs: integer("duration_ms"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_action_audit_org_idx").on(table.organizationId),
+  actorIdx: index("ai_action_audit_actor_idx").on(table.actorUserId),
+  actionTypeIdx: index("ai_action_audit_action_type_idx").on(table.actionType),
+  createdAtIdx: index("ai_action_audit_created_at_idx").on(table.createdAt),
+}));
+
+export const insertAiActionAuditSchema = createInsertSchema(aiActionAudit).omit({ id: true, createdAt: true });
+export type InsertAiActionAudit = z.infer<typeof insertAiActionAuditSchema>;
+export type AiActionAudit = typeof aiActionAudit.$inferSelect;
+
+// Table 6: approval_requests
+export const approvalRequests = pgTable("approval_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  entityType: approvalEntityTypeEnum("entity_type").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  requestedByUserId: varchar("requested_by_user_id").notNull().references(() => users.id),
+  status: approvalStatusEnum("status").notNull().default("pending"),
+  approverUserId: varchar("approver_user_id").references(() => users.id),
+  approverRole: text("approver_role"),
+  notes: text("notes"),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("approval_requests_org_idx").on(table.organizationId),
+  entityIdx: index("approval_requests_entity_idx").on(table.entityType, table.entityId),
+  statusIdx: index("approval_requests_status_idx").on(table.status),
+  requestedByIdx: index("approval_requests_requested_by_idx").on(table.requestedByUserId),
+}));
+
+export const insertApprovalRequestSchema = createInsertSchema(approvalRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertApprovalRequest = z.infer<typeof insertApprovalRequestSchema>;
+export type ApprovalRequest = typeof approvalRequests.$inferSelect;
+
+// Table 7: document_revisions
+export const documentRevisions = pgTable("document_revisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  documentId: varchar("document_id").notNull(),
+  revisionNumber: integer("revision_number").notNull(),
+  sourceType: documentRevisionSourceEnum("source_type").notNull().default("upload"),
+  supersedesRevisionId: varchar("supersedes_revision_id"),
+  status: documentRevisionStatusEnum("status").notNull().default("active"),
+  storageKey: text("storage_key"),
+  checksum: text("checksum"),
+  metadata: json("metadata"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("document_revisions_org_idx").on(table.organizationId),
+  docIdx: index("document_revisions_doc_idx").on(table.documentId),
+  docRevisionIdx: unique("document_revisions_doc_rev").on(table.documentId, table.revisionNumber),
+}));
+
+export const insertDocumentRevisionSchema = createInsertSchema(documentRevisions).omit({ id: true, createdAt: true });
+export type InsertDocumentRevision = z.infer<typeof insertDocumentRevisionSchema>;
+export type DocumentRevision = typeof documentRevisions.$inferSelect;
+
+// Table 8: project_health_snapshots
+export const projectHealthSnapshots = pgTable("project_health_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  overallScore: integer("overall_score").notNull(),
+  scheduleScore: integer("schedule_score").notNull(),
+  budgetScore: integer("budget_score").notNull(),
+  rfiSubmittalScore: integer("rfi_submittal_score").notNull(),
+  changeOrderScore: integer("change_order_score").notNull(),
+  safetyScore: integer("safety_score").notNull(),
+  breakdown: json("breakdown"),
+  snapshotDate: date("snapshot_date").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("project_health_org_idx").on(table.organizationId),
+  projectIdx: index("project_health_project_idx").on(table.projectId),
+  dateIdx: index("project_health_date_idx").on(table.snapshotDate),
+}));
+
+export const insertProjectHealthSnapshotSchema = createInsertSchema(projectHealthSnapshots).omit({ id: true, createdAt: true });
+export type InsertProjectHealthSnapshot = z.infer<typeof insertProjectHealthSnapshotSchema>;
+export type ProjectHealthSnapshot = typeof projectHealthSnapshots.$inferSelect;

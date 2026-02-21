@@ -26,7 +26,7 @@ export const PLAN_DISPLAY_NAMES: Record<PlanTier, string> = {
 export const HUSTLER_TIER = "enterprise" as PlanTier;
 
 // Add-on keys matching the database enum
-export type AddOnKey = "ai_pm" | "ai_cfo" | "ai_email" | "website_seo" | "bid_network" | "ai_vision";
+export type AddOnKey = "ai_pm" | "ai_cfo" | "ai_email" | "website_seo" | "bid_network" | "ai_vision" | "integration_qbo" | "integration_esign" | "ai_governance_pack";
 
 // Feature keys for gating
 export type FeatureKey = 
@@ -42,7 +42,18 @@ export type FeatureKey =
   | "VENDOR_INVITES"
   | "ADVANCED_REPORTS"
   | "PORTFOLIO_DASHBOARDS"
-  | "PRIORITY_SUPPORT";
+  | "PRIORITY_SUPPORT"
+  | "INTEGRATIONS_HUB"
+  | "INTEGRATION_QBO"
+  | "INTEGRATION_GOOGLE"
+  | "INTEGRATION_MICROSOFT"
+  | "INTEGRATION_ESIGN"
+  | "AI_GOVERNANCE"
+  | "APPROVALS_FRAMEWORK"
+  | "DOCUMENT_CONTROL"
+  | "EXECUTIVE_DIGEST"
+  | "PROJECT_HEALTH_SCORE"
+  | "MOBILE_OFFLINE_V2";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -59,6 +70,9 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "MATERIAL_BUDGET",
     "VENDOR_INVITES",
     "ADVANCED_REPORTS",
+    "APPROVALS_FRAMEWORK",
+    "DOCUMENT_CONTROL",
+    "PROJECT_HEALTH_SCORE",
   ],
   enterprise: [
     // Scale ($579) or Hustler ($1199): Everything in Growth, plus:
@@ -70,7 +84,14 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "BID_NETWORK",
     "WEBSITE_SEO",
     "PRIORITY_SUPPORT",
-    "MULTI_ORG", // Full multi-org for Hustler
+    "MULTI_ORG",
+    "INTEGRATIONS_HUB",
+    "APPROVALS_FRAMEWORK",
+    "DOCUMENT_CONTROL",
+    "EXECUTIVE_DIGEST",
+    "PROJECT_HEALTH_SCORE",
+    "AI_GOVERNANCE",
+    "MOBILE_OFFLINE_V2",
   ],
 };
 
@@ -82,6 +103,9 @@ export const ADDON_FEATURES: Record<AddOnKey, FeatureKey> = {
   website_seo: "WEBSITE_SEO",
   bid_network: "BID_NETWORK",
   ai_vision: "AI_VISION",
+  integration_qbo: "INTEGRATION_QBO",
+  integration_esign: "INTEGRATION_ESIGN",
+  ai_governance_pack: "AI_GOVERNANCE",
 };
 
 // Plan display information for UI - New pricing structure
@@ -218,6 +242,24 @@ export const ADDON_INFO: Record<AddOnKey, {
     price: 79,
     category: "ai",
   },
+  integration_qbo: {
+    name: "QBO Integration",
+    description: "QuickBooks Online sync for accounting",
+    price: 49,
+    category: "growth",
+  },
+  integration_esign: {
+    name: "E-Sign Integration",
+    description: "DocuSign/Dropbox Sign integration",
+    price: 29,
+    category: "growth",
+  },
+  ai_governance_pack: {
+    name: "AI Governance Pack",
+    description: "AI cost tracking, limits, and audit dashboard",
+    price: 79,
+    category: "ai",
+  },
 };
 
 // Feature metadata for UI display
@@ -273,6 +315,50 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   PRIORITY_SUPPORT: {
     name: "Priority Support",
     description: "Faster response times and dedicated support",
+  },
+  INTEGRATIONS_HUB: {
+    name: "Integrations Hub",
+    description: "Central hub for third-party integrations",
+  },
+  INTEGRATION_QBO: {
+    name: "QuickBooks Online",
+    description: "QuickBooks Online accounting sync",
+  },
+  INTEGRATION_GOOGLE: {
+    name: "Google Workspace",
+    description: "Google Calendar, Drive, and Gmail integration",
+  },
+  INTEGRATION_MICROSOFT: {
+    name: "Microsoft 365",
+    description: "Outlook, Teams, and OneDrive integration",
+  },
+  INTEGRATION_ESIGN: {
+    name: "E-Signatures",
+    description: "DocuSign and Dropbox Sign integration",
+  },
+  AI_GOVERNANCE: {
+    name: "AI Governance",
+    description: "AI cost tracking, usage limits, and audit dashboard",
+  },
+  APPROVALS_FRAMEWORK: {
+    name: "Approvals Framework",
+    description: "Multi-step approval workflows for key actions",
+  },
+  DOCUMENT_CONTROL: {
+    name: "Document Control",
+    description: "Version control and revision management for documents",
+  },
+  EXECUTIVE_DIGEST: {
+    name: "Executive Digest",
+    description: "Weekly executive summary reports and insights",
+  },
+  PROJECT_HEALTH_SCORE: {
+    name: "Project Health Score",
+    description: "Automated project health scoring and alerts",
+  },
+  MOBILE_OFFLINE_V2: {
+    name: "Mobile Offline V2",
+    description: "Enhanced offline mode with background sync",
   },
 };
 
