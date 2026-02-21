@@ -44,11 +44,11 @@ export default function IntegrationsPage() {
 
   const connectMutation = useMutation({
     mutationFn: async (providerKey: string) => {
-      const res = await apiRequest("POST", `/api/integrations/connections`, { provider: providerKey });
+      const res = await apiRequest("POST", `/api/integrations/connections`, { provider: providerKey, devMode: true });
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Connected", description: "Integration connection created. Authorize to complete setup." });
+      toast({ title: "Connected", description: "Integration connected successfully (dev mode)." });
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/providers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/connections"] });
     },

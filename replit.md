@@ -71,6 +71,13 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Planning Documentation**: 12 specification documents in `/planning/` directory covering architecture decisions (8 ADRs), per-module specs, security/test plan, and rollout strategy.
 *   **Test Harness**: Skeleton test files in `/audit/tests/integrations/` and `/audit/tests/rbac/` for org isolation, RBAC matrix, outbox dispatcher, QBO sync, email ingestion, document revisions, and approvals.
 
+### Dev Testing Infrastructure (February 2026)
+
+*   **Dev Seed Endpoint**: `POST /api/dev/seed-enterprise` (dev-only, Admin+ role required) populates enterprise subscription, add-ons, simulated integration connections, AI audit entries, approval requests, document revisions, and project health snapshots.
+*   **OAuth Dev Bypass**: `POST /api/integrations/connections` accepts `devMode: true` in dev to create simulated active connections without real OAuth.
+*   **Project Health Widget**: `client/src/components/ProjectHealthWidget.tsx` displays project health score (0-100) with breakdown bars on the project detail Overview tab.
+*   **Test Flow**: Login as Admin → POST `/api/dev/seed-enterprise` → Navigate to `/integrations`, `/approvals`, `/ai-governance` → Verify data displays. Open any project → Overview tab → See health score widget.
+
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
 *   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.

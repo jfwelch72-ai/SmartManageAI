@@ -636,6 +636,24 @@ export const NavigationConfig = {
       testId: "nav-payroll-management",
       visible: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
     },
+    {
+      href: "/integrations",
+      label: "Integrations Hub",
+      testId: "nav-integrations",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/approvals",
+      label: "Approvals",
+      testId: "nav-approvals",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/ai-governance",
+      label: "AI Governance",
+      testId: "nav-ai-governance",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
   ],
 
   toolsMenu: [

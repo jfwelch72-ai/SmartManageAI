@@ -37,11 +37,26 @@ router.post("/connections", requireAuth, async (req, res) => {
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const { provider, displayName } = req.body;
+    const { provider, displayName, devMode } = req.body;
     if (!provider) return res.status(400).json({ error: "Provider required" });
     const providerImpl = getProvider(provider);
     if (!providerImpl) return res.status(400).json({ error: "Unknown provider" });
     const connection = await connectionService.createConnection(user.organizationId, provider, displayName || providerImpl.displayName, user.id);
+
+    if (devMode && process.env.NODE_ENV !== "production") {
+      await connectionService.storeConnectionTokens(connection.id, user.organizationId, {
+        accessToken: "dev-simulated-token",
+        refreshToken: "dev-simulated-refresh",
+        expiresAt: new Date(Date.now() + 86400000 * 365),
+        scope: providerImpl.requiredScopes.join(" "),
+        tokenType: "Bearer",
+        raw: { devMode: true, simulatedAt: new Date().toISOString() },
+      });
+      logIntegrationAudit("connection.dev_activated", { orgId: user.organizationId, connectionId: connection.id, provider, userId: user.id });
+      const updated = await connectionService.getConnection(connection.id, user.organizationId);
+      return res.status(201).json(updated);
+    }
+
     logIntegrationAudit("connection.created", { orgId: user.organizationId, connectionId: connection.id, provider, userId: user.id });
     res.status(201).json(connection);
   } catch (err) {

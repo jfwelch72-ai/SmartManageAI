@@ -26,6 +26,7 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
+import ProjectHealthWidget from "@/components/ProjectHealthWidget";
 import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
@@ -2979,6 +2980,10 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {project?.id && (
+              <ProjectHealthWidget projectId={project.id} />
+            )}
 
             {/* Financial Information - Hidden from hourly employees */}
             {FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role) && (
