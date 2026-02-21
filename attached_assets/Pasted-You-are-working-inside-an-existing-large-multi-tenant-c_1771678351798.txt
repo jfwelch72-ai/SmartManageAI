@@ -1,0 +1,346 @@
+You are working inside an existing, large multi-tenant construction management SaaS (SmartManageAI) in this Replit workspace. The codebase already has many features (projects, estimates, bids, portals, time clock, COs, delays, SOV, tasks/notes, equipment, AI modules, website builder, etc.) plus multi-tenant org isolation + RBAC + existing security guards.
+
+ABSOLUTE RULES (NON-NEGOTIABLE)
+1) DO NOT delete, rename, or remove any existing feature, route, UI page, DB table, integration, auth flow, RBAC logic, or security guard.
+2) DO NOT break existing behavior. All changes must be additive and backward-compatible.
+3) NO destructive migrations: never drop/alter existing columns in a way that breaks current reads. Only additive migrations (new tables/columns/indexes).
+4) Preserve multi-tenant isolation: every new query must be org-scoped. Never introduce cross-org reads/writes.
+5) Preserve RBAC: every new endpoint must require explicit permission checks consistent with current roles.
+6) Any “refactor” must be optional and non-breaking; avoid moving existing routes unless there is an established modular routing mount pattern. If routes.ts is huge, do NOT rip it apart; only add minimal mounts.
+7) Any AI action that creates/updates real business objects must be “draft + approval” by default.
+8) Add feature flags for every major new module and default them OFF for all orgs until explicitly enabled.
+
+GOAL
+Implement (not just plan) the full upgrade wave described below while keeping everything stable:
+A) Integration Hub foundations + provider adapters + OAuth + sync jobs + webhooks + import/export
+B) QuickBooks Online integration (real) – minimal but functional end-to-end
+C) Google + Microsoft email ingestion + AI classification → tasks + Calendar two-way sync (functional baseline)
+D) E-sign integration (functional baseline) for COs and subcontracts (draft → send → status tracking)
+E) AI governance: cost/usage governor, auditability (“why”), approvals, and per-org limits
+F) Approval workflows framework wired into COs, SOV/pay apps, Time approvals, and Vendor bills (where applicable)
+G) Document control & revisioning: addenda/revisions/superseded enforcement + revision compare stubs
+H) Executive Daily Digest and deterministic Project Health Score
+I) Mobile/offline reliability improvements: conflict resolution strategy + upload resilience + instrumentation
+J) Automated org isolation + RBAC matrix test harness extended to cover the above
+
+DELIVERABLES REQUIRED
+1) PLANNING + SPECS (must be created/updated as you implement)
+Create:
+ /planning/
+   - UPGRADE_MASTER_PLAN.md (single source of truth; updated as implementation proceeds)
+   - ARCHITECTURE_DECISIONS.md (ADRs)
+   - INTEGRATION_HUB_SPEC.md
+   - QBO_SYNC_SPEC.md
+   - EMAIL_CALENDAR_SPEC.md
+   - ESIGN_SPEC.md
+   - APPROVAL_WORKFLOWS_SPEC.md
+   - DOCUMENT_CONTROL_SPEC.md
+   - AI_GOVERNANCE_SPEC.md
+   - MOBILE_OFFLINE_SPEC.md
+   - SECURITY_AND_TEST_PLAN.md
+   - ROLL_OUT_STRATEGY.md
+These docs must reflect actual code as implemented (no “aspirational only” docs).
+
+2) FEATURE FLAGS (must exist and default OFF)
+Add flags (or extend existing feature flag system):
+- INTEGRATIONS_HUB
+- INTEGRATION_QBO
+- INTEGRATION_GOOGLE
+- INTEGRATION_MICROSOFT
+- INTEGRATION_ESIGN
+- AI_GOVERNANCE
+- APPROVALS_FRAMEWORK
+- DOCUMENT_CONTROL
+- EXECUTIVE_DIGEST
+- PROJECT_HEALTH_SCORE
+- MOBILE_OFFLINE_V2
+Ensure flags are org-scoped and can be toggled by SUPER_ADMIN or org admin (as appropriate).
+
+3) DATABASE (ADDITIVE MIGRATIONS ONLY)
+Add these tables (and indexes):
+A) integration_connections
+  - id, orgId, providerKey, status, displayName
+  - authType (oauth/apiKey/manual)
+  - scopes (jsonb), metadata (jsonb)
+  - encryptedSecrets (jsonb) OR encryptedSecretsRef (string) aligned with existing security patterns
+  - createdByUserId, createdAt, updatedAt, lastSyncedAt
+  Indexes: (orgId, providerKey), (orgId, status)
+
+B) integration_events_outbox
+  - id, orgId, eventType, payload (jsonb), status (queued/sent/failed), attempts, nextRetryAt, createdAt
+  Indexes: (orgId, status), (orgId, eventType)
+
+C) integration_webhook_subscriptions
+  - id, orgId, targetUrl, secret, enabled, eventFilters (jsonb), createdAt
+  Indexes: (orgId, enabled)
+
+D) integration_sync_state
+  - id, orgId, providerKey, connectionId, entityType, cursor (text/json), lastRunAt, status, stats (jsonb)
+  Indexes: (orgId, providerKey), (orgId, connectionId)
+
+E) ai_action_audit
+  - id, orgId, actorUserId (nullable), actionType
+  - inputRefs (jsonb), outputRefs (jsonb)
+  - rationale (text/jsonb), model, tokensIn, tokensOut, costEstimate
+  - approvalRequired (bool), approvalStatus, approvedByUserId, approvedAt
+  - createdAt
+  Indexes: (orgId, createdAt), (orgId, actionType), (orgId, approvalStatus)
+
+F) approval_requests
+  - id, orgId, entityType, entityId
+  - requestedByUserId
+  - status (pending/approved/rejected)
+  - approverUserId (nullable) + approverRole (nullable)
+  - notes, createdAt, updatedAt, decidedAt
+  Indexes: (orgId, status), (orgId, entityType, entityId)
+
+G) document_revisions
+  - id, orgId, docId
+  - revisionNumber
+  - sourceType (upload/email/import)
+  - supersedesRevisionId (nullable)
+  - status (active/superseded)
+  - fileRef/storageKey, checksum
+  - createdByUserId, createdAt
+  Indexes: (orgId, docId), (orgId, status)
+
+H) project_health_snapshots
+  - id, orgId, projectId
+  - score (0-100), components (jsonb), computedAt, computedBy (system/user)
+  Indexes: (orgId, projectId), (orgId, computedAt)
+
+NO EXISTING TABLES MAY BE DROPPED OR BROKEN.
+If existing similar tables exist, extend them additively or map to them—do not duplicate unnecessarily.
+
+4) INTEGRATION HUB (IMPLEMENTATION)
+Create:
+ /server/integrations/
+   - types.ts (provider-agnostic types/interfaces)
+   - registry.ts (provider registry + feature flags)
+   - connectionService.ts (CRUD + secrets handling aligned with existing patterns; org-scoped)
+   - webhookService.ts (HMAC signing/verification; outbound + inbound validation)
+   - outboxService.ts (write to integration_events_outbox and dispatch)
+   - importExportService.ts (CSV import/export framework)
+   - audit.ts (structured audit logs)
+ /server/routes/integrationsRoutes.ts (or mount in existing routes pattern)
+Endpoints (all org-scoped, RBAC enforced, validated):
+- GET  /api/integrations/providers
+- GET  /api/integrations/connections
+- POST /api/integrations/connections
+- POST /api/integrations/connections/:id/authorize
+- POST /api/integrations/connections/:id/callback
+- POST /api/integrations/connections/:id/disconnect
+- GET  /api/integrations/events
+- POST /api/integrations/webhooks/subscribe
+- POST /api/integrations/webhooks/test (admin-only)
+- POST /api/integrations/import (CSV upload) + validate-only mode
+- GET  /api/integrations/export (CSV export)
+- GET  /api/integrations/audit (admin-only)
+
+Add idempotency keys for POST actions.
+Add structured logs for every action and write ai_action_audit or integration audit where relevant.
+All routes must be protected by org isolation and RBAC checks.
+
+5) PROVIDERS (REAL, MINIMUM FUNCTIONAL)
+A) QUICKBOOKS ONLINE (QBO) – MUST BE FUNCTIONAL BASELINE
+Create:
+ /server/integrations/providers/qbo/
+   - index.ts, oauth.ts, api.ts, mapping.ts, sync.ts, webhooks.ts (optional)
+Implement:
+- OAuth 2.0 connection flow (authorize + callback) storing tokens securely.
+- Minimal sync scope (MUST deliver business value):
+  1) Import Chart of Accounts (read)
+  2) Export Customers (create/update) from your CRM/clients
+  3) Export Projects/Jobs mapping (if supported in your internal model; otherwise export as Customers + Class/Project meta based on QBO model)
+  4) Export Invoices from SOV/Pay Apps (create Invoice in QBO; store QBO IDs)
+  5) Import Payment status for those invoices (read) to update internal invoice status
+- Provide an internal mapping table or fields in metadata to store QBO IDs per entity (do this additively).
+- Include “dry run” mode and “sync now” trigger.
+
+B) GOOGLE + MICROSOFT – EMAIL INGESTION + CALENDAR SYNC (FUNCTIONAL BASELINE)
+Create:
+ /server/integrations/providers/google/
+ /server/integrations/providers/microsoft/
+Implement:
+EMAIL:
+- OAuth connect
+- Pull messages (incremental sync using cursor in integration_sync_state)
+- Store minimal email metadata + body snippet in existing email tables OR add an additive table if none exists (prefer existing patterns).
+- Run AI classification pipeline (feature-flagged, governed):
+  - classify: RFI / Submittal / Delay / CO / Invoice / General / Action Required
+  - extract: project reference, due dates, owner/GC, next action
+  - create DRAFT tasks + suggested responses (NOT auto-send)
+- UI:
+  - “Inbox Review” screen showing AI label + suggested task creation
+  - “Create Task” / “Create Delay Notice Draft” / “Create CO Draft” actions (approval required)
+
+CALENDAR:
+- Two-way sync baseline:
+  - Export internal project schedule milestones/tasks to external calendar (org-configurable)
+  - Import events tagged with project codes to internal schedule (read-only or draft)
+- Conflict handling: if an event changes, log and require approval for internal changes.
+
+C) E-SIGN (FUNCTIONAL BASELINE)
+Create:
+ /server/integrations/providers/esign/
+Implement:
+- Provider-agnostic interface with at least ONE implemented provider (choose DocuSign or Dropbox Sign depending on existing env feasibility).
+- Ability to:
+  - generate envelope from a template + populated fields (CO / subcontract)
+  - send to recipients
+  - track status (sent/viewed/signed/declined)
+  - store signed PDF in document storage and create a document revision entry
+- UI:
+  - Send for signature (draft)
+  - Status tracking
+  - Download signed copy
+
+6) BACKGROUND JOBS + OUTBOX DISPATCH (IMPLEMENT)
+If an existing job system exists, extend it additively; otherwise create:
+ /server/jobs/
+   - jobTypes.ts
+   - jobRunner.ts
+   - outboxDispatcher.ts
+   - providers/qboJobs.ts
+   - providers/googleJobs.ts
+   - providers/microsoftJobs.ts
+   - providers/esignJobs.ts
+Requirements:
+- org-scoped execution
+- retries with backoff
+- dead-letter / failed visibility
+- metrics + logs
+- admin endpoint to view job runs and trigger a run (RBAC admin-only)
+
+7) APPROVAL WORKFLOWS (IMPLEMENT + WIRE IN)
+Implement a generic approvals framework:
+- createApprovalRequest(orgId, entityType, entityId, requestedBy, rules)
+- approve/reject with role/user constraints
+- audit trail entries
+Wire approvals into:
+A) Change Orders: any “send”, “finalize”, or “external publish” requires approval (configurable).
+B) SOV/Pay App: submission/export to QBO requires approval.
+C) Time approvals: weekly timecards require foreman/super approval before payroll export.
+D) Vendor bills (if you have them): approval required before export.
+Make this additive: existing flows still work if approvals flag is OFF; with flag ON, enforce.
+
+8) DOCUMENT CONTROL & REVISIONING (IMPLEMENT + ENFORCE)
+Implement:
+- document_revisions creation whenever a doc is uploaded/imported/signed
+- “active vs superseded” logic and UI badges
+- addenda tracking baseline:
+  - attach addenda to bids/projects
+  - revision compare stub (show metadata diff; full visual compare can be phase 2)
+Enforcement:
+- if a document is superseded, default views show latest active revision; allow “view old revision” with warning.
+
+9) AI GOVERNANCE (IMPLEMENT)
+Implement a single AI execution wrapper used by ALL new AI calls:
+- records ai_action_audit (orgId, userId, model, tokens, costEstimate, rationale, inputRefs/outputRefs)
+- per-org limits: max tokens/day, max $/day, max actions/day
+- safe modes: “draft only”, “no external send”, “approval required”
+Add UI:
+- AI Activity Log (filters by project/user/type/status)
+- AI Settings per org (limits + toggles)
+
+10) EXECUTIVE DAILY DIGEST + PROJECT HEALTH SCORE (IMPLEMENT)
+A) Executive Daily Digest (functional):
+- Generate daily digest per org:
+  - yesterday’s field notes summary
+  - approvals pending (CO/SOV/time/vendor)
+  - “stuck” items (RFIs unanswered > X days, submittals overdue, delays pending response)
+  - top 5 actions for today
+- Deliver via:
+  - dashboard widget + optional daily email (opt-in)
+- Must cite internal objects (links) so “why” is obvious.
+
+B) Deterministic Project Health Score (functional, explainable):
+Compute score (0–100) from deterministic inputs:
+- schedule variance (planned vs actual milestones)
+- budget burn vs progress (if you have budget tracking)
+- open RFIs/submittals counts & aging
+- open change orders aging
+- safety issues/incidents (if tracked)
+Store snapshots in project_health_snapshots.
+UI:
+- Project health card with score + component breakdown + trends.
+
+11) MOBILE/OFFLINE RELIABILITY V2 (IMPLEMENT BASELINE)
+Implement:
+- a conflict resolution strategy for offline edits (last-write-wins is NOT acceptable without logging; use:
+  - server authoritative merge rules per entity
+  - conflicts table/log + UI to resolve
+)
+- resilient uploads:
+  - chunked uploads or retryable upload queue
+  - background retry handling
+- instrumentation:
+  - offline sync metrics
+  - pending upload counts
+  - error dashboards
+This must be additive; do not break current mobile/offline if it exists.
+
+12) TEST HARNESS (MANDATORY)
+Create /server/auditHarness/ tests:
+- orgIsolation.spec.ts: attempt cross-org access for EVERY new route and critical entity
+- rbacMatrix.spec.ts: role × endpoint access tests (integrations, approvals, AI logs, digest, health score)
+- outboxDispatcher.spec.ts: ensures events are scoped and signed correctly
+- qboSync.spec.ts: uses mock QBO API to verify mapping + idempotency
+- emailIngestion.spec.ts: mock provider to verify cursor-based sync and AI classification output is draft-only
+- documentRevisions.spec.ts: ensures superseded behavior and latest-by-default
+- approvals.spec.ts: ensures enforcement when flag ON and bypass when OFF
+If test framework is missing, add a lightweight test setup that does not interfere with production builds.
+
+13) UI PAGES (ADD ONLY)
+Add new pages under /client/src/pages/ (or existing pattern):
+- Integrations Overview
+- Connection details (QBO/Google/Microsoft/E-sign)
+- Integration audit log
+- AI Activity Log + AI Settings
+- Approvals Inbox (pending approvals by project)
+- Document Revisions view
+- Executive Digest view
+- Project Health view
+All must respect RBAC and org isolation.
+
+14) ROLLOUT STRATEGY (IMPLEMENT)
+In /planning/ROLL_OUT_STRATEGY.md:
+- Default flags OFF
+- Enable per org for TFR first
+- Provide a “Safe Pilot Mode”:
+  - read-only sync first
+  - then exports require approval
+  - then automation options
+
+15) PRICING RECOMMENDATIONS (DOCUMENT + CONFIG HOOKS)
+In /planning/UPGRADE_MASTER_PLAN.md:
+- Recommend tier packaging:
+  - Starter: limited projects/users, basic PM, no QBO, limited AI
+  - Pro: includes AI Notes→Tasks, email ingestion (limited), approvals inbox
+  - Enterprise: QBO + Google/Microsoft + E-sign + webhooks + higher AI limits + support
+- Add-ons: QBO, E-sign, advanced AI, multi-org Hustler dashboard
+Add hooks in code for feature-based entitlements (do not change existing billing logic; extend it additively).
+
+IMPLEMENTATION PHASING (DO NOT SKIP)
+Phase 0: Planning docs + feature flags + DB migrations + Integration Hub scaffolding + tests skeleton
+Phase 1: QBO OAuth + COA sync + invoice export + payment import + admin UI
+Phase 2: Google/Microsoft email ingestion + AI classification drafts + calendar baseline sync + UI
+Phase 3: E-sign send/sign tracking + store signed docs as revisions + approvals wired into CO/SOV/time
+Phase 4: Document control enforcement + executive digest + health score + mobile/offline reliability V2 + hardening tests
+
+CRITICAL QUALITY REQUIREMENTS
+- Every new endpoint must have: RBAC check, org scope, input validation, structured logs, error handling.
+- Every external provider call must have: timeout, retry policy, safe logging (no secrets), and idempotency.
+- Every “create/update” action triggered by AI must be draft-only unless approved.
+- Provide detailed README/SETUP steps for OAuth providers (env vars, redirect URIs, scopes).
+
+FINAL OUTPUT REQUIRED
+After completing the implementation, print a “IMPLEMENTATION SUMMARY” that includes:
+- All new files created
+- All migrations created
+- All new routes added (with required permissions)
+- All feature flags added (default state)
+- What is functional end-to-end now (QBO sync scope, email ingestion scope, e-sign scope)
+- What remains TODO (explicit list)
+- How to run tests + where to view logs + how to enable per org safely
+Do NOT claim a feature is functional unless the code truly implements it end-to-end with UI + API + persistence + tests.
