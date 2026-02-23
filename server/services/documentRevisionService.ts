@@ -106,6 +106,41 @@ export async function compareRevisions(orgId: string, revisionId1: string, revis
 
   if (!rev1 || !rev2) return null;
 
+  const meta1 = (rev1.metadata || {}) as Record<string, any>;
+  const meta2 = (rev2.metadata || {}) as Record<string, any>;
+
+  const fileSize1 = meta1.fileSize || meta1.size || null;
+  const fileSize2 = meta2.fileSize || meta2.size || null;
+  const fileName1 = meta1.fileName || meta1.name || null;
+  const fileName2 = meta2.fileName || meta2.name || null;
+
+  const timeBetween = rev1.createdAt && rev2.createdAt
+    ? Math.abs(new Date(rev2.createdAt).getTime() - new Date(rev1.createdAt).getTime())
+    : null;
+
+  const changes: Array<{ field: string; from: any; to: any; type: "changed" | "added" | "removed" }> = [];
+
+  if (rev1.sourceType !== rev2.sourceType) {
+    changes.push({ field: "sourceType", from: rev1.sourceType, to: rev2.sourceType, type: "changed" });
+  }
+  if (rev1.status !== rev2.status) {
+    changes.push({ field: "status", from: rev1.status, to: rev2.status, type: "changed" });
+  }
+  if (fileName1 !== fileName2) {
+    changes.push({ field: "fileName", from: fileName1, to: fileName2, type: fileName1 && fileName2 ? "changed" : (fileName2 ? "added" : "removed") });
+  }
+  if (fileSize1 !== fileSize2) {
+    changes.push({ field: "fileSize", from: fileSize1, to: fileSize2, type: "changed" });
+  }
+  if (rev1.createdByUserId !== rev2.createdByUserId) {
+    changes.push({ field: "uploadedBy", from: rev1.createdByUserId, to: rev2.createdByUserId, type: "changed" });
+  }
+  if (rev1.storageKey !== rev2.storageKey) {
+    changes.push({ field: "storageKey", from: rev1.storageKey, to: rev2.storageKey, type: "changed" });
+  }
+
+  const checksumMatch = rev1.checksum && rev2.checksum ? rev1.checksum === rev2.checksum : null;
+
   return {
     revision1: {
       id: rev1.id,
@@ -113,6 +148,9 @@ export async function compareRevisions(orgId: string, revisionId1: string, revis
       sourceType: rev1.sourceType,
       status: rev1.status,
       createdAt: rev1.createdAt,
+      checksum: rev1.checksum,
+      storageKey: rev1.storageKey,
+      createdByUserId: rev1.createdByUserId,
       metadata: rev1.metadata,
     },
     revision2: {
@@ -121,8 +159,14 @@ export async function compareRevisions(orgId: string, revisionId1: string, revis
       sourceType: rev2.sourceType,
       status: rev2.status,
       createdAt: rev2.createdAt,
+      checksum: rev2.checksum,
+      storageKey: rev2.storageKey,
+      createdByUserId: rev2.createdByUserId,
       metadata: rev2.metadata,
     },
-    note: "Full document comparison coming in a future update",
+    changes,
+    checksumMatch,
+    timeBetweenMs: timeBetween,
+    fileSizeDelta: fileSize1 !== null && fileSize2 !== null ? fileSize2 - fileSize1 : null,
   };
 }

@@ -7589,6 +7589,54 @@ export const insertDocumentRevisionSchema = createInsertSchema(documentRevisions
 export type InsertDocumentRevision = z.infer<typeof insertDocumentRevisionSchema>;
 export type DocumentRevision = typeof documentRevisions.$inferSelect;
 
+// Addenda tables
+export const addendumStatusEnum = pgEnum("addendum_status", ["DRAFT", "ISSUED", "ACKNOWLEDGED"]);
+export const addendumRecipientTypeEnum = pgEnum("addendum_recipient_type", ["SUBCONTRACTOR", "TEAM_MEMBER", "CLIENT"]);
+
+export const addenda = pgTable("addenda", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  addendumNumber: integer("addendum_number").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  issuedDate: timestamp("issued_date"),
+  issuedById: varchar("issued_by_id").references(() => users.id),
+  relatedDocumentId: varchar("related_document_id").references(() => planDocuments.id, { onDelete: "set null" }),
+  storageKey: text("storage_key"),
+  fileUrl: text("file_url"),
+  fileName: text("file_name"),
+  status: addendumStatusEnum("status").notNull().default("DRAFT"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("addenda_org_idx").on(table.organizationId),
+  projectIdx: index("addenda_project_idx").on(table.projectId),
+  projectNumUnique: unique("addenda_project_num_unique").on(table.projectId, table.addendumNumber),
+}));
+
+export const insertAddendumSchema = createInsertSchema(addenda).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAddendum = z.infer<typeof insertAddendumSchema>;
+export type Addendum = typeof addenda.$inferSelect;
+
+export const addendumAcknowledgments = pgTable("addendum_acknowledgments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  addendumId: varchar("addendum_id").notNull().references(() => addenda.id, { onDelete: "cascade" }),
+  recipientType: addendumRecipientTypeEnum("recipient_type").notNull(),
+  recipientId: varchar("recipient_id"),
+  recipientName: text("recipient_name").notNull(),
+  recipientEmail: text("recipient_email"),
+  sentAt: timestamp("sent_at").defaultNow(),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  addendumIdx: index("ack_addendum_idx").on(table.addendumId),
+}));
+
+export const insertAddendumAcknowledgmentSchema = createInsertSchema(addendumAcknowledgments).omit({ id: true, createdAt: true });
+export type InsertAddendumAcknowledgment = z.infer<typeof insertAddendumAcknowledgmentSchema>;
+export type AddendumAcknowledgment = typeof addendumAcknowledgments.$inferSelect;
+
 // Table 8: project_health_snapshots
 export const projectHealthSnapshots = pgTable("project_health_snapshots", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

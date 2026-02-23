@@ -27,6 +27,8 @@ import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
 import ProjectHealthWidget from "@/components/ProjectHealthWidget";
+import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
+import ProjectAddenda from "@/components/ProjectAddenda";
 import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, StickyNote, Paperclip, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
@@ -2229,7 +2231,7 @@ export default function ProjectDetailPage() {
   const [editContractAmount, setEditContractAmount] = useState("");
   const [editTexturaDrawDate, setEditTexturaDrawDate] = useState("");
   const [editDrawDayOfMonth, setEditDrawDayOfMonth] = useState<number | "">("");
-  const [plansSubTab, setPlansSubTab] = useState<"takeoff" | "documents">("documents");
+  const [plansSubTab, setPlansSubTab] = useState<"takeoff" | "documents" | "addenda">("documents");
 
   // Procurement item state
   const [showProcurementDialog, setShowProcurementDialog] = useState(false);
@@ -3822,6 +3824,14 @@ export default function ProjectDetailPage() {
                 >
                   Takeoff Workspace
                 </Button>
+                <Button
+                  variant={plansSubTab === "addenda" ? "default" : "ghost"}
+                  onClick={() => setPlansSubTab("addenda")}
+                  data-testid="tab-addenda"
+                  className="rounded-b-none"
+                >
+                  Addenda
+                </Button>
               </div>
             </div>
             
@@ -3964,6 +3974,11 @@ export default function ProjectDetailPage() {
                                   Import to Takeoff
                                 </Button>
                               )}
+                              <DocumentRevisionPanel
+                                documentId={doc.id}
+                                documentTitle={doc.title || doc.fileName}
+                                userRole={user?.role || ""}
+                              />
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button
@@ -4013,6 +4028,14 @@ export default function ProjectDetailPage() {
                 </Card>
             )}
             
+            {plansSubTab === "addenda" && project && (
+              <ProjectAddenda
+                projectId={project.id}
+                projectCode={project.code}
+                userRole={user?.role || ""}
+              />
+            )}
+
             {plansSubTab === "takeoff" && project && (
               <div className="h-[calc(100vh-200px)]">
                 <TakeoffWorkspace projectId={project.id} projectCode={project.code} />

@@ -111,6 +111,7 @@ import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
 import aiGovernanceRoutes from "./aiGovernanceRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
+import addendaRoutes from "./addendaRoutes";
 import projectHealthRoutes from "./projectHealthRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
 import featureFlagRoutes from "./featureFlagRoutes";
@@ -248,6 +249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/approvals", approvalRoutes);
   app.use("/api/ai-governance", aiGovernanceRoutes);
   app.use("/api/documents", documentRevisionRoutes);
+  app.use("/api", addendaRoutes);
   app.use("/api/project-health", projectHealthRoutes);
 
   app.use("/api/feature-flags", featureFlagRoutes);
