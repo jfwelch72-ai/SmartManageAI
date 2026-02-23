@@ -15,6 +15,8 @@ import {
 } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { logInfo } from "./utils/logger";
+import { FEATURE_FLAG_KEYS } from "@shared/schema";
+import { setAllFeatureFlags } from "./services/featureFlagService";
 
 const router = Router();
 
@@ -239,6 +241,12 @@ router.post("/seed-enterprise", requireAuth, async (req, res) => {
       healthCount++;
     }
     results.projectHealthSnapshots = `Created ${healthCount} snapshots for ${orgProjects.length} projects`;
+
+    const allFlagsOn = Object.fromEntries(
+      FEATURE_FLAG_KEYS.map(key => [key, true])
+    );
+    await setAllFeatureFlags(orgId, allFlagsOn);
+    results.featureFlags = "All 11 feature flags enabled";
 
     logInfo("Enterprise dev seed completed", { orgId, results });
 

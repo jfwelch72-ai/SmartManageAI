@@ -112,6 +112,7 @@ import aiGovernanceRoutes from "./aiGovernanceRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
 import projectHealthRoutes from "./projectHealthRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
+import featureFlagRoutes from "./featureFlagRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
@@ -242,6 +243,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/ai-governance", aiGovernanceRoutes);
   app.use("/api/documents", documentRevisionRoutes);
   app.use("/api/project-health", projectHealthRoutes);
+
+  app.use("/api/feature-flags", featureFlagRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

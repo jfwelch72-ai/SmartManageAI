@@ -13,6 +13,8 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { createApprovalRequest } from "./services/approvalService";
+import { isFeatureEnabled } from "./services/featureFlagService";
 import { generateSOVPDF } from "./sov-pdf-service";
 import Decimal from "decimal.js";
 
@@ -827,6 +829,21 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
       .set(updateData)
       .where(eq(scheduleOfValues.id, id))
       .returning();
+
+    if (newStatus === "SUBMITTED" && req.user?.organizationId) {
+      try {
+        const approvalsEnabled = await isFeatureEnabled(req.user.organizationId, "APPROVALS_FRAMEWORK");
+        if (approvalsEnabled) {
+          await createApprovalRequest(
+            req.user.organizationId,
+            "SOV_PAY_APP",
+            id,
+            req.user.id,
+            `SOV/Pay App submitted for approval`
+          );
+        }
+      } catch (e) { /* non-blocking */ }
+    }
 
     res.json(updated);
   } catch (error) {

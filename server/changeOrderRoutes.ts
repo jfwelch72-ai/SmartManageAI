@@ -7,6 +7,8 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
+import { createApprovalRequest } from "./services/approvalService";
+import { isFeatureEnabled } from "./services/featureFlagService";
 
 const router = Router();
 
@@ -185,6 +187,21 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
       `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
       true
     );
+
+    if (project?.gcOrganizationId) {
+      try {
+        const approvalsEnabled = await isFeatureEnabled(project.gcOrganizationId, "APPROVALS_FRAMEWORK");
+        if (approvalsEnabled) {
+          await createApprovalRequest(
+            project.gcOrganizationId,
+            "CHANGE_ORDER",
+            order.id,
+            req.user!.id,
+            `Change order ${updatedOrder.changeOrderNumber} submitted for approval`
+          );
+        }
+      } catch (e) { /* non-blocking */ }
+    }
 
     res.json(updatedOrder);
   } catch (error: any) {

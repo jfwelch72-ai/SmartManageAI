@@ -212,10 +212,27 @@ export const organizations = pgTable("organizations", {
   onboardingData: text("onboarding_data"),
   terminologyJson: text("terminology_json"),
   themeExtractedAt: timestamp("theme_extracted_at"),
+  featureFlags: text("feature_flags"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const FEATURE_FLAG_KEYS = [
+  "INTEGRATIONS_HUB",
+  "INTEGRATION_QBO",
+  "INTEGRATION_GOOGLE",
+  "INTEGRATION_MICROSOFT",
+  "INTEGRATION_ESIGN",
+  "AI_GOVERNANCE",
+  "APPROVALS_FRAMEWORK",
+  "DOCUMENT_CONTROL",
+  "EXECUTIVE_DIGEST",
+  "PROJECT_HEALTH_SCORE",
+  "MOBILE_OFFLINE_V2",
+] as const;
+
+export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;

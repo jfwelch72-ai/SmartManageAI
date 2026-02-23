@@ -13,6 +13,8 @@ import { sanitizeText } from "./sanitization";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 import { calculatePerUnitMetrics } from "./productionRateService";
+import { createApprovalRequest } from "./services/approvalService";
+import { isFeatureEnabled } from "./services/featureFlagService";
 
 // Geolocation radius check (in meters)
 const GEOFENCE_RADIUS = 200; // 200 meters
@@ -1642,6 +1644,21 @@ export function registerTimeClockRoutes(app: Express): void {
           inArray(timeEntries.id, accessibleIds),
           eq(timeEntries.approvalStatus, "PENDING")
         ));
+
+      if (req.user?.organizationId) {
+        try {
+          const approvalsEnabled = await isFeatureEnabled(req.user.organizationId, "APPROVALS_FRAMEWORK");
+          if (approvalsEnabled) {
+            await createApprovalRequest(
+              req.user.organizationId,
+              "TIME_ENTRY",
+              accessibleIds[0],
+              req.user.id,
+              `Bulk approved ${accessibleIds.length} time entries`
+            );
+          }
+        } catch (e) { /* non-blocking */ }
+      }
 
       res.json({ 
         success: true, 

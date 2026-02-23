@@ -654,6 +654,12 @@ export const NavigationConfig = {
       testId: "nav-ai-governance",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/executive-digest",
+      label: "Executive Digest",
+      testId: "nav-executive-digest",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER",
+    },
   ],
 
   toolsMenu: [
