@@ -27,7 +27,10 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
+  Plus,
+  Trash2,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -250,6 +253,22 @@ function SubscriptionDetailDialog({
     },
   });
 
+  const deleteSubscription = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/platform/subscriptions/${orgId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription Deleted", description: "The subscription has been removed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/subscriptions"] });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete Failed", description: err.message, variant: "destructive" });
+      setConfirmAction(null);
+    },
+  });
+
   const handlePlanChange = () => {
     if (newPlanTier) {
       setConfirmAction({ type: "plan", label: `Change plan to ${newPlanTier}` });
@@ -267,6 +286,8 @@ function SubscriptionDetailDialog({
       updateSubscription.mutate({ planTier: newPlanTier });
     } else if (confirmAction?.type === "status") {
       updateSubscription.mutate({ status: newStatus });
+    } else if (confirmAction?.type === "delete") {
+      deleteSubscription.mutate();
     }
   };
 
@@ -419,6 +440,17 @@ function SubscriptionDetailDialog({
                   </div>
                 </div>
               )}
+
+              <div className="border-t pt-4">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setConfirmAction({ type: "delete", label: `Delete subscription for ${sub?.organizationName || "this organization"}` })}
+                  data-testid="button-delete-subscription"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Delete Subscription
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -434,14 +466,131 @@ function SubscriptionDetailDialog({
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmAction(null)} data-testid="button-cancel-confirm">Cancel</Button>
-            <Button onClick={executeConfirmedAction} disabled={updateSubscription.isPending} data-testid="button-confirm-change">
-              {updateSubscription.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Confirm
+            <Button
+              variant={confirmAction?.type === "delete" ? "destructive" : "default"}
+              onClick={executeConfirmedAction}
+              disabled={updateSubscription.isPending || deleteSubscription.isPending}
+              data-testid="button-confirm-change"
+            >
+              {(updateSubscription.isPending || deleteSubscription.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {confirmAction?.type === "delete" ? "Delete" : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function AssignSubscriptionDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedOrg, setSelectedOrg] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState("free");
+  const [selectedStatus, setSelectedStatus] = useState("active");
+
+  const { data: availableOrgs = [], isLoading: orgsLoading } = useQuery<{ id: string; name: string; tradeType: string | null }[]>({
+    queryKey: ["/api/platform/organizations-without-subscription"],
+    enabled: open,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (body: { organizationId: string; planTier: string; status: string }) => {
+      const res = await apiRequest("POST", "/api/platform/subscriptions", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Subscription Created", description: "Subscription has been assigned to the organization." });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/subscriptions"] });
+      setSelectedOrg("");
+      setSelectedPlan("free");
+      setSelectedStatus("active");
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = () => {
+    if (!selectedOrg) {
+      toast({ title: "Select an organization", variant: "destructive" });
+      return;
+    }
+    createMutation.mutate({ organizationId: selectedOrg, planTier: selectedPlan, status: selectedStatus });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle data-testid="text-assign-dialog-title">Assign Subscription</DialogTitle>
+          <DialogDescription>Assign a subscription plan to an organization that doesn't have one.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Organization</Label>
+            {orgsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>
+            ) : availableOrgs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">All organizations already have subscriptions.</p>
+            ) : (
+              <Select value={selectedOrg} onValueChange={setSelectedOrg}>
+                <SelectTrigger data-testid="select-assign-org">
+                  <SelectValue placeholder="Select organization..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableOrgs.map(org => (
+                    <SelectItem key={org.id} value={org.id}>{org.name}{org.tradeType ? ` (${org.tradeType})` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Plan Tier</Label>
+            <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+              <SelectTrigger data-testid="select-assign-plan">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="free">Trial</SelectItem>
+                <SelectItem value="starter">Starter</SelectItem>
+                <SelectItem value="professional">Growth</SelectItem>
+                <SelectItem value="enterprise">Scale</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Status</Label>
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger data-testid="select-assign-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="trialing">Trialing</SelectItem>
+                <SelectItem value="past_due">Past Due</SelectItem>
+                <SelectItem value="canceled">Canceled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-assign">Cancel</Button>
+          <Button onClick={handleSubmit} disabled={createMutation.isPending || !selectedOrg} data-testid="button-confirm-assign">
+            {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Assign Subscription
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -452,6 +601,7 @@ export default function PlatformSubscriptions() {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
 
   const buildParams = () => {
     const p = new URLSearchParams();
@@ -490,9 +640,14 @@ export default function PlatformSubscriptions() {
   return (
     <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-          <CreditCard className="h-6 w-6" /> Subscription Management
-        </h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+            <CreditCard className="h-6 w-6" /> Subscription Management
+          </h1>
+          <Button onClick={() => setShowAssignDialog(true)} data-testid="button-assign-subscription">
+            <Plus className="w-4 h-4 mr-2" /> Assign Subscription
+          </Button>
+        </div>
         <p className="text-muted-foreground mt-1">Manage organization plans, statuses, and add-ons across the platform</p>
       </div>
 
@@ -663,6 +818,11 @@ export default function PlatformSubscriptions() {
           onClose={() => setSelectedOrgId(null)}
         />
       )}
+
+      <AssignSubscriptionDialog
+        open={showAssignDialog}
+        onClose={() => setShowAssignDialog(false)}
+      />
     </div>
   );
 }

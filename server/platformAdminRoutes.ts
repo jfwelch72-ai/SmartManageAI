@@ -1177,4 +1177,119 @@ router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, req
   }
 });
 
+router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { organizationId, planTier, status, billingProvider } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ error: "organizationId is required" });
+    }
+
+    if (!planTier || !["free", "starter", "professional", "enterprise"].includes(planTier)) {
+      return res.status(400).json({ error: "Valid planTier is required (free, starter, professional, enterprise)" });
+    }
+
+    const [org] = await db.select({ id: organizations.id, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const [existing] = await db.select({ id: organizationSubscriptions.id })
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, organizationId))
+      .limit(1);
+
+    if (existing) {
+      return res.status(409).json({ error: "Organization already has a subscription. Use the update endpoint instead." });
+    }
+
+    const [newSub] = await db.insert(organizationSubscriptions)
+      .values({
+        organizationId,
+        planTier: planTier as any,
+        status: status || "active",
+        billingProvider: billingProvider || "manual",
+      })
+      .returning();
+
+    await logAudit(
+      {
+        userId: req.user!.id,
+        entityType: "subscription",
+        entityId: organizationId,
+        action: "CREATE",
+        newValue: JSON.stringify({ planTier, status: status || "active", orgName: org.name }),
+      },
+      req
+    );
+
+    res.status(201).json({ subscription: newSub });
+  } catch (error: any) {
+    console.error("Create subscription error:", error.message);
+    res.status(500).json({ error: "Failed to create subscription" });
+  }
+});
+
+router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [existing] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Subscription not found" });
+    }
+
+    await db.delete(organizationAddOns)
+      .where(eq(organizationAddOns.organizationId, orgId));
+
+    await db.delete(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId));
+
+    await logAudit(
+      {
+        userId: req.user!.id,
+        entityType: "subscription",
+        entityId: orgId,
+        action: "DELETE",
+        oldValue: JSON.stringify({ planTier: existing.planTier, status: existing.status }),
+      },
+      req
+    );
+
+    res.json({ success: true, message: "Subscription deleted" });
+  } catch (error: any) {
+    console.error("Delete subscription error:", error.message);
+    res.status(500).json({ error: "Failed to delete subscription" });
+  }
+});
+
+router.get("/platform/organizations-without-subscription", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const orgsWithSubs = db.select({ orgId: organizationSubscriptions.organizationId }).from(organizationSubscriptions);
+
+    const orgsWithoutSubs = await db.select({
+      id: organizations.id,
+      name: organizations.name,
+      tradeType: organizations.tradeType,
+    })
+      .from(organizations)
+      .where(sql`${organizations.id} NOT IN (${orgsWithSubs})`)
+      .orderBy(organizations.name)
+      .limit(100);
+
+    res.json(orgsWithoutSubs);
+  } catch (error: any) {
+    console.error("Fetch orgs without subscription error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organizations" });
+  }
+});
+
 export default router;
