@@ -86,13 +86,13 @@ export default function TopHeader() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center justify-between px-4 gap-4">
+      <div className="flex h-14 items-center justify-between px-2 sm:px-4 gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
           <SidebarTrigger data-testid="button-sidebar-toggle" />
           {userRole === 'HUSTLER' && <OrganizationSwitcher />}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {hasContractorAccess(userRole) && (
             <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
               <Link href="/messages">
@@ -126,7 +126,7 @@ export default function TopHeader() {
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-96" data-testid="notifications-panel">
+              <DropdownMenuContent align="end" className="w-[calc(100vw-2rem)] sm:w-96" data-testid="notifications-panel">
                 <div className="flex items-center justify-between p-2">
                   <DropdownMenuLabel>Notifications</DropdownMenuLabel>
                   {unreadNotifications.length > 0 && (

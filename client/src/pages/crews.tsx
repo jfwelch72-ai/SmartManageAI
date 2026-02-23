@@ -512,6 +512,7 @@ export default function CrewsPage() {
                     {hasCrewFilters ? "No crews match your filters" : "No crews found"}
                   </div>
                 ) : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -519,7 +520,7 @@ export default function CrewsPage() {
                         <TableHead>Lead</TableHead>
                         <TableHead>Members</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Description</TableHead>
+                        <TableHead className="hidden sm:table-cell">Description</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -547,7 +548,7 @@ export default function CrewsPage() {
                               <Badge variant="secondary">Inactive</Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-muted-foreground max-w-xs truncate">
+                          <TableCell className="text-muted-foreground max-w-xs truncate hidden sm:table-cell">
                             {crew.description || "-"}
                           </TableCell>
                           <TableCell className="text-right">
@@ -576,6 +577,7 @@ export default function CrewsPage() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>

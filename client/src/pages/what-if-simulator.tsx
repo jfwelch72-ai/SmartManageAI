@@ -247,7 +247,7 @@ export default function WhatIfSimulatorPage() {
   const results = calculateResults();
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

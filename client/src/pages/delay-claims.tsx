@@ -255,7 +255,7 @@ export default function DelayClaimsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Delay Claims</h1>
@@ -381,72 +381,74 @@ export default function DelayClaimsPage() {
       {/* Claims Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Claim #</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Cost</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredClaims.length === 0 ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                    No delay claims found
-                  </TableCell>
+                  <TableHead>Claim #</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead>Cost</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                filteredClaims.map((claim) => (
-                  <TableRow key={claim.id} data-testid={`row-claim-${claim.id}`}>
-                    <TableCell className="font-mono text-sm" data-testid={`text-claim-number-${claim.id}`}>
-                      {claim.claimNumber}
-                    </TableCell>
-                    <TableCell>
-                      {claim.project?.code || "-"}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate">
-                      {claim.title}
-                    </TableCell>
-                    <TableCell>
-                      {getClaimTypeBadge(claim.claimType)}
-                    </TableCell>
-                    <TableCell>
-                      {claim.daysRequested ? `${claim.daysRequested} days` : "-"}
-                    </TableCell>
-                    <TableCell>
-                      {formatCurrency(claim.costRequested)}
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(claim.status)}
-                    </TableCell>
-                    <TableCell>
-                      {claim.createdAt ? format(new Date(claim.createdAt), "MM/dd/yyyy") : "-"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setSelectedClaim(claim);
-                          setIsDetailOpen(true);
-                        }}
-                        data-testid={`button-view-claim-${claim.id}`}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {filteredClaims.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      No delay claims found
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  filteredClaims.map((claim) => (
+                    <TableRow key={claim.id} data-testid={`row-claim-${claim.id}`}>
+                      <TableCell className="font-mono text-sm" data-testid={`text-claim-number-${claim.id}`}>
+                        {claim.claimNumber}
+                      </TableCell>
+                      <TableCell>
+                        {claim.project?.code || "-"}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {claim.title}
+                      </TableCell>
+                      <TableCell>
+                        {getClaimTypeBadge(claim.claimType)}
+                      </TableCell>
+                      <TableCell>
+                        {claim.daysRequested ? `${claim.daysRequested} days` : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {formatCurrency(claim.costRequested)}
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(claim.status)}
+                      </TableCell>
+                      <TableCell>
+                        {claim.createdAt ? format(new Date(claim.createdAt), "MM/dd/yyyy") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedClaim(claim);
+                            setIsDetailOpen(true);
+                          }}
+                          data-testid={`button-view-claim-${claim.id}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

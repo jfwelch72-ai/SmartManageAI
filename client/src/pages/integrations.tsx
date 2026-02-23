@@ -426,7 +426,7 @@ export default function IntegrationsPage() {
   const qboConnection = activeConnections.find(c => c.provider === "qbo");
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-integrations-title">Integrations Hub</h1>
         <p className="text-muted-foreground" data-testid="text-integrations-description">
@@ -434,7 +434,7 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {(providers || []).map((provider) => {
           const conn = getConnectionForProvider(provider.key);
           const isConnected = conn?.status === "active";

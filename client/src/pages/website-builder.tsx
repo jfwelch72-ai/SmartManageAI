@@ -1013,7 +1013,7 @@ export default function WebsiteBuilderPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-website-builder">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6" data-testid="page-website-builder">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

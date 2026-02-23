@@ -160,24 +160,24 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-8">
         {/* Welcome Section */}
-        <div className="mb-8" data-testid="welcome-section">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="text-lg bg-primary text-primary-foreground">
+        <div className="mb-6 sm:mb-8" data-testid="welcome-section">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Avatar className="h-12 w-12 sm:h-16 sm:w-16">
+                <AvatarFallback className="text-base sm:text-lg bg-primary text-primary-foreground">
                   {user?.firstName?.[0]}{user?.lastName?.[0]}
                 </AvatarFallback>
               </Avatar>
               <div>
                 <div className="flex items-center gap-2">
                   <GreetingIcon className="w-5 h-5 text-yellow-500" />
-                  <h1 className="text-2xl font-bold text-foreground" data-testid="greeting-text">
+                  <h1 className="text-xl sm:text-2xl font-bold text-foreground" data-testid="greeting-text">
                     {greeting}, {firstName}!
                   </h1>
                 </div>
-                <p className="text-muted-foreground mt-1">
+                <p className="text-muted-foreground mt-1 text-sm sm:text-base">
                   {format(new Date(), "EEEE, MMMM d, yyyy")}
                 </p>
                 <Badge variant="secondary" className="mt-2">
@@ -191,7 +191,7 @@ export default function DashboardPage() {
               <ThemePicker />
               <DashboardEditMode />
               {hasManagementAccess(user?.role) && (
-                <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid">
+                <Button onClick={() => setLocation('/bids?new=true')} data-testid="button-new-bid" className="w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-2" />
                   New Bid
                 </Button>
@@ -208,7 +208,7 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-6">
             {/* Quick Stats Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="quick-stats">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4" data-testid="quick-stats">
               <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/projects?status=ACTIVE')} data-testid="stat-active-projects">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">

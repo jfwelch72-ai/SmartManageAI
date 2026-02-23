@@ -260,12 +260,12 @@ export default function HustlerDashboard() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-6">
         <div className="mb-6">
           <Skeleton className="h-8 w-64 mb-2" />
-          <Skeleton className="h-4 w-96" />
+          <Skeleton className="h-4 w-full sm:w-96" />
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
               <CardHeader>
@@ -283,19 +283,19 @@ export default function HustlerDashboard() {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2" data-testid="text-hustler-title">
-            <Building2 className="h-8 w-8" />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2" data-testid="text-hustler-title">
+            <Building2 className="h-7 w-7 sm:h-8 sm:w-8" />
             My Organizations
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
             Manage and switch between your {data?.count || 0} organizations
           </p>
         </div>
         <Link href="/onboarding">
-          <Button data-testid="button-add-org">
+          <Button data-testid="button-add-org" className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Add Organization
           </Button>
@@ -337,7 +337,7 @@ export default function HustlerDashboard() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 mb-6">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-6">
           <Card data-testid="card-stat-orgs">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium">Organizations</CardTitle>

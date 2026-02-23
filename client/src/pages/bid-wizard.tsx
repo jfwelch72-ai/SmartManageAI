@@ -442,7 +442,7 @@ export default function BidWizardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto p-6">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>

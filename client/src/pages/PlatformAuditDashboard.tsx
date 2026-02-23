@@ -231,14 +231,14 @@ export default function PlatformAuditDashboard() {
   const overallStatus = report.summary.failed === 0 ? 'healthy' : 'failing';
 
   return (
-    <div className="min-h-screen bg-background p-6 space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="min-h-screen bg-background px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-audit-title">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2" data-testid="text-audit-title">
             <Shield className="h-6 w-6" />
             Platform Security Audit
           </h1>
-          <p className="text-muted-foreground flex items-center gap-2">
+          <p className="text-muted-foreground flex items-center gap-2 text-sm sm:text-base">
             <Clock className="h-4 w-4" />
             Last run: {new Date(report.timestamp).toLocaleString()} | 
             Git: {report.gitCommit} | 
