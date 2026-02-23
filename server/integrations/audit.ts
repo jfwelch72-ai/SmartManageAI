@@ -6,9 +6,12 @@ export type IntegrationAuditAction =
   | "connection.disconnected"
   | "connection.deleted"
   | "connection.error"
+  | "connection.dev_activated"
   | "sync.started"
   | "sync.completed"
   | "sync.failed"
+  | `sync.${string}.dry_run`
+  | `sync.${string}.executed`
   | "webhook.delivered"
   | "webhook.failed"
   | "event.enqueued"
@@ -16,7 +19,7 @@ export type IntegrationAuditAction =
   | "event.dead_letter";
 
 export function logIntegrationAudit(
-  action: IntegrationAuditAction,
+  action: IntegrationAuditAction | string,
   details: {
     orgId: string;
     connectionId?: string;

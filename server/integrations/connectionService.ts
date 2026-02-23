@@ -38,10 +38,11 @@ export async function updateConnectionStatus(id: string, orgId: string, status: 
 
 export async function storeConnectionTokens(id: string, orgId: string, tokens: TokenSet) {
   const safeMetadata = { 
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken || null,
     tokenType: tokens.tokenType, 
     scope: tokens.scope, 
     expiresAt: tokens.expiresAt?.toISOString(),
-    hasRefreshToken: !!tokens.refreshToken,
     ...(tokens.raw || {}),
   };
   const [updated] = await db.update(integrationConnections)
