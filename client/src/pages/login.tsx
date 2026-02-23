@@ -136,10 +136,58 @@ export default function LoginPage() {
     }
   };
 
+  const [ssoSlug, setSsoSlug] = useState("");
+  const [showSso, setShowSso] = useState(false);
+
+  const handleSsoLogin = () => {
+    if (ssoSlug.trim()) {
+      window.location.href = `/api/sso/${encodeURIComponent(ssoSlug.trim())}/login`;
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 gap-6">
       <LoginForm onLogin={handleLogin} />
       
+      <div className="w-full max-w-md text-center">
+        {!showSso ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSso(true)}
+            className="text-muted-foreground"
+            data-testid="button-show-sso"
+          >
+            <Shield className="w-4 h-4 mr-2" />
+            Sign in with SSO
+          </Button>
+        ) : (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Single Sign-On
+              </CardTitle>
+              <CardDescription>Enter your organization's identifier to sign in via SSO</CardDescription>
+            </CardHeader>
+            <CardContent className="flex gap-2">
+              <input
+                type="text"
+                value={ssoSlug}
+                onChange={(e) => setSsoSlug(e.target.value)}
+                placeholder="Organization slug"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="input-sso-slug"
+                onKeyDown={(e) => e.key === "Enter" && handleSsoLogin()}
+              />
+              <Button onClick={handleSsoLogin} disabled={!ssoSlug.trim()} data-testid="button-sso-login" size="sm">
+                Continue
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {isDev && (
         <Card className="w-full max-w-md">
           <CardHeader className="pb-3">

@@ -53,7 +53,12 @@ export type FeatureKey =
   | "DOCUMENT_CONTROL"
   | "EXECUTIVE_DIGEST"
   | "PROJECT_HEALTH_SCORE"
-  | "MOBILE_OFFLINE_V2";
+  | "MOBILE_OFFLINE_V2"
+  | "SSO"
+  | "AUDIT_EXPORT"
+  | "DATA_RETENTION"
+  | "PRIVACY_COMPLIANCE"
+  | "SESSION_MANAGEMENT";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -92,6 +97,11 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "PROJECT_HEALTH_SCORE",
     "AI_GOVERNANCE",
     "MOBILE_OFFLINE_V2",
+    "SSO",
+    "AUDIT_EXPORT",
+    "DATA_RETENTION",
+    "PRIVACY_COMPLIANCE",
+    "SESSION_MANAGEMENT",
   ],
 };
 
@@ -359,6 +369,26 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   MOBILE_OFFLINE_V2: {
     name: "Mobile Offline V2",
     description: "Enhanced offline mode with background sync",
+  },
+  SSO: {
+    name: "Single Sign-On",
+    description: "SAML 2.0 SSO integration with enterprise identity providers",
+  },
+  AUDIT_EXPORT: {
+    name: "Audit Log Export",
+    description: "Searchable audit logs with CSV and JSON export",
+  },
+  DATA_RETENTION: {
+    name: "Data Retention Policies",
+    description: "Automated data lifecycle management with configurable retention",
+  },
+  PRIVACY_COMPLIANCE: {
+    name: "Privacy & Compliance",
+    description: "GDPR/DPA tooling with data subject request management",
+  },
+  SESSION_MANAGEMENT: {
+    name: "Session Management",
+    description: "Active session tracking, idle timeout, and concurrent session limits",
   },
 };
 

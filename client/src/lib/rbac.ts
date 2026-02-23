@@ -660,6 +660,18 @@ export const NavigationConfig = {
       testId: "nav-executive-digest",
       visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER",
     },
+    {
+      href: "/audit-logs",
+      label: "Audit Logs",
+      testId: "nav-audit-logs",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/enterprise-settings",
+      label: "Enterprise Settings",
+      testId: "nav-enterprise-settings",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
   ],
 
   toolsMenu: [

@@ -102,6 +102,8 @@ import PayrollManagementPage from "@/pages/payroll-management";
 import IntegrationsPage from "@/pages/integrations";
 import ApprovalsPage from "@/pages/approvals";
 import AIGovernancePage from "@/pages/ai-governance";
+import AuditLogsPage from "@/pages/audit-logs";
+import EnterpriseSettingsPage from "@/pages/enterprise-settings";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -215,6 +217,8 @@ function Router() {
       <Route path="/integrations" component={() => <ProtectedRoute component={IntegrationsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/approvals" component={() => <ProtectedRoute component={ApprovalsPage} />} />
       <Route path="/ai-governance" component={() => <ProtectedRoute component={AIGovernancePage} permission={RoutePermissions.AI_SETTINGS} />} />
+      <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/enterprise-settings" component={() => <ProtectedRoute component={EnterpriseSettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />

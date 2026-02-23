@@ -64,7 +64,14 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Approval Workflows Framework**: Generic approval system for various project elements (COs, SOV/Pay Apps, Time, Vendor Bills, E-sign, QBO exports).
 *   **Document Control & Revisioning**: Sequential revision numbering, active/superseded status, source tracking.
 *   **Project Health Score**: Deterministic 0-100 score from weighted inputs (schedule, budget, RFI/submittal, CO, safety) with snapshots for trending.
-*   **Background Jobs Framework**: node-cron based job runner with outbox dispatcher.
+*   **Background Jobs Framework**: node-cron based job runner with outbox dispatcher and daily retention policy execution.
+*   **Enterprise Procurement Readiness**: Suite of enterprise-grade features gated behind the `enterprise` plan tier with dedicated feature flags (`SSO`, `AUDIT_EXPORT`, `DATA_RETENTION`, `PRIVACY_COMPLIANCE`, `SESSION_MANAGEMENT`).
+    *   **SSO / SAML 2.0 Support**: SAML 2.0 Service Provider using `@node-saml/node-saml`. Supports OKTA, Azure AD, OneLogin, and custom IdPs. Admin configures IdP metadata, certificate, and entity ID. SSO-only mode enforceable per org. Routes in `server/ssoRoutes.ts`, schema in `sso_configurations` table.
+    *   **Session Security Hardening**: Active session tracking in `active_sessions` table with idle timeout enforcement, concurrent session limits, IP tracking, and device info. Users can view/revoke sessions. Configurable per org (timeout, max sessions).
+    *   **Audit Log Export System**: Searchable/filterable audit log viewer with date range, entity type, action, and user filters. Export to CSV or JSON. Summary statistics (actions by type, activity counts). Routes in `server/auditExportRoutes.ts`, UI at `/audit-logs`.
+    *   **Data Retention Policies**: Configurable retention periods per entity type (audit_logs, AI actions, documents, time entries, messages, file uploads) with DELETE/ARCHIVE/ANONYMIZE actions. Dry-run preview, manual execution, and automated daily cron at 2 AM. Routes in `server/retentionRoutes.ts`, schema in `retention_policies` table.
+    *   **Privacy & Compliance Tooling (GDPR)**: Record of Processing Activities (ROPA) management per GDPR Article 30. Data Subject Request workflow (ACCESS, DELETION, PORTABILITY, RECTIFICATION, OBJECTION) with status tracking. User data export and anonymization capabilities. Routes in `server/privacyRoutes.ts`, schemas in `data_processing_records` and `data_subject_requests` tables.
+    *   **Enterprise Settings Page**: Unified admin interface at `/enterprise-settings` with 4 tabs (SSO, Session Security, Data Retention, Privacy & Compliance), each gated by its respective feature flag via FeatureGate components.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
@@ -81,3 +88,4 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Google Workspace (Gmail, Calendar)**: For email and calendar integrations.
 *   **Microsoft 365 (Mail, Calendar)**: For email and calendar integrations.
 *   **DocuSign**: For e-signature workflows.
+*   **@node-saml/node-saml**: SAML 2.0 Service Provider for enterprise SSO.

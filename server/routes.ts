@@ -114,6 +114,10 @@ import documentRevisionRoutes from "./documentRevisionRoutes";
 import projectHealthRoutes from "./projectHealthRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
 import featureFlagRoutes from "./featureFlagRoutes";
+import ssoRoutes from "./ssoRoutes";
+import auditExportRoutes from "./auditExportRoutes";
+import retentionRoutes from "./retentionRoutes";
+import privacyRoutes from "./privacyRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
@@ -247,6 +251,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/project-health", projectHealthRoutes);
 
   app.use("/api/feature-flags", featureFlagRoutes);
+
+  app.use("/api/sso", ssoRoutes);
+  app.use("/api/audit", auditExportRoutes);
+  app.use("/api/retention", retentionRoutes);
+  app.use("/api/privacy", privacyRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

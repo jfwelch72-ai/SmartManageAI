@@ -224,6 +224,11 @@ export const FEATURE_FLAG_KEYS = [
   "INTEGRATION_GOOGLE",
   "INTEGRATION_MICROSOFT",
   "INTEGRATION_ESIGN",
+  "SSO",
+  "AUDIT_EXPORT",
+  "DATA_RETENTION",
+  "PRIVACY_COMPLIANCE",
+  "SESSION_MANAGEMENT",
   "INTEGRATION_ZAPIER",
   "AI_GOVERNANCE",
   "APPROVALS_FRAMEWORK",
@@ -7607,3 +7612,121 @@ export const projectHealthSnapshots = pgTable("project_health_snapshots", {
 export const insertProjectHealthSnapshotSchema = createInsertSchema(projectHealthSnapshots).omit({ id: true, createdAt: true });
 export type InsertProjectHealthSnapshot = z.infer<typeof insertProjectHealthSnapshotSchema>;
 export type ProjectHealthSnapshot = typeof projectHealthSnapshots.$inferSelect;
+
+// ============================================================================
+// Enterprise Procurement Readiness Tables
+// ============================================================================
+
+// SSO Provider enum
+export const ssoProviderEnum = pgEnum("sso_provider", ["OKTA", "AZURE_AD", "ONELOGIN", "CUSTOM"]);
+
+// Table: sso_configurations
+export const ssoConfigurations = pgTable("sso_configurations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  provider: ssoProviderEnum("provider").notNull(),
+  entityId: text("entity_id").notNull(),
+  ssoLoginUrl: text("sso_login_url").notNull(),
+  certificate: text("certificate").notNull(),
+  metadataUrl: text("metadata_url"),
+  enforceSSO: boolean("enforce_sso").notNull().default(false),
+  enabled: boolean("enabled").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("sso_config_org_idx").on(table.organizationId),
+}));
+
+export const insertSsoConfigurationSchema = createInsertSchema(ssoConfigurations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSsoConfiguration = z.infer<typeof insertSsoConfigurationSchema>;
+export type SsoConfiguration = typeof ssoConfigurations.$inferSelect;
+
+// Table: active_sessions
+export const activeSessions = pgTable("active_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  deviceInfo: text("device_info"),
+  lastActivityAt: timestamp("last_activity_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("active_sessions_user_idx").on(table.userId),
+  expiresIdx: index("active_sessions_expires_idx").on(table.expiresAt),
+}));
+
+export const insertActiveSessionSchema = createInsertSchema(activeSessions).omit({ id: true, createdAt: true });
+export type InsertActiveSession = z.infer<typeof insertActiveSessionSchema>;
+export type ActiveSession = typeof activeSessions.$inferSelect;
+
+// Retention policy enums
+export const retentionEntityTypeEnum = pgEnum("retention_entity_type", ["AUDIT_LOGS", "AI_ACTIONS", "DOCUMENTS", "TIME_ENTRIES", "MESSAGES", "FILE_UPLOADS"]);
+export const retentionActionEnum = pgEnum("retention_action", ["DELETE", "ARCHIVE", "ANONYMIZE"]);
+
+// Table: retention_policies
+export const retentionPolicies = pgTable("retention_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  entityType: retentionEntityTypeEnum("entity_type").notNull(),
+  retentionDays: integer("retention_days").notNull(),
+  action: retentionActionEnum("action").notNull().default("ARCHIVE"),
+  enabled: boolean("enabled").notNull().default(true),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("retention_policies_org_idx").on(table.organizationId),
+  orgEntityIdx: unique("retention_policies_org_entity").on(table.organizationId, table.entityType),
+}));
+
+export const insertRetentionPolicySchema = createInsertSchema(retentionPolicies).omit({ id: true, createdAt: true, updatedAt: true, lastRunAt: true });
+export type InsertRetentionPolicy = z.infer<typeof insertRetentionPolicySchema>;
+export type RetentionPolicy = typeof retentionPolicies.$inferSelect;
+
+// Data subject request enums
+export const dataSubjectRequestTypeEnum = pgEnum("data_subject_request_type", ["ACCESS", "DELETION", "PORTABILITY", "RECTIFICATION", "OBJECTION"]);
+export const dataSubjectRequestStatusEnum = pgEnum("data_subject_request_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DENIED"]);
+
+// Table: data_processing_records (ROPA - Record of Processing Activities)
+export const dataProcessingRecords = pgTable("data_processing_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  purpose: text("purpose").notNull(),
+  legalBasis: text("legal_basis").notNull(),
+  dataCategories: json("data_categories"),
+  recipients: json("recipients"),
+  retentionPeriod: text("retention_period"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("data_processing_records_org_idx").on(table.organizationId),
+}));
+
+export const insertDataProcessingRecordSchema = createInsertSchema(dataProcessingRecords).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDataProcessingRecord = z.infer<typeof insertDataProcessingRecordSchema>;
+export type DataProcessingRecord = typeof dataProcessingRecords.$inferSelect;
+
+// Table: data_subject_requests
+export const dataSubjectRequests = pgTable("data_subject_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  requestType: dataSubjectRequestTypeEnum("request_type").notNull(),
+  subjectEmail: text("subject_email").notNull(),
+  subjectName: text("subject_name"),
+  status: dataSubjectRequestStatusEnum("status").notNull().default("PENDING"),
+  requestedAt: timestamp("requested_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id),
+  notes: text("notes"),
+  exportFileKey: text("export_file_key"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("data_subject_requests_org_idx").on(table.organizationId),
+  statusIdx: index("data_subject_requests_status_idx").on(table.status),
+}))
+
+export const insertDataSubjectRequestSchema = createInsertSchema(dataSubjectRequests).omit({ id: true, createdAt: true, requestedAt: true, completedAt: true });
+export type InsertDataSubjectRequest = z.infer<typeof insertDataSubjectRequestSchema>;
+export type DataSubjectRequest = typeof dataSubjectRequests.$inferSelect;
