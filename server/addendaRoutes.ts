@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "./auth";
 import { db } from "./db";
-import { addenda, addendumAcknowledgments, projects } from "@shared/schema";
+import { addenda, addendumAcknowledgments } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
 
@@ -11,9 +11,6 @@ router.get("/projects/:projectId/addenda", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const { projectId } = req.params;
-    const [proj] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.organizationId, user.organizationId)));
-    if (!proj) return res.status(404).json({ error: "Project not found" });
 
     const items = await db.select().from(addenda)
       .where(and(
@@ -46,10 +43,6 @@ router.post("/projects/:projectId/addenda", requireAuth, async (req, res) => {
     const { projectId } = req.params;
     const { title, description, relatedDocumentId, storageKey, fileUrl, fileName } = req.body;
     if (!title) return res.status(400).json({ error: "Title is required" });
-
-    const [proj] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.organizationId, user.organizationId)));
-    if (!proj) return res.status(404).json({ error: "Project not found" });
 
     const latest = await db.select({ maxNum: sql<number>`coalesce(max(${addenda.addendumNumber}), 0)` })
       .from(addenda)
