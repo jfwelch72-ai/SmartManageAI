@@ -1,10 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Truck, Clock, Package, AlertCircle, Wrench } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Truck, Clock, Package, AlertCircle, Wrench, Sparkles, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
+import { AIAnalysisButton } from "@/components/AIAnalysisButton";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProjectProfitability {
   project_code: string;
@@ -156,14 +160,23 @@ export default function CFODashboard() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <DollarSign className="h-8 w-8 text-primary" />
-            CFO Dashboard
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Real-time profitability analysis across all projects
-          </p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <DollarSign className="h-8 w-8 text-primary" />
+              CFO Dashboard
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Real-time profitability analysis across all projects
+            </p>
+          </div>
+          <AIAnalysisButton
+            showDropdown={true}
+            variant="default"
+            size="default"
+            className=""
+            data-testid="cfo-ai-analysis-button"
+          />
         </div>
 
       {isLoading ? (
@@ -641,9 +654,15 @@ export default function CFODashboard() {
               <Card>
                 <CardContent className="p-8 text-center">
                   <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">
+                  <p className="text-muted-foreground mb-4">
                     No profitability data available. Run AI analysis to generate insights.
                   </p>
+                  <AIAnalysisButton
+                    module="COSTS"
+                    variant="default"
+                    size="default"
+                    data-testid="cfo-empty-state-ai-button"
+                  />
                 </CardContent>
               </Card>
             )}

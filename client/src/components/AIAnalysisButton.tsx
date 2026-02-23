@@ -66,6 +66,8 @@ export function AIAnalysisButton({
       });
       queryClient.invalidateQueries({ queryKey: ['/api/ai-insights'] });
       queryClient.invalidateQueries({ queryKey: ['/api/ai-insights/dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/cfo/profitability'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/cfo/equipment-metrics'] });
     },
     onError: (error: any) => {
       toast({
