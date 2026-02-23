@@ -714,6 +714,12 @@ export const PlatformAdminNavConfig = {
       visible: (role?: string) => isSuperAdmin(role),
     },
     {
+      href: "/admin/subscriptions",
+      label: "Subscriptions",
+      testId: "nav-platform-subscriptions",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
+    {
       href: "/admin/analytics",
       label: "Analytics",
       testId: "nav-platform-analytics",

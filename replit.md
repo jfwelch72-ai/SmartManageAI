@@ -43,7 +43,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Subcontractor Bid Request Network**: Platform-wide bid solicitation network allowing General Contractors to request bids from platform-member subcontractors.
 *   **Unified Task Model**: Consolidates manual, email-originated, and AI-generated tasks.
 *   **Operational Infrastructure**: Structured logging utility, monitoring hooks, health, and readiness probes.
-*   **Subscription & Billing System**: 4-tier membership model with 6 add-ons, featuring backend and frontend feature gating.
+*   **Subscription & Billing System**: 4-tier membership model with 6 add-ons, featuring backend and frontend feature gating. Includes Super Admin Subscription Management page at `/admin/subscriptions` with platform-wide stats (MRR, plan distribution, status breakdown), searchable/filterable subscription table, and detail dialogs for plan changes, status updates, and add-on management.
 *   **Construction Calculator Suite**: Professional construction calculator with 10 specialized tools.
 *   **Marketing Landing Page**: Comprehensive public landing page for unauthenticated visitors.
 *   **User Profile Page**: Comprehensive profile management with editable personal info, skills management (including Skills & Certifications system with skill rating, verification, and automated expiry notifications), and Performance & History (employee overview, attendance, safety, quality, performance reviews).

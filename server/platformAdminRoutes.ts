@@ -1,11 +1,12 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, scopeItems, estimateLineItems, dailyScopeProgress, estimates } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationCalculators, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, scopeItems, estimateLineItems, dailyScopeProgress, estimates, organizationSubscriptions, organizationAddOns, organizationUsage } from "@shared/schema";
 import { requireAuth, type AuthRequest, generateToken } from "./auth";
-import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
+import { eq, count, desc, sql, and, gte, isNotNull, ilike, like } from "drizzle-orm";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { logAudit } from "./auditLogger";
+import { PLAN_INFO, ADDON_INFO, HUSTLER_PLAN_INFO, type PlanTier, type AddOnKey } from "@shared/billing/plans";
 
 const router = Router();
 
@@ -840,6 +841,339 @@ router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (re
   } catch (error: any) {
     console.error("SOW stats error:", error.message);
     res.status(500).json({ error: "Failed to get SOW link stats" });
+  }
+});
+
+router.get("/platform/subscriptions/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const byPlanTier = await db.select({
+      planTier: organizationSubscriptions.planTier,
+      count: count(),
+    })
+    .from(organizationSubscriptions)
+    .groupBy(organizationSubscriptions.planTier);
+
+    const byStatus = await db.select({
+      status: organizationSubscriptions.status,
+      count: count(),
+    })
+    .from(organizationSubscriptions)
+    .groupBy(organizationSubscriptions.status);
+
+    const addonStats = await db.select({
+      addonKey: organizationAddOns.addonKey,
+      count: count(),
+    })
+    .from(organizationAddOns)
+    .where(eq(organizationAddOns.status, "active"))
+    .groupBy(organizationAddOns.addonKey);
+
+    const [totalOrgs] = await db.select({ count: count() }).from(organizationSubscriptions);
+
+    let estimatedMrr = 0;
+    for (const row of byPlanTier) {
+      const info = PLAN_INFO[row.planTier as PlanTier];
+      if (info) {
+        estimatedMrr += info.price * row.count;
+      }
+    }
+
+    const activeAddonCount = await db.select({ count: count() })
+      .from(organizationAddOns)
+      .where(eq(organizationAddOns.status, "active"));
+
+    for (const addon of addonStats) {
+      const info = ADDON_INFO[addon.addonKey as AddOnKey];
+      if (info) {
+        estimatedMrr += info.price * addon.count;
+      }
+    }
+
+    const recentChanges = await db.select({
+      id: auditLog.id,
+      action: auditLog.action,
+      entityType: auditLog.entityType,
+      newValue: auditLog.newValue,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .where(eq(auditLog.entityType, "subscription"))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(10);
+
+    res.json({
+      totalSubscriptions: totalOrgs.count,
+      byPlanTier,
+      byStatus,
+      addonAdoption: addonStats,
+      estimatedMrr,
+      recentChanges,
+    });
+  } catch (error: any) {
+    console.error("Subscription stats error:", error.message);
+    res.status(500).json({ error: "Failed to get subscription stats" });
+  }
+});
+
+router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { planTier, status, search, page = "1", limit = "20" } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    const conditions: any[] = [];
+    if (planTier && planTier !== "all") {
+      conditions.push(eq(organizationSubscriptions.planTier, planTier as string));
+    }
+    if (status && status !== "all") {
+      conditions.push(eq(organizationSubscriptions.status, status as string));
+    }
+
+    let searchCondition: any = undefined;
+    if (search && typeof search === "string" && search.trim()) {
+      searchCondition = ilike(organizations.name, `%${search.trim()}%`);
+    }
+
+    const allConditions = searchCondition
+      ? (conditions.length > 0 ? and(...conditions, searchCondition) : searchCondition)
+      : (conditions.length > 0 ? and(...conditions) : undefined);
+
+    const baseQuery = db
+      .select({
+        subscriptionId: organizationSubscriptions.id,
+        orgId: organizations.id,
+        orgName: organizations.name,
+        orgSlug: organizations.slug,
+        tradeType: organizations.tradeType,
+        planTier: organizationSubscriptions.planTier,
+        status: organizationSubscriptions.status,
+        billingProvider: organizationSubscriptions.billingProvider,
+        currentPeriodEnd: organizationSubscriptions.currentPeriodEnd,
+        createdAt: organizationSubscriptions.createdAt,
+        updatedAt: organizationSubscriptions.updatedAt,
+      })
+      .from(organizationSubscriptions)
+      .innerJoin(organizations, eq(organizationSubscriptions.organizationId, organizations.id));
+
+    const dataQuery = allConditions
+      ? baseQuery.where(allConditions)
+      : baseQuery;
+
+    const rows = await dataQuery
+      .orderBy(desc(organizationSubscriptions.updatedAt))
+      .limit(limitNum)
+      .offset(offset);
+
+    const countQuery = db
+      .select({ count: count() })
+      .from(organizationSubscriptions)
+      .innerJoin(organizations, eq(organizationSubscriptions.organizationId, organizations.id));
+
+    const [totalRow] = allConditions
+      ? await countQuery.where(allConditions)
+      : await countQuery;
+
+    const orgIds = rows.map(r => r.orgId);
+    let userCounts: Record<string, number> = {};
+    let addonCounts: Record<string, number> = {};
+
+    if (orgIds.length > 0) {
+      const userCountRows = await db.select({
+        orgId: users.organizationId,
+        count: count(),
+      })
+      .from(users)
+      .where(sql`${users.organizationId} IN (${sql.join(orgIds.map(id => sql`${id}`), sql`, `)})`)
+      .groupBy(users.organizationId);
+
+      for (const r of userCountRows) {
+        if (r.orgId) userCounts[r.orgId] = r.count;
+      }
+
+      const addonCountRows = await db.select({
+        orgId: organizationAddOns.organizationId,
+        count: count(),
+      })
+      .from(organizationAddOns)
+      .where(and(
+        sql`${organizationAddOns.organizationId} IN (${sql.join(orgIds.map(id => sql`${id}`), sql`, `)})`,
+        eq(organizationAddOns.status, "active")
+      ))
+      .groupBy(organizationAddOns.organizationId);
+
+      for (const r of addonCountRows) {
+        addonCounts[r.orgId] = r.count;
+      }
+    }
+
+    const subscriptions = rows.map(r => ({
+      ...r,
+      userCount: userCounts[r.orgId] || 0,
+      activeAddonCount: addonCounts[r.orgId] || 0,
+      planPrice: PLAN_INFO[r.planTier as PlanTier]?.price || 0,
+      planName: PLAN_INFO[r.planTier as PlanTier]?.name || r.planTier,
+    }));
+
+    res.json({
+      subscriptions,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalRow.count,
+        totalPages: Math.ceil(totalRow.count / limitNum),
+      },
+    });
+  } catch (error: any) {
+    console.error("Subscriptions list error:", error.message);
+    res.status(500).json({ error: "Failed to list subscriptions" });
+  }
+});
+
+router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    if (!org) return res.status(404).json({ error: "Organization not found" });
+
+    const [subscription] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    const addons = await db.select()
+      .from(organizationAddOns)
+      .where(eq(organizationAddOns.organizationId, orgId));
+
+    const usage = await db.select()
+      .from(organizationUsage)
+      .where(eq(organizationUsage.organizationId, orgId));
+
+    const [userCount] = await db.select({ count: count() })
+      .from(users)
+      .where(eq(users.organizationId, orgId));
+
+    const recentAudit = await db.select()
+      .from(auditLog)
+      .where(and(
+        eq(auditLog.entityType, "subscription"),
+        eq(auditLog.entityId, orgId)
+      ))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(20);
+
+    res.json({
+      organization: { id: org.id, name: org.name, slug: org.slug, tradeType: org.tradeType, createdAt: org.createdAt },
+      subscription: subscription || null,
+      addons,
+      usage,
+      userCount: userCount.count,
+      planInfo: subscription ? PLAN_INFO[subscription.planTier as PlanTier] : null,
+      recentAudit,
+    });
+  } catch (error: any) {
+    console.error("Subscription detail error:", error.message);
+    res.status(500).json({ error: "Failed to get subscription details" });
+  }
+});
+
+router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const { planTier, status } = req.body;
+
+    const [subscription] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+
+    const updates: any = { updatedAt: new Date() };
+    const changes: string[] = [];
+
+    if (planTier && ["free", "starter", "professional", "enterprise"].includes(planTier)) {
+      changes.push(`planTier: ${subscription.planTier} → ${planTier}`);
+      updates.planTier = planTier;
+    }
+
+    if (status && ["active", "trialing", "past_due", "canceled"].includes(status)) {
+      changes.push(`status: ${subscription.status} → ${status}`);
+      updates.status = status;
+    }
+
+    if (changes.length === 0) {
+      return res.status(400).json({ error: "No valid changes provided" });
+    }
+
+    const [updated] = await db.update(organizationSubscriptions)
+      .set(updates)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .returning();
+
+    await logAudit(
+      {
+        userId: req.user!.id,
+        entityType: "subscription",
+        entityId: orgId,
+        action: "UPDATE",
+        newValue: JSON.stringify({ changes, planTier: updates.planTier, status: updates.status }),
+      },
+      req
+    );
+
+    res.json({ subscription: updated, changes });
+  } catch (error: any) {
+    console.error("Subscription update error:", error.message);
+    res.status(500).json({ error: "Failed to update subscription" });
+  }
+});
+
+router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId, addonKey } = req.params;
+    const { status } = req.body;
+
+    if (!status || !["active", "inactive"].includes(status)) {
+      return res.status(400).json({ error: "Status must be 'active' or 'inactive'" });
+    }
+
+    const [existing] = await db.select()
+      .from(organizationAddOns)
+      .where(and(
+        eq(organizationAddOns.organizationId, orgId),
+        eq(organizationAddOns.addonKey, addonKey)
+      ))
+      .limit(1);
+
+    let result;
+    if (existing) {
+      [result] = await db.update(organizationAddOns)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(organizationAddOns.id, existing.id))
+        .returning();
+    } else {
+      [result] = await db.insert(organizationAddOns)
+        .values({ organizationId: orgId, addonKey: addonKey as any, status, updatedAt: new Date() })
+        .returning();
+    }
+
+    await logAudit(
+      {
+        userId: req.user!.id,
+        entityType: "subscription",
+        entityId: orgId,
+        action: "UPDATE",
+        newValue: JSON.stringify({ addon: addonKey, status }),
+      },
+      req
+    );
+
+    res.json({ addon: result });
+  } catch (error: any) {
+    console.error("Addon update error:", error.message);
+    res.status(500).json({ error: "Failed to update addon" });
   }
 });
 

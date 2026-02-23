@@ -51,6 +51,7 @@ import PlatformOrganizationDetail from "@/pages/PlatformOrganizationDetail";
 import PlatformAnalytics from "@/pages/PlatformAnalytics";
 import PlatformSupportTools from "@/pages/PlatformSupportTools";
 import PlatformAuditDashboard from "@/pages/PlatformAuditDashboard";
+import PlatformSubscriptions from "@/pages/PlatformSubscriptions";
 import VendorPricingPage from "@/pages/vendor-pricing";
 import MobileSyncPage from "@/pages/mobile-sync";
 import CompanySettingsPage from "@/pages/company-settings";
@@ -294,6 +295,7 @@ function Router() {
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={PlatformSubscriptions} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/audit" component={() => <ProtectedRoute component={PlatformAuditDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
