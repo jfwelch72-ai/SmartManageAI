@@ -54,11 +54,12 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Time Entries System Enhancements**: Rebuilt time-entry page with tabbed interface, table layout, filters, summary cards, and CSV export.
 *   **Overtime Request System**: Allows workers to request overtime with manager approval workflow.
 *   **Trade-Specific Cost Code Preset System**: CSI-based cost codes for 23 trade types.
-*   **Integration Hub**: Provider-agnostic framework for centralized connection management, event outbox pattern, webhook delivery, and provider registry. Supports QBO, Google, Microsoft, and DocuSign.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management, event outbox pattern, webhook delivery, and provider registry. Supports QBO, Google, Microsoft, DocuSign, and Zapier.
 *   **QuickBooks Online Sync**: OAuth 2.0 connection flow for Chart of Accounts import, Customer export, Invoice export from SOV, Payment status import. Includes dry-run and scheduled sync modes.
 *   **Google Workspace Integration**: OAuth 2.0 for Gmail + Calendar with cursor-based incremental email ingestion.
 *   **Microsoft 365 Integration**: OAuth 2.0 for Mail + Calendar via Graph API with delta query sync.
 *   **E-Sign Integration**: DocuSign OAuth provider for sending COs and Subcontracts for signature, with status tracking and signed PDF storage.
+*   **Zapier Webhook Integration**: Webhook-based provider connecting SmartManageAI to 5,000+ apps. Supports 16 outgoing event types (project, bid, CO, invoice, time, task, document, safety), HMAC-signed payloads, incoming webhook endpoints, webhook CRUD management, and per-webhook trigger tracking.
 *   **AI Governance System**: Centralized `executeAiAction()` wrapper with per-org daily limits, audit trail, and safe modes.
 *   **Approval Workflows Framework**: Generic approval system for various project elements (COs, SOV/Pay Apps, Time, Vendor Bills, E-sign, QBO exports).
 *   **Document Control & Revisioning**: Sequential revision numbering, active/superseded status, source tracking.

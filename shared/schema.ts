@@ -224,6 +224,7 @@ export const FEATURE_FLAG_KEYS = [
   "INTEGRATION_GOOGLE",
   "INTEGRATION_MICROSOFT",
   "INTEGRATION_ESIGN",
+  "INTEGRATION_ZAPIER",
   "AI_GOVERNANCE",
   "APPROVALS_FRAMEWORK",
   "DOCUMENT_CONTROL",
@@ -7340,7 +7341,7 @@ export type WorkerLog = typeof workerLogs.$inferSelect;
 
 // ============ UPGRADE WAVE: Integration Hub + AI Governance + Approvals + Document Control + Health ============
 
-export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign"]);
+export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign", "zapier"]);
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
 export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
 export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
@@ -7432,6 +7433,51 @@ export const integrationSyncState = pgTable("integration_sync_state", {
 export const insertIntegrationSyncStateSchema = createInsertSchema(integrationSyncState).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertIntegrationSyncState = z.infer<typeof insertIntegrationSyncStateSchema>;
 export type IntegrationSyncState = typeof integrationSyncState.$inferSelect;
+
+// Table 4b: zapier_webhooks – outgoing webhook configs for the Zapier provider
+export const zapierWebhooks = pgTable("zapier_webhooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  webhookUrl: text("webhook_url").notNull(),
+  eventTypes: text("event_types").array().notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  secretKey: text("secret_key").notNull(),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  lastStatus: text("last_status"),
+  triggerCount: integer("trigger_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("zapier_webhooks_org_idx").on(table.organizationId),
+  connectionIdx: index("zapier_webhooks_connection_idx").on(table.connectionId),
+}));
+
+export const insertZapierWebhookSchema = createInsertSchema(zapierWebhooks).omit({ id: true, createdAt: true, updatedAt: true, triggerCount: true, lastTriggeredAt: true, lastStatus: true });
+export type InsertZapierWebhook = z.infer<typeof insertZapierWebhookSchema>;
+export type ZapierWebhook = typeof zapierWebhooks.$inferSelect;
+
+export const ZAPIER_EVENT_TYPES = [
+  "project.created",
+  "project.updated",
+  "project.status_changed",
+  "bid.created",
+  "bid.status_changed",
+  "change_order.created",
+  "change_order.approved",
+  "change_order.rejected",
+  "invoice.created",
+  "invoice.paid",
+  "time_entry.submitted",
+  "time_entry.approved",
+  "task.created",
+  "task.completed",
+  "document.uploaded",
+  "safety_incident.reported",
+] as const;
+
+export type ZapierEventType = typeof ZAPIER_EVENT_TYPES[number];
 
 // Table 5: ai_action_audit
 export const aiActionAudit = pgTable("ai_action_audit", {
