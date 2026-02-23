@@ -128,7 +128,8 @@ router.post("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
       organizationId: organizationId || req.body.organizationId,
     };
 
-    const validation = insertDocumentTransmittalSchema.safeParse(body);
+    const createTransmittalSchema = insertDocumentTransmittalSchema.omit({ transmittalNumber: true });
+    const validation = createTransmittalSchema.safeParse(body);
     if (!validation.success) {
       return res.status(400).json({ error: "Validation failed", details: validation.error.flatten() });
     }
