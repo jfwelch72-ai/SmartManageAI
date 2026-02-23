@@ -35,7 +35,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Onboarding Walkthrough System**: Role-specific onboarding walkthroughs guided by an AI Assistant.
 *   **Email AI System**: Comprehensive email management with AI-powered classification and task extraction across 15 categories, supporting major email providers.
 *   **Subcontractor Payables Workflow System**: Automates payable creation upon subcontract completion with workflow, KPI dashboard, and role-based approvals.
-*   **Website Builder System**: White-label website management with modules for Setup, Page Builder, Blog, Project Gallery, Social Media, Analytics, SEO, Media Library, AI Design Assistant, and an **AI Website Wizard** that generates entire website structures.
+*   **Website Builder System**: White-label website management with modules for Setup, Page Builder, Blog, Project Gallery, Social Media, Analytics, SEO, Media Library, AI Design Assistant, an **AI Website Wizard** that generates entire website structures, and a **Publishing Tab** with deployment status, publish/unpublish/maintenance controls, custom domain configuration with DNS verification, pre-publish checklist, publishing settings, and deployment history tracking.
 *   **Labor Cost Rate Management System**: Calculates employee costs using job classifications, prevailing wage rates, burden rate configuration, and employee cost assignments.
 *   **AI-Powered Bid Wizard**: Multi-step bid creation workflow featuring AI document analysis to extract project information and scope items from documents.
 *   **Dashboard Customization System**: User dashboard personalization with admin-controlled permissions, editable widgets, customizable color schemes, and WCAG AA accessibility compliance.

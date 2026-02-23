@@ -5243,6 +5243,32 @@ export const insertOrganizationWebsiteSchema = createInsertSchema(organizationWe
 export type InsertOrganizationWebsite = z.infer<typeof insertOrganizationWebsiteSchema>;
 export type OrganizationWebsite = typeof organizationWebsites.$inferSelect;
 
+export const websiteDeploymentActionEnum = pgEnum("website_deployment_action", [
+  "PUBLISHED", "UNPUBLISHED", "MAINTENANCE_ON", "MAINTENANCE_OFF", 
+  "DOMAIN_UPDATED", "DOMAIN_VERIFIED", "SETTINGS_UPDATED", "REPUBLISHED"
+]);
+
+export const websiteDeployments = pgTable("website_deployments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  websiteId: varchar("website_id").notNull().references(() => organizationWebsites.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  action: websiteDeploymentActionEnum("action").notNull(),
+  performedByUserId: varchar("performed_by_user_id").notNull().references(() => users.id),
+  performedByName: text("performed_by_name"),
+  note: text("note"),
+  snapshotUrl: text("snapshot_url"),
+  metadata: json("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  websiteIdx: index("deployment_website_idx").on(table.websiteId),
+  orgIdx: index("deployment_org_idx").on(table.organizationId),
+  createdAtIdx: index("deployment_created_at_idx").on(table.createdAt),
+}));
+
+export const insertWebsiteDeploymentSchema = createInsertSchema(websiteDeployments).omit({ id: true, createdAt: true });
+export type InsertWebsiteDeployment = z.infer<typeof insertWebsiteDeploymentSchema>;
+export type WebsiteDeployment = typeof websiteDeployments.$inferSelect;
+
 // Website Pages
 export const organizationWebsitePages = pgTable("organization_website_pages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

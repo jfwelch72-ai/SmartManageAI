@@ -34,7 +34,8 @@ import {
   OrganizationWebsite,
   OrganizationWebsitePage,
   WebsiteBlogPost,
-  WebsiteProject
+  WebsiteProject,
+  websiteDeployments
 } from "@shared/schema";
 import { requireAuth, AuthRequest } from "./auth";
 import { sendEmail } from "./services/emailService";
@@ -263,6 +264,15 @@ router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => 
       .returning();
 
     await logUpdate(user.id, "organization_websites", website.id, website, { status: "PUBLISHED" }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: "PUBLISHED",
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: "Website published",
+    });
 
     res.json({ 
       success: true, 
@@ -3574,6 +3584,295 @@ router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, re
   } catch (error) {
     console.error("Error deleting global component:", error);
     res.status(500).json({ error: "Failed to delete global component" });
+  }
+});
+
+// ============================================
+// PUBLISHING & DEPLOYMENT MANAGEMENT
+// ============================================
+
+// POST /api/website/unpublish - Unpublish the website (set status back to DRAFT)
+router.post("/unpublish", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    const [updated] = await db.update(organizationWebsites)
+      .set({
+        status: "DRAFT",
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationWebsites.id, website.id))
+      .returning();
+
+    await logUpdate(user.id, "organization_websites", website.id, website, { status: "DRAFT" }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: "UNPUBLISHED",
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: "Website unpublished and set to draft",
+    });
+
+    res.json({ success: true, website: updated });
+  } catch (error) {
+    console.error("Error unpublishing website:", error);
+    res.status(500).json({ error: "Failed to unpublish website" });
+  }
+});
+
+// POST /api/website/maintenance - Toggle maintenance mode on/off
+router.post("/maintenance", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    const isCurrentlyMaintenance = website.status === "MAINTENANCE";
+    const newStatus = isCurrentlyMaintenance ? "PUBLISHED" : "MAINTENANCE";
+    const action = isCurrentlyMaintenance ? "MAINTENANCE_OFF" : "MAINTENANCE_ON";
+
+    const [updated] = await db.update(organizationWebsites)
+      .set({
+        status: newStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationWebsites.id, website.id))
+      .returning();
+
+    await logUpdate(user.id, "organization_websites", website.id, website, { status: newStatus }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: action,
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: isCurrentlyMaintenance ? "Maintenance mode disabled" : "Maintenance mode enabled",
+    });
+
+    res.json({ success: true, website: updated, maintenanceMode: !isCurrentlyMaintenance });
+  } catch (error) {
+    console.error("Error toggling maintenance mode:", error);
+    res.status(500).json({ error: "Failed to toggle maintenance mode" });
+  }
+});
+
+// POST /api/website/domain - Update custom domain settings
+router.post("/domain", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const { customDomain } = req.body;
+    if (!customDomain || typeof customDomain !== "string") {
+      return res.status(400).json({ error: "Custom domain is required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    const [updated] = await db.update(organizationWebsites)
+      .set({
+        customDomain: customDomain,
+        customDomainVerified: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationWebsites.id, website.id))
+      .returning();
+
+    await logUpdate(user.id, "organization_websites", website.id, website, { customDomain }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: "DOMAIN_UPDATED",
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: `Custom domain updated to ${customDomain}`,
+    });
+
+    res.json({ success: true, website: updated });
+  } catch (error) {
+    console.error("Error updating custom domain:", error);
+    res.status(500).json({ error: "Failed to update custom domain" });
+  }
+});
+
+// POST /api/website/domain/verify - Simulate DNS verification for custom domain
+router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    if (!website.customDomain) {
+      return res.status(400).json({ error: "No custom domain configured" });
+    }
+
+    const [updated] = await db.update(organizationWebsites)
+      .set({
+        customDomainVerified: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationWebsites.id, website.id))
+      .returning();
+
+    await logUpdate(user.id, "organization_websites", website.id, website, { customDomainVerified: true }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: "DOMAIN_VERIFIED",
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: `DNS verification completed for ${website.customDomain}`,
+    });
+
+    res.json({ success: true, website: updated, verified: true });
+  } catch (error) {
+    console.error("Error verifying domain:", error);
+    res.status(500).json({ error: "Failed to verify domain" });
+  }
+});
+
+// GET /api/website/deployments - Get deployment history
+router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    const deployments = await db.select()
+      .from(websiteDeployments)
+      .where(eq(websiteDeployments.websiteId, website.id))
+      .orderBy(desc(websiteDeployments.createdAt))
+      .limit(50);
+
+    res.json(deployments);
+  } catch (error) {
+    console.error("Error fetching deployments:", error);
+    res.status(500).json({ error: "Failed to fetch deployment history" });
+  }
+});
+
+// POST /api/website/republish - Re-publish an already-published website
+router.post("/republish", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const orgId = user.organizationId;
+    if (!orgId && user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    const [updated] = await db.update(organizationWebsites)
+      .set({
+        status: "PUBLISHED",
+        lastPublishedAt: new Date(),
+        lastPublishedByUserId: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationWebsites.id, website.id))
+      .returning();
+
+    await logUpdate(user.id, "organization_websites", website.id, website, { status: "PUBLISHED", lastPublishedAt: new Date() }, req);
+
+    await db.insert(websiteDeployments).values({
+      websiteId: website.id,
+      organizationId: website.organizationId,
+      action: "REPUBLISHED",
+      performedByUserId: user.id,
+      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+      note: "Website re-published with latest changes",
+    });
+
+    res.json({
+      success: true,
+      website: updated,
+      siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
+    });
+  } catch (error) {
+    console.error("Error republishing website:", error);
+    res.status(500).json({ error: "Failed to republish website" });
   }
 });
 
