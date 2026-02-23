@@ -209,7 +209,12 @@ router.post("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MAN
       submittedByName: `${user.firstName} ${user.lastName}`,
     };
 
-    const validationResult = insertSubmittalSchema.safeParse(body);
+    if (body.dateRequired && typeof body.dateRequired === 'string') {
+      body.dateRequired = new Date(body.dateRequired);
+    }
+
+    const createSubmittalSchema = insertSubmittalSchema.omit({ submittalNumber: true });
+    const validationResult = createSubmittalSchema.safeParse(body);
     if (!validationResult.success) {
       return res.status(400).json({ error: "Validation failed", details: validationResult.error.flatten() });
     }
