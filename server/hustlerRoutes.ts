@@ -57,6 +57,9 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
         totalPendingTasks: 0,
         totalLaborHoursThisMonth: 0,
         estimatedBidValue: 0,
+        bidsAwarded: 0,
+        bidsLost: 0,
+        bidWinRate: 0,
         organizationBreakdown: [],
       });
     }
@@ -75,7 +78,9 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
     const [bidsResult] = await db
       .select({ 
         count: sql<number>`count(*)::int`,
-        totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`
+        totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`,
+        awarded: sql<number>`count(*) filter (where status = 'AWARDED')::int`,
+        lost: sql<number>`count(*) filter (where status = 'LOST')::int`,
       })
       .from(bids)
       .where(inArray(bids.gcOrganizationId, orgIds));
@@ -128,6 +133,11 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
       };
     }));
 
+    const portfolioAwarded = bidsResult?.awarded || 0;
+    const portfolioLost = bidsResult?.lost || 0;
+    const portfolioDecided = portfolioAwarded + portfolioLost;
+    const portfolioBidWinRate = portfolioDecided > 0 ? Math.round((portfolioAwarded / portfolioDecided) * 100) : 0;
+
     res.json({
       totalOrganizations: orgIds.length,
       totalActiveProjects: projectsResult?.count || 0,
@@ -135,6 +145,9 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
       totalPendingChangeOrders: changeOrdersResult?.count || 0,
       totalPendingTasks: tasksResult?.count || 0,
       estimatedBidValue: parseFloat(bidsResult?.totalValue || "0"),
+      bidsAwarded: portfolioAwarded,
+      bidsLost: portfolioLost,
+      bidWinRate: portfolioBidWinRate,
       organizationBreakdown: orgBreakdown,
     });
   } catch (error: any) {
@@ -1639,11 +1652,13 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
         .from(projects)
         .where(eq(projects.gcOrganizationId, orgId));
 
-      // Bids
+      // Bids with win/loss tracking
       const [bidStats] = await db
         .select({
           total: sql<number>`count(*)::int`,
           totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`,
+          awarded: sql<number>`count(*) filter (where status = 'AWARDED')::int`,
+          lost: sql<number>`count(*) filter (where status = 'LOST')::int`,
         })
         .from(bids)
         .where(eq(bids.gcOrganizationId, orgId));
@@ -1669,7 +1684,10 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
       const activeProjects = projectStats?.active || 0;
       const employees = employeeStats?.count || 0;
       const projectsPerEmployee = employees > 0 ? (activeProjects / employees).toFixed(2) : "0";
-      const bidWinRate = 0; // Placeholder - would need won bids tracking
+      const awarded = bidStats?.awarded || 0;
+      const lost = bidStats?.lost || 0;
+      const decidedBids = awarded + lost;
+      const bidWinRate = decidedBids > 0 ? Math.round((awarded / decidedBids) * 100) : 0;
 
       return {
         organizationId: orgId,
@@ -1681,6 +1699,8 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
           completedProjects: projectStats?.completed || 0,
           totalProjectValue: parseFloat(projectStats?.totalValue || "0"),
           totalBids: bidStats?.total || 0,
+          bidsAwarded: awarded,
+          bidsLost: lost,
           bidPipeline: parseFloat(bidStats?.totalValue || "0"),
           employees,
           pendingChangeOrders: coStats?.pending || 0,
@@ -1716,6 +1736,152 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
   } catch (error: any) {
     logError(`[Hustler] Failed to fetch benchmarking data: ${error.message}`);
     res.status(500).json({ error: "Failed to fetch benchmarking data" });
+  }
+});
+
+// ============================================================================
+// CONSOLIDATED PORTFOLIO EXPORT - CSV Download
+// ============================================================================
+
+router.get("/hustler/portfolio/export", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const linkedOrgs = await db
+      .select({
+        organizationId: hustlerOrganizations.organizationId,
+        orgName: organizations.name,
+        tradeType: organizations.tradeType,
+      })
+      .from(hustlerOrganizations)
+      .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.isActive, true)
+        )
+      );
+
+    const orgIds = linkedOrgs.map(o => o.organizationId);
+
+    if (orgIds.length === 0) {
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="portfolio-report-${new Date().toISOString().slice(0, 10)}.csv"`);
+      return res.send("No linked organizations found.\n");
+    }
+
+    const orgRows = await Promise.all(orgIds.map(async (orgId) => {
+      const orgInfo = linkedOrgs.find(o => o.organizationId === orgId);
+
+      const [projectStats] = await db
+        .select({
+          active: sql<number>`count(*) filter (where status = 'ACTIVE')::int`,
+          completed: sql<number>`count(*) filter (where status = 'COMPLETE')::int`,
+          planning: sql<number>`count(*) filter (where status = 'PLANNING')::int`,
+          totalValue: sql<string>`coalesce(sum(contract_amount)::text, '0')`,
+        })
+        .from(projects)
+        .where(eq(projects.gcOrganizationId, orgId));
+
+      const [bidStats] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          totalValue: sql<string>`coalesce(sum(bid_amount)::text, '0')`,
+          awarded: sql<number>`count(*) filter (where status = 'AWARDED')::int`,
+          lost: sql<number>`count(*) filter (where status = 'LOST')::int`,
+          active: sql<number>`count(*) filter (where status = 'ACTIVE')::int`,
+        })
+        .from(bids)
+        .where(eq(bids.gcOrganizationId, orgId));
+
+      const [employeeStats] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(eq(users.organizationId, orgId), eq(users.isActive, true)));
+
+      const [coStats] = await db
+        .select({ pending: sql<number>`count(*)::int` })
+        .from(changeOrders)
+        .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+        .where(
+          and(
+            eq(projects.gcOrganizationId, orgId),
+            eq(changeOrders.status, "SUBMITTED")
+          )
+        );
+
+      const awarded = bidStats?.awarded || 0;
+      const lost = bidStats?.lost || 0;
+      const decided = awarded + lost;
+      const winRate = decided > 0 ? Math.round((awarded / decided) * 100) : 0;
+
+      return {
+        organization: orgInfo?.orgName || "Unknown",
+        tradeType: orgInfo?.tradeType || "OTHER",
+        activeProjects: projectStats?.active || 0,
+        planningProjects: projectStats?.planning || 0,
+        completedProjects: projectStats?.completed || 0,
+        totalProjectValue: parseFloat(projectStats?.totalValue || "0"),
+        totalBids: bidStats?.total || 0,
+        activeBids: bidStats?.active || 0,
+        bidsAwarded: awarded,
+        bidsLost: lost,
+        bidWinRate: `${winRate}%`,
+        bidPipeline: parseFloat(bidStats?.totalValue || "0"),
+        employees: employeeStats?.count || 0,
+        pendingChangeOrders: coStats?.pending || 0,
+      };
+    }));
+
+    const headers = [
+      "Organization", "Trade Type", "Active Projects", "Planning Projects", "Completed Projects",
+      "Total Project Value ($)", "Total Bids", "Active Bids", "Bids Awarded", "Bids Lost",
+      "Bid Win Rate", "Bid Pipeline ($)", "Employees", "Pending Change Orders"
+    ];
+
+    const escapeCsv = (val: string | number) => {
+      const str = String(val);
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    let csv = headers.map(escapeCsv).join(",") + "\n";
+
+    for (const row of orgRows) {
+      csv += [
+        row.organization, row.tradeType, row.activeProjects, row.planningProjects,
+        row.completedProjects, row.totalProjectValue, row.totalBids, row.activeBids,
+        row.bidsAwarded, row.bidsLost, row.bidWinRate, row.bidPipeline,
+        row.employees, row.pendingChangeOrders,
+      ].map(escapeCsv).join(",") + "\n";
+    }
+
+    csv += "\n";
+    csv += "Portfolio Totals\n";
+    csv += `Total Organizations,${orgRows.length}\n`;
+    csv += `Total Active Projects,${orgRows.reduce((s, r) => s + r.activeProjects, 0)}\n`;
+    csv += `Total Completed Projects,${orgRows.reduce((s, r) => s + r.completedProjects, 0)}\n`;
+    csv += `Total Project Value ($),${orgRows.reduce((s, r) => s + r.totalProjectValue, 0)}\n`;
+    csv += `Total Bids,${orgRows.reduce((s, r) => s + r.totalBids, 0)}\n`;
+    const totalAwarded = orgRows.reduce((s, r) => s + r.bidsAwarded, 0);
+    const totalLost = orgRows.reduce((s, r) => s + r.bidsLost, 0);
+    const totalDecided = totalAwarded + totalLost;
+    csv += `Overall Bid Win Rate,${totalDecided > 0 ? Math.round((totalAwarded / totalDecided) * 100) : 0}%\n`;
+    csv += `Total Bid Pipeline ($),${orgRows.reduce((s, r) => s + r.bidPipeline, 0)}\n`;
+    csv += `Total Employees,${orgRows.reduce((s, r) => s + r.employees, 0)}\n`;
+    csv += `Total Pending Change Orders,${orgRows.reduce((s, r) => s + r.pendingChangeOrders, 0)}\n`;
+    csv += `\nReport Generated,${new Date().toISOString()}\n`;
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="portfolio-report-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
+  } catch (error: any) {
+    logError(`[Hustler] Failed to export portfolio: ${error.message}`);
+    res.status(500).json({ error: "Failed to export portfolio report" });
   }
 });
 

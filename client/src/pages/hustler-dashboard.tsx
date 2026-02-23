@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle } from "lucide-react";
+import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle, Download, Target } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
@@ -22,6 +22,9 @@ interface PortfolioStats {
   totalPendingChangeOrders: number;
   totalPendingTasks: number;
   estimatedBidValue: number;
+  bidsAwarded: number;
+  bidsLost: number;
+  bidWinRate: number;
   organizationBreakdown: Array<{
     id: string;
     name: string;
@@ -301,13 +304,40 @@ export default function HustlerDashboard() {
 
       {/* Executive Dashboard - Portfolio Overview */}
       <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-primary" />
-          Portfolio Overview
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Portfolio Overview
+          </h2>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                const res = await apiRequest("GET", "/api/hustler/portfolio/export");
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `portfolio-report-${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                toast({ title: "Report Downloaded", description: "Portfolio CSV report has been downloaded." });
+              } catch (err: any) {
+                toast({ title: "Export Failed", description: err.message, variant: "destructive" });
+              }
+            }}
+            data-testid="button-export-portfolio"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
+        </div>
 
         {/* KPI Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6 mb-6">
           <Card data-testid="card-stat-orgs">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium">Organizations</CardTitle>
@@ -384,6 +414,27 @@ export default function HustlerDashboard() {
                 <div className="text-2xl font-bold" data-testid="text-stat-pipeline">
                   ${(portfolioStats?.estimatedBidValue || 0).toLocaleString()}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-win-rate">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Bid Win Rate</CardTitle>
+              <Target className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold" data-testid="text-stat-win-rate">
+                    {portfolioStats?.bidWinRate || 0}%
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {portfolioStats?.bidsAwarded || 0}W / {portfolioStats?.bidsLost || 0}L
+                  </p>
+                </>
               )}
             </CardContent>
           </Card>
