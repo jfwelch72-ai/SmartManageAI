@@ -134,7 +134,6 @@ router.delete("/addenda/:id", requireAuth, async (req, res) => {
         eq(addenda.organizationId, user.organizationId)
       ));
     if (!existing) return res.status(404).json({ error: "Addendum not found" });
-    if (existing.status !== "DRAFT") return res.status(400).json({ error: "Only draft addenda can be deleted" });
 
     await db.delete(addendumAcknowledgments).where(eq(addendumAcknowledgments.addendumId, req.params.id));
     await db.delete(addenda).where(eq(addenda.id, req.params.id));

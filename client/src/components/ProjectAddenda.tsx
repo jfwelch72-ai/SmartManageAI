@@ -373,7 +373,7 @@ export default function ProjectAddenda({ projectId, projectCode, userRole }: Pro
                               Acknowledge
                             </Button>
                           )}
-                          {addendum.status === "DRAFT" && canDelete && (
+                          {canDelete && (
                             <Button
                               variant="ghost"
                               size="icon"
