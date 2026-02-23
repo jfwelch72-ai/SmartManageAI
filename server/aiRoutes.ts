@@ -2064,7 +2064,7 @@ router.post("/ai-analyze", sensitiveLimiter, async (req: AuthRequest, res) => {
       );
     }
 
-    await logCreate(req.user.id, 'AI_ANALYSIS', savedInsightIds[0] || 'batch', req);
+    await logCreate(req.user.id, 'AI_ANALYSIS', savedInsightIds[0] || 'batch', { module: module || 'ALL', insightCount: result.insights.length, savedInsightIds }, req);
 
     res.json({
       success: true,
