@@ -422,12 +422,14 @@ router.get("/cfo/profitability", async (req: AuthRequest, res) => {
 
     const latestRun = await getLatestAIRun();
 
-    if (!latestRun || !latestRun.profitabilityData) {
-      return res.json([]);
+    if (latestRun?.profitabilityData) {
+      const profitabilityData = JSON.parse(latestRun.profitabilityData);
+      return res.json(profitabilityData);
     }
 
-    const profitabilityData = JSON.parse(latestRun.profitabilityData);
-    res.json(profitabilityData);
+    const { calculateAllProjectsProfitability } = await import("./ai/profitabilityEngine");
+    const liveData = await calculateAllProjectsProfitability();
+    res.json(liveData);
   } catch (error: any) {
     console.error("Error fetching profitability data:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -447,10 +449,15 @@ router.get("/cfo/equipment-metrics", async (req: AuthRequest, res) => {
     const latestRun = await getLatestAIRun();
 
     if (!latestRun || !latestRun.snapshotData) {
+      const { equipment: equipmentTable } = await import("@shared/schema");
+      const allEquipment = await db.select().from(equipmentTable).where(eq(equipmentTable.organizationId, req.user.organizationId)).limit(500);
+      const totalCount = allEquipment.length;
+      const assignedCount = allEquipment.filter((e: any) => e.status === 'ASSIGNED').length;
+
       return res.json({
         summary: {
-          total_owned_equipment: 0,
-          active_rentals: 0,
+          total_owned_equipment: totalCount,
+          active_rentals: assignedCount,
           total_rental_cost_mtd: 0,
           underutilized_count: 0,
         },

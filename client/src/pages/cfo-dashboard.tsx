@@ -79,6 +79,7 @@ interface EquipmentMetrics {
 export default function CFODashboard() {
   const { user, logout, organizationName } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
     queryKey: ["/api/cfo/profitability"],
@@ -88,6 +89,29 @@ export default function CFODashboard() {
   const { data: equipmentMetrics, isLoading: equipmentLoading } = useQuery<EquipmentMetrics>({
     queryKey: ["/api/cfo/equipment-metrics"],
     enabled: !!user && (user.role === 'ADMIN' || user.role === 'MANAGER'),
+  });
+
+  const runFullAnalysis = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/ai-pm/run');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Full CFO Analysis Complete",
+        description: "Profitability data and equipment metrics have been updated with AI insights.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/cfo/profitability'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/cfo/equipment-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/ai-insights'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Failed to run full CFO analysis. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   if (!user) {
@@ -170,13 +194,26 @@ export default function CFODashboard() {
               Real-time profitability analysis across all projects
             </p>
           </div>
-          <AIAnalysisButton
-            showDropdown={true}
-            variant="default"
-            size="default"
-            className=""
-            data-testid="cfo-ai-analysis-button"
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="default"
+              onClick={() => runFullAnalysis.mutate()}
+              disabled={runFullAnalysis.isPending}
+              data-testid="cfo-run-full-analysis"
+            >
+              {runFullAnalysis.isPending ? (
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              {runFullAnalysis.isPending ? 'Running Analysis...' : 'Run Full CFO Analysis'}
+            </Button>
+            <AIAnalysisButton
+              showDropdown={true}
+              variant="outline"
+              size="default"
+            />
+          </div>
         </div>
 
       {isLoading ? (
@@ -655,14 +692,21 @@ export default function CFODashboard() {
                 <CardContent className="p-8 text-center">
                   <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground mb-4">
-                    No profitability data available. Run AI analysis to generate insights.
+                    No profitability data available. Run the full CFO analysis to calculate project profitability and generate AI insights.
                   </p>
-                  <AIAnalysisButton
-                    module="COSTS"
+                  <Button
                     variant="default"
-                    size="default"
-                    data-testid="cfo-empty-state-ai-button"
-                  />
+                    onClick={() => runFullAnalysis.mutate()}
+                    disabled={runFullAnalysis.isPending}
+                    data-testid="cfo-empty-state-run-analysis"
+                  >
+                    {runFullAnalysis.isPending ? (
+                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    {runFullAnalysis.isPending ? 'Running Analysis...' : 'Run Full CFO Analysis'}
+                  </Button>
                 </CardContent>
               </Card>
             )}
