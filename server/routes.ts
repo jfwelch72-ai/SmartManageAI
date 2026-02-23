@@ -107,6 +107,7 @@ import submittalRoutes from "./submittalRoutes";
 import portalRoutes from "./portalRoutes";
 import portalChatRoutes from "./portalChatRoutes";
 import integrationRoutes from "./integrationRoutes";
+import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
 import aiGovernanceRoutes from "./aiGovernanceRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
@@ -232,6 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api/billing", billingRoutes);
 
+  registerAllProviders();
   app.use("/api/integrations", integrationRoutes);
 
   app.use("/api/weather", weatherRoutes);
