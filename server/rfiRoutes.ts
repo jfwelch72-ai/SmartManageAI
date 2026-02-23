@@ -229,6 +229,10 @@ router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
       status: req.body.status || "DRAFT",
     };
 
+    if (rfiData.dateRequired && typeof rfiData.dateRequired === 'string') {
+      rfiData.dateRequired = new Date(rfiData.dateRequired);
+    }
+
     const validated = insertRfiSchema.parse(rfiData);
 
     const [newRfi] = await db.insert(rfis).values(validated).returning();
