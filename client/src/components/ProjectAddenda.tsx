@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,6 +105,7 @@ function getStatusBadge(status: string) {
 }
 
 export default function ProjectAddenda({ projectId, projectCode, userRole }: ProjectAddendaProps) {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -363,7 +365,7 @@ export default function ProjectAddenda({ projectId, projectCode, userRole }: Pro
                               onClick={() =>
                                 acknowledgeMutation.mutate({
                                   id: addendum.id,
-                                  recipientName: "Current User",
+                                  recipientName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.email || "Unknown",
                                 })
                               }
                               disabled={acknowledgeMutation.isPending}

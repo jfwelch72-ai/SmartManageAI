@@ -177,8 +177,8 @@ router.post("/addenda/:id/issue", requireAuth, async (req, res) => {
 router.post("/addenda/:id/acknowledge", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    const { recipientType, recipientName, recipientEmail } = req.body;
-    if (!recipientName) return res.status(400).json({ error: "recipientName required" });
+    const { recipientType, recipientEmail } = req.body;
+    const recipientName = req.body.recipientName || (user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || "Unknown");
 
     const [existing] = await db.select().from(addenda)
       .where(and(
