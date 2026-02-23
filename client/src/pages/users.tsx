@@ -59,6 +59,9 @@ const ROLE_LABELS: Record<string, string> = {
   ESTIMATOR: "Estimator",
   OFFICE_MANAGER: "Office Manager",
   HOURLY_EMPLOYEE: "Hourly Employee",
+  MAINTENANCE_MANAGER: "Maintenance Manager",
+  HUSTLER: "Hustler",
+  VENDOR: "Vendor",
 };
 
 const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
@@ -68,6 +71,9 @@ const ROLE_COLORS: Record<string, "default" | "secondary" | "destructive"> = {
   ESTIMATOR: "default",
   OFFICE_MANAGER: "default",
   HOURLY_EMPLOYEE: "secondary",
+  MAINTENANCE_MANAGER: "default",
+  HUSTLER: "destructive",
+  VENDOR: "secondary",
 };
 
 // Status filter options
