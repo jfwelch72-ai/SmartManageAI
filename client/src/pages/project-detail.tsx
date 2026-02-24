@@ -2742,16 +2742,13 @@ export default function ProjectDetailPage() {
                   <SelectItem value="time">Time & T&M</SelectItem>
                 )}
                 {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
-                  <SelectItem value="labor-hours">Labor Hours</SelectItem>
+                  <SelectItem value="labor">Labor</SelectItem>
                 )}
                 {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
                   <SelectItem value="receipts">Receipts</SelectItem>
                 )}
                 {FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(user?.role) && (
                   <SelectItem value="subcontractors">Subcontractors</SelectItem>
-                )}
-                {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (
-                  <SelectItem value="labor-rates">Labor Rates</SelectItem>
                 )}
                 <SelectItem value="job-info">Job Info</SelectItem>
                 {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
@@ -2822,16 +2819,13 @@ export default function ProjectDetailPage() {
               <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
             )}
             {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
-              <TabsTrigger value="labor-hours" data-testid="tab-labor-hours">Labor Hours</TabsTrigger>
+              <TabsTrigger value="labor" data-testid="tab-labor">Labor</TabsTrigger>
             )}
             {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
               <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
             )}
             {FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(user?.role) && (
               <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">Subcontractors</TabsTrigger>
-            )}
-            {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (
-              <TabsTrigger value="labor-rates" data-testid="tab-labor-rates">Labor Rates</TabsTrigger>
             )}
             <TabsTrigger value="job-info" data-testid="tab-job-info">Job Info</TabsTrigger>
             {hasManagementAccess(user?.role) && (
@@ -4127,8 +4121,351 @@ export default function ProjectDetailPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="labor-hours">
-            {project && <ProjectLaborHours projectId={project.id} projectCode={project.code} />}
+          <TabsContent value="labor">
+            <div className="space-y-6">
+              {project && <ProjectLaborHours projectId={project.id} projectCode={project.code} />}
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <CardTitle>Project Default Labor Rates</CardTitle>
+                    <CardDescription>
+                      Set the default hourly rates for this project and burden multiplier for payroll taxes, insurance, workers comp, etc.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={handleOpenLaborRatesDialog} data-testid="button-configure-labor-rates">
+                    <Edit className="w-4 h-4 mr-2" />
+                    {laborRatesConfig ? "Edit Rates" : "Configure Rates"}
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {laborRatesLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading labor rates...</div>
+                  ) : laborRatesConfig ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="text-center p-4 border rounded-md">
+                        <p className="text-sm text-muted-foreground mb-1">Regular Rate</p>
+                        <p className="text-2xl font-bold font-mono">${parseFloat(laborRatesConfig.defaultRegularRate).toFixed(2)}/hr</p>
+                      </div>
+                      <div className="text-center p-4 border rounded-md">
+                        <p className="text-sm text-muted-foreground mb-1">Overtime Rate</p>
+                        <p className="text-2xl font-bold font-mono">${parseFloat(laborRatesConfig.defaultOvertimeRate).toFixed(2)}/hr</p>
+                      </div>
+                      <div className="text-center p-4 border rounded-md">
+                        <p className="text-sm text-muted-foreground mb-1">Burden Multiplier</p>
+                        <p className="text-2xl font-bold font-mono">{parseFloat(laborRatesConfig.burdenMultiplier).toFixed(2)}x</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          ({((parseFloat(laborRatesConfig.burdenMultiplier) - 1) * 100).toFixed(0)}% overhead)
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p className="mb-2">No project-specific rates configured.</p>
+                      <p className="text-sm">Using system defaults: $50/hr regular, $75/hr overtime, 1.0x burden</p>
+                    </div>
+                  )}
+                  {laborRatesConfig?.notes && (
+                    <div className="mt-4 p-3 bg-muted rounded-md">
+                      <p className="text-sm text-muted-foreground">{laborRatesConfig.notes}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <CardTitle>Employee Rate Overrides</CardTitle>
+                    <CardDescription>
+                      Set different rates for specific employees on this project. Employee overrides take priority over project defaults.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={() => setShowEmployeeRateDialog(true)} data-testid="button-add-employee-rate">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Override
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {employeeRatesLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading employee rates...</div>
+                  ) : employeeRates.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No employee-specific rate overrides. All employees use the project default rates.
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Employee</TableHead>
+                          <TableHead className="text-right">Regular Rate</TableHead>
+                          <TableHead className="text-right">Overtime Rate</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead className="w-[80px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {employeeRates.map((rate) => (
+                          <TableRow key={rate.id} data-testid={`employee-rate-${rate.id}`}>
+                            <TableCell className="font-medium">
+                              {rate.employee.firstName} {rate.employee.lastName}
+                              <p className="text-xs text-muted-foreground">{rate.employee.email}</p>
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${parseFloat(rate.regularRate).toFixed(2)}/hr
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              ${parseFloat(rate.overtimeRate).toFixed(2)}/hr
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {rate.notes || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-delete-rate-${rate.id}`}>
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Remove Rate Override?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will remove the custom rate for {rate.employee.firstName} {rate.employee.lastName}. 
+                                      They will use the project default rates instead.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteEmployeeRate(rate.id)}>
+                                      Remove
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {financials?.laborRates && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Labor Cost Impact</CardTitle>
+                    <CardDescription>
+                      How labor rates affect your project financials
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Base Labor Cost:</span>
+                          <span className="font-mono">${(financials.actualCosts.laborBaseCost || 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Burden Multiplier:</span>
+                          <span className="font-mono">{financials.laborRates.burdenMultiplier}x</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="font-medium">Total Labor Cost:</span>
+                          <span className="font-mono font-bold">${financials.actualCosts.labor.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total Labor Hours:</span>
+                          <span className="font-mono">{financials.actualCosts.laborHours.toFixed(1)} hrs</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Effective Rate:</span>
+                          <span className="font-mono">
+                            ${financials.actualCosts.laborHours > 0 
+                              ? (financials.actualCosts.labor / financials.actualCosts.laborHours).toFixed(2) 
+                              : "0.00"}/hr
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2">
+                          <span className="text-muted-foreground">Employee Overrides:</span>
+                          <span className="font-mono">{financials.laborRates.employeeOverrideCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+            <Dialog open={showLaborRatesDialog} onOpenChange={setShowLaborRatesDialog}>
+              <DialogContent data-testid="dialog-labor-rates">
+                <DialogHeader>
+                  <DialogTitle>Configure Project Labor Rates</DialogTitle>
+                  <DialogDescription>
+                    Set the default hourly rates and burden multiplier for this project.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="labor-regular-rate">Default Regular Rate ($/hr) *</Label>
+                    <Input
+                      id="labor-regular-rate"
+                      type="number"
+                      step="0.01"
+                      value={laborRegularRate}
+                      onChange={(e) => setLaborRegularRate(e.target.value)}
+                      placeholder="50.00"
+                      data-testid="input-labor-regular-rate"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="labor-overtime-rate">Default Overtime Rate ($/hr) *</Label>
+                    <Input
+                      id="labor-overtime-rate"
+                      type="number"
+                      step="0.01"
+                      value={laborOvertimeRate}
+                      onChange={(e) => setLaborOvertimeRate(e.target.value)}
+                      placeholder="75.00"
+                      data-testid="input-labor-overtime-rate"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="labor-burden-multiplier">Burden Multiplier *</Label>
+                    <Select 
+                      value={laborBurdenMultiplier}
+                      onValueChange={setLaborBurdenMultiplier}
+                    >
+                      <SelectTrigger id="labor-burden-multiplier" data-testid="select-burden-multiplier">
+                        <SelectValue placeholder="Select multiplier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1.0">1.0x (No burden)</SelectItem>
+                        <SelectItem value="1.1">1.1x (10% overhead)</SelectItem>
+                        <SelectItem value="1.15">1.15x (15% overhead)</SelectItem>
+                        <SelectItem value="1.2">1.2x (20% overhead)</SelectItem>
+                        <SelectItem value="1.25">1.25x (25% overhead)</SelectItem>
+                        <SelectItem value="1.3">1.3x (30% overhead)</SelectItem>
+                        <SelectItem value="1.35">1.35x (35% overhead)</SelectItem>
+                        <SelectItem value="1.4">1.4x (40% overhead)</SelectItem>
+                        <SelectItem value="1.45">1.45x (45% overhead)</SelectItem>
+                        <SelectItem value="1.5">1.5x (50% overhead)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Accounts for payroll taxes, insurance, workers comp, benefits, etc.
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="labor-notes">Notes</Label>
+                    <Textarea
+                      id="labor-notes"
+                      value={laborRatesNotes}
+                      onChange={(e) => setLaborRatesNotes(e.target.value)}
+                      placeholder="Rate assumptions, calculation notes..."
+                      data-testid="input-labor-notes"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowLaborRatesDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveLaborRates}
+                    disabled={updateLaborRatesMutation.isPending}
+                    data-testid="button-save-labor-rates"
+                  >
+                    {updateLaborRatesMutation.isPending ? "Saving..." : "Save Rates"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={showEmployeeRateDialog} onOpenChange={(open) => {
+              setShowEmployeeRateDialog(open);
+              if (!open) {
+                setSelectedEmployeeId("");
+                setEmployeeRegularRate("");
+                setEmployeeOvertimeRate("");
+                setEmployeeRateNotes("");
+              }
+            }}>
+              <DialogContent data-testid="dialog-employee-rate">
+                <DialogHeader>
+                  <DialogTitle>Add Employee Rate Override</DialogTitle>
+                  <DialogDescription>
+                    Set a custom rate for a specific employee on this project.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="employee-select">Employee *</Label>
+                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                      <SelectTrigger id="employee-select" data-testid="select-employee">
+                        <SelectValue placeholder="Select employee" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allUsers.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.firstName} {u.lastName} - {u.costRateRegular ? `$${u.costRateRegular}/hr` : u.role}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="employee-regular-rate">Regular Rate ($/hr) *</Label>
+                    <Input
+                      id="employee-regular-rate"
+                      type="number"
+                      step="0.01"
+                      value={employeeRegularRate}
+                      onChange={(e) => setEmployeeRegularRate(e.target.value)}
+                      placeholder="50.00"
+                      data-testid="input-employee-regular-rate"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="employee-overtime-rate">Overtime Rate ($/hr) *</Label>
+                    <Input
+                      id="employee-overtime-rate"
+                      type="number"
+                      step="0.01"
+                      value={employeeOvertimeRate}
+                      onChange={(e) => setEmployeeOvertimeRate(e.target.value)}
+                      placeholder="75.00"
+                      data-testid="input-employee-overtime-rate"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="employee-rate-notes">Notes</Label>
+                    <Input
+                      id="employee-rate-notes"
+                      value={employeeRateNotes}
+                      onChange={(e) => setEmployeeRateNotes(e.target.value)}
+                      placeholder="Reason for custom rate..."
+                      data-testid="input-employee-rate-notes"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowEmployeeRateDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveEmployeeRate}
+                    disabled={updateEmployeeRateMutation.isPending}
+                    data-testid="button-save-employee-rate"
+                  >
+                    {updateEmployeeRateMutation.isPending ? "Saving..." : "Save Rate"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            </div>
           </TabsContent>
 
           <TabsContent value="receipts">
@@ -4865,350 +5202,6 @@ export default function ProjectDetailPage() {
             </Dialog>
           </TabsContent>
 
-          <TabsContent value="labor-rates">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <CardTitle>Project Default Labor Rates</CardTitle>
-                    <CardDescription>
-                      Set the default hourly rates for this project and burden multiplier for payroll taxes, insurance, workers comp, etc.
-                    </CardDescription>
-                  </div>
-                  <Button onClick={handleOpenLaborRatesDialog} data-testid="button-configure-labor-rates">
-                    <Edit className="w-4 h-4 mr-2" />
-                    {laborRatesConfig ? "Edit Rates" : "Configure Rates"}
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  {laborRatesLoading ? (
-                    <div className="text-center py-8 text-muted-foreground">Loading labor rates...</div>
-                  ) : laborRatesConfig ? (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="text-center p-4 border rounded-md">
-                        <p className="text-sm text-muted-foreground mb-1">Regular Rate</p>
-                        <p className="text-2xl font-bold font-mono">${parseFloat(laborRatesConfig.defaultRegularRate).toFixed(2)}/hr</p>
-                      </div>
-                      <div className="text-center p-4 border rounded-md">
-                        <p className="text-sm text-muted-foreground mb-1">Overtime Rate</p>
-                        <p className="text-2xl font-bold font-mono">${parseFloat(laborRatesConfig.defaultOvertimeRate).toFixed(2)}/hr</p>
-                      </div>
-                      <div className="text-center p-4 border rounded-md">
-                        <p className="text-sm text-muted-foreground mb-1">Burden Multiplier</p>
-                        <p className="text-2xl font-bold font-mono">{parseFloat(laborRatesConfig.burdenMultiplier).toFixed(2)}x</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          ({((parseFloat(laborRatesConfig.burdenMultiplier) - 1) * 100).toFixed(0)}% overhead)
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <p className="mb-2">No project-specific rates configured.</p>
-                      <p className="text-sm">Using system defaults: $50/hr regular, $75/hr overtime, 1.0x burden</p>
-                    </div>
-                  )}
-                  {laborRatesConfig?.notes && (
-                    <div className="mt-4 p-3 bg-muted rounded-md">
-                      <p className="text-sm text-muted-foreground">{laborRatesConfig.notes}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <CardTitle>Employee Rate Overrides</CardTitle>
-                    <CardDescription>
-                      Set different rates for specific employees on this project. Employee overrides take priority over project defaults.
-                    </CardDescription>
-                  </div>
-                  <Button onClick={() => setShowEmployeeRateDialog(true)} data-testid="button-add-employee-rate">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Override
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  {employeeRatesLoading ? (
-                    <div className="text-center py-8 text-muted-foreground">Loading employee rates...</div>
-                  ) : employeeRates.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No employee-specific rate overrides. All employees use the project default rates.
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Employee</TableHead>
-                          <TableHead className="text-right">Regular Rate</TableHead>
-                          <TableHead className="text-right">Overtime Rate</TableHead>
-                          <TableHead>Notes</TableHead>
-                          <TableHead className="w-[80px]"></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {employeeRates.map((rate) => (
-                          <TableRow key={rate.id} data-testid={`employee-rate-${rate.id}`}>
-                            <TableCell className="font-medium">
-                              {rate.employee.firstName} {rate.employee.lastName}
-                              <p className="text-xs text-muted-foreground">{rate.employee.email}</p>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              ${parseFloat(rate.regularRate).toFixed(2)}/hr
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              ${parseFloat(rate.overtimeRate).toFixed(2)}/hr
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {rate.notes || "-"}
-                            </TableCell>
-                            <TableCell>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" data-testid={`button-delete-rate-${rate.id}`}>
-                                    <Trash2 className="w-4 h-4 text-destructive" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Remove Rate Override?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This will remove the custom rate for {rate.employee.firstName} {rate.employee.lastName}. 
-                                      They will use the project default rates instead.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteEmployeeRate(rate.id)}>
-                                      Remove
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-
-              {financials?.laborRates && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Labor Cost Impact</CardTitle>
-                    <CardDescription>
-                      How labor rates affect your project financials
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Base Labor Cost:</span>
-                          <span className="font-mono">${(financials.actualCosts.laborBaseCost || 0).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Burden Multiplier:</span>
-                          <span className="font-mono">{financials.laborRates.burdenMultiplier}x</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2">
-                          <span className="font-medium">Total Labor Cost:</span>
-                          <span className="font-mono font-bold">${financials.actualCosts.labor.toLocaleString()}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Total Labor Hours:</span>
-                          <span className="font-mono">{financials.actualCosts.laborHours.toFixed(1)} hrs</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Effective Rate:</span>
-                          <span className="font-mono">
-                            ${financials.actualCosts.laborHours > 0 
-                              ? (financials.actualCosts.labor / financials.actualCosts.laborHours).toFixed(2) 
-                              : "0.00"}/hr
-                          </span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2">
-                          <span className="text-muted-foreground">Employee Overrides:</span>
-                          <span className="font-mono">{financials.laborRates.employeeOverrideCount}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            <Dialog open={showLaborRatesDialog} onOpenChange={setShowLaborRatesDialog}>
-              <DialogContent data-testid="dialog-labor-rates">
-                <DialogHeader>
-                  <DialogTitle>Configure Project Labor Rates</DialogTitle>
-                  <DialogDescription>
-                    Set the default hourly rates and burden multiplier for this project.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="labor-regular-rate">Default Regular Rate ($/hr) *</Label>
-                    <Input
-                      id="labor-regular-rate"
-                      type="number"
-                      step="0.01"
-                      value={laborRegularRate}
-                      onChange={(e) => setLaborRegularRate(e.target.value)}
-                      placeholder="50.00"
-                      data-testid="input-labor-regular-rate"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="labor-overtime-rate">Default Overtime Rate ($/hr) *</Label>
-                    <Input
-                      id="labor-overtime-rate"
-                      type="number"
-                      step="0.01"
-                      value={laborOvertimeRate}
-                      onChange={(e) => setLaborOvertimeRate(e.target.value)}
-                      placeholder="75.00"
-                      data-testid="input-labor-overtime-rate"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="labor-burden-multiplier">Burden Multiplier *</Label>
-                    <Select 
-                      value={laborBurdenMultiplier}
-                      onValueChange={setLaborBurdenMultiplier}
-                    >
-                      <SelectTrigger id="labor-burden-multiplier" data-testid="select-burden-multiplier">
-                        <SelectValue placeholder="Select multiplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1.0">1.0x (No burden)</SelectItem>
-                        <SelectItem value="1.1">1.1x (10% overhead)</SelectItem>
-                        <SelectItem value="1.15">1.15x (15% overhead)</SelectItem>
-                        <SelectItem value="1.2">1.2x (20% overhead)</SelectItem>
-                        <SelectItem value="1.25">1.25x (25% overhead)</SelectItem>
-                        <SelectItem value="1.3">1.3x (30% overhead)</SelectItem>
-                        <SelectItem value="1.35">1.35x (35% overhead)</SelectItem>
-                        <SelectItem value="1.4">1.4x (40% overhead)</SelectItem>
-                        <SelectItem value="1.45">1.45x (45% overhead)</SelectItem>
-                        <SelectItem value="1.5">1.5x (50% overhead)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Accounts for payroll taxes, insurance, workers comp, benefits, etc.
-                    </p>
-                  </div>
-                  <div>
-                    <Label htmlFor="labor-notes">Notes</Label>
-                    <Textarea
-                      id="labor-notes"
-                      value={laborRatesNotes}
-                      onChange={(e) => setLaborRatesNotes(e.target.value)}
-                      placeholder="Rate assumptions, calculation notes..."
-                      data-testid="input-labor-notes"
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowLaborRatesDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSaveLaborRates}
-                    disabled={updateLaborRatesMutation.isPending}
-                    data-testid="button-save-labor-rates"
-                  >
-                    {updateLaborRatesMutation.isPending ? "Saving..." : "Save Rates"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={showEmployeeRateDialog} onOpenChange={(open) => {
-              setShowEmployeeRateDialog(open);
-              if (!open) {
-                setSelectedEmployeeId("");
-                setEmployeeRegularRate("");
-                setEmployeeOvertimeRate("");
-                setEmployeeRateNotes("");
-              }
-            }}>
-              <DialogContent data-testid="dialog-employee-rate">
-                <DialogHeader>
-                  <DialogTitle>Add Employee Rate Override</DialogTitle>
-                  <DialogDescription>
-                    Set a custom rate for a specific employee on this project.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="employee-select">Employee *</Label>
-                    <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                      <SelectTrigger id="employee-select" data-testid="select-employee">
-                        <SelectValue placeholder="Select employee" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allUsers.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.firstName} {u.lastName} - {u.costRateRegular ? `$${u.costRateRegular}/hr` : u.role}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="employee-regular-rate">Regular Rate ($/hr) *</Label>
-                    <Input
-                      id="employee-regular-rate"
-                      type="number"
-                      step="0.01"
-                      value={employeeRegularRate}
-                      onChange={(e) => setEmployeeRegularRate(e.target.value)}
-                      placeholder="50.00"
-                      data-testid="input-employee-regular-rate"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="employee-overtime-rate">Overtime Rate ($/hr) *</Label>
-                    <Input
-                      id="employee-overtime-rate"
-                      type="number"
-                      step="0.01"
-                      value={employeeOvertimeRate}
-                      onChange={(e) => setEmployeeOvertimeRate(e.target.value)}
-                      placeholder="75.00"
-                      data-testid="input-employee-overtime-rate"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="employee-rate-notes">Notes</Label>
-                    <Input
-                      id="employee-rate-notes"
-                      value={employeeRateNotes}
-                      onChange={(e) => setEmployeeRateNotes(e.target.value)}
-                      placeholder="Reason for custom rate..."
-                      data-testid="input-employee-rate-notes"
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowEmployeeRateDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSaveEmployeeRate}
-                    disabled={updateEmployeeRateMutation.isPending}
-                    data-testid="button-save-employee-rate"
-                  >
-                    {updateEmployeeRateMutation.isPending ? "Saving..." : "Save Rate"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </TabsContent>
 
           <TabsContent value="job-info">
             <JobInformationForm projectCode={project.code} />
