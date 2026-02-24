@@ -44,6 +44,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Phase 2 Takeoff Enhancements**: Sheet management (rename, reorder, duplicate, delete), visual revision comparison (side-by-side + overlay slider modes), and document revision preview URL endpoint.
 *   **Phase 3 Addenda Overlays & Advanced Calibration**: Addenda overlay system in TakeoffWorkspace (toggle addendum images as semi-transparent overlays on plan sheets with per-addendum opacity control). Added addenda preview-url endpoint. Advanced calibration tools: scale verification (measure known distance to check error %), multi-point calibration (average multiple references for higher accuracy), and calibration info display panel.
 *   **Mobile & Offline Sync Backend**: Created `server/mobileSyncRoutes.ts` with 6 API endpoints (GET status, POST sync trigger, DELETE device, POST clear-offline, GET conflicts, PATCH resolve conflict) backed by `mobile_devices` and `offline_sync_queue` tables. Frontend conflict resolution buttons now wired with mutations. All routes enforce org-scoped isolation.
+*   **PWA Support**: Added Progressive Web App capability — `manifest.json`, service worker (`sw.js`), PWA icons (192x192 & 512x512), Apple meta tags in `index.html`, and service worker registration in `main.tsx` (production-only). Service worker uses network-first for navigation, cache-first for static assets, and skips API requests. `server/index.ts` sets no-cache headers for `sw.js`.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
