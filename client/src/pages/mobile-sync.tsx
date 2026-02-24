@@ -6,8 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
-import { Smartphone, Wifi, WifiOff, Cloud, AlertTriangle, ArrowRight, Shield } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Smartphone, Wifi, WifiOff, Cloud, AlertTriangle, ArrowRight, Shield, Loader2 } from "lucide-react";
 
 interface ConflictItem {
   id: string;
@@ -23,9 +25,32 @@ export default function MobileSyncPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
   const isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+  const { toast } = useToast();
 
   const { data: conflicts } = useQuery<ConflictItem[]>({
     queryKey: ["/api/ai-features/mobile-sync/conflicts"],
+  });
+
+  const resolveConflictMutation = useMutation({
+    mutationFn: async ({ id, resolution }: { id: string; resolution: "LOCAL_WINS" | "SERVER_WINS" }) => {
+      const res = await apiRequest("PATCH", `/api/ai-features/mobile-sync/conflicts/${id}`, { resolution });
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/mobile-sync/conflicts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/mobile-sync"] });
+      toast({
+        title: "Conflict Resolved",
+        description: `Resolution applied: ${variables.resolution === "LOCAL_WINS" ? "Local changes kept" : "Server version accepted"}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Resolution Failed",
+        description: error.message || "Failed to resolve conflict",
+        variant: "destructive",
+      });
+    },
   });
 
   const unresolvedConflicts = (conflicts || []).filter(c => c.status === "UNRESOLVED");
@@ -107,10 +132,28 @@ export default function MobileSyncPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" data-testid={`button-use-local-${conflict.id}`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={resolveConflictMutation.isPending}
+                            onClick={() => resolveConflictMutation.mutate({ id: conflict.id, resolution: "LOCAL_WINS" })}
+                            data-testid={`button-use-local-${conflict.id}`}
+                          >
+                            {resolveConflictMutation.isPending && resolveConflictMutation.variables?.id === conflict.id && resolveConflictMutation.variables?.resolution === "LOCAL_WINS" && (
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            )}
                             Use Local
                           </Button>
-                          <Button variant="outline" size="sm" data-testid={`button-use-server-${conflict.id}`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={resolveConflictMutation.isPending}
+                            onClick={() => resolveConflictMutation.mutate({ id: conflict.id, resolution: "SERVER_WINS" })}
+                            data-testid={`button-use-server-${conflict.id}`}
+                          >
+                            {resolveConflictMutation.isPending && resolveConflictMutation.variables?.id === conflict.id && resolveConflictMutation.variables?.resolution === "SERVER_WINS" && (
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            )}
                             Use Server
                           </Button>
                         </div>

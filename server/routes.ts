@@ -137,6 +137,7 @@ import takeoffSubRoutes from "./takeoffSubRoutes";
 import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
+import mobileSyncRoutes from "./mobileSyncRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -420,6 +421,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Equipment & Tool Management Routes (extracted to equipmentMgmtRoutes.ts)
   app.use(equipmentMgmtRoutes);
+
+  // Mobile & Offline Sync Routes
+  app.use(mobileSyncRoutes);
 
   const { registerPerformanceRoutes } = await import("./performanceRoutes");
   registerPerformanceRoutes(app);

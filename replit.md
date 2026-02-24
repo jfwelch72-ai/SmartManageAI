@@ -43,6 +43,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Subscription Management**: POST/DELETE routes and Assign/Delete subscription UI for Super Admin already implemented in platformAdminRoutes.ts and PlatformSubscriptions.tsx.
 *   **Phase 2 Takeoff Enhancements**: Sheet management (rename, reorder, duplicate, delete), visual revision comparison (side-by-side + overlay slider modes), and document revision preview URL endpoint.
 *   **Phase 3 Addenda Overlays & Advanced Calibration**: Addenda overlay system in TakeoffWorkspace (toggle addendum images as semi-transparent overlays on plan sheets with per-addendum opacity control). Added addenda preview-url endpoint. Advanced calibration tools: scale verification (measure known distance to check error %), multi-point calibration (average multiple references for higher accuracy), and calibration info display panel.
+*   **Mobile & Offline Sync Backend**: Created `server/mobileSyncRoutes.ts` with 6 API endpoints (GET status, POST sync trigger, DELETE device, POST clear-offline, GET conflicts, PATCH resolve conflict) backed by `mobile_devices` and `offline_sync_queue` tables. Frontend conflict resolution buttons now wired with mutations. All routes enforce org-scoped isolation.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
