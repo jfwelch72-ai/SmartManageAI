@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
+import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
 import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess } from "@/lib/rbac";
 import { useTour } from "@/components/TourProvider";
 import {
@@ -70,9 +71,10 @@ export function AppSidebar() {
   const { user, logout, organizationName } = useAuth();
   const [location] = useLocation();
   const { data: messageCountData = { unreadCount: 0 } } = useUnreadMessageCount();
+  const chatRefetchInterval = useVisibleRefetchInterval(30000);
   const { data: portalChatUnreadData } = useQuery<{ unreadCount: number }>({
     queryKey: ["/api/team/chat/unread"],
-    refetchInterval: 10000,
+    refetchInterval: chatRefetchInterval,
   });
   const { state } = useSidebar();
   const tour = useTour();
@@ -97,7 +99,7 @@ export function AppSidebar() {
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
   const isInWalkthrough = tour.isTourActive;
-  const showUpgradeButton = entitlements?.planTier === "free";
+  const showUpgradeButton = entitlements?.planTier === "free" && user?.role !== "SUPER_ADMIN";
 
   if (!user) return null;
 

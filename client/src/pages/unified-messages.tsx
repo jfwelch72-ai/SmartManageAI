@@ -25,7 +25,7 @@ export default function UnifiedMessagesPage() {
 
   const { data: portalUnreadData } = useQuery<{ unreadCount: number }>({
     queryKey: ["/api/team/chat/unread"],
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
   const portalUnreadCount = portalUnreadData?.unreadCount || 0;
 

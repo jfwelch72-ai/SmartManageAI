@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { usePageVisible } from "@/hooks/use-page-visible";
 import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt, TimeClockShift, Crew, CrewProjectAssignment } from "@shared/schema";
 
 // Dashboard
@@ -234,9 +235,10 @@ export function useMarkAllNotificationsRead() {
 
 // Messages
 export function useUnreadMessageCount() {
+  const isVisible = usePageVisible();
   return useQuery<{ unreadCount: number }>({
     queryKey: ["/api/messages/unread-count"],
-    refetchInterval: 30000, // Poll every 30 seconds
+    refetchInterval: isVisible ? 60000 : false,
   });
 }
 

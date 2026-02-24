@@ -3,8 +3,10 @@
  * Manage organization subscription, add-ons, and view usage
  */
 
+import { useEffect } from "react";
 import { useEntitlements, usePlans } from "@/hooks/useEntitlements";
 import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,9 +44,20 @@ export default function BillingPage() {
   const { toast } = useToast();
   const { entitlements, isLoading } = useEntitlements();
   const { data: plansData } = usePlans();
+  const [, setLocation] = useLocation();
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      setLocation("/admin/subscriptions");
+    }
+  }, [isSuperAdmin, setLocation]);
+
+  if (isSuperAdmin) {
+    return null;
+  }
 
   const toggleModeMutation = useMutation({
     mutationFn: async (mode: "dev" | "production") => {
