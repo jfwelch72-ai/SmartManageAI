@@ -2,221 +2,9 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-
-// Enums
-export const userRoleEnum = pgEnum("user_role", ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER"]);
-export const projectStatusEnum = pgEnum("project_status", ["BID", "PLANNING", "ACTIVE", "COMPLETE", "CLOSED"]);
-export const bidStatusEnum = pgEnum("bid_status", ["DRAFT", "ACTIVE", "AWARDED", "LOST", "CANCELLED"]);
-export const estimateStatusEnum = pgEnum("estimate_status", ["DRAFT", "SUBMITTED", "WON", "LOST", "PENDING_APPROVAL", "APPROVED", "REJECTED"]);
-export const estimateLineItemSourceEnum = pgEnum("estimate_line_item_source", ["MANUAL", "TAKEOFF", "GENERATED"]);
-export const procurementStatusEnum = pgEnum("procurement_status", ["PLANNED", "QUOTED", "APPROVED", "ORDERED", "DELIVERED"]);
-export const documentTypeEnum = pgEnum("document_type", ["PLANS", "SPECS", "TAKEOFF", "OTHER"]);
-export const noteTypeEnum = pgEnum("note_type", ["GENERAL", "FIELD_NOTE", "SAFETY", "CLIENT_MEETING"]);
-export const mediaTypeEnum = pgEnum("media_type", ["IMAGE", "VIDEO"]);
-export const billingStatusEnum = pgEnum("billing_status", ["NOT_READY", "READY_TO_BILL", "BILLED"]);
-export const changeOrderStatusEnum = pgEnum("change_order_status", ["DRAFT", "PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"]);
-export const calendarEventTypeEnum = pgEnum("calendar_event_type", ["TIME_OFF_REQUEST", "TIME_OFF_APPROVED", "NETWORKING_EVENT", "PROJECT_START", "PROJECT_PHASE", "PROJECT_MILESTONE"]);
-export const notificationTypeEnum = pgEnum("notification_type", ["BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE", "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "DELAY_CHANGE_ORDER_NEEDED", "PORTAL_ACTIVITY", "BID_AWARDED", "PROGRESS_MILESTONE", "DAILY_PROGRESS_LOGGED", "CHANGE_ORDER_APPROVED", "SOV_ITEM_COMPLETED", "PORTAL_CHAT_MESSAGE"]);
-
-// Messaging enums
-export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
-export const messageStatusEnum = pgEnum("message_status", ["SENT", "DELIVERED", "READ"]);
-export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
-export const auditActionEnum = pgEnum("audit_action", [
-  "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
-  "CLOCK_IN", "CLOCK_OUT", "ADJUST",
-  "REVOKE_TOKENS", "CREATE_BID_QUOTE", "UPDATE_BID_QUOTE", "DELETE_BID_QUOTE",
-  "CREATE_BID_MATERIAL_QUOTE", "UPDATE_BID_MATERIAL_QUOTE", "DELETE_BID_MATERIAL_QUOTE"
-]);
-export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
-export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
-export const aiNoteInsightCategoryEnum = pgEnum("ai_note_insight_category", ["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]);
-export const aiNoteInsightSeverityEnum = pgEnum("ai_note_insight_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
-export const aiNoteInsightSourceTypeEnum = pgEnum("ai_note_insight_source_type", ["PROJECT", "COMPANY"]);
-export const aiTaskStatusEnum = pgEnum("ai_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]);
-export const aiTaskPriorityEnum = pgEnum("ai_task_priority", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
-export const taskSourceTypeEnum = pgEnum("task_source_type", ["MANUAL", "EMAIL", "AI_GENERATED", "SYSTEM"]);
-
-// CRM Enums
-export const crmOrganisationTypeEnum = pgEnum("crm_organisation_type", ["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR"]);
-export const crmOrgStatusEnum = pgEnum("crm_org_status", ["ACTIVE", "PREQUALIFIED", "COMPLIANCE_ISSUE", "INACTIVE"]);
-export const crmContactRoleEnum = pgEnum("crm_contact_role", ["PM", "ESTIMATOR", "SUPERINTENDENT", "SALES", "ACCOUNTS_PAYABLE", "ACCOUNTS_RECEIVABLE", "OWNER", "GENERAL_MANAGER", "FOREMAN", "OTHER"]);
-export const crmPreferredContactEnum = pgEnum("crm_preferred_contact", ["EMAIL", "PHONE", "TEXT", "OTHER"]);
-export const crmNoteTypeEnum = pgEnum("crm_note_type", ["CALL", "EMAIL", "MEETING", "HOT_LEAD", "COLD_LEAD", "FOLLOW_UP", "ISSUE", "GENERAL"]);
-
-// Vendor Pricing Integration Enums
-export const pricingSourceTypeEnum = pgEnum("pricing_source_type", ["MANUAL", "PRICEBOOK_IMPORT", "VENDOR_PORTAL"]);
-export const vendorEnrollmentStatusEnum = pgEnum("vendor_enrollment_status", ["PENDING", "ACTIVE", "SUSPENDED", "REJECTED"]);
-export const pricingApprovalStatusEnum = pgEnum("pricing_approval_status", ["PENDING_REVIEW", "APPROVED", "REJECTED", "AUTO_APPROVED"]);
-
-// Delay Tracking Enums
-export const delayReasonEnum = pgEnum("delay_reason", [
-  "WEATHER", "GC_SCHEDULING", "OTHER_CONTRACTORS", "MATERIAL_DELIVERY", 
-  "PERMIT_ISSUES", "INSPECTION_DELAY", "OWNER_DIRECTIVE", "DESIGN_CHANGES",
-  "SITE_CONDITIONS", "LABOR_SHORTAGE", "OTHER"
-]);
-export const delayStatusEnum = pgEnum("delay_status", ["DRAFT", "SUBMITTED", "ACKNOWLEDGED", "RESOLVED"]);
-export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", "GC", "SUBCONTRACTOR", "TFR", "FORCE_MAJEURE"]);
-export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
-export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
-
-// Delay Claims Enums
-export const delayClaimStatusEnum = pgEnum("delay_claim_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CLOSED"]);
-export const delayClaimTypeEnum = pgEnum("delay_claim_type", ["TIME_EXTENSION", "COST_IMPACT", "BOTH"]);
-export const dailyReportLockStatusEnum = pgEnum("daily_report_lock_status", ["UNLOCKED", "LOCKED", "SUPERVISOR_LOCKED"]);
-export const photoCustodyActionEnum = pgEnum("photo_custody_action", ["CAPTURED", "UPLOADED", "VIEWED", "DOWNLOADED", "ATTACHED_TO_CLAIM", "EXPORTED"]);
-
-// Inspection Scheduling Enums
-export const inspectionTypeEnum = pgEnum("inspection_type", ["CITY_OFFICIAL", "GC_REPRESENTATIVE", "OWNER_REPRESENTATIVE"]);
-export const inspectionStatusEnum = pgEnum("inspection_status", ["REQUESTED", "SCHEDULED", "PASSED", "FAILED", "CANCELLED"]);
-export const inspectionRequestMethodEnum = pgEnum("inspection_request_method", ["CALL", "EMAIL", "PORTAL", "OTHER"]);
-
-// White-Label / Multi-Tenant Enums - Comprehensive CSI Trade Divisions
-export const tradeTypeEnum = pgEnum("trade_type", [
-  // === EXISTING TRADES (23) - DO NOT REMOVE ===
-  "GENERAL_CONTRACTOR",    // CSI 00/01 - Full GC/CM
-  "CONCRETE",              // CSI 03 - Concrete/Foundations  
-  "EARTHWORK",             // CSI 31 - Excavation/Grading
-  "ASPHALT_PAVING",        // CSI 32 - Asphalt & Striping
-  "ROOFING",               // CSI 07 - Roofing & Waterproofing
-  "ELECTRICAL",            // CSI 26 - Power & Lighting
-  "PLUMBING",              // CSI 22 - Plumbing Systems
-  "HVAC",                  // CSI 23 - Mechanical/HVAC
-  "CARPENTRY",             // CSI 06 - Wood & Metal Framing
-  "MASONRY",               // CSI 04 - Masonry/Stone
-  "DRYWALL",               // CSI 09 - Drywall/Insulation/Acoustical
-  "PAINTING",              // CSI 09 90 - Painting & Coatings
-  "FLOORING",              // CSI 09 60 - All Flooring Types
-  "LANDSCAPING",           // CSI 32 90 - Landscaping & Irrigation
-  "DEMOLITION",            // CSI 02 - Demo & Hazmat
-  "STEEL_ERECTION",        // CSI 05 - Structural Steel & Metals
-  "GLAZING",               // CSI 08 - Doors/Frames/Windows/Glass
-  "INSULATION",            // CSI 07 21 - Thermal & Acoustic Insulation
-  "FIRE_PROTECTION",       // CSI 21 - Fire Sprinkler/Suppression
-  "LOW_VOLTAGE",           // CSI 27/28 - Technology/Security/AV
-  "SOLAR",                 // Renewable Energy/Solar Installation
-  "WATERPROOFING",         // CSI 07 - Below Grade/Above Grade
-  "OTHER",
-  
-  // === CIVIL / SITE / ENVIRONMENTAL (20 new) ===
-  "SITE_DEMOLITION",           // CSI 02 41 - Site Clearing/Demo
-  "MASS_EXCAVATION",           // CSI 31 23 - Bulk Earth Moving
-  "TRENCHING",                 // CSI 31 23 - Utility Trenching
-  "SHORING",                   // CSI 31 50 - Excavation Support
-  "DEWATERING",                // CSI 31 23 - Groundwater Control
-  "SOIL_STABILIZATION",        // CSI 31 32 - Ground Improvement
-  "ENVIRONMENTAL_REMEDIATION", // CSI 02 80 - Hazmat/Contamination
-  "WELL_PLUGGING",             // Well Abandonment/Plugging
-  "STORMWATER_SYSTEMS",        // CSI 33 40 - Storm Drainage
-  "SANITARY_SEWER",            // CSI 33 30 - Sanitary Systems
-  "WATERLINE",                 // CSI 33 10 - Water Distribution
-  "FORCE_MAIN",                // CSI 33 30 - Pressurized Sewer
-  "ROADWAY_CONSTRUCTION",      // CSI 32 10 - Road Building
-  "CURB_AND_GUTTER",           // CSI 32 16 - Curbs & Gutters
-  "SIDEWALK",                  // CSI 32 13 - Pedestrian Paving
-  "CONCRETE_PAVING",           // CSI 32 13 - Concrete Flatwork
-  "TRAFFIC_CONTROL",           // CSI 32 17 - Traffic Systems
-  "STRIPING_AND_SIGNAGE",      // CSI 32 17 - Pavement Markings
-  "EROSION_CONTROL",           // CSI 31 25 - Erosion/Sediment
-  "FENCING_AND_GATES",         // CSI 32 31 - Fencing/Gates
-  
-  // === STRUCTURAL / BUILDING (13 new) ===
-  "CAST_IN_PLACE_CONCRETE",    // CSI 03 30 - CIP Concrete
-  "PRECAST_CONCRETE",          // CSI 03 40 - Precast Elements
-  "REBAR_AND_POST_TENSION",    // CSI 03 20 - Reinforcement
-  "STRUCTURAL_STEEL",          // CSI 05 12 - Structural Framing
-  "METAL_BUILDINGS",           // CSI 13 34 - Pre-Engineered Metal
-  "CARPENTRY_FRAMING",         // CSI 06 10 - Rough Carpentry
-  "DRYWALL_SYSTEMS",           // CSI 09 29 - Gypsum Board
-  "ACOUSTICAL_CEILINGS",       // CSI 09 51 - Acoustical Ceilings
-  "PAINTING_AND_COATINGS",     // CSI 09 90 - Industrial Coatings
-  "FLOORING_SYSTEMS",          // CSI 09 60 - Flooring Assembly
-  "ROOFING_SYSTEMS",           // CSI 07 50 - Roofing Systems
-  "MASONRY_SYSTEMS",           // CSI 04 20 - Unit Masonry
-  "GLAZING_SYSTEMS",           // CSI 08 80 - Curtain Wall/Storefronts
-  
-  // === MEP / SPECIALTY (11 new) ===
-  "ELECTRICAL_UNDERGROUND",    // CSI 26 05 - Underground Electric
-  "ELECTRICAL_OVERHEAD",       // CSI 26 05 - Overhead Power Lines
-  "MECHANICAL_PIPING",         // CSI 23 20 - Process Piping
-  "HVAC_SYSTEMS",              // CSI 23 - Complete HVAC
-  "PLUMBING_SYSTEMS",          // CSI 22 - Complete Plumbing
-  "FIRE_PROTECTION_SYSTEMS",   // CSI 21 - Complete Fire Systems
-  "LOW_VOLTAGE_SYSTEMS",       // CSI 27/28 - Low Voltage
-  "SECURITY_AND_ACCESS",       // CSI 28 - Security Systems
-  "COMMUNICATIONS_IT",         // CSI 27 - Communications
-  "SOLAR_INSTALLATION",        // Photovoltaic Systems
-  "TEMPORARY_POWER",           // Temporary Electrical
-  
-  // === SUPPORT / SERVICES (5 new) ===
-  "SURVEY_AND_LAYOUT",         // CSI 01 71 - Survey/Layout
-  "TESTING_AND_INSPECTIONS",   // CSI 01 45 - QC/Testing
-  "COMMISSIONING",             // CSI 01 91 - Cx Services
-  "TEMPORARY_FACILITIES",      // CSI 01 50 - Temp Structures
-  "GENERAL_CONDITIONS"         // CSI 01 - Gen Conditions/Overhead
-]);
-export const onboardingStatusEnum = pgEnum("onboarding_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]);
-
-// Organization Document Enums
-export const organizationDocumentTypeEnum = pgEnum("organization_document_type", [
-  "LOGO_PRIMARY",
-  "LOGO_SECONDARY",
-  "LETTERHEAD",
-  "INSURANCE_CERT_GENERAL_LIABILITY",
-  "INSURANCE_CERT_WORKERS_COMP",
-  "INSURANCE_CERT_AUTO",
-  "INSURANCE_CERT_UMBRELLA",
-  "W9",
-  "LICENSE",
-  "BONDING_LETTER",
-  "BANKING_INFO",
-  "SAFETY_PROGRAM",
-  "COMPANY_PROFILE",
-  "TEMPLATE_OTHER"
-]);
-export const organizationDocumentVisibilityEnum = pgEnum("organization_document_visibility", ["PUBLIC", "INTERNAL", "CONFIDENTIAL"]);
-
-// Subscription & Billing Enums
-export const planTierEnum = pgEnum("plan_tier", ["free", "starter", "professional", "enterprise"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled"]);
-export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual"]);
-export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
-export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision", "integration_qbo", "integration_esign", "ai_governance_pack"]);
-export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs"]);
-
-// Pricebook Import Job Status Enum
-export const pricebookImportJobStatusEnum = pgEnum("pricebook_import_job_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
-
-// Organizations table (tenants/companies)
-export const organizations = pgTable("organizations", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  tradeType: tradeTypeEnum("trade_type").notNull().default("GENERAL_CONTRACTOR"),
-  tradeName: text("trade_name"),
-  logoUrl: text("logo_url"),
-  primaryColor: text("primary_color"),
-  secondaryColor: text("secondary_color"),
-  accentColor: text("accent_color"),
-  fontFamily: text("font_family"),
-  websiteUrl: text("website_url"),
-  region: text("region"),
-  typicalCrewSize: integer("typical_crew_size"),
-  address: text("address"),
-  city: text("city"),
-  state: text("state"),
-  zipCode: text("zip_code"),
-  phone: text("phone"),
-  email: text("email"),
-  onboardingStatus: onboardingStatusEnum("onboarding_status").notNull().default("NOT_STARTED"),
-  onboardingData: text("onboarding_data"),
-  terminologyJson: text("terminology_json"),
-  themeExtractedAt: timestamp("theme_extracted_at"),
-  featureFlags: text("feature_flags"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialPlatformEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalPhaseEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum } from "./enums";
+import { bids, organizations, projects, users } from "./core";
+import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tmTickets } from "./operations";
 
 export const FEATURE_FLAG_KEYS = [
   "INTEGRATIONS_HUB",
@@ -240,1373 +28,6 @@ export const FEATURE_FLAG_KEYS = [
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 
-export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
-export type Organization = typeof organizations.$inferSelect;
-
-// Organization Subscriptions table
-export const organizationSubscriptions = pgTable("organization_subscriptions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
-  planTier: planTierEnum("plan_tier").notNull().default("free"),
-  status: subscriptionStatusEnum("status").notNull().default("active"),
-  billingProvider: billingProviderEnum("billing_provider").notNull().default("manual"),
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
-  currentPeriodEnd: timestamp("current_period_end"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdIdx: index("org_subscriptions_org_id_idx").on(table.organizationId),
-}));
-
-export const insertOrganizationSubscriptionSchema = createInsertSchema(organizationSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;
-export type OrganizationSubscription = typeof organizationSubscriptions.$inferSelect;
-
-// Organization Add-ons table
-export const organizationAddOns = pgTable("organization_addons", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  addonKey: addonKeyEnum("addon_key").notNull(),
-  status: addonStatusEnum("status").notNull().default("inactive"),
-  stripePriceId: text("stripe_price_id"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdIdx: index("org_addons_org_id_idx").on(table.organizationId),
-  orgAddonUniqueIdx: unique("org_addon_unique").on(table.organizationId, table.addonKey),
-}));
-
-export const insertOrganizationAddOnSchema = createInsertSchema(organizationAddOns).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertOrganizationAddOn = z.infer<typeof insertOrganizationAddOnSchema>;
-export type OrganizationAddOn = typeof organizationAddOns.$inferSelect;
-
-// Organization Usage table (for usage-based features like AI Vision)
-export const organizationUsage = pgTable("organization_usage", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  usageKey: usageKeyEnum("usage_key").notNull(),
-  periodStart: timestamp("period_start").notNull(),
-  periodEnd: timestamp("period_end").notNull(),
-  quantity: integer("quantity").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdIdx: index("org_usage_org_id_idx").on(table.organizationId),
-  periodIdx: index("org_usage_period_idx").on(table.periodStart, table.periodEnd),
-}));
-
-export const insertOrganizationUsageSchema = createInsertSchema(organizationUsage).omit({ id: true, createdAt: true });
-export type InsertOrganizationUsage = z.infer<typeof insertOrganizationUsageSchema>;
-export type OrganizationUsage = typeof organizationUsage.$inferSelect;
-
-// Work Week Start Day Enum (0=Sunday, 1=Monday, etc.)
-export const workWeekStartDayEnum = pgEnum("work_week_start_day", ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]);
-
-// Organization Payroll Settings table
-export const organizationPayrollSettings = pgTable("organization_payroll_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
-  workWeekStartDay: workWeekStartDayEnum("work_week_start_day").notNull().default("MONDAY"),
-  workWeekEndNotificationEnabled: boolean("work_week_end_notification_enabled").notNull().default(true),
-  notificationRecipientEmails: text("notification_recipient_emails"),
-  overtimeThresholdHours: decimal("overtime_threshold_hours", { precision: 5, scale: 2 }).notNull().default("40"),
-  autoGenerateWeeklyReports: boolean("auto_generate_weekly_reports").notNull().default(true),
-  requireSuperintendentApproval: boolean("require_superintendent_approval").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdIdx: index("org_payroll_settings_org_id_idx").on(table.organizationId),
-}));
-
-export const insertOrganizationPayrollSettingsSchema = createInsertSchema(organizationPayrollSettings).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertOrganizationPayrollSettings = z.infer<typeof insertOrganizationPayrollSettingsSchema>;
-export type OrganizationPayrollSettings = typeof organizationPayrollSettings.$inferSelect;
-
-// Weekly Payroll Reports table - stores generated end-of-week reports
-export const weeklyPayrollReports = pgTable("weekly_payroll_reports", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  weekStartDate: date("week_start_date").notNull(),
-  weekEndDate: date("week_end_date").notNull(),
-  totalRegularHours: decimal("total_regular_hours", { precision: 10, scale: 2 }).notNull().default("0"),
-  totalOvertimeHours: decimal("total_overtime_hours", { precision: 10, scale: 2 }).notNull().default("0"),
-  totalEmployees: integer("total_employees").notNull().default(0),
-  reportData: text("report_data"),
-  generatedAt: timestamp("generated_at").notNull().defaultNow(),
-  generatedByApprovalOf: varchar("generated_by_approval_of").references(() => users.id),
-  notificationSentAt: timestamp("notification_sent_at"),
-  notificationRecipients: text("notification_recipients"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdIdx: index("weekly_payroll_reports_org_id_idx").on(table.organizationId),
-  weekIdx: index("weekly_payroll_reports_week_idx").on(table.weekStartDate, table.weekEndDate),
-  orgWeekUnique: unique("weekly_payroll_reports_org_week_unique").on(table.organizationId, table.weekStartDate),
-}));
-
-export const insertWeeklyPayrollReportSchema = createInsertSchema(weeklyPayrollReports).omit({ id: true, createdAt: true });
-export type InsertWeeklyPayrollReport = z.infer<typeof insertWeeklyPayrollReportSchema>;
-export type WeeklyPayrollReport = typeof weeklyPayrollReports.$inferSelect;
-
-export const payRunStatusEnum = pgEnum("pay_run_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PROCESSING", "PAID", "VOIDED", "ARCHIVED"]);
-
-export const payRuns = pgTable("pay_runs", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  payPeriodStart: date("pay_period_start").notNull(),
-  payPeriodEnd: date("pay_period_end").notNull(),
-  runNumber: text("run_number"),
-  status: payRunStatusEnum("status").notNull().default("DRAFT"),
-  totalRegularHours: decimal("total_regular_hours", { precision: 10, scale: 2 }).notNull().default("0"),
-  totalOvertimeHours: decimal("total_overtime_hours", { precision: 10, scale: 2 }).notNull().default("0"),
-  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).notNull().default("0"),
-  totalWorkers: integer("total_workers").notNull().default(0),
-  notes: text("notes"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  paidAt: timestamp("paid_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdx: index("pay_runs_org_idx").on(table.organizationId),
-  statusIdx: index("pay_runs_status_idx").on(table.status),
-  periodIdx: index("pay_runs_period_idx").on(table.payPeriodStart, table.payPeriodEnd),
-}));
-
-export const insertPayRunSchema = createInsertSchema(payRuns).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertPayRun = z.infer<typeof insertPayRunSchema>;
-export type PayRun = typeof payRuns.$inferSelect;
-
-export const payRunLineItems = pgTable("pay_run_line_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  payRunId: varchar("pay_run_id").notNull().references(() => payRuns.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  projectId: varchar("project_id").notNull().references(() => projects.id),
-  costCode: text("cost_code"),
-  regularHours: decimal("regular_hours", { precision: 8, scale: 2 }).notNull().default("0"),
-  overtimeHours: decimal("overtime_hours", { precision: 8, scale: 2 }).notNull().default("0"),
-  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull().default("0"),
-  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull().default("0"),
-  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
-  timeEntryIds: text("time_entry_ids").array(),
-  wageType: text("wage_type").default("STANDARD"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  payRunIdx: index("pay_run_line_items_pay_run_idx").on(table.payRunId),
-  userIdx: index("pay_run_line_items_user_idx").on(table.userId),
-  projectIdx: index("pay_run_line_items_project_idx").on(table.projectId),
-}));
-
-export const insertPayRunLineItemSchema = createInsertSchema(payRunLineItems).omit({ id: true, createdAt: true });
-export type InsertPayRunLineItem = z.infer<typeof insertPayRunLineItemSchema>;
-export type PayRunLineItem = typeof payRunLineItems.$inferSelect;
-
-// Users table
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  email: text("email").notNull().unique(),
-  phone: text("phone"),
-  role: userRoleEnum("role").notNull().default("HOURLY_EMPLOYEE"),
-  isActive: boolean("is_active").notNull().default(true),
-  passwordHash: text("password_hash").notNull(),
-  tokenVersion: integer("token_version").notNull().default(0),
-  costRateRegular: decimal("cost_rate_regular", { precision: 10, scale: 2 }),
-  costRateOvertime: decimal("cost_rate_overtime", { precision: 10, scale: 2 }),
-  birthdate: text("birthdate"),
-  timezone: text("timezone"),
-  profileDescription: text("profile_description"),
-  avatarUrl: text("avatar_url"),
-  tradeSpecialization: text("trade_specialization"),
-  employmentType: text("employment_type"),
-  emergencyContactName: text("emergency_contact_name"),
-  emergencyContactPhone: text("emergency_contact_phone"),
-  emergencyContactAddress: text("emergency_contact_address"),
-  emergencyContactEmail: text("emergency_contact_email"),
-  walkthroughCompleted: boolean("walkthrough_completed").notNull().default(false),
-  walkthroughStep: integer("walkthrough_step").notNull().default(0),
-  walkthroughStartedAt: timestamp("walkthrough_started_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Projects table
-export const projects = pgTable("projects", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  code: text("code").notNull().unique(),
-  clientName: text("client_name").notNull(),
-  clientContactName: text("client_contact_name"),
-  clientContactEmail: text("client_contact_email"),
-  clientContactPhone: text("client_contact_phone"),
-  status: projectStatusEnum("status").notNull().default("PLANNING"),
-  locationAddress: text("location_address"),
-  city: text("city"),
-  state: text("state"),
-  startDate: timestamp("start_date"),
-  endDate: timestamp("end_date"),
-  estimatedCompletionDate: timestamp("estimated_completion_date"),
-  description: text("description"),
-  budget: decimal("budget", { precision: 12, scale: 2 }),
-  contractAmount: decimal("contract_amount", { precision: 12, scale: 2 }),
-  texturaDrawDate: date("textura_draw_date"),
-  drawDayOfMonth: integer("draw_day_of_month"),
-  estimatorId: varchar("estimator_id").references(() => users.id),
-  superintendentId: varchar("superintendent_id").references(() => users.id),
-  projectManagerId: varchar("project_manager_id").references(() => users.id),
-  gcOrganizationId: varchar("gc_organization_id"),
-  ownerRepOrganizationId: varchar("owner_rep_organization_id"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  statusIdx: index("projects_status_idx").on(table.status),
-}));
-
-// Bids table (separate from projects)
-export const bids = pgTable("bids", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  code: text("code").notNull().unique(),
-  clientName: text("client_name").notNull(),
-  clientContactName: text("client_contact_name"),
-  clientContactEmail: text("client_contact_email"),
-  clientContactPhone: text("client_contact_phone"),
-  bidAmount: decimal("bid_amount", { precision: 12, scale: 2 }),
-  dueDate: timestamp("due_date"),
-  locationAddress: text("location_address"),
-  city: text("city"),
-  state: text("state"),
-  description: text("description"),
-  estimatorId: varchar("estimator_id").references(() => users.id),
-  gcOrganizationId: varchar("gc_organization_id"),
-  ownerRepOrganizationId: varchar("owner_rep_organization_id"),
-  status: bidStatusEnum("status").notNull().default("DRAFT"),
-  convertedToProjectId: varchar("converted_to_project_id"),
-  awardedAt: timestamp("awarded_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Bid Subcontractor Quotes table
-// During conversion: projectId added, bidId set to null when bid deleted
-// Non-selected quotes preserved for later selection on project page
-export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
-  subcontractorName: text("subcontractor_name").notNull(),
-  scopeOfWork: text("scope_of_work").notNull(),
-  quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
-  leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
-  estimatedCompletionTime: text("estimated_completion_time"), // e.g., "3 months", "45 days"
-  contactName: text("contact_name"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  notes: text("notes"),
-  isSelected: boolean("is_selected").notNull().default(false), // Selected quote transfers on award
-  fileUrl: text("file_url"),
-  fileName: text("file_name"),
-  fileSize: integer("file_size"),
-  mimeType: text("mime_type"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Bid Material Quotes table
-// During conversion: projectId added, bidId set to null when bid deleted
-// Non-selected quotes preserved for later selection on project page
-export const bidMaterialQuotes = pgTable("bid_material_quotes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
-  materialName: text("material_name").notNull(),
-  description: text("description").notNull(),
-  specs: text("specs"),
-  cost: decimal("cost", { precision: 12, scale: 2 }).notNull(),
-  leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
-  supplierName: text("supplier_name"),
-  supplierContact: text("supplier_contact"),
-  isSelected: boolean("is_selected").notNull().default(false), // Selected quote transfers on award
-  fileUrl: text("file_url"),
-  fileName: text("file_name"),
-  fileSize: integer("file_size"),
-  mimeType: text("mime_type"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Estimates table - can attach to either a bid OR project
-// During conversion: bidId retained for traceability, projectId added
-export const estimates = pgTable("estimates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
-  versionNumber: integer("version_number").notNull().default(1),
-  status: estimateStatusEnum("status").notNull().default("DRAFT"),
-  baseBidAmount: decimal("base_bid_amount", { precision: 12, scale: 2 }),
-  altPricesJson: text("alt_prices_json"),
-  costBreakdownJson: text("cost_breakdown_json"),
-  notes: text("notes"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  // Ensure at least one of bidId or projectId is set (allows both after conversion)
-  checkEitherBidOrProject: sql`CHECK ((bid_id IS NULL AND project_id IS NOT NULL) OR (bid_id IS NOT NULL))`,
-}));
-
-// Procurement Items table
-export const procurementItems = pgTable("procurement_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  description: text("description").notNull(),
-  vendor: text("vendor"),
-  quantity: decimal("quantity", { precision: 10, scale: 2 }),
-  unit: text("unit"),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
-  status: procurementStatusEnum("status").notNull().default("PLANNED"),
-  poNumber: text("po_number"),
-  neededByDate: timestamp("needed_by_date"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Plan Documents table
-export const planDocuments = pgTable("plan_documents", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  type: documentTypeEnum("type").notNull().default("OTHER"),
-  title: text("title").notNull(),
-  fileName: text("file_name").notNull(),
-  fileUrl: text("file_url").notNull(),
-  objectKey: text("object_key"),
-  fileSize: integer("file_size"),
-  mimeType: text("mime_type"),
-  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
-  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
-});
-
-// Time Entries table
-export const timeEntries = pgTable("time_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  date: timestamp("date").notNull(),
-  hoursRegular: decimal("hours_regular", { precision: 8, scale: 2 }).notNull().default("0"),
-  hoursOvertime: decimal("hours_overtime", { precision: 8, scale: 2 }).notNull().default("0"),
-  costCode: text("cost_code"),
-  notes: text("notes"),
-  approvalStatus: shiftApprovalStatusEnum("approval_status").notNull().default("PENDING"),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  rejectedById: varchar("rejected_by_id").references(() => users.id),
-  rejectedAt: timestamp("rejected_at"),
-  rejectionReason: text("rejection_reason"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  userIdIdx: index("time_entries_user_id_idx").on(table.userId),
-  projectIdIdx: index("time_entries_project_id_idx").on(table.projectId),
-  dateIdx: index("time_entries_date_idx").on(table.date),
-  approvalStatusIdx: index("time_entries_approval_status_idx").on(table.approvalStatus),
-}));
-
-// Project Labor Rates table - stores default rates and burden multiplier for a project
-export const projectLaborRates = pgTable("project_labor_rates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }).unique(),
-  defaultRegularRate: decimal("default_regular_rate", { precision: 10, scale: 2 }).notNull(),
-  defaultOvertimeRate: decimal("default_overtime_rate", { precision: 10, scale: 2 }).notNull(),
-  burdenMultiplier: decimal("burden_multiplier", { precision: 5, scale: 4 }).notNull().default("1.0000"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// Project Employee Rate Overrides - stores employee-specific rates per project
-export const projectEmployeeRates = pgTable("project_employee_rates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull(),
-  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull(),
-  classificationId: varchar("classification_id"), // Optional link to job classification
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectUserUnique: unique().on(table.projectId, table.userId),
-}));
-
-// Job Classifications - trades and labor categories (e.g., Carpenter, Electrician, Laborer)
-export const jobClassifications = pgTable("job_classifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  name: text("name").notNull(), // e.g., "Carpenter", "Electrician", "Laborer"
-  code: text("code"), // e.g., "CARP", "ELEC", "LAB"
-  description: text("description"),
-  defaultRegularRate: decimal("default_regular_rate", { precision: 10, scale: 2 }), // Default shop rate for this classification
-  defaultOvertimeRate: decimal("default_overtime_rate", { precision: 10, scale: 2 }),
-  isActive: boolean("is_active").notNull().default(true),
-  sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgNameUnique: unique().on(table.organizationId, table.name),
-}));
-
-// Employee Classification Assignments - assigns employees to job classifications with rates
-export const employeeClassifications = pgTable("employee_classifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
-  regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull(), // Employee's rate for this classification
-  overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull(),
-  isPrimary: boolean("is_primary").notNull().default(false), // Is this the employee's primary classification?
-  effectiveDate: date("effective_date").notNull().defaultNow(),
-  endDate: date("end_date"), // Null means currently active
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  userClassUnique: unique().on(table.userId, table.classificationId),
-  userIdIdx: index("employee_classifications_user_id_idx").on(table.userId),
-  classIdIdx: index("employee_classifications_class_id_idx").on(table.classificationId),
-}));
-
-// Prevailing Wage Rates - stores prevailing wage rates per project per classification
-export const prevailingWageRates = pgTable("prevailing_wage_rates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
-  wageRate: decimal("wage_rate", { precision: 10, scale: 2 }).notNull(), // Base wage
-  fringeRate: decimal("fringe_rate", { precision: 10, scale: 2 }).notNull().default("0"), // Fringe benefits
-  totalRate: decimal("total_rate", { precision: 10, scale: 2 }).notNull(), // wage + fringe
-  overtimeMultiplier: decimal("overtime_multiplier", { precision: 4, scale: 2 }).notNull().default("1.5"),
-  effectiveDate: date("effective_date").notNull(),
-  expirationDate: date("expiration_date"), // Null means no expiration
-  wageDecision: text("wage_decision"), // Reference to wage determination (e.g., "CA-2024-0001")
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectClassUnique: unique().on(table.projectId, table.classificationId),
-  projectIdIdx: index("prevailing_wage_rates_project_id_idx").on(table.projectId),
-}));
-
-export const salaryTypeEnum = pgEnum("salary_type", ["FIXED", "CONTRACT", "HOURLY_EQUIVALENT", "SEASONAL"]);
-
-export const annualSalaryCategories = pgTable("annual_salary_categories", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  baseAnnualSalary: decimal("base_annual_salary", { precision: 12, scale: 2 }).notNull(),
-  salaryType: salaryTypeEnum("salary_type").default("FIXED"),
-  effectiveDate: date("effective_date").notNull().defaultNow(),
-  description: text("description"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgNameUnique: unique().on(table.organizationId, table.name),
-}));
-
-export const burdenRates = pgTable("burden_rates", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  burdenPercentage: decimal("burden_percentage", { precision: 8, scale: 4 }).notNull().default("0"),
-  fixedBurdenAmount: decimal("fixed_burden_amount", { precision: 12, scale: 2 }).default("0"),
-  taxesPercent: decimal("taxes_percent", { precision: 8, scale: 4 }).default("0"),
-  benefitsPercent: decimal("benefits_percent", { precision: 8, scale: 4 }).default("0"),
-  insurancePercent: decimal("insurance_percent", { precision: 8, scale: 4 }).default("0"),
-  overheadPercent: decimal("overhead_percent", { precision: 8, scale: 4 }).default("0"),
-  description: text("description"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgNameUnique: unique().on(table.organizationId, table.name),
-}));
-
-export const employeeCostAssignments = pgTable("employee_cost_assignments", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  salaryCategoryId: varchar("salary_category_id").notNull().references(() => annualSalaryCategories.id, { onDelete: "cascade" }),
-  burdenRateId: varchar("burden_rate_id").references(() => burdenRates.id, { onDelete: "set null" }),
-  workingHoursPerYear: integer("working_hours_per_year").notNull().default(2080),
-  fullyBurdenedCost: decimal("fully_burdened_cost", { precision: 14, scale: 2 }),
-  derivedHourlyRate: decimal("derived_hourly_rate", { precision: 10, scale: 4 }),
-  effectiveDate: date("effective_date").notNull().defaultNow(),
-  endDate: date("end_date"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  userUnique: unique().on(table.userId, table.salaryCategoryId),
-  userIdIdx: index("employee_cost_assignments_user_id_idx").on(table.userId),
-}));
-
-// T&M Daily Sheets table (legacy - replaced by tmTickets)
-export const tmDailySheets = pgTable("tm_daily_sheets", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  date: timestamp("date").notNull(),
-  tfrRepName: text("tfr_rep_name").notNull(),
-  clientRepName: text("client_rep_name"),
-  weather: text("weather"),
-  descriptionOfWork: text("description_of_work").notNull(),
-  crewSize: integer("crew_size"),
-  laborSummaryJson: text("labor_summary_json"),
-  equipmentUsedJson: text("equipment_used_json"),
-  materialsUsedJson: text("materials_used_json"),
-  attachmentsJson: text("attachments_json"),
-  clientSignatureName: text("client_signature_name"),
-  clientSignatureDate: timestamp("client_signature_date"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-// T&M Ticket Status Enum
-export const tmTicketStatusEnum = pgEnum("tm_ticket_status", ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED"]);
-
-// T&M Billing Status Enum
-export const tmBillingStatusEnum = pgEnum("tm_billing_status", ["PENDING", "APPROVED_FOR_BILLING", "INVOICED", "BILLED"]);
-
-// T&M Invoice Status Enum
-export const tmInvoiceStatusEnum = pgEnum("tm_invoice_status", ["DRAFT", "SENT", "PAID", "CANCELLED"]);
-
-// T&M Invoices table - generated invoices for T&M tickets
-export const tmInvoices = pgTable("tm_invoices", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  invoiceNumber: text("invoice_number").notNull(),
-  invoiceDate: date("invoice_date").notNull(),
-  dueDate: date("due_date"),
-  
-  // Client/billing info
-  clientName: text("client_name").notNull(),
-  clientAddress: text("client_address"),
-  clientEmail: text("client_email"),
-  
-  // Totals
-  subtotal: decimal("subtotal", { precision: 12, scale: 2 }).notNull().default("0"),
-  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0"),
-  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0"),
-  total: decimal("total", { precision: 12, scale: 2 }).notNull().default("0"),
-  
-  // Status and workflow
-  status: tmInvoiceStatusEnum("status").notNull().default("DRAFT"),
-  sentAt: timestamp("sent_at"),
-  paidAt: timestamp("paid_at"),
-  notes: text("notes"),
-  
-  // PDF generation
-  pdfUrl: text("pdf_url"),
-  pdfObjectKey: text("pdf_object_key"),
-  
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  organizationIdIdx: index("tm_invoices_organization_id_idx").on(table.organizationId),
-  projectIdIdx: index("tm_invoices_project_id_idx").on(table.projectId),
-  statusIdx: index("tm_invoices_status_idx").on(table.status),
-  invoiceDateIdx: index("tm_invoices_invoice_date_idx").on(table.invoiceDate),
-}));
-
-// T&M Work Tickets table - comprehensive tracking for time & material work
-export const tmTickets = pgTable("tm_tickets", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  ticketNumber: text("ticket_number").notNull(),
-  workDate: date("work_date").notNull(),
-  tfrRepresentativeId: varchar("tfr_representative_id").notNull().references(() => users.id),
-  workOrderReference: text("work_order_reference"),
-  
-  // Standardized scope of work (matches estimating sheets for production rate tracking)
-  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
-  workTypeId: varchar("work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
-  workTypeCode: text("work_type_code"), // Machine-readable code for AI/production tracking
-  workTypeName: text("work_type_name"), // Display name e.g. "4\" Sidewalk"
-  categoryName: text("category_name"), // Category e.g. "Sidewalk"
-  scopeModifierIds: text("scope_modifier_ids"), // JSON array of modifier IDs
-  scopeModifierNames: text("scope_modifier_names"), // JSON array of modifier names
-  canonicalName: text("canonical_name"), // Full standardized name for tracking
-  scopeUnit: text("scope_unit"), // Unit of measure (SF, LF, CY, EA)
-  scopeQuantity: decimal("scope_quantity", { precision: 12, scale: 2 }), // Quantity completed
-  
-  // Freetext description for additional details
-  scopeDescription: text("scope_description").notNull(),
-  notes: text("notes"),
-  status: tmTicketStatusEnum("status").notNull().default("DRAFT"),
-  
-  // Totals (calculated from line items)
-  totalLaborHours: decimal("total_labor_hours", { precision: 10, scale: 2 }).default("0"),
-  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).default("0"),
-  totalEquipmentCost: decimal("total_equipment_cost", { precision: 12, scale: 2 }).default("0"),
-  totalMaterialCost: decimal("total_material_cost", { precision: 12, scale: 2 }).default("0"),
-  grandTotal: decimal("grand_total", { precision: 12, scale: 2 }).default("0"),
-  
-  // Approval workflow
-  submittedAt: timestamp("submitted_at"),
-  submittedById: varchar("submitted_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  rejectedAt: timestamp("rejected_at"),
-  rejectedById: varchar("rejected_by_id").references(() => users.id),
-  rejectionReason: text("rejection_reason"),
-  
-  // Signed document upload
-  signedDocumentUrl: text("signed_document_url"),
-  signedDocumentFileName: text("signed_document_file_name"),
-  signedDocumentObjectKey: text("signed_document_object_key"),
-  signedDocumentUploadedAt: timestamp("signed_document_uploaded_at"),
-  
-  // Billing workflow (Office Manager approval for invoicing)
-  billingStatus: tmBillingStatusEnum("billing_status").notNull().default("PENDING"),
-  billingApprovedAt: timestamp("billing_approved_at"),
-  billingApprovedById: varchar("billing_approved_by_id").references(() => users.id),
-  invoiceId: varchar("invoice_id").references(() => tmInvoices.id, { onDelete: "set null" }),
-  billedAt: timestamp("billed_at"),
-  billingNotes: text("billing_notes"),
-  
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectIdIdx: index("tm_tickets_project_id_idx").on(table.projectId),
-  statusIdx: index("tm_tickets_status_idx").on(table.status),
-  workDateIdx: index("tm_tickets_work_date_idx").on(table.workDate),
-  workTypeCodeIdx: index("tm_tickets_work_type_code_idx").on(table.workTypeCode),
-  billingStatusIdx: index("tm_tickets_billing_status_idx").on(table.billingStatus),
-}));
-
-// T&M Ticket Labor Entries
-export const tmTicketLaborEntries = pgTable("tm_ticket_labor_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
-  employeeName: text("employee_name").notNull(),
-  position: text("position").notNull(),
-  crewMemberCount: integer("crew_member_count").notNull().default(1),
-  hoursWorked: decimal("hours_worked", { precision: 6, scale: 2 }).notNull(),
-  totalHours: decimal("total_hours", { precision: 8, scale: 2 }).notNull(), // hoursWorked * crewMemberCount
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  ticketIdIdx: index("tm_ticket_labor_entries_ticket_id_idx").on(table.ticketId),
-}));
-
-// T&M Ticket Equipment Entries
-export const tmTicketEquipmentEntries = pgTable("tm_ticket_equipment_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
-  equipmentType: text("equipment_type").notNull(),
-  quantity: integer("quantity").notNull().default(1),
-  hoursUsed: decimal("hours_used", { precision: 6, scale: 2 }).notNull(),
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  ticketIdIdx: index("tm_ticket_equipment_entries_ticket_id_idx").on(table.ticketId),
-}));
-
-// T&M Ticket Material Entries
-export const tmTicketMaterialEntries = pgTable("tm_ticket_material_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ticketId: varchar("ticket_id").notNull().references(() => tmTickets.id, { onDelete: "cascade" }),
-  materialDescription: text("material_description").notNull(),
-  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
-  unit: text("unit").notNull(),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  ticketIdIdx: index("tm_ticket_material_entries_ticket_id_idx").on(table.ticketId),
-}));
-
-// Receipts table
-export const receipts = pgTable("receipts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  date: timestamp("date").notNull(),
-  vendor: text("vendor").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  category: text("category"),
-  fileName: text("file_name").notNull(),
-  fileUrl: text("file_url").notNull(),
-  objectKey: text("object_key"),
-  fileSize: integer("file_size"),
-  mimeType: text("mime_type"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-// Project Notes table
-export const projectNotes = pgTable("project_notes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  authorId: varchar("author_id").notNull().references(() => users.id),
-  noteType: noteTypeEnum("note_type").notNull().default("GENERAL"),
-  text: text("text").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  projectIdIdx: index("project_notes_project_id_idx").on(table.projectId),
-  authorIdIdx: index("project_notes_author_id_idx").on(table.authorId),
-  createdAtIdx: index("project_notes_created_at_idx").on(table.createdAt),
-}));
-
-// Company Daily Notes table (company-wide communications)
-export const companyDailyNotes = pgTable("company_daily_notes", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  authorId: varchar("author_id").notNull().references(() => users.id),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  text: text("text").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  authorIdIdx: index("company_daily_notes_author_id_idx").on(table.authorId),
-  projectIdIdx: index("company_daily_notes_project_id_idx").on(table.projectId),
-  createdAtIdx: index("company_daily_notes_created_at_idx").on(table.createdAt),
-}));
-
-// AI Note Insights table (stores AI analysis of daily notes)
-export const aiNoteInsights = pgTable("ai_note_insights", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  runId: varchar("run_id").notNull().references(() => aiRuns.id),
-  sourceType: aiNoteInsightSourceTypeEnum("source_type").notNull(),
-  sourceId: varchar("source_id").notNull(),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  category: aiNoteInsightCategoryEnum("category").notNull(),
-  summary: text("summary").notNull(),
-  recommendedActions: text("recommended_actions_json"),
-  severity: aiNoteInsightSeverityEnum("severity").notNull().default("MEDIUM"),
-  recipients: text("recipients_json"),
-  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
-  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
-  acknowledgedAt: timestamp("acknowledged_at"),
-  completedById: varchar("completed_by_id").references(() => users.id),
-  completedAt: timestamp("completed_at"),
-  dismissedById: varchar("dismissed_by_id").references(() => users.id),
-  dismissedAt: timestamp("dismissed_at"),
-  dismissReason: text("dismiss_reason"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  runIdIdx: index("ai_note_insights_run_id_idx").on(table.runId),
-  projectIdIdx: index("ai_note_insights_project_id_idx").on(table.projectId),
-  categoryIdx: index("ai_note_insights_category_idx").on(table.category),
-  severityIdx: index("ai_note_insights_severity_idx").on(table.severity),
-  statusIdx: index("ai_note_insights_status_idx").on(table.status),
-}));
-
-// Unified Tasks table (supports manual, email-derived, AI-generated, and system tasks)
-export const tasks = pgTable("tasks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
-  vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
-  emailThreadId: varchar("email_thread_id"),
-  emailMessageId: varchar("email_message_id"),
-  title: text("title").notNull(),
-  description: text("description"),
-  category: aiNoteInsightCategoryEnum("category").notNull().default("OTHER"),
-  priority: aiTaskPriorityEnum("priority").notNull().default("MEDIUM"),
-  status: aiTaskStatusEnum("status").notNull().default("PENDING"),
-  sourceType: taskSourceTypeEnum("source_type").notNull().default("MANUAL"),
-  aiMetadata: text("ai_metadata"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  assignedToId: varchar("assigned_to_id").references(() => users.id),
-  dueDate: timestamp("due_date"),
-  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
-  acknowledgedAt: timestamp("acknowledged_at"),
-  completedById: varchar("completed_by_id").references(() => users.id),
-  completedAt: timestamp("completed_at"),
-  dismissedById: varchar("dismissed_by_id").references(() => users.id),
-  dismissedAt: timestamp("dismissed_at"),
-  dismissReason: text("dismiss_reason"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  organizationIdIdx: index("tasks_organization_id_idx").on(table.organizationId),
-  projectIdIdx: index("tasks_project_id_idx").on(table.projectId),
-  assignedToIdIdx: index("tasks_assigned_to_id_idx").on(table.assignedToId),
-  statusIdx: index("tasks_status_idx").on(table.status),
-  priorityIdx: index("tasks_priority_idx").on(table.priority),
-  dueDateIdx: index("tasks_due_date_idx").on(table.dueDate),
-  sourceTypeIdx: index("tasks_source_type_idx").on(table.sourceType),
-  emailThreadIdIdx: index("tasks_email_thread_id_idx").on(table.emailThreadId),
-}));
-
-export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
-export const updateTaskSchema = insertTaskSchema.partial();
-export type Task = typeof tasks.$inferSelect;
-export type InsertTask = z.infer<typeof insertTaskSchema>;
-
-// Material responsibility enum - who is responsible for material overages
-export const materialResponsibilityEnum = pgEnum("material_responsibility", [
-  "TFR",           // TFR is responsible (absorb cost)
-  "SUBCONTRACTOR", // Subcontractor is responsible (deduct from payment)
-  "CUSTOMER",      // Customer is responsible (bill as change order)
-  "PENDING",       // Not yet determined
-]);
-
-// Overage action status enum
-export const overageActionStatusEnum = pgEnum("overage_action_status", [
-  "NONE",       // No overage or no action needed
-  "PENDING",    // Overage detected, awaiting decision
-  "BILLED",     // Billed to customer
-  "DEDUCTED",   // Deducted from subcontractor
-  "ABSORBED",   // Absorbed by TFR
-  "RESOLVED",   // Resolved through other means
-]);
-
-// Scope of Work Items table
-export const scopeItems = pgTable("scope_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
-  // Unified SOW Tracking - links to organization's master SOW library for production rate tracking across projects
-  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
-  subcontractorQuoteId: varchar("subcontractor_quote_id"),
-  description: text("description").notNull(),
-  unit: text("unit").notNull(),
-  totalQuantity: decimal("total_quantity", { precision: 12, scale: 2 }).notNull(),
-  completedQuantity: decimal("completed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
-  billedQuantity: decimal("billed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
-  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
-  billingStatus: billingStatusEnum("billing_status").notNull().default("NOT_READY"),
-  lastBilledDate: timestamp("last_billed_date"),
-  
-  // Estimated material quantities (copied from estimate at project creation)
-  estimatedConcreteYards: decimal("estimated_concrete_yards", { precision: 10, scale: 2 }),
-  estimatedStoneTons: decimal("estimated_stone_tons", { precision: 10, scale: 2 }),
-  estimatedExcavationYards: decimal("estimated_excavation_yards", { precision: 10, scale: 2 }),
-  
-  // Actual material quantities (recorded during project execution)
-  actualConcreteYards: decimal("actual_concrete_yards", { precision: 10, scale: 2 }),
-  actualStoneTons: decimal("actual_stone_tons", { precision: 10, scale: 2 }),
-  actualExcavationYards: decimal("actual_excavation_yards", { precision: 10, scale: 2 }),
-  
-  // Material variance tracking
-  materialResponsibility: materialResponsibilityEnum("material_responsibility").default("PENDING"),
-  overageActionStatus: overageActionStatusEnum("overage_action_status").default("NONE"),
-  overageNotes: text("overage_notes"),
-  overageResolvedById: varchar("overage_resolved_by_id").references(() => users.id),
-  overageResolvedAt: timestamp("overage_resolved_at"),
-  
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  // Enforce one-to-one mapping: one scope item per estimate line item
-  uniqueEstimateLineItem: unique("scope_items_estimate_line_item_unique").on(table.estimateLineItemId),
-  organizationSowItemIdx: index("scope_items_org_sow_item_idx").on(table.organizationSowItemId),
-}));
-
-// Daily Scope Progress table - tracks daily quantities completed for each scope item
-// Also captures production rate data: labor hours, costs, crew size for historical analysis
-export const dailyScopeProgress = pgTable("daily_scope_progress", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  // Unified SOW Tracking - denormalized for efficient cross-project production rate queries
-  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
-  workDate: date("work_date").notNull(),
-  quantityCompleted: decimal("quantity_completed", { precision: 12, scale: 2 }).notNull(),
-  billedQuantity: decimal("billed_quantity", { precision: 12, scale: 2 }).notNull().default("0"),
-  billingStatus: billingStatusEnum("billing_status").notNull().default("NOT_READY"),
-  billedDate: timestamp("billed_date"),
-  billedById: varchar("billed_by_id").references(() => users.id),
-  notes: text("notes"),
-  
-  // Production Rate Tracking - Labor
-  laborHours: decimal("labor_hours", { precision: 10, scale: 2 }),
-  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
-  crewSize: integer("crew_size"),
-  
-  // Production Rate Tracking - Materials
-  materialCost: decimal("material_cost", { precision: 12, scale: 2 }),
-  
-  // Production Rate Tracking - Equipment
-  equipmentHours: decimal("equipment_hours", { precision: 10, scale: 2 }),
-  equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }),
-  
-  // Computed per-unit metrics (stored for query performance)
-  laborHoursPerUnit: decimal("labor_hours_per_unit", { precision: 10, scale: 4 }),
-  laborCostPerUnit: decimal("labor_cost_per_unit", { precision: 10, scale: 4 }),
-  materialCostPerUnit: decimal("material_cost_per_unit", { precision: 10, scale: 4 }),
-  totalCostPerUnit: decimal("total_cost_per_unit", { precision: 10, scale: 4 }),
-  
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  scopeItemIdIdx: index("daily_scope_progress_scope_item_id_idx").on(table.scopeItemId),
-  projectIdIdx: index("daily_scope_progress_project_id_idx").on(table.projectId),
-  workDateIdx: index("daily_scope_progress_work_date_idx").on(table.workDate),
-  billingStatusIdx: index("daily_scope_progress_billing_status_idx").on(table.billingStatus),
-  organizationSowItemIdx: index("daily_scope_progress_org_sow_item_idx").on(table.organizationSowItemId),
-}));
-
-// Project Material Budgets table - snapshots bid/estimate material quantities when project is created
-// This captures the "target" budget for variance tracking
-export const projectMaterialBudgets = pgTable("project_material_budgets", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
-  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
-  
-  // Material description and unit from estimate
-  description: text("description").notNull(),
-  unit: text("unit").notNull(),
-  
-  // Budgeted quantities and costs (from estimate at time of project creation)
-  budgetedQuantity: decimal("budgeted_quantity", { precision: 12, scale: 2 }).notNull(),
-  budgetedUnitCost: decimal("budgeted_unit_cost", { precision: 10, scale: 2 }).notNull().default('0'),
-  budgetedTotalCost: decimal("budgeted_total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  
-  // Running actual totals (updated as usage entries are added)
-  actualQuantityUsed: decimal("actual_quantity_used", { precision: 12, scale: 2 }).notNull().default('0'),
-  actualTotalCost: decimal("actual_total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  
-  // Variance tracking
-  varianceQuantity: decimal("variance_quantity", { precision: 12, scale: 2 }).notNull().default('0'),
-  variancePercent: decimal("variance_percent", { precision: 6, scale: 2 }).notNull().default('0'),
-  
-  // Alert thresholds
-  alertThresholdPercent: decimal("alert_threshold_percent", { precision: 5, scale: 2 }).notNull().default('90'),
-  alertTriggered: boolean("alert_triggered").notNull().default(false),
-  alertTriggeredAt: timestamp("alert_triggered_at"),
-  
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectIdIdx: index("project_material_budgets_project_id_idx").on(table.projectId),
-  scopeItemIdIdx: index("project_material_budgets_scope_item_id_idx").on(table.scopeItemId),
-  alertTriggeredIdx: index("project_material_budgets_alert_triggered_idx").on(table.alertTriggered),
-}));
-
-// Project Material Usage table - tracks actual daily material consumption from field reps
-export const projectMaterialUsage = pgTable("project_material_usage", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
-  materialBudgetId: varchar("material_budget_id").references(() => projectMaterialBudgets.id, { onDelete: "set null" }),
-  dailyScopeProgressId: varchar("daily_scope_progress_id").references(() => dailyScopeProgress.id, { onDelete: "set null" }),
-  
-  // Usage details
-  usageDate: date("usage_date").notNull(),
-  description: text("description").notNull(),
-  quantityUsed: decimal("quantity_used", { precision: 12, scale: 2 }).notNull(),
-  unit: text("unit").notNull(),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull().default('0'),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  
-  // Optional vendor/receipt tracking
-  vendorName: text("vendor_name"),
-  receiptReference: text("receipt_reference"),
-  notes: text("notes"),
-  
-  // Who entered this record
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectIdIdx: index("project_material_usage_project_id_idx").on(table.projectId),
-  scopeItemIdIdx: index("project_material_usage_scope_item_id_idx").on(table.scopeItemId),
-  usageDateIdx: index("project_material_usage_usage_date_idx").on(table.usageDate),
-  materialBudgetIdIdx: index("project_material_usage_material_budget_id_idx").on(table.materialBudgetId),
-}));
-
-// Media table (photos and videos)
-export const media = pgTable("media", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  type: mediaTypeEnum("type").notNull(),
-  fileName: text("file_name").notNull(),
-  fileUrl: text("file_url").notNull(),
-  objectKey: text("object_key"),
-  fileSize: integer("file_size"),
-  mimeType: text("mime_type"),
-  caption: text("caption"),
-  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
-  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
-});
-
-// Change Orders table
-// Simplified workflow: DRAFT → SUBMITTED → APPROVED/REJECTED
-export const changeOrders = pgTable("change_orders", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  changeOrderNumber: text("change_order_number").notNull(),
-  description: text("description").notNull(),
-  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  status: changeOrderStatusEnum("status").notNull().default("DRAFT"),
-  requestedById: varchar("requested_by_id").notNull().references(() => users.id),
-  submittedAt: timestamp("submitted_at"),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  rejectionReason: text("rejection_reason"),
-  attachmentsJson: text("attachments_json"),
-  // Standardized Scope of Work fields (matches estimating sheets for production rate tracking)
-  workTypeId: varchar("work_type_id"),
-  workTypeCode: text("work_type_code"),
-  workTypeName: text("work_type_name"),
-  categoryName: text("category_name"),
-  scopeModifierIds: text("scope_modifier_ids"),
-  scopeModifierNames: text("scope_modifier_names"),
-  canonicalName: text("canonical_name"),
-  scopeUnit: text("scope_unit"),
-  scopeQuantity: text("scope_quantity"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  statusIdx: index("change_orders_status_idx").on(table.status),
-  projectIdIdx: index("change_orders_project_id_idx").on(table.projectId),
-  workTypeCodeIdx: index("change_orders_work_type_code_idx").on(table.workTypeCode),
-}));
-
-// Change Order Line Items - Labor Entries
-export const changeOrderLaborEntries = pgTable("change_order_labor_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
-  employeeName: text("employee_name").notNull(),
-  position: text("position"),
-  hoursWorked: decimal("hours_worked", { precision: 8, scale: 2 }).notNull(),
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
-});
-
-// Change Order Line Items - Equipment Entries
-export const changeOrderEquipmentEntries = pgTable("change_order_equipment_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
-  equipmentType: text("equipment_type").notNull(),
-  description: text("description"),
-  quantity: integer("quantity").notNull().default(1),
-  hoursUsed: decimal("hours_used", { precision: 8, scale: 2 }).notNull(),
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
-});
-
-// Change Order Line Items - Material Entries (with vendor pricing integration)
-export const changeOrderMaterialEntries = pgTable("change_order_material_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
-  materialDescription: text("material_description").notNull(),
-  category: text("category"), // For vendor catalog lookup (CONCRETE, STONE, REBAR, etc.)
-  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
-  unit: text("unit"),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
-  vendorPricingId: varchar("vendor_pricing_id"), // Reference to catalog item if applied
-});
-
-// Project Delays table - tracks schedule delays with change order integration
-export const projectDelays = pgTable("project_delays", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  delayNumber: text("delay_number").notNull(), // e.g., DLY-260009-001
-  reason: delayReasonEnum("reason").notNull(),
-  reasonNotes: text("reason_notes"), // Free-form description of delay cause
-  startDateTime: timestamp("start_date_time").notNull(),
-  endDateTime: timestamp("end_date_time"), // Null if delay is ongoing
-  estimatedDuration: integer("estimated_duration"), // Days if end unknown
-  ownerRepContactId: varchar("owner_rep_contact_id"), // CRM contact who issued delay
-  gcRepContactId: varchar("gc_rep_contact_id"), // GC rep who issued/acknowledged
-  ownerRepName: text("owner_rep_name"), // Cached name for display
-  gcRepName: text("gc_rep_name"), // Cached name for display
-  proofFileId: varchar("proof_file_id"), // Reference to uploaded email/document
-  proofFileName: text("proof_file_name"),
-  proofFileUrl: text("proof_file_url"),
-  financiallyResponsible: delayResponsibilityEnum("financially_responsible").notNull(),
-  changeOrderRequired: boolean("change_order_required").notNull().default(false),
-  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
-  proceedToWorkDate: timestamp("proceed_to_work_date"), // When work can resume
-  proceedToWorkNotes: text("proceed_to_work_notes"),
-  proceedToWorkFileUrl: text("proceed_to_work_file_url"), // Proof of proceed notice
-  status: delayStatusEnum("status").notNull().default("DRAFT"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  submittedAt: timestamp("submitted_at"),
-  acknowledgedById: varchar("acknowledged_by_id").references(() => users.id),
-  acknowledgedAt: timestamp("acknowledged_at"),
-  resolvedAt: timestamp("resolved_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Weather evidence for WEATHER type delays
-  weatherEvidenceJson: json("weather_evidence_json").$type<{
-    fetchedAt: string;
-    location: { lat: number; lng: number };
-    dailyData: Array<{
-      date: string;
-      tempHigh: number;
-      tempLow: number;
-      precipitation: number;
-      windSpeed: number;
-      conditions: string;
-      alerts?: string[];
-    }>;
-  }>(),
-  locationLat: decimal("location_lat", { precision: 10, scale: 6 }),
-  locationLng: decimal("location_lng", { precision: 10, scale: 6 }),
-}, (table) => ({
-  projectIdIdx: index("project_delays_project_id_idx").on(table.projectId),
-  statusIdx: index("project_delays_status_idx").on(table.status),
-  reasonIdx: index("project_delays_reason_idx").on(table.reason),
-  startDateIdx: index("project_delays_start_date_idx").on(table.startDateTime),
-}));
-
-// Delay Notifications table - for generating professional notification letters/emails
-export const delayNotifications = pgTable("delay_notifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  delayId: varchar("delay_id").notNull().references(() => projectDelays.id, { onDelete: "cascade" }),
-  recipientType: delayNotificationRecipientTypeEnum("recipient_type").notNull(),
-  recipientName: text("recipient_name").notNull(),
-  recipientCompany: text("recipient_company"),
-  recipientEmail: text("recipient_email"),
-  subject: text("subject").notNull(),
-  body: text("body").notNull(), // The full letter content
-  status: delayNotificationStatusEnum("status").notNull().default("DRAFT"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  delayIdIdx: index("delay_notifications_delay_id_idx").on(table.delayId),
-}));
-
-// Project Inspections table - tracks scheduled inspections with city officials, GC reps, owner reps
-export const projectInspections = pgTable("project_inspections", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  inspectionNumber: text("inspection_number").notNull(), // e.g., INSP-260009-001
-  inspectionType: inspectionTypeEnum("inspection_type").notNull(),
-  title: text("title").notNull(), // e.g., "Footing Inspection", "Rough Electrical"
-  description: text("description"),
-  requestMethod: inspectionRequestMethodEnum("request_method"),
-  requestedDate: timestamp("requested_date").notNull(), // When inspection was requested
-  scheduledDate: timestamp("scheduled_date"), // When inspection is scheduled
-  completedDate: timestamp("completed_date"),
-  status: inspectionStatusEnum("status").notNull().default("REQUESTED"),
-  
-  // Inspector Contact Information (from CRM or manual entry)
-  inspectorContactId: varchar("inspector_contact_id"), // CRM contact ID if from CRM
-  inspectorName: text("inspector_name"),
-  inspectorCompany: text("inspector_company"),
-  inspectorPhone: text("inspector_phone"),
-  inspectorEmail: text("inspector_email"),
-  
-  // GC Representative (from CRM or manual entry)
-  gcRepContactId: varchar("gc_rep_contact_id"), // CRM contact ID
-  gcRepName: text("gc_rep_name"),
-  gcRepCompany: text("gc_rep_company"),
-  gcRepPhone: text("gc_rep_phone"),
-  gcRepEmail: text("gc_rep_email"),
-  
-  // Owner Representative (from CRM or manual entry)
-  ownerRepContactId: varchar("owner_rep_contact_id"), // CRM contact ID
-  ownerRepName: text("owner_rep_name"),
-  ownerRepCompany: text("owner_rep_company"),
-  ownerRepPhone: text("owner_rep_phone"),
-  ownerRepEmail: text("owner_rep_email"),
-  
-  // Result information
-  resultNotes: text("result_notes"),
-  punchListItems: text("punch_list_items"), // Items to fix if failed
-  reinspectionRequired: boolean("reinspection_required").notNull().default(false),
-  reinspectionDate: timestamp("reinspection_date"),
-  
-  // PDF and email tracking
-  requestPdfUrl: text("request_pdf_url"), // Generated PDF of inspection request
-  emailSentAt: timestamp("email_sent_at"),
-  emailRecipients: text("email_recipients"), // Comma-separated list of emails
-  
-  // Metadata
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  projectIdIdx: index("project_inspections_project_id_idx").on(table.projectId),
-  statusIdx: index("project_inspections_status_idx").on(table.status),
-  typeIdx: index("project_inspections_type_idx").on(table.inspectionType),
-  scheduledDateIdx: index("project_inspections_scheduled_date_idx").on(table.scheduledDate),
-}));
-
-export const insertProjectInspectionSchema = createInsertSchema(projectInspections).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
-});
-export type InsertProjectInspection = z.infer<typeof insertProjectInspectionSchema>;
-export type ProjectInspection = typeof projectInspections.$inferSelect;
-
-// Calendar Events table
-export const calendarEvents = pgTable("calendar_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  eventType: calendarEventTypeEnum("event_type").notNull(),
-  title: text("title").notNull(),
-  description: text("description"),
-  startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date"),
-  allDay: boolean("all_day").notNull().default(false),
-  userId: varchar("user_id").references(() => users.id),
-  projectId: varchar("project_id").references(() => projects.id),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-// Notifications table
-export const notifications = pgTable("notifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  type: notificationTypeEnum("type").notNull(),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  isRead: boolean("is_read").notNull().default(false),
-  relatedEntityId: varchar("related_entity_id"),
-  relatedEntityType: text("related_entity_type"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-// Payroll Notifications table - tracks when time entries are ready for payroll processing
-export const payrollNotifications = pgTable("payroll_notifications", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  periodStart: date("period_start").notNull(),
-  periodEnd: date("period_end").notNull(),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  approvingManagerId: varchar("approving_manager_id").notNull().references(() => users.id),
-  officeManagerId: varchar("office_manager_id").references(() => users.id),
-  status: text("status").notNull().default("PENDING"),
-  totalShiftsApproved: integer("total_shifts_approved").notNull().default(0),
-  totalTimeEntriesApproved: integer("total_time_entries_approved").notNull().default(0),
-  totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
-  sentToOfficeManagerAt: timestamp("sent_to_office_manager_at"),
-  processedAt: timestamp("processed_at"),
-  processedById: varchar("processed_by_id").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdx: index("payroll_notifications_org_idx").on(table.organizationId),
-  periodIdx: index("payroll_notifications_period_idx").on(table.periodStart, table.periodEnd),
-  statusIdx: index("payroll_notifications_status_idx").on(table.status),
-}));
-
-// File Permissions table
-export const filePermissions = pgTable("file_permissions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  fileId: varchar("file_id").notNull(),
-  fileType: fileTypeEnum("file_type").notNull(),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  grantedById: varchar("granted_by_id").notNull().references(() => users.id),
-  grantedAt: timestamp("granted_at").notNull().defaultNow(),
-});
-
-// Audit Log table
-export const auditLog = pgTable("audit_log", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  entityType: text("entity_type").notNull(),
-  entityId: varchar("entity_id").notNull(),
-  action: auditActionEnum("action").notNull(),
-  oldValue: text("old_value"),
-  newValue: text("new_value"),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  entityTypeIdx: index("audit_log_entity_type_idx").on(table.entityType),
-  entityIdIdx: index("audit_log_entity_id_idx").on(table.entityId),
-  userIdIdx: index("audit_log_user_id_idx").on(table.userId),
-  createdAtIdx: index("audit_log_created_at_idx").on(table.createdAt),
-}));
-
-// Billing Events table
-export const billingEvents = pgTable("billing_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  scopeItemId: varchar("scope_item_id").notNull().references(() => scopeItems.id, { onDelete: "cascade" }),
-  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
-  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
-  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull(),
-  description: text("description"),
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-// Time Clock Shifts table
-export const timeClockShifts = pgTable("time_clock_shifts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  clockIn: timestamp("clock_in").notNull(),
-  clockOut: timestamp("clock_out"),
-  clockInLatitude: doublePrecision("clock_in_latitude"),
-  clockInLongitude: doublePrecision("clock_in_longitude"),
-  clockOutLatitude: doublePrecision("clock_out_latitude"),
-  clockOutLongitude: doublePrecision("clock_out_longitude"),
-  notes: text("notes"),
-  autoClockOut: boolean("auto_clock_out").notNull().default(false),
-  approvalStatus: shiftApprovalStatusEnum("approval_status").notNull().default("PENDING"),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  totalHours: decimal("total_hours", { precision: 6, scale: 2 }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  userIdIdx: index("time_clock_shifts_user_id_idx").on(table.userId),
-  clockInIdx: index("time_clock_shifts_clock_in_idx").on(table.clockIn),
-  approvalStatusIdx: index("time_clock_shifts_approval_status_idx").on(table.approvalStatus),
-}));
-
-// Time Clock Events table
-export const timeClockEvents = pgTable("time_clock_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  shiftId: varchar("shift_id").notNull().references(() => timeClockShifts.id, { onDelete: "cascade" }),
-  eventType: clockEventTypeEnum("event_type").notNull(),
-  timestamp: timestamp("timestamp").notNull(),
-  latitude: doublePrecision("latitude"),
-  longitude: doublePrecision("longitude"),
-  notes: text("notes"),
-  performedById: varchar("performed_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-// Overtime Request Status enum
-export const overtimeRequestStatusEnum = pgEnum("overtime_request_status", ["PENDING", "APPROVED", "REJECTED"]);
-
-// Overtime Requests table
-export const overtimeRequests = pgTable("overtime_requests", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  shiftId: varchar("shift_id").notNull().references(() => timeClockShifts.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  organizationId: varchar("organization_id").notNull(),
-  requestedHours: decimal("requested_hours", { precision: 6, scale: 2 }).notNull(),
-  approvedHours: decimal("approved_hours", { precision: 6, scale: 2 }),
-  superintendentId: varchar("superintendent_id").notNull().references(() => users.id),
-  status: overtimeRequestStatusEnum("status").notNull().default("PENDING"),
-  notes: text("notes"),
-  rejectionReason: text("rejection_reason"),
-  approvedAt: timestamp("approved_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  userIdx: index("overtime_requests_user_idx").on(table.userId),
-  shiftIdx: index("overtime_requests_shift_idx").on(table.shiftId),
-  statusIdx: index("overtime_requests_status_idx").on(table.status),
-  orgIdx: index("overtime_requests_org_idx").on(table.organizationId),
-}));
-
-// AI Settings table
 export const aiSettings = pgTable("ai_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   dailyRunsEnabled: boolean("daily_runs_enabled").notNull().default(true),
@@ -1661,27 +82,6 @@ export const aiTasks = pgTable("ai_tasks", {
 }));
 
 // AI Insight Module Types
-export const aiInsightModuleEnum = pgEnum("ai_insight_module", [
-  "SCHEDULING",
-  "DELAYS", 
-  "COSTS",
-  "EQUIPMENT",
-  "VENDOR_PRICING",
-  "PROJECT_HEALTH",
-  "GANTT_CHART",
-  "LABOR",
-  "BIDS",
-  "CHANGE_ORDERS"
-]);
-
-export const aiInsightSeverityEnum = pgEnum("ai_insight_severity", [
-  "INFO",
-  "SUGGESTION",
-  "WARNING",
-  "CRITICAL"
-]);
-
-// AI Insights table (module-specific AI analysis and recommendations)
 export const aiInsights = pgTable("ai_insights", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
@@ -1748,8 +148,6 @@ export const aiVendorComparisons = pgTable("ai_vendor_comparisons", {
 }));
 
 // AI Bid Document Analysis (AI-powered bid invitation/scope document review)
-export const aiBidDocumentAnalysisStatusEnum = pgEnum("ai_bid_document_analysis_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
-
 export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
@@ -1802,8 +200,6 @@ export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
 }));
 
 // AI Contract/Award Document Analysis (AI-powered award/contract document review)
-export const aiContractDocumentAnalysisStatusEnum = pgEnum("ai_contract_document_analysis_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
-
 export const aiContractDocumentAnalysis = pgTable("ai_contract_document_analysis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
@@ -1883,13 +279,6 @@ export const aiContractDocumentAnalysis = pgTable("ai_contract_document_analysis
 // ==================================================
 
 // Enums for takeoff and estimating
-export const measurementTypeEnum = pgEnum("measurement_type", ["LINEAR", "AREA", "VOLUME", "COUNT", "NOTE"]);
-export const measurementSourceEnum = pgEnum("measurement_source", ["USER", "AI"]);
-export const measurementStatusEnum = pgEnum("measurement_status", ["DRAFT", "CONFIRMED"]);
-export const scopeTypeEnum = pgEnum("scope_type", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "UNDERDRAIN", "BASE", "BEDDING", "GENERAL"]);
-export const estimateItemCategoryEnum = pgEnum("estimate_item_category", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"]);
-
-// Project Plans table (for uploaded PDFs)
 export const projectPlans = pgTable("project_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -2005,127 +394,6 @@ export const estimateCrews = pgTable("estimate_crews", {
 });
 
 // Stone type enum for sub-base calculations
-export const stoneTypeEnum = pgEnum("stone_type", ["CRUSHED_STONE", "LIMESTONE", "COMPACTED_BASE", "PEA_GRAVEL", "RECYCLED_CONCRETE"]);
-
-// Material calculator enums for reinforcement and additives
-export const wireMeshTypeEnum = pgEnum("wire_mesh_type", ["6X6_W1.4_W1.4", "6X6_W2.9_W2.9", "4X4_W1.4_W1.4", "4X4_W2.9_W2.9"]);
-export const rebarSizeEnum = pgEnum("rebar_size", ["#3", "#4", "#5", "#6"]);
-export const sealerTypeEnum = pgEnum("sealer_type", ["CURE_AND_SEAL", "PENETRATING", "ACRYLIC", "EPOXY"]);
-export const underlaymentTypeEnum = pgEnum("underlayment_type", ["POLY_6MIL", "POLY_10MIL", "VAPOR_BARRIER"]);
-export const dowelSizeEnum = pgEnum("dowel_size", ["3/4_INCH", "1_INCH", "1_1/4_INCH"]);
-
-// Estimate Line Items table (detailed cost breakdown per line)
-export const estimateLineItems = pgTable("estimate_line_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
-  category: estimateItemCategoryEnum("category").notNull(),
-  description: text("description").notNull(),
-  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
-  unit: text("unit").notNull(),
-  source: estimateLineItemSourceEnum("source").notNull().default("MANUAL"),
-  sourceTakeoffCategoryId: varchar("source_takeoff_category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
-  scopeWorkTypeId: varchar("scope_work_type_id").references(() => scopeWorkTypes.id, { onDelete: "set null" }),
-  workTypeCode: text("work_type_code"),
-  computedQuantity: decimal("computed_quantity", { precision: 12, scale: 2 }),
-  materialCost: decimal("material_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  laborHours: decimal("labor_hours", { precision: 10, scale: 2 }).notNull().default('0'),
-  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  equipmentHours: decimal("equipment_hours", { precision: 10, scale: 2 }).notNull().default('0'),
-  equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  consumablesCost: decimal("consumables_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  subcontractCost: decimal("subcontract_cost", { precision: 12, scale: 2 }).notNull().default('0'),
-  subcontractorQuoteId: varchar("subcontractor_quote_id").references(() => bidSubcontractorQuotes.id, { onDelete: "set null" }),
-  overheadAllocation: decimal("overhead_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
-  profitAllocation: decimal("profit_allocation", { precision: 12, scale: 2 }).notNull().default('0'),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
-  userAdjusted: boolean("user_adjusted").notNull().default(false),
-  metadata: text("metadata"),
-  
-  // Material Calculator Fields - Concrete
-  concreteDepthInches: decimal("concrete_depth_inches", { precision: 6, scale: 2 }),
-  dimensionWidthInches: decimal("dimension_width_inches", { precision: 8, scale: 2 }),
-  dimensionHeightInches: decimal("dimension_height_inches", { precision: 8, scale: 2 }),
-  concreteWasteFactor: decimal("concrete_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedConcreteYards: decimal("calculated_concrete_yards", { precision: 10, scale: 2 }),
-  
-  // Material Calculator Fields - Stone Sub-Base
-  requiresStoneBase: boolean("requires_stone_base").default(false),
-  stoneType: stoneTypeEnum("stone_type"),
-  stoneDepthInches: decimal("stone_depth_inches", { precision: 6, scale: 2 }),
-  stoneWasteFactor: decimal("stone_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedStoneTons: decimal("calculated_stone_tons", { precision: 10, scale: 2 }),
-  
-  // Material Calculator Fields - Excavation
-  requiresExcavation: boolean("requires_excavation").default(false),
-  excavationDepthInches: decimal("excavation_depth_inches", { precision: 6, scale: 2 }),
-  excavationWidthInches: decimal("excavation_width_inches", { precision: 8, scale: 2 }),
-  excavationSwellFactor: decimal("excavation_swell_factor", { precision: 5, scale: 2 }).default('25'),
-  calculatedExcavationYards: decimal("calculated_excavation_yards", { precision: 10, scale: 2 }),
-  
-  // Material Calculator Fields - Wire Mesh Reinforcement
-  requiresWireMesh: boolean("requires_wire_mesh").default(false),
-  wireMeshType: wireMeshTypeEnum("wire_mesh_type"),
-  wireMeshCoverageSF: decimal("wire_mesh_coverage_sf", { precision: 8, scale: 2 }).default('150'),
-  wireMeshWasteFactor: decimal("wire_mesh_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedWireMeshRolls: decimal("calculated_wire_mesh_rolls", { precision: 10, scale: 2 }),
-  
-  // Material Calculator Fields - Rebar Reinforcement
-  requiresRebar: boolean("requires_rebar").default(false),
-  rebarSize: rebarSizeEnum("rebar_size"),
-  rebarSpacingInches: decimal("rebar_spacing_inches", { precision: 6, scale: 2 }).default('12'),
-  rebarLengthFeet: decimal("rebar_length_feet", { precision: 6, scale: 2 }).default('20'),
-  rebarWasteFactor: decimal("rebar_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedRebarCount: decimal("calculated_rebar_count", { precision: 10, scale: 0 }),
-  calculatedRebarLinearFeet: decimal("calculated_rebar_linear_feet", { precision: 12, scale: 2 }),
-  
-  // Material Calculator Fields - Dowels (for joints)
-  requiresDowels: boolean("requires_dowels").default(false),
-  dowelSize: dowelSizeEnum("dowel_size"),
-  dowelSpacingInches: decimal("dowel_spacing_inches", { precision: 6, scale: 2 }).default('12'),
-  dowelLengthInches: decimal("dowel_length_inches", { precision: 6, scale: 2 }).default('18'),
-  jointLengthFeet: decimal("joint_length_feet", { precision: 10, scale: 2 }),
-  calculatedDowelCount: decimal("calculated_dowel_count", { precision: 10, scale: 0 }),
-  
-  // Material Calculator Fields - Sealer
-  requiresSealer: boolean("requires_sealer").default(false),
-  sealerType: sealerTypeEnum("sealer_type"),
-  sealerCoverageSFPerGallon: decimal("sealer_coverage_sf_per_gallon", { precision: 8, scale: 2 }).default('200'),
-  sealerCoats: integer("sealer_coats").default(1),
-  sealerWasteFactor: decimal("sealer_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedSealerGallons: decimal("calculated_sealer_gallons", { precision: 10, scale: 2 }),
-  
-  // Material Calculator Fields - Plastic Underlayment / Vapor Barrier
-  requiresUnderlayment: boolean("requires_underlayment").default(false),
-  underlaymentType: underlaymentTypeEnum("underlayment_type"),
-  underlaymentOverlapInches: decimal("underlayment_overlap_inches", { precision: 6, scale: 2 }).default('6'),
-  underlaymentWasteFactor: decimal("underlayment_waste_factor", { precision: 5, scale: 2 }).default('10'),
-  calculatedUnderlaymentSF: decimal("calculated_underlayment_sf", { precision: 12, scale: 2 }),
-  
-  // Aggregated material requirements JSON for procurement export
-  materialRequirementsJson: text("material_requirements_json"),
-  equipmentRequirementsJson: text("equipment_requirements_json"),
-  
-  // Labor Rate Tracking - links to organization's job classifications
-  jobClassificationId: varchar("job_classification_id").references(() => jobClassifications.id, { onDelete: "set null" }),
-  laborRateUsed: decimal("labor_rate_used", { precision: 10, scale: 2 }), // Stores the rate at time of creation for historical accuracy
-  
-  // Unified SOW Tracking - links to organization's master SOW library for production rate tracking
-  organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
-  
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  estimateIdx: index("estimate_line_items_estimate_idx").on(table.estimateId),
-  categoryIdx: index("estimate_line_items_category_idx").on(table.category),
-  sourceIdx: index("estimate_line_items_source_idx").on(table.source),
-  scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
-  workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
-  subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),
-  jobClassificationIdx: index("estimate_line_items_job_classification_idx").on(table.jobClassificationId),
-  organizationSowItemIdx: index("estimate_line_items_org_sow_item_idx").on(table.organizationSowItemId),
-}));
-
-// Estimate Versions table (snapshots of estimates)
 export const estimateVersions = pgTable("estimate_versions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
@@ -2165,638 +433,7 @@ export const estimateHistory = pgTable("estimate_history", {
 });
 
 // Insert and Select Schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  tokenVersion: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-// Password Reset Tokens table
-export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  tokenHash: text("token_hash").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  userIdx: index("password_reset_tokens_user_idx").on(table.userId),
-  expiresIdx: index("password_reset_tokens_expires_idx").on(table.expiresAt),
-}));
-
-export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
-  id: true,
-  usedAt: true,
-  createdAt: true,
-});
-export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
-export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
-
-export const insertProjectSchema = createInsertSchema(projects).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertBidSchema = createInsertSchema(bids).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertBidSubcontractorQuoteSchema = createInsertSchema(bidSubcontractorQuotes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  fileUrl: z.string().optional(),
-  fileName: z.string().optional(),
-  fileSize: z.number().optional(),
-  mimeType: z.string().optional(),
-});
-
-export const insertBidMaterialQuoteSchema = createInsertSchema(bidMaterialQuotes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  fileUrl: z.string().optional(),
-  fileName: z.string().optional(),
-  fileSize: z.number().optional(),
-  mimeType: z.string().optional(),
-});
-
-export const insertEstimateSchema = createInsertSchema(estimates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertProcurementItemSchema = createInsertSchema(procurementItems).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertPlanDocumentSchema = createInsertSchema(planDocuments).omit({
-  id: true,
-  uploadedAt: true,
-});
-
-export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  approvedAt: true,
-  rejectedAt: true,
-});
-
-export const insertProjectLaborRateSchema = createInsertSchema(projectLaborRates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertProjectEmployeeRateSchema = createInsertSchema(projectEmployeeRates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertJobClassificationSchema = createInsertSchema(jobClassifications).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertEmployeeClassificationSchema = createInsertSchema(employeeClassifications).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertPrevailingWageRateSchema = createInsertSchema(prevailingWageRates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertTMDailySheetSchema = createInsertSchema(tmDailySheets).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertReceiptSchema = createInsertSchema(receipts).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertProjectNoteSchema = createInsertSchema(projectNotes).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertCompanyDailyNoteSchema = createInsertSchema(companyDailyNotes).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertAINoteInsightSchema = createInsertSchema(aiNoteInsights).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertScopeItemSchema = createInsertSchema(scopeItems).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertDailyScopeProgressSchema = createInsertSchema(dailyScopeProgress).omit({
-  id: true,
-  billedDate: true,
-  billedById: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertMediaSchema = createInsertSchema(media).omit({
-  id: true,
-  uploadedAt: true,
-});
-
-export const insertFilePermissionSchema = createInsertSchema(filePermissions).omit({
-  id: true,
-  grantedAt: true,
-});
-
-// Type exports
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
 export type SelectUser = Omit<User, 'passwordHash'>;
-
-export type InsertProject = z.infer<typeof insertProjectSchema>;
-export type Project = typeof projects.$inferSelect;
-
-export type InsertBid = z.infer<typeof insertBidSchema>;
-export type Bid = typeof bids.$inferSelect;
-
-export type InsertBidSubcontractorQuote = z.infer<typeof insertBidSubcontractorQuoteSchema>;
-export type BidSubcontractorQuote = typeof bidSubcontractorQuotes.$inferSelect;
-
-export type InsertBidMaterialQuote = z.infer<typeof insertBidMaterialQuoteSchema>;
-export type BidMaterialQuote = typeof bidMaterialQuotes.$inferSelect;
-
-export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
-export type Estimate = typeof estimates.$inferSelect;
-
-export type InsertProcurementItem = z.infer<typeof insertProcurementItemSchema>;
-export type ProcurementItem = typeof procurementItems.$inferSelect;
-
-export type InsertPlanDocument = z.infer<typeof insertPlanDocumentSchema>;
-export type PlanDocument = typeof planDocuments.$inferSelect;
-
-export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
-export type TimeEntry = typeof timeEntries.$inferSelect;
-
-export type InsertProjectLaborRate = z.infer<typeof insertProjectLaborRateSchema>;
-export type ProjectLaborRate = typeof projectLaborRates.$inferSelect;
-
-export type InsertProjectEmployeeRate = z.infer<typeof insertProjectEmployeeRateSchema>;
-export type ProjectEmployeeRate = typeof projectEmployeeRates.$inferSelect;
-
-export type InsertJobClassification = z.infer<typeof insertJobClassificationSchema>;
-export type JobClassification = typeof jobClassifications.$inferSelect;
-
-export type InsertEmployeeClassification = z.infer<typeof insertEmployeeClassificationSchema>;
-export type EmployeeClassification = typeof employeeClassifications.$inferSelect;
-
-export type InsertPrevailingWageRate = z.infer<typeof insertPrevailingWageRateSchema>;
-export type PrevailingWageRate = typeof prevailingWageRates.$inferSelect;
-
-export const insertAnnualSalaryCategorySchema = createInsertSchema(annualSalaryCategories).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertBurdenRateSchema = createInsertSchema(burdenRates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertEmployeeCostAssignmentSchema = createInsertSchema(employeeCostAssignments).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  fullyBurdenedCost: true,
-  derivedHourlyRate: true,
-});
-
-export type InsertAnnualSalaryCategory = z.infer<typeof insertAnnualSalaryCategorySchema>;
-export type AnnualSalaryCategory = typeof annualSalaryCategories.$inferSelect;
-
-export type InsertBurdenRate = z.infer<typeof insertBurdenRateSchema>;
-export type BurdenRate = typeof burdenRates.$inferSelect;
-
-export type InsertEmployeeCostAssignment = z.infer<typeof insertEmployeeCostAssignmentSchema>;
-export type EmployeeCostAssignment = typeof employeeCostAssignments.$inferSelect;
-
-export type InsertTMDailySheet = z.infer<typeof insertTMDailySheetSchema>;
-export type TMDailySheet = typeof tmDailySheets.$inferSelect;
-
-// T&M Invoice schemas and types
-export const insertTMInvoiceSchema = createInsertSchema(tmInvoices).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  sentAt: true,
-  paidAt: true,
-});
-
-export type InsertTMInvoice = z.infer<typeof insertTMInvoiceSchema>;
-export type TMInvoice = typeof tmInvoices.$inferSelect;
-
-// T&M Ticket schemas and types
-export const insertTMTicketSchema = createInsertSchema(tmTickets).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  submittedAt: true,
-  approvedAt: true,
-  rejectedAt: true,
-  signedDocumentUploadedAt: true,
-  billingApprovedAt: true,
-  billedAt: true,
-});
-
-export const insertTMTicketLaborEntrySchema = createInsertSchema(tmTicketLaborEntries).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertTMTicketEquipmentEntrySchema = createInsertSchema(tmTicketEquipmentEntries).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertTMTicketMaterialEntrySchema = createInsertSchema(tmTicketMaterialEntries).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertTMTicket = z.infer<typeof insertTMTicketSchema>;
-export type TMTicket = typeof tmTickets.$inferSelect;
-
-export type InsertTMTicketLaborEntry = z.infer<typeof insertTMTicketLaborEntrySchema>;
-export type TMTicketLaborEntry = typeof tmTicketLaborEntries.$inferSelect;
-
-export type InsertTMTicketEquipmentEntry = z.infer<typeof insertTMTicketEquipmentEntrySchema>;
-export type TMTicketEquipmentEntry = typeof tmTicketEquipmentEntries.$inferSelect;
-
-export type InsertTMTicketMaterialEntry = z.infer<typeof insertTMTicketMaterialEntrySchema>;
-export type TMTicketMaterialEntry = typeof tmTicketMaterialEntries.$inferSelect;
-
-export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
-export type Receipt = typeof receipts.$inferSelect;
-
-export type InsertProjectNote = z.infer<typeof insertProjectNoteSchema>;
-export type ProjectNote = typeof projectNotes.$inferSelect;
-
-export type InsertCompanyDailyNote = z.infer<typeof insertCompanyDailyNoteSchema>;
-export type CompanyDailyNote = typeof companyDailyNotes.$inferSelect;
-
-export type InsertAINoteInsight = z.infer<typeof insertAINoteInsightSchema>;
-export type AINoteInsight = typeof aiNoteInsights.$inferSelect;
-
-export type InsertScopeItem = z.infer<typeof insertScopeItemSchema>;
-export type ScopeItem = typeof scopeItems.$inferSelect;
-
-export type InsertDailyScopeProgress = z.infer<typeof insertDailyScopeProgressSchema>;
-export type DailyScopeProgress = typeof dailyScopeProgress.$inferSelect;
-
-export const insertProjectMaterialBudgetSchema = createInsertSchema(projectMaterialBudgets).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  actualQuantityUsed: true,
-  actualTotalCost: true,
-  varianceQuantity: true,
-  variancePercent: true,
-  alertTriggered: true,
-  alertTriggeredAt: true,
-});
-export type InsertProjectMaterialBudget = z.infer<typeof insertProjectMaterialBudgetSchema>;
-export type ProjectMaterialBudget = typeof projectMaterialBudgets.$inferSelect;
-
-export const insertProjectMaterialUsageSchema = createInsertSchema(projectMaterialUsage).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-export type InsertProjectMaterialUsage = z.infer<typeof insertProjectMaterialUsageSchema>;
-export type ProjectMaterialUsage = typeof projectMaterialUsage.$inferSelect;
-
-export type InsertMedia = z.infer<typeof insertMediaSchema>;
-export type Media = typeof media.$inferSelect;
-
-export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  approvedAt: true,
-});
-
-export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({
-  id: true,
-  createdAt: true,
-  approvedAt: true,
-});
-
-export const insertNotificationSchema = createInsertSchema(notifications).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
-export type ChangeOrder = typeof changeOrders.$inferSelect;
-
-// Change Order Line Item schemas
-export const insertChangeOrderLaborEntrySchema = createInsertSchema(changeOrderLaborEntries).omit({
-  id: true,
-});
-export const insertChangeOrderEquipmentEntrySchema = createInsertSchema(changeOrderEquipmentEntries).omit({
-  id: true,
-});
-export const insertChangeOrderMaterialEntrySchema = createInsertSchema(changeOrderMaterialEntries).omit({
-  id: true,
-});
-
-export type InsertChangeOrderLaborEntry = z.infer<typeof insertChangeOrderLaborEntrySchema>;
-export type ChangeOrderLaborEntry = typeof changeOrderLaborEntries.$inferSelect;
-
-export type InsertChangeOrderEquipmentEntry = z.infer<typeof insertChangeOrderEquipmentEntrySchema>;
-export type ChangeOrderEquipmentEntry = typeof changeOrderEquipmentEntries.$inferSelect;
-
-export type InsertChangeOrderMaterialEntry = z.infer<typeof insertChangeOrderMaterialEntrySchema>;
-export type ChangeOrderMaterialEntry = typeof changeOrderMaterialEntries.$inferSelect;
-
-// Project Delays schema
-export const insertProjectDelaySchema = createInsertSchema(projectDelays).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  submittedAt: true,
-  acknowledgedAt: true,
-  resolvedAt: true,
-});
-
-export type InsertProjectDelay = z.infer<typeof insertProjectDelaySchema>;
-export type ProjectDelay = typeof projectDelays.$inferSelect;
-
-export const insertDelayNotificationSchema = createInsertSchema(delayNotifications).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-export type InsertDelayNotification = z.infer<typeof insertDelayNotificationSchema>;
-export type DelayNotification = typeof delayNotifications.$inferSelect;
-
-// Delay Claims table - formal claims for time extensions or cost impacts from delays
-export const delayClaims = pgTable("delay_claims", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  claimNumber: text("claim_number").notNull(), // e.g., CLM-260009-001
-  title: text("title").notNull(),
-  description: text("description"),
-  claimType: delayClaimTypeEnum("claim_type").notNull(),
-  status: delayClaimStatusEnum("status").notNull().default("DRAFT"),
-  
-  // Linked delays - can include multiple delay records
-  linkedDelayIds: text("linked_delay_ids").array(), // Array of projectDelay IDs
-  
-  // Time extension request
-  daysRequested: integer("days_requested"),
-  daysApproved: integer("days_approved"),
-  originalCompletionDate: timestamp("original_completion_date"),
-  requestedCompletionDate: timestamp("requested_completion_date"),
-  
-  // Cost impact request
-  costRequested: decimal("cost_requested", { precision: 12, scale: 2 }),
-  costApproved: decimal("cost_approved", { precision: 12, scale: 2 }),
-  costBreakdownJson: json("cost_breakdown_json").$type<{
-    laborCost?: number;
-    equipmentCost?: number;
-    materialCost?: number;
-    overheadCost?: number;
-    otherCosts?: Array<{ description: string; amount: number }>;
-  }>(),
-  
-  // Supporting documentation
-  supportingDocUrls: text("supporting_doc_urls").array(),
-  weatherEvidenceSummary: text("weather_evidence_summary"),
-  
-  // Workflow tracking
-  submittedAt: timestamp("submitted_at"),
-  submittedById: varchar("submitted_by_id").references(() => users.id),
-  reviewedAt: timestamp("reviewed_at"),
-  reviewedById: varchar("reviewed_by_id").references(() => users.id),
-  reviewNotes: text("review_notes"),
-  approvedAt: timestamp("approved_at"),
-  approvedById: varchar("approved_by_id").references(() => users.id),
-  rejectedAt: timestamp("rejected_at"),
-  rejectedById: varchar("rejected_by_id").references(() => users.id),
-  rejectionReason: text("rejection_reason"),
-  
-  // Linked change order for approved claims
-  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
-  
-  createdById: varchar("created_by_id").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdx: index("delay_claims_org_idx").on(table.organizationId),
-  projectIdx: index("delay_claims_project_idx").on(table.projectId),
-  statusIdx: index("delay_claims_status_idx").on(table.status),
-  claimNumberIdx: index("delay_claims_number_idx").on(table.claimNumber),
-}));
-
-export const insertDelayClaimSchema = createInsertSchema(delayClaims).omit({
-  id: true,
-  claimNumber: true,
-  createdAt: true,
-  updatedAt: true,
-  submittedAt: true,
-  reviewedAt: true,
-  approvedAt: true,
-  rejectedAt: true,
-});
-export type InsertDelayClaim = z.infer<typeof insertDelayClaimSchema>;
-export type DelayClaim = typeof delayClaims.$inferSelect;
-
-// Daily Report Locks table - prevents tampering with daily reports for legal evidence
-export const dailyReportLocks = pgTable("daily_report_locks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  reportDate: date("report_date").notNull(),
-  status: dailyReportLockStatusEnum("status").notNull().default("UNLOCKED"),
-  
-  // Lock metadata
-  lockedAt: timestamp("locked_at"),
-  lockedById: varchar("locked_by_id").references(() => users.id),
-  lockReason: text("lock_reason"),
-  
-  // Supervisor override
-  supervisorLockedAt: timestamp("supervisor_locked_at"),
-  supervisorLockedById: varchar("supervisor_locked_by_id").references(() => users.id),
-  supervisorLockNotes: text("supervisor_lock_notes"),
-  
-  // Hash for data integrity verification
-  contentHash: text("content_hash"), // SHA-256 hash of report content at lock time
-  
-  // Linked claim if locked for evidence
-  linkedClaimId: varchar("linked_claim_id").references(() => delayClaims.id, { onDelete: "set null" }),
-  
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdx: index("daily_report_locks_org_idx").on(table.organizationId),
-  projectIdx: index("daily_report_locks_project_idx").on(table.projectId),
-  dateIdx: index("daily_report_locks_date_idx").on(table.reportDate),
-  statusIdx: index("daily_report_locks_status_idx").on(table.status),
-  projectDateUnique: unique("daily_report_locks_project_date_unique").on(table.projectId, table.reportDate),
-}));
-
-export const insertDailyReportLockSchema = createInsertSchema(dailyReportLocks).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  lockedAt: true,
-  supervisorLockedAt: true,
-});
-export type InsertDailyReportLock = z.infer<typeof insertDailyReportLockSchema>;
-export type DailyReportLock = typeof dailyReportLocks.$inferSelect;
-
-// Photo Custody Records table - chain of custody tracking for photos used as evidence
-export const photoCustodyRecords = pgTable("photo_custody_records", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
-  
-  // Photo reference
-  photoUrl: text("photo_url").notNull(),
-  photoFileName: text("photo_file_name").notNull(),
-  photoObjectKey: text("photo_object_key"),
-  
-  // Original metadata (preserved at capture time)
-  originalMetadataJson: json("original_metadata_json").$type<{
-    captureTimestamp: string;
-    deviceId?: string;
-    deviceModel?: string;
-    gpsLat?: number;
-    gpsLng?: number;
-    gpsAccuracy?: number;
-    fileHash?: string;
-  }>(),
-  
-  // Custody action tracking
-  action: photoCustodyActionEnum("action").notNull(),
-  actionById: varchar("action_by_id").notNull().references(() => users.id),
-  actionAt: timestamp("action_at").notNull().defaultNow(),
-  actionNotes: text("action_notes"),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  
-  // Linked entities
-  linkedClaimId: varchar("linked_claim_id").references(() => delayClaims.id, { onDelete: "set null" }),
-  linkedDelayId: varchar("linked_delay_id").references(() => projectDelays.id, { onDelete: "set null" }),
-  
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  orgIdx: index("photo_custody_org_idx").on(table.organizationId),
-  projectIdx: index("photo_custody_project_idx").on(table.projectId),
-  photoUrlIdx: index("photo_custody_photo_url_idx").on(table.photoUrl),
-  actionIdx: index("photo_custody_action_idx").on(table.action),
-  claimIdx: index("photo_custody_claim_idx").on(table.linkedClaimId),
-}));
-
-export const insertPhotoCustodyRecordSchema = createInsertSchema(photoCustodyRecords).omit({
-  id: true,
-  createdAt: true,
-  actionAt: true,
-});
-export type InsertPhotoCustodyRecord = z.infer<typeof insertPhotoCustodyRecordSchema>;
-export type PhotoCustodyRecord = typeof photoCustodyRecords.$inferSelect;
-
-export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
-export type CalendarEvent = typeof calendarEvents.$inferSelect;
-
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-export type Notification = typeof notifications.$inferSelect;
-
-export const insertPayrollNotificationSchema = createInsertSchema(payrollNotifications).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  sentToOfficeManagerAt: true,
-  processedAt: true,
-});
-export type InsertPayrollNotification = z.infer<typeof insertPayrollNotificationSchema>;
-export type PayrollNotification = typeof payrollNotifications.$inferSelect;
-
-export type InsertFilePermission = z.infer<typeof insertFilePermissionSchema>;
-export type FilePermission = typeof filePermissions.$inferSelect;
-
-export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertBillingEventSchema = createInsertSchema(billingEvents).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertTimeClockShiftSchema = createInsertSchema(timeClockShifts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  approvedAt: true,
-});
-
-export const insertTimeClockEventSchema = createInsertSchema(timeClockEvents).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
-export type AuditLog = typeof auditLog.$inferSelect;
-
-export type InsertBillingEvent = z.infer<typeof insertBillingEventSchema>;
-export type BillingEvent = typeof billingEvents.$inferSelect;
-
-export type InsertTimeClockShift = z.infer<typeof insertTimeClockShiftSchema>;
-export type TimeClockShift = typeof timeClockShifts.$inferSelect;
-
-export type InsertTimeClockEvent = z.infer<typeof insertTimeClockEventSchema>;
-
-export const insertOvertimeRequestSchema = createInsertSchema(overtimeRequests).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  approvedAt: true,
-  approvedHours: true,
-  rejectionReason: true,
-  status: true,
-});
-export type InsertOvertimeRequest = z.infer<typeof insertOvertimeRequestSchema>;
-export type OvertimeRequest = typeof overtimeRequests.$inferSelect;
-export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
 
 export const insertAISettingsSchema = createInsertSchema(aiSettings).omit({
   id: true,
@@ -3357,10 +994,6 @@ export const insertEstimateCrewSchema = createInsertSchema(estimateCrews).omit({
 export type InsertEstimateCrew = z.infer<typeof insertEstimateCrewSchema>;
 export type EstimateCrew = typeof estimateCrews.$inferSelect;
 
-export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
-export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
-
 export const insertEstimateVersionSchema = createInsertSchema(estimateVersions).omit({ id: true, createdAt: true });
 export type InsertEstimateVersion = z.infer<typeof insertEstimateVersionSchema>;
 export type EstimateVersion = typeof estimateVersions.$inferSelect;
@@ -3724,46 +1357,6 @@ export type MessageReadReceipt = typeof messageReadReceipts.$inferSelect;
 // ============================================================
 
 // Equipment Status Enum
-export const equipmentStatusEnum = pgEnum("equipment_status", [
-  "AVAILABLE",      // Ready for assignment
-  "ASSIGNED",       // Currently on a job
-  "IN_REPAIR",      // Being repaired
-  "OUT_OF_SERVICE", // Temporarily unavailable
-  "RETIRED"         // No longer in use
-]);
-
-// Equipment Type Enum
-export const equipmentTypeEnum = pgEnum("equipment_type", [
-  "HEAVY_EQUIPMENT",  // Excavators, loaders, dozers
-  "POWER_TOOL",       // Drills, saws, grinders
-  "HAND_TOOL",        // Hammers, wrenches, etc.
-  "VEHICLE",          // Trucks, vans
-  "TRAILER",          // Flatbeds, enclosed trailers
-  "CONCRETE",         // Mixers, vibrators, screeds
-  "COMPACTION",       // Rollers, plate compactors
-  "SURVEYING",        // Levels, total stations
-  "SAFETY",           // Safety equipment
-  "OTHER"
-]);
-
-// Repair Status Enum
-export const repairStatusEnum = pgEnum("repair_status", [
-  "PENDING",      // Waiting to be started
-  "IN_PROGRESS",  // Currently being repaired
-  "COMPLETED",    // Repair finished
-  "CANCELLED"     // Repair cancelled
-]);
-
-// Maintenance Type Enum
-export const maintenanceTypeEnum = pgEnum("maintenance_type", [
-  "PREVENTATIVE",      // Scheduled PM (oil changes, filters, etc.)
-  "SCHEDULED_SERVICE", // Major service intervals
-  "WEAR_ITEM",         // Tracks, tires, blades, etc.
-  "INSPECTION",        // Safety inspections
-  "CALIBRATION"        // For precision equipment
-]);
-
-// Equipment Assignments (link equipment to projects)
 export const equipmentAssignments = pgTable("equipment_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
@@ -4092,12 +1685,6 @@ export type InsertRentalEquipmentCatalog = z.infer<typeof insertRentalEquipmentC
 export type RentalEquipmentCatalog = typeof rentalEquipmentCatalog.$inferSelect;
 
 // Bid Equipment Selection Source Enum
-export const bidEquipmentSourceEnum = pgEnum("bid_equipment_source", [
-  "OWNED",   // Company-owned equipment
-  "RENTAL"  // Rental from vendor
-]);
-
-// Bid Equipment Selections - Equipment planned for bids
 export const bidEquipmentSelections = pgTable("bid_equipment_selections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
@@ -4146,16 +1733,6 @@ export type InsertBidEquipmentSelection = z.infer<typeof insertBidEquipmentSelec
 export type BidEquipmentSelection = typeof bidEquipmentSelections.$inferSelect;
 
 // Project Equipment Plan Status Enum
-export const projectEquipmentPlanStatusEnum = pgEnum("project_equipment_plan_status", [
-  "PLANNED",           // From bid, not yet assigned
-  "ASSIGNED",          // Owned equipment assigned to project
-  "RENTAL_BOOKED",     // Rental confirmed with vendor
-  "RENTAL_ACTIVE",     // Rental in progress
-  "COMPLETED",         // Equipment work finished
-  "CANCELLED"          // No longer needed
-]);
-
-// Project Equipment Plans - Carryover from bid with planned vs actual tracking
 export const projectEquipmentPlans = pgTable("project_equipment_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -4477,8 +2054,6 @@ export type InsertOrganizationSowItem = z.infer<typeof insertOrganizationSowItem
 export type OrganizationSowItem = typeof organizationSowItems.$inferSelect;
 
 // SOW Audit Log - Track all SOW item changes for compliance
-export const sowAuditActionEnum = pgEnum("sow_audit_action", ["CREATE", "UPDATE", "DEACTIVATE", "REGENERATE"]);
-
 export const sowAuditLog = pgTable("sow_audit_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4668,9 +2243,6 @@ export type TradeFeature = typeof tradeFeatures.$inferSelect;
 // FEATURE A: AI AUTO-TAKEOFF ANALYSES
 // AI-powered blueprint/photo analysis for quantity takeoffs
 // ============================================
-export const aiTakeoffStatusEnum = pgEnum("ai_takeoff_status", ["PENDING", "PROCESSING", "COMPLETE", "FAILED"]);
-export const aiTakeoffModeEnum = pgEnum("ai_takeoff_mode", ["QUICK", "DETAILED"]);
-
 export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4702,9 +2274,6 @@ export type AiTakeoffAnalysis = typeof aiTakeoffAnalyses.$inferSelect;
 // FEATURE B: PROJECT SCHEDULES
 // AI-powered scheduling with Gantt-style task management
 // ============================================
-export const scheduleGeneratedByEnum = pgEnum("schedule_generated_by", ["AI", "MANUAL"]);
-export const scheduleTaskStatusEnum = pgEnum("schedule_task_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "DELAYED", "ON_HOLD"]);
-
 export const projectSchedules = pgTable("project_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4769,9 +2338,6 @@ export type ProjectScheduleTask = typeof projectScheduleTasks.$inferSelect;
 // FEATURE C: AI JOBSITE CAMERA ANALYSIS
 // Vision AI for safety, progress, and compliance analysis
 // ============================================
-export const jobsiteAnalysisStatusEnum = pgEnum("jobsite_analysis_status", ["PENDING", "PROCESSING", "COMPLETE", "PARTIAL", "FAILED"]);
-export const safetySeverityEnum = pgEnum("safety_severity", ["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
-
 export const jobsiteAnalysisBatches = pgTable("jobsite_analysis_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4824,8 +2390,6 @@ export type JobsiteAnalysisPhoto = typeof jobsiteAnalysisPhotos.$inferSelect;
 // FEATURE D: VENDOR PRICING SYNC
 // Pricebook import and material pricing management
 // ============================================
-export const pricebookStatusEnum = pgEnum("pricebook_status", ["PENDING", "PROCESSING", "ACTIVE", "EXPIRED", "SUPERSEDED"]);
-
 export const vendorPricebooks = pgTable("vendor_pricebooks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4947,8 +2511,6 @@ export type ClientPortalActivity = typeof clientPortalActivity.$inferSelect;
 // FEATURE F: AI CHANGE ORDER DRAFTS
 // AI-generated change order content before finalization
 // ============================================
-export const aiCoDraftStatusEnum = pgEnum("ai_co_draft_status", ["DRAFT", "CONVERTED", "DISCARDED"]);
-
 export const aiCoDrafts = pgTable("ai_co_drafts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -4977,9 +2539,6 @@ export type AiCoDraft = typeof aiCoDrafts.$inferSelect;
 // FEATURE G: MOBILE DEVICES & SYNC
 // Device registration and offline sync support
 // ============================================
-export const mobilePlatformEnum = pgEnum("mobile_platform", ["IOS", "ANDROID", "WEB"]);
-export const syncStatusEnum = pgEnum("sync_status", ["IN_PROGRESS", "COMPLETE", "FAILED"]);
-
 export const mobileDevices = pgTable("mobile_devices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -5045,8 +2604,6 @@ export type MobilePendingUpload = typeof mobilePendingUploads.$inferSelect;
 // SCHEDULE OF VALUES (SOV) SYSTEM
 // Progress billing and value tracking
 // ============================================
-export const sovStatusEnum = pgEnum("sov_status", ["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED"]);
-
 export const scheduleOfValues = pgTable("schedule_of_values", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -5141,9 +2698,6 @@ export type SovLineItem = typeof sovLineItems.$inferSelect;
 // LIEN WAIVERS
 // Track conditional/unconditional lien waivers tied to SOV pay apps
 // ============================================
-export const lienWaiverTypeEnum = pgEnum("lien_waiver_type", ["CONDITIONAL_PARTIAL", "UNCONDITIONAL_PARTIAL", "CONDITIONAL_FINAL", "UNCONDITIONAL_FINAL"]);
-export const lienWaiverStatusEnum = pgEnum("lien_waiver_status", ["PENDING", "SENT", "RECEIVED", "APPROVED", "REJECTED"]);
-
 export const lienWaivers = pgTable("lien_waivers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -5178,8 +2732,6 @@ export type LienWaiver = typeof lienWaivers.$inferSelect;
 // SOV PAYMENTS
 // Track partial and full payments against SOV pay apps
 // ============================================
-export const sovPaymentMethodEnum = pgEnum("sov_payment_method", ["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]);
-
 export const sovPayments = pgTable("sov_payments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -5208,14 +2760,6 @@ export type SovPayment = typeof sovPayments.$inferSelect;
 // ============================================
 
 // Website Builder Enums
-export const websiteStatusEnum = pgEnum("website_status", ["DRAFT", "PUBLISHED", "MAINTENANCE"]);
-export const websitePageTypeEnum = pgEnum("website_page_type", ["HOME", "ABOUT", "SERVICES", "SAFETY", "GALLERY", "BLOG", "CONTACT", "CUSTOM"]);
-export const blogPostStatusEnum = pgEnum("blog_post_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
-export const blogCommentStatusEnum = pgEnum("blog_comment_status", ["PENDING", "APPROVED", "REJECTED", "SPAM"]);
-export const websiteProjectStatusEnum = pgEnum("website_project_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
-export const socialPlatformEnum = pgEnum("social_platform", ["FACEBOOK", "INSTAGRAM", "LINKEDIN", "TWITTER", "TIKTOK", "YOUTUBE"]);
-
-// Main Website Configuration
 export const organizationWebsites = pgTable("organization_websites", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -5312,11 +2856,6 @@ export const organizationWebsites = pgTable("organization_websites", {
 export const insertOrganizationWebsiteSchema = createInsertSchema(organizationWebsites).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationWebsite = z.infer<typeof insertOrganizationWebsiteSchema>;
 export type OrganizationWebsite = typeof organizationWebsites.$inferSelect;
-
-export const websiteDeploymentActionEnum = pgEnum("website_deployment_action", [
-  "PUBLISHED", "UNPUBLISHED", "MAINTENANCE_ON", "MAINTENANCE_OFF", 
-  "DOMAIN_UPDATED", "DOMAIN_VERIFIED", "SETTINGS_UPDATED", "REPUBLISHED"
-]);
 
 export const websiteDeployments = pgTable("website_deployments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -5797,34 +3336,6 @@ export type WebsiteContactSubmission = typeof websiteContactSubmissions.$inferSe
 // ====================================================================
 
 // Email Provider Enum
-export const emailProviderEnum = pgEnum("email_provider", ["GMAIL", "OUTLOOK", "IMAP"]);
-
-// Email Thread Status Enum
-export const emailThreadStatusEnum = pgEnum("email_thread_status", ["OPEN", "ARCHIVED", "IGNORED"]);
-
-// Email Classification Enum
-export const emailClassificationEnum = pgEnum("email_classification", [
-  "PROJECT_UPDATE",
-  "BID_INVITE",
-  "BID_RFI",
-  "CHANGE_ORDER_REQUEST",
-  "SUBMITTAL_REQUEST",
-  "PAY_APP",
-  "INVOICE",
-  "DELAY_NOTICE",
-  "SAFETY_ISSUE",
-  "DELIVERY_NOTICE",
-  "TIME_CLOCK_ISSUE",
-  "VENDOR_PRICING",
-  "GENERAL_COMMUNICATION",
-  "SPAM_OR_IRRELEVANT",
-  "OTHER"
-]);
-
-// Email Task Source Enum  
-export const emailTaskSourceEnum = pgEnum("email_task_source", ["EMAIL", "MANUAL", "AI_GENERATED"]);
-
-// Email Accounts Table (linked email accounts per user)
 export const emailAccounts = pgTable("email_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -6040,22 +3551,6 @@ export type EmailSummary = typeof emailSummaries.$inferSelect;
 // ============================================
 
 // Dashboard Widget Types - Available widgets for the dashboard
-export const dashboardWidgetTypeEnum = pgEnum("dashboard_widget_type", [
-  "QUICK_STATS",
-  "AI_INSIGHTS", 
-  "MESSAGES",
-  "NOTIFICATIONS",
-  "CALENDAR_EVENTS",
-  "ACTIVE_PROJECTS",
-  "ACTIVE_BIDS",
-  "AI_TASKS",
-  "CREW_ASSIGNMENTS",
-  "RECENT_ACTIVITY",
-  "PROJECT_HEALTH",
-  "BUDGET_OVERVIEW"
-]);
-
-// User Dashboard Permissions - Admin-controlled access to customization
 export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -6184,8 +3679,6 @@ export type InsertHustlerOrganization = z.infer<typeof insertHustlerOrganization
 export type HustlerOrganization = typeof hustlerOrganizations.$inferSelect;
 
 // Hustler Link Requests - Invitation/Request workflow for linking HUSTLERs to organizations
-export const hustlerLinkRequestStatusEnum = pgEnum("hustler_link_request_status", ["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REVOKED"]);
-
 export const hustlerLinkRequests = pgTable("hustler_link_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // The HUSTLER user requesting or being invited
@@ -6224,8 +3717,6 @@ export type InsertHustlerLinkRequest = z.infer<typeof insertHustlerLinkRequestSc
 export type HustlerLinkRequest = typeof hustlerLinkRequests.$inferSelect;
 
 // HUSTLER Delegates - COO and other executives who can manage organizations on behalf of the HUSTLER
-export const hustlerDelegateRoleEnum = pgEnum("hustler_delegate_role", ["COO", "CFO", "OPERATIONS_MANAGER"]);
-
 export const hustlerDelegates = pgTable("hustler_delegates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // The HUSTLER who owns this delegate relationship
@@ -6269,33 +3760,6 @@ export type HustlerDelegate = typeof hustlerDelegates.$inferSelect;
 // ============================================
 
 // Enums for bid request network
-export const bidRequestStatusEnum = pgEnum("bid_request_status", [
-  "DRAFT",           // GC is preparing the request
-  "OPEN",            // Request is open for submissions
-  "CLOSED",          // Deadline passed or manually closed
-  "AWARDED",         // A sub has been selected
-  "CANCELLED"        // Request cancelled
-]);
-
-export const bidInvitationStatusEnum = pgEnum("bid_invitation_status", [
-  "PENDING",         // Invitation sent, awaiting response
-  "VIEWED",          // Sub has viewed the invitation
-  "DECLINED",        // Sub declined to bid
-  "RESPONDED",       // Sub submitted a quote
-  "WITHDRAWN"        // Sub withdrew their response
-]);
-
-export const bidResponseStatusEnum = pgEnum("bid_response_status", [
-  "DRAFT",           // Sub is preparing response
-  "SUBMITTED",       // Response submitted
-  "UNDER_REVIEW",    // GC is reviewing
-  "SHORTLISTED",     // GC marked as potential winner
-  "AWARDED",         // Sub won the bid
-  "NOT_SELECTED",    // Sub not selected
-  "WITHDRAWN"        // Sub withdrew response
-]);
-
-// Organization Network Settings - Admin toggles for bid network participation
 export const organizationNetworkSettings = pgTable("organization_network_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }).unique(),
@@ -6605,14 +4069,6 @@ export interface PaletteValidationResult {
 // ==========================================
 
 // Field Productivity Enums
-export const voiceLogStatusEnum = pgEnum("voice_log_status", ["PENDING", "TRANSCRIBED", "FAILED"]);
-export const issueSeverityEnum = pgEnum("issue_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
-export const issueStatusEnum = pgEnum("issue_status", ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]);
-export const offlineSyncStatusEnum = pgEnum("offline_sync_status", ["PENDING", "SYNCED", "FAILED"]);
-export const offlineOperationTypeEnum = pgEnum("offline_operation_type", ["CREATE", "UPDATE", "DELETE"]);
-export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO"]);
-
-// Voice Logs table - Voice memo transcriptions from field workers
 export const voiceLogs = pgTable("voice_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -6746,10 +4202,6 @@ export type OfflineSyncQueue = typeof offlineSyncQueue.$inferSelect;
 // ==========================================
 
 // Marketplace Enums
-export const vendorScoreCategoryEnum = pgEnum("vendor_score_category", ["QUALITY", "TIMELINESS", "COMMUNICATION", "PRICING", "RELIABILITY"]);
-export const crewAvailabilityStatusEnum = pgEnum("crew_availability_status", ["AVAILABLE", "PARTIALLY_AVAILABLE", "BOOKED", "UNAVAILABLE"]);
-
-// Vendor Scores table - Vendor performance scoring by project
 export const vendorScores = pgTable("vendor_scores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -6887,9 +4339,6 @@ export type CrewMarketplace = typeof crewMarketplace.$inferSelect;
 // ============================================================
 // RFI (Request for Information) System
 // ============================================================
-export const rfiStatusEnum = pgEnum("rfi_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "ANSWERED", "CLOSED"]);
-export const rfiPriorityEnum = pgEnum("rfi_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
-
 export const rfis = pgTable("rfis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -6954,8 +4403,6 @@ export type RfiActivity = typeof rfiActivity.$inferSelect;
 // ============================================================
 // Document Transmittal System
 // ============================================================
-export const transmittalStatusEnum = pgEnum("transmittal_status", ["DRAFT", "SENT", "ACKNOWLEDGED", "SUPERSEDED"]);
-
 export const documentTransmittals = pgTable("document_transmittals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7007,10 +4454,6 @@ export type TransmittalRecipient = typeof transmittalRecipients.$inferSelect;
 // ============================================================
 // Submittal System
 // ============================================================
-export const submittalStatusEnum = pgEnum("submittal_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "APPROVED_AS_NOTED", "REJECTED", "REVISE_AND_RESUBMIT"]);
-export const submittalPhaseEnum = pgEnum("submittal_phase", ["ESTIMATE", "AWARDED", "CONSTRUCTION"]);
-export const submittalTypeEnum = pgEnum("submittal_type", ["CONTRACTOR", "SUBCONTRACTOR"]);
-
 export const submittals = pgTable("submittals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7116,8 +4559,6 @@ export const ratingScores = pgTable("rating_scores", {
   ratingIdx: index("rating_scores_rating_idx").on(table.ratingId),
   ratingCriteriaUnique: unique("rating_scores_rating_criteria_unique").on(table.ratingId, table.criteriaId),
 }));
-
-export const rewardTypeEnum = pgEnum("reward_type_enum", ["BONUS", "INCENTIVE", "RECOGNITION", "POINTS", "CUSTOM"]);
 
 export const rewardTypes = pgTable("reward_types", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -7256,10 +4697,6 @@ export type BidDocumentDistribution = typeof bidDocumentDistributions.$inferSele
 // CLIENT PORTAL CHAT SYSTEM
 // Two-way messaging between portal users (clients/subs) and project team members
 // ============================================================
-
-export const portalChatThreadStatusEnum = pgEnum("portal_chat_thread_status", ["OPEN", "CLOSED", "ARCHIVED"]);
-export const portalChatThreadCategoryEnum = pgEnum("portal_chat_thread_category", ["PROJECT", "RFI", "SUBMITTAL", "TASK", "GENERAL"]);
-export const portalChatPriorityEnum = pgEnum("portal_chat_priority", ["NORMAL", "URGENT"]);
 
 export const portalChatThreads = pgTable("portal_chat_threads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -7437,15 +4874,6 @@ export type WorkerLog = typeof workerLogs.$inferSelect;
 
 // ============ UPGRADE WAVE: Integration Hub + AI Governance + Approvals + Document Control + Health ============
 
-export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign", "zapier"]);
-export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
-export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
-export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
-export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT"]);
-export const documentRevisionStatusEnum = pgEnum("document_revision_status", ["active", "superseded"]);
-export const documentRevisionSourceEnum = pgEnum("document_revision_source", ["upload", "email", "import", "esign"]);
-
-// Table 1: integration_connections
 export const integrationConnections = pgTable("integration_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7655,9 +5083,6 @@ export type InsertDocumentRevision = z.infer<typeof insertDocumentRevisionSchema
 export type DocumentRevision = typeof documentRevisions.$inferSelect;
 
 // Addenda tables
-export const addendumStatusEnum = pgEnum("addendum_status", ["DRAFT", "ISSUED", "ACKNOWLEDGED"]);
-export const addendumRecipientTypeEnum = pgEnum("addendum_recipient_type", ["SUBCONTRACTOR", "TEAM_MEMBER", "CLIENT"]);
-
 export const addenda = pgTable("addenda", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7731,9 +5156,6 @@ export type ProjectHealthSnapshot = typeof projectHealthSnapshots.$inferSelect;
 // ============================================================================
 
 // SSO Provider enum
-export const ssoProviderEnum = pgEnum("sso_provider", ["OKTA", "AZURE_AD", "ONELOGIN", "CUSTOM"]);
-
-// Table: sso_configurations
 export const ssoConfigurations = pgTable("sso_configurations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7775,10 +5197,6 @@ export type InsertActiveSession = z.infer<typeof insertActiveSessionSchema>;
 export type ActiveSession = typeof activeSessions.$inferSelect;
 
 // Retention policy enums
-export const retentionEntityTypeEnum = pgEnum("retention_entity_type", ["AUDIT_LOGS", "AI_ACTIONS", "DOCUMENTS", "TIME_ENTRIES", "MESSAGES", "FILE_UPLOADS"]);
-export const retentionActionEnum = pgEnum("retention_action", ["DELETE", "ARCHIVE", "ANONYMIZE"]);
-
-// Table: retention_policies
 export const retentionPolicies = pgTable("retention_policies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7799,10 +5217,6 @@ export type InsertRetentionPolicy = z.infer<typeof insertRetentionPolicySchema>;
 export type RetentionPolicy = typeof retentionPolicies.$inferSelect;
 
 // Data subject request enums
-export const dataSubjectRequestTypeEnum = pgEnum("data_subject_request_type", ["ACCESS", "DELETION", "PORTABILITY", "RECTIFICATION", "OBJECTION"]);
-export const dataSubjectRequestStatusEnum = pgEnum("data_subject_request_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DENIED"]);
-
-// Table: data_processing_records (ROPA - Record of Processing Activities)
 export const dataProcessingRecords = pgTable("data_processing_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -7843,3 +5257,4 @@ export const dataSubjectRequests = pgTable("data_subject_requests", {
 export const insertDataSubjectRequestSchema = createInsertSchema(dataSubjectRequests).omit({ id: true, createdAt: true, requestedAt: true, completedAt: true });
 export type InsertDataSubjectRequest = z.infer<typeof insertDataSubjectRequestSchema>;
 export type DataSubjectRequest = typeof dataSubjectRequests.$inferSelect;
+

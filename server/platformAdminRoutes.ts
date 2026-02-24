@@ -924,10 +924,10 @@ router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req
 
     const conditions: any[] = [];
     if (planTier && planTier !== "all") {
-      conditions.push(eq(organizationSubscriptions.planTier, planTier as string));
+      conditions.push(eq(organizationSubscriptions.planTier, planTier as any));
     }
     if (status && status !== "all") {
-      conditions.push(eq(organizationSubscriptions.status, status as string));
+      conditions.push(eq(organizationSubscriptions.status, status as any));
     }
 
     let searchCondition: any = undefined;
@@ -1143,7 +1143,7 @@ router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, req
       .from(organizationAddOns)
       .where(and(
         eq(organizationAddOns.organizationId, orgId),
-        eq(organizationAddOns.addonKey, addonKey)
+        eq(organizationAddOns.addonKey, addonKey as any)
       ))
       .limit(1);
 
