@@ -5138,6 +5138,71 @@ export type InsertSovLineItem = z.infer<typeof insertSovLineItemSchema>;
 export type SovLineItem = typeof sovLineItems.$inferSelect;
 
 // ============================================
+// LIEN WAIVERS
+// Track conditional/unconditional lien waivers tied to SOV pay apps
+// ============================================
+export const lienWaiverTypeEnum = pgEnum("lien_waiver_type", ["CONDITIONAL_PARTIAL", "UNCONDITIONAL_PARTIAL", "CONDITIONAL_FINAL", "UNCONDITIONAL_FINAL"]);
+export const lienWaiverStatusEnum = pgEnum("lien_waiver_status", ["PENDING", "SENT", "RECEIVED", "APPROVED", "REJECTED"]);
+
+export const lienWaivers = pgTable("lien_waivers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sovId: varchar("sov_id").references(() => scheduleOfValues.id, { onDelete: "set null" }),
+  waiverType: lienWaiverTypeEnum("waiver_type").notNull(),
+  status: lienWaiverStatusEnum("status").notNull().default("PENDING"),
+  recipientName: text("recipient_name").notNull(),
+  recipientCompany: text("recipient_company"),
+  throughDate: date("through_date").notNull(),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  notes: text("notes"),
+  documentUrl: text("document_url"),
+  sentAt: timestamp("sent_at"),
+  receivedAt: timestamp("received_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("lien_waivers_project_idx").on(table.projectId),
+  orgIdx: index("lien_waivers_org_idx").on(table.organizationId),
+  sovIdx: index("lien_waivers_sov_idx").on(table.sovId),
+}));
+
+export const insertLienWaiverSchema = createInsertSchema(lienWaivers).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLienWaiver = z.infer<typeof insertLienWaiverSchema>;
+export type LienWaiver = typeof lienWaivers.$inferSelect;
+
+// ============================================
+// SOV PAYMENTS
+// Track partial and full payments against SOV pay apps
+// ============================================
+export const sovPaymentMethodEnum = pgEnum("sov_payment_method", ["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]);
+
+export const sovPayments = pgTable("sov_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  sovId: varchar("sov_id").notNull().references(() => scheduleOfValues.id, { onDelete: "cascade" }),
+  paymentNumber: integer("payment_number").notNull().default(1),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  paymentDate: date("payment_date").notNull(),
+  paymentMethod: sovPaymentMethodEnum("payment_method").default("CHECK"),
+  referenceNumber: text("reference_number"),
+  notes: text("notes"),
+  recordedById: varchar("recorded_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  sovIdx: index("sov_payments_sov_idx").on(table.sovId),
+  orgIdx: index("sov_payments_org_idx").on(table.organizationId),
+}));
+
+export const insertSovPaymentSchema = createInsertSchema(sovPayments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSovPayment = z.infer<typeof insertSovPaymentSchema>;
+export type SovPayment = typeof sovPayments.$inferSelect;
+
+// ============================================
 // WEBSITE BUILDER SYSTEM
 // Complete website builder with AI design, blog, gallery, analytics
 // ============================================

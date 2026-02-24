@@ -9,6 +9,9 @@ import {
   estimateLineItems,
   notifications,
   users,
+  lienWaivers,
+  sovPayments,
+  changeOrders,
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole } from "./auth";
@@ -1052,6 +1055,327 @@ router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
   } catch (error) {
     console.error("Delete SOV error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ============================================
+// LIEN WAIVERS ROUTES
+// ============================================
+
+router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.json([]);
+
+    const conditions: any[] = [];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(lienWaivers.organizationId, orgId));
+    }
+
+    const waivers = await db.select({
+      id: lienWaivers.id,
+      organizationId: lienWaivers.organizationId,
+      projectId: lienWaivers.projectId,
+      sovId: lienWaivers.sovId,
+      waiverType: lienWaivers.waiverType,
+      status: lienWaivers.status,
+      recipientName: lienWaivers.recipientName,
+      recipientCompany: lienWaivers.recipientCompany,
+      throughDate: lienWaivers.throughDate,
+      amount: lienWaivers.amount,
+      notes: lienWaivers.notes,
+      documentUrl: lienWaivers.documentUrl,
+      sentAt: lienWaivers.sentAt,
+      receivedAt: lienWaivers.receivedAt,
+      approvedAt: lienWaivers.approvedAt,
+      createdAt: lienWaivers.createdAt,
+      projectName: projects.name,
+      projectCode: projects.code,
+    })
+    .from(lienWaivers)
+    .innerJoin(projects, eq(lienWaivers.projectId, projects.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(lienWaivers.createdAt));
+
+    res.json(waivers);
+  } catch (error) {
+    console.error("Get lien waivers error:", error);
+    res.status(500).json({ error: "Failed to fetch lien waivers" });
+  }
+});
+
+router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const schema = z.object({
+      projectId: z.string().min(1),
+      sovId: z.string().optional().nullable(),
+      waiverType: z.enum(["CONDITIONAL_PARTIAL", "UNCONDITIONAL_PARTIAL", "CONDITIONAL_FINAL", "UNCONDITIONAL_FINAL"]),
+      recipientName: z.string().min(1),
+      recipientCompany: z.string().optional().nullable(),
+      throughDate: z.string().min(1),
+      amount: z.string().or(z.number()).transform(v => String(v)),
+      notes: z.string().optional().nullable(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid data", details: parsed.error.issues });
+    }
+
+    const { projectId, sovId, waiverType, recipientName, recipientCompany, throughDate, amount, notes } = parsed.data;
+
+    const useOrgId = orgId || req.body.organizationId;
+    if (!useOrgId) return res.status(400).json({ error: "Organization context required" });
+
+    const { project, hasAccess } = await verifyProjectAccess(projectId, orgId, shouldFilter);
+    if (!project || !hasAccess) return res.status(404).json({ error: "Project not found" });
+
+    const [waiver] = await db.insert(lienWaivers).values({
+      organizationId: useOrgId,
+      projectId,
+      sovId: sovId || null,
+      waiverType: waiverType as any,
+      recipientName,
+      recipientCompany: recipientCompany || null,
+      throughDate,
+      amount,
+      notes: notes || null,
+      createdById: req.user!.id,
+    }).returning();
+
+    res.status(201).json(waiver);
+  } catch (error) {
+    console.error("Create lien waiver error:", error);
+    res.status(500).json({ error: "Failed to create lien waiver" });
+  }
+});
+
+router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db.select().from(lienWaivers).where(eq(lienWaivers.id, id)).limit(1);
+    if (!existing) return res.status(404).json({ error: "Lien waiver not found" });
+    if (shouldFilter && orgId && existing.organizationId !== orgId) return res.status(404).json({ error: "Lien waiver not found" });
+
+    const updates: any = { updatedAt: new Date() };
+    if (req.body.status) {
+      updates.status = req.body.status;
+      if (req.body.status === "SENT") updates.sentAt = new Date();
+      if (req.body.status === "RECEIVED") updates.receivedAt = new Date();
+      if (req.body.status === "APPROVED") {
+        updates.approvedAt = new Date();
+        updates.approvedById = req.user!.id;
+      }
+    }
+    if (req.body.notes !== undefined) updates.notes = req.body.notes;
+    if (req.body.documentUrl !== undefined) updates.documentUrl = req.body.documentUrl;
+
+    const [updated] = await db.update(lienWaivers).set(updates).where(eq(lienWaivers.id, id)).returning();
+    res.json(updated);
+  } catch (error) {
+    console.error("Update lien waiver error:", error);
+    res.status(500).json({ error: "Failed to update lien waiver" });
+  }
+});
+
+// ============================================
+// SOV PAYMENTS ROUTES
+// ============================================
+
+router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.json([]);
+
+    const conditions: any[] = [];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(sovPayments.organizationId, orgId));
+    }
+
+    const payments = await db.select({
+      id: sovPayments.id,
+      organizationId: sovPayments.organizationId,
+      sovId: sovPayments.sovId,
+      paymentNumber: sovPayments.paymentNumber,
+      amount: sovPayments.amount,
+      paymentDate: sovPayments.paymentDate,
+      paymentMethod: sovPayments.paymentMethod,
+      referenceNumber: sovPayments.referenceNumber,
+      notes: sovPayments.notes,
+      createdAt: sovPayments.createdAt,
+      sovNumber: scheduleOfValues.sovNumber,
+      sovTitle: scheduleOfValues.title,
+      projectName: projects.name,
+      projectCode: projects.code,
+      totalEarnedLessRetainage: scheduleOfValues.totalEarnedLessRetainage,
+    })
+    .from(sovPayments)
+    .innerJoin(scheduleOfValues, eq(sovPayments.sovId, scheduleOfValues.id))
+    .innerJoin(projects, eq(scheduleOfValues.projectId, projects.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(sovPayments.createdAt));
+
+    res.json(payments);
+  } catch (error) {
+    console.error("Get SOV payments error:", error);
+    res.status(500).json({ error: "Failed to fetch payments" });
+  }
+});
+
+router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const schema = z.object({
+      sovId: z.string().min(1),
+      amount: z.string().or(z.number()).transform(v => String(v)),
+      paymentDate: z.string().min(1),
+      paymentMethod: z.enum(["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]).optional().default("CHECK"),
+      referenceNumber: z.string().optional().nullable(),
+      notes: z.string().optional().nullable(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid data", details: parsed.error.issues });
+    }
+
+    const { sovId, amount, paymentDate, paymentMethod, referenceNumber, notes } = parsed.data;
+
+    const { sov, hasAccess } = await verifySOVAccess(sovId, orgId, shouldFilter);
+    if (!sov || !hasAccess) return res.status(404).json({ error: "SOV not found" });
+
+    const existingPayments = await db.select({ paymentNumber: sovPayments.paymentNumber })
+      .from(sovPayments)
+      .where(eq(sovPayments.sovId, sovId))
+      .orderBy(desc(sovPayments.paymentNumber))
+      .limit(1);
+
+    const nextPaymentNumber = existingPayments.length > 0 ? existingPayments[0].paymentNumber + 1 : 1;
+
+    const [payment] = await db.insert(sovPayments).values({
+      organizationId: sov.organizationId,
+      sovId,
+      paymentNumber: nextPaymentNumber,
+      amount,
+      paymentDate,
+      paymentMethod: paymentMethod as any,
+      referenceNumber: referenceNumber || null,
+      notes: notes || null,
+      recordedById: req.user!.id,
+    }).returning();
+
+    res.status(201).json(payment);
+  } catch (error) {
+    console.error("Create SOV payment error:", error);
+    res.status(500).json({ error: "Failed to create payment" });
+  }
+});
+
+// ============================================
+// CHANGE ORDER SOV TIE-OUT ROUTE
+// ============================================
+
+router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.json({ changeOrders: [], sovSummary: [] });
+
+    const coConditions: any[] = [eq(changeOrders.status, "APPROVED")];
+    const sovConditions: any[] = [];
+
+    if (shouldFilter && orgId) {
+      sovConditions.push(eq(scheduleOfValues.organizationId, orgId));
+    }
+
+    const approvedCOs = await db.select({
+      id: changeOrders.id,
+      projectId: changeOrders.projectId,
+      changeOrderNumber: changeOrders.changeOrderNumber,
+      description: changeOrders.description,
+      amount: changeOrders.amount,
+      status: changeOrders.status,
+      approvedAt: changeOrders.approvedAt,
+      projectName: projects.name,
+      projectCode: projects.code,
+    })
+    .from(changeOrders)
+    .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+    .where(coConditions.length > 0 ? and(...coConditions) : undefined)
+    .orderBy(desc(changeOrders.approvedAt));
+
+    const filteredCOs = shouldFilter && orgId
+      ? approvedCOs.filter(co => {
+          return true;
+        })
+      : approvedCOs;
+
+    const sovSummary = await db.select({
+      id: scheduleOfValues.id,
+      projectId: scheduleOfValues.projectId,
+      sovNumber: scheduleOfValues.sovNumber,
+      title: scheduleOfValues.title,
+      contractValue: scheduleOfValues.contractValue,
+      totalScheduledValue: scheduleOfValues.totalScheduledValue,
+      status: scheduleOfValues.status,
+      projectName: projects.name,
+      projectCode: projects.code,
+    })
+    .from(scheduleOfValues)
+    .innerJoin(projects, eq(scheduleOfValues.projectId, projects.id))
+    .where(sovConditions.length > 0 ? and(...sovConditions) : undefined)
+    .orderBy(desc(scheduleOfValues.updatedAt));
+
+    const projectMap: Record<string, { coTotal: number; sovTotal: number; contractValue: number; cos: any[]; sovs: any[] }> = {};
+
+    for (const co of filteredCOs) {
+      if (!projectMap[co.projectId]) {
+        projectMap[co.projectId] = { coTotal: 0, sovTotal: 0, contractValue: 0, cos: [], sovs: [] };
+      }
+      projectMap[co.projectId].coTotal += parseFloat(co.amount || "0");
+      projectMap[co.projectId].cos.push(co);
+    }
+
+    for (const sov of sovSummary) {
+      if (!projectMap[sov.projectId]) {
+        projectMap[sov.projectId] = { coTotal: 0, sovTotal: 0, contractValue: 0, cos: [], sovs: [] };
+      }
+      projectMap[sov.projectId].sovTotal += parseFloat(sov.totalScheduledValue || "0");
+      projectMap[sov.projectId].contractValue = parseFloat(sov.contractValue || "0");
+      projectMap[sov.projectId].sovs.push(sov);
+    }
+
+    const reconciliation = Object.entries(projectMap).map(([projectId, data]) => {
+      const expectedSovTotal = data.contractValue + data.coTotal;
+      const variance = data.sovTotal - expectedSovTotal;
+      return {
+        projectId,
+        projectName: data.cos[0]?.projectName || data.sovs[0]?.projectName || "Unknown",
+        projectCode: data.cos[0]?.projectCode || data.sovs[0]?.projectCode || "",
+        contractValue: data.contractValue,
+        approvedCOTotal: data.coTotal,
+        expectedSovTotal,
+        actualSovTotal: data.sovTotal,
+        variance,
+        isReconciled: Math.abs(variance) < 0.01,
+        changeOrderCount: data.cos.length,
+        sovCount: data.sovs.length,
+        changeOrders: data.cos,
+        sovs: data.sovs,
+      };
+    });
+
+    res.json(reconciliation);
+  } catch (error) {
+    console.error("CO tie-out error:", error);
+    res.status(500).json({ error: "Failed to fetch CO tie-out data" });
   }
 });
 

@@ -31,7 +31,12 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  Mail
+  Mail,
+  Shield,
+  CreditCard,
+  GitCompare,
+  ArrowRightLeft,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -85,9 +90,559 @@ interface SOV {
   createdByName: string | null;
 }
 
+function LienWaiversTab({ projects, sovs }: { projects: Project[]; sovs: SOV[] }) {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({
+    projectId: "",
+    sovId: "",
+    waiverType: "CONDITIONAL_PARTIAL" as string,
+    recipientName: "",
+    recipientCompany: "",
+    throughDate: "",
+    amount: "",
+    notes: "",
+  });
+
+  const { data: waivers = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/sov/lien-waivers"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await apiRequest("POST", "/api/sov/lien-waivers", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sov/lien-waivers"] });
+      toast({ title: "Lien waiver created" });
+      setShowCreate(false);
+      setForm({ projectId: "", sovId: "", waiverType: "CONDITIONAL_PARTIAL", recipientName: "", recipientCompany: "", throughDate: "", amount: "", notes: "" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/sov/lien-waivers/${id}`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sov/lien-waivers"] });
+      toast({ title: "Waiver updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const waiverTypeLabel = (t: string) => {
+    const map: Record<string, string> = {
+      CONDITIONAL_PARTIAL: "Conditional Partial",
+      UNCONDITIONAL_PARTIAL: "Unconditional Partial",
+      CONDITIONAL_FINAL: "Conditional Final",
+      UNCONDITIONAL_FINAL: "Unconditional Final",
+    };
+    return map[t] || t;
+  };
+
+  const statusColor = (s: string) => {
+    const map: Record<string, string> = {
+      PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+      SENT: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+      RECEIVED: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
+      APPROVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+      REJECTED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    };
+    return map[s] || "bg-gray-100 text-gray-800";
+  };
+
+  const nextStatus = (current: string): string | null => {
+    const flow: Record<string, string> = { PENDING: "SENT", SENT: "RECEIVED", RECEIVED: "APPROVED" };
+    return flow[current] || null;
+  };
+
+  const projectSovs = sovs.filter(s => s.projectId === form.projectId);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Shield className="h-5 w-5" /> Lien Waivers
+        </h2>
+        <Button onClick={() => setShowCreate(true)} data-testid="button-create-lien-waiver">
+          <Plus className="h-4 w-4 mr-2" /> New Waiver
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}</div>
+      ) : waivers.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">No lien waivers yet</CardContent></Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Recipient</TableHead>
+                  <TableHead>Through Date</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {waivers.map((w: any) => (
+                  <TableRow key={w.id} data-testid={`row-waiver-${w.id}`}>
+                    <TableCell>
+                      <span className="font-medium">{w.projectName}</span>
+                      {w.projectCode && <span className="text-xs text-muted-foreground ml-1">({w.projectCode})</span>}
+                    </TableCell>
+                    <TableCell><Badge variant="outline">{waiverTypeLabel(w.waiverType)}</Badge></TableCell>
+                    <TableCell>
+                      <span>{w.recipientName}</span>
+                      {w.recipientCompany && <span className="text-xs text-muted-foreground block">{w.recipientCompany}</span>}
+                    </TableCell>
+                    <TableCell>{w.throughDate ? format(new Date(w.throughDate), "MMM d, yyyy") : "—"}</TableCell>
+                    <TableCell className="text-right font-medium">${parseFloat(w.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    <TableCell><Badge className={statusColor(w.status)}>{w.status}</Badge></TableCell>
+                    <TableCell className="text-right">
+                      {nextStatus(w.status) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateStatusMutation.mutate({ id: w.id, status: nextStatus(w.status)! })}
+                          disabled={updateStatusMutation.isPending}
+                          data-testid={`button-advance-waiver-${w.id}`}
+                        >
+                          {nextStatus(w.status) === "SENT" ? "Mark Sent" : nextStatus(w.status) === "RECEIVED" ? "Mark Received" : "Approve"}
+                        </Button>
+                      )}
+                      {w.status === "RECEIVED" && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="ml-1"
+                          onClick={() => updateStatusMutation.mutate({ id: w.id, status: "REJECTED" })}
+                          disabled={updateStatusMutation.isPending}
+                          data-testid={`button-reject-waiver-${w.id}`}
+                        >
+                          Reject
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create Lien Waiver</DialogTitle>
+            <DialogDescription>Track a conditional or unconditional lien waiver</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Project</Label>
+                <Select value={form.projectId} onValueChange={(v) => setForm(f => ({ ...f, projectId: v, sovId: "" }))}>
+                  <SelectTrigger data-testid="select-waiver-project"><SelectValue placeholder="Select project..." /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Linked SOV (optional)</Label>
+                <Select value={form.sovId} onValueChange={(v) => setForm(f => ({ ...f, sovId: v }))}>
+                  <SelectTrigger data-testid="select-waiver-sov"><SelectValue placeholder="Select SOV..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {projectSovs.map(s => <SelectItem key={s.id} value={s.id}>{s.sovNumber} - {s.title}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Waiver Type</Label>
+              <Select value={form.waiverType} onValueChange={(v) => setForm(f => ({ ...f, waiverType: v }))}>
+                <SelectTrigger data-testid="select-waiver-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CONDITIONAL_PARTIAL">Conditional Partial</SelectItem>
+                  <SelectItem value="UNCONDITIONAL_PARTIAL">Unconditional Partial</SelectItem>
+                  <SelectItem value="CONDITIONAL_FINAL">Conditional Final</SelectItem>
+                  <SelectItem value="UNCONDITIONAL_FINAL">Unconditional Final</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Recipient Name</Label>
+                <Input value={form.recipientName} onChange={(e) => setForm(f => ({ ...f, recipientName: e.target.value }))} data-testid="input-waiver-recipient" />
+              </div>
+              <div className="space-y-2">
+                <Label>Company (optional)</Label>
+                <Input value={form.recipientCompany} onChange={(e) => setForm(f => ({ ...f, recipientCompany: e.target.value }))} data-testid="input-waiver-company" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Through Date</Label>
+                <Input type="date" value={form.throughDate} onChange={(e) => setForm(f => ({ ...f, throughDate: e.target.value }))} data-testid="input-waiver-date" />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount ($)</Label>
+                <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm(f => ({ ...f, amount: e.target.value }))} data-testid="input-waiver-amount" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} data-testid="input-waiver-notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreate(false)} data-testid="button-cancel-waiver">Cancel</Button>
+            <Button
+              onClick={() => createMutation.mutate({ ...form, sovId: form.sovId === "none" ? "" : form.sovId })}
+              disabled={!form.projectId || !form.recipientName || !form.throughDate || !form.amount || createMutation.isPending}
+              data-testid="button-submit-waiver"
+            >
+              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Waiver
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function PaymentsTab({ sovs }: { sovs: SOV[] }) {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({
+    sovId: "",
+    amount: "",
+    paymentDate: "",
+    paymentMethod: "CHECK" as string,
+    referenceNumber: "",
+    notes: "",
+  });
+
+  const { data: payments = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/sov/payments"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await apiRequest("POST", "/api/sov/payments", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sov/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sov"] });
+      toast({ title: "Payment recorded" });
+      setShowCreate(false);
+      setForm({ sovId: "", amount: "", paymentDate: "", paymentMethod: "CHECK", referenceNumber: "", notes: "" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const paymentsBySOV: Record<string, any[]> = {};
+  payments.forEach((p: any) => {
+    if (!paymentsBySOV[p.sovId]) paymentsBySOV[p.sovId] = [];
+    paymentsBySOV[p.sovId].push(p);
+  });
+
+  const getSOVBalance = (sovId: string, earnedLessRetainage: string) => {
+    const total = parseFloat(earnedLessRetainage || "0");
+    const paid = (paymentsBySOV[sovId] || []).reduce((sum: number, p: any) => sum + parseFloat(p.amount || "0"), 0);
+    return { total, paid, remaining: total - paid };
+  };
+
+  const methodLabel = (m: string) => {
+    const map: Record<string, string> = { CHECK: "Check", ACH: "ACH", WIRE: "Wire", CREDIT_CARD: "Credit Card", OTHER: "Other" };
+    return map[m] || m;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <CreditCard className="h-5 w-5" /> Partial Payments
+        </h2>
+        <Button onClick={() => setShowCreate(true)} data-testid="button-record-payment">
+          <Plus className="h-4 w-4 mr-2" /> Record Payment
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}</div>
+      ) : payments.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground">No payments recorded yet</CardContent></Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>SOV / Project</TableHead>
+                  <TableHead className="text-center">Payment #</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map((p: any) => {
+                  const bal = getSOVBalance(p.sovId, p.totalEarnedLessRetainage);
+                  return (
+                    <TableRow key={p.id} data-testid={`row-payment-${p.id}`}>
+                      <TableCell>
+                        <span className="font-medium">{p.sovNumber}</span>
+                        <span className="text-xs text-muted-foreground block">{p.projectName}</span>
+                      </TableCell>
+                      <TableCell className="text-center">#{p.paymentNumber}</TableCell>
+                      <TableCell className="text-right font-medium text-emerald-600">${parseFloat(p.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>{p.paymentDate ? format(new Date(p.paymentDate), "MMM d, yyyy") : "—"}</TableCell>
+                      <TableCell><Badge variant="outline">{methodLabel(p.paymentMethod)}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground">{p.referenceNumber || "—"}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={bal.remaining > 0.01 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                          ${bal.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>Record a full or partial payment against an SOV pay app</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>SOV Pay App</Label>
+              <Select value={form.sovId} onValueChange={(v) => setForm(f => ({ ...f, sovId: v }))}>
+                <SelectTrigger data-testid="select-payment-sov"><SelectValue placeholder="Select SOV..." /></SelectTrigger>
+                <SelectContent>
+                  {sovs.map(s => <SelectItem key={s.id} value={s.id}>{s.sovNumber} - {s.title} ({s.projectName})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Amount ($)</Label>
+                <Input type="number" step="0.01" value={form.amount} onChange={(e) => setForm(f => ({ ...f, amount: e.target.value }))} data-testid="input-payment-amount" />
+              </div>
+              <div className="space-y-2">
+                <Label>Payment Date</Label>
+                <Input type="date" value={form.paymentDate} onChange={(e) => setForm(f => ({ ...f, paymentDate: e.target.value }))} data-testid="input-payment-date" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Payment Method</Label>
+                <Select value={form.paymentMethod} onValueChange={(v) => setForm(f => ({ ...f, paymentMethod: v }))}>
+                  <SelectTrigger data-testid="select-payment-method"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CHECK">Check</SelectItem>
+                    <SelectItem value="ACH">ACH</SelectItem>
+                    <SelectItem value="WIRE">Wire</SelectItem>
+                    <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reference # (optional)</Label>
+                <Input value={form.referenceNumber} onChange={(e) => setForm(f => ({ ...f, referenceNumber: e.target.value }))} data-testid="input-payment-reference" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} data-testid="input-payment-notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreate(false)} data-testid="button-cancel-payment">Cancel</Button>
+            <Button
+              onClick={() => createMutation.mutate(form)}
+              disabled={!form.sovId || !form.amount || !form.paymentDate || createMutation.isPending}
+              data-testid="button-submit-payment"
+            >
+              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Record Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function COTieOutTab() {
+  const { data: reconciliation = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/sov/co-tieout"],
+  });
+
+  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+
+  if (isLoading) {
+    return <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}</div>;
+  }
+
+  if (reconciliation.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          No projects with approved change orders or SOVs to reconcile
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const reconciledCount = reconciliation.filter((r: any) => r.isReconciled).length;
+  const discrepancyCount = reconciliation.filter((r: any) => !r.isReconciled).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <GitCompare className="h-5 w-5" /> Change Order SOV Tie-Out
+        </h2>
+        <div className="flex items-center gap-3">
+          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+            <CheckCircle2 className="h-3 w-3 mr-1" /> {reconciledCount} Reconciled
+          </Badge>
+          {discrepancyCount > 0 && (
+            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+              <AlertTriangle className="h-3 w-3 mr-1" /> {discrepancyCount} Discrepancies
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Project</TableHead>
+                <TableHead className="text-right">Contract Value</TableHead>
+                <TableHead className="text-right">Approved COs</TableHead>
+                <TableHead className="text-right">Expected SOV Total</TableHead>
+                <TableHead className="text-right">Actual SOV Total</TableHead>
+                <TableHead className="text-right">Variance</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {reconciliation.map((r: any) => (
+                <>
+                  <TableRow
+                    key={r.projectId}
+                    className="cursor-pointer hover:bg-muted/30"
+                    onClick={() => setExpandedProject(expandedProject === r.projectId ? null : r.projectId)}
+                    data-testid={`row-tieout-${r.projectId}`}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {expandedProject === r.projectId ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span className="font-medium">{r.projectName}</span>
+                        {r.projectCode && <span className="text-xs text-muted-foreground">({r.projectCode})</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">${r.contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    <TableCell className="text-right">
+                      ${r.approvedCOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <span className="text-xs text-muted-foreground ml-1">({r.changeOrderCount} COs)</span>
+                    </TableCell>
+                    <TableCell className="text-right">${r.expectedSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    <TableCell className="text-right">${r.actualSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    <TableCell className="text-right">
+                      <span className={Math.abs(r.variance) < 0.01 ? "text-muted-foreground" : r.variance > 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
+                        {r.variance >= 0 ? "+" : ""}${r.variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {r.isReconciled ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Reconciled
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                          <AlertTriangle className="h-3 w-3 mr-1" /> Discrepancy
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                  {expandedProject === r.projectId && (
+                    <TableRow key={`${r.projectId}-detail`}>
+                      <TableCell colSpan={7} className="bg-muted/20 p-4">
+                        <div className="grid grid-cols-2 gap-6">
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2">Approved Change Orders ({r.changeOrderCount})</h4>
+                            {r.changeOrders.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">No approved COs</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {r.changeOrders.map((co: any) => (
+                                  <div key={co.id} className="flex justify-between text-sm py-1 border-b last:border-0">
+                                    <span>{co.changeOrderNumber}: {co.description}</span>
+                                    <span className="font-medium">${parseFloat(co.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold mb-2">SOV Records ({r.sovCount})</h4>
+                            {r.sovs.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">No SOVs found</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {r.sovs.map((sov: any) => (
+                                  <div key={sov.id} className="flex justify-between text-sm py-1 border-b last:border-0">
+                                    <span>{sov.sovNumber}: {sov.title}</span>
+                                    <span className="font-medium">${parseFloat(sov.totalScheduledValue || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function ScheduleOfValuesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [mainTab, setMainTab] = useState("pay-apps");
   const [activeTab, setActiveTab] = useState("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -366,16 +921,34 @@ export default function ScheduleOfValuesPage() {
             Schedule of Values
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage billing schedules and track project progress
+            Manage billing schedules, payments, lien waivers, and change order reconciliation
           </p>
         </div>
-        {canEdit && (
+        {canEdit && mainTab === "pay-apps" && (
           <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-sov">
             <Plus className="h-4 w-4 mr-2" />
             Create SOV
           </Button>
         )}
       </div>
+
+      <Tabs value={mainTab} onValueChange={setMainTab}>
+        <TabsList data-testid="tabs-main-sov">
+          <TabsTrigger value="pay-apps" data-testid="tab-pay-apps">
+            <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Pay Apps
+          </TabsTrigger>
+          <TabsTrigger value="lien-waivers" data-testid="tab-lien-waivers">
+            <Shield className="h-4 w-4 mr-1.5" /> Lien Waivers
+          </TabsTrigger>
+          <TabsTrigger value="payments" data-testid="tab-payments">
+            <CreditCard className="h-4 w-4 mr-1.5" /> Payments
+          </TabsTrigger>
+          <TabsTrigger value="co-tieout" data-testid="tab-co-tieout">
+            <GitCompare className="h-4 w-4 mr-1.5" /> CO Tie-Out
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="pay-apps" className="mt-6 space-y-6">
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -543,6 +1116,21 @@ export default function ScheduleOfValuesPage() {
           </TabsContent>
         ))}
       </Tabs>
+
+      </TabsContent>
+
+      <TabsContent value="lien-waivers" className="mt-6">
+        <LienWaiversTab projects={projects} sovs={sovs} />
+      </TabsContent>
+
+      <TabsContent value="payments" className="mt-6">
+        <PaymentsTab sovs={sovs} />
+      </TabsContent>
+
+      <TabsContent value="co-tieout" className="mt-6">
+        <COTieOutTab />
+      </TabsContent>
+    </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-lg">
