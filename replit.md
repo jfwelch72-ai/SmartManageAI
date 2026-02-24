@@ -38,7 +38,8 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Backend Route Extraction**: Extracted all 265 route handlers from the monolithic routes.ts (16,007 lines) into 10+ domain-specific route files. routes.ts is now 488 lines of pure wiring (imports + app.use). Route files: dashboardUserRoutes, projectCoreRoutes, crmVendorRoutes, scopeConfigRoutes, projectContentRoutes, projectOpsRoutes, notificationCrewRoutes, takeoffSubRoutes, messagingRoutes, equipmentMgmtRoutes (plus previously extracted authProfileRoutes, workforceRoutes, bidRoutes2).
 *   **Schema Split**: Split the 7,845-line shared/schema.ts into 4 domain modules: shared/schema/enums.ts, core.ts, operations.ts, features.ts with a barrel index.ts. All imports via `@shared/schema` continue working.
 *   **project-detail.tsx Decomposition**: Extracted 9 tab components into client/src/components/project-tabs/ (ChangeOrdersTab, OverviewTab, SubcontractorsTab, LaborTab, PlansTab, ProcurementTab, ReceiptsTab, MediaTab, TimeTab). Reduced from 5,438 to 2,098 lines.
-*   **Test Infrastructure**: Vitest configured with npm test/test:watch/test:coverage scripts. Schema validation tests and route module structure tests established (169 tests passing).
+*   **Test Infrastructure**: Vitest configured with npm test/test:watch/test:coverage scripts. Schema validation tests and route module structure tests established (254 tests passing).
+*   **Org Isolation Test Harness**: Automated multi-tenant isolation testing framework in server/__tests__/org-isolation/. Seeds two orgs, runs cross-org read/write/list/fuzz/snapshot tests against all org-scoped endpoints. Run via `npm run test:isolation`. Uses supertest for HTTP-level testing with real JWT auth tokens.
 *   **Subscription Management**: POST/DELETE routes and Assign/Delete subscription UI for Super Admin already implemented in platformAdminRoutes.ts and PlatformSubscriptions.tsx.
 
 ## External Dependencies

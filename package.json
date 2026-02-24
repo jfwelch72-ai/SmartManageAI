@@ -19,7 +19,8 @@
     "seed:test-company": "tsx scripts/seed-test-company.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:isolation": "vitest run server/__tests__/org-isolation/"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.17.3",
@@ -64,6 +65,7 @@
     "@types/nodemailer": "^7.0.4",
     "@types/pdfkit": "^0.17.4",
     "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
     "@uppy/aws-s3": "^5.0.2",
     "@uppy/core": "^5.1.1",
     "@uppy/dashboard": "^5.0.4",
@@ -111,6 +113,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.2",
     "resend": "^6.9.1",
+    "supertest": "^7.2.2",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.2.5",

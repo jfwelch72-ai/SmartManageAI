@@ -1,0 +1,181 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get CRM org contacts — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get CRM org notes — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get CRM org pricing — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [],
+  "hasErrorField": false,
+  "status": 200,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get CRM organisation by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get bid by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get change order by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [],
+  "hasErrorField": false,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get crew by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [],
+  "hasErrorField": false,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get equipment by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get estimate by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [],
+  "hasErrorField": false,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project by code — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project financials — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project labor rates — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project material budgets — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project material overages — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project material usage — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get project scope items — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get scope item progress — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [],
+  "hasErrorField": false,
+  "status": 200,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get task by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 404,
+}
+`;
+
+exports[`Org Isolation - Response Shape Snapshots > SNAPSHOT: Get user by ID — rejection response shape is stable 1`] = `
+{
+  "bodyKeys": [
+    "error",
+  ],
+  "hasErrorField": true,
+  "status": 403,
+}
+`;
