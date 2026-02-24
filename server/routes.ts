@@ -134,6 +134,7 @@ import projectContentRoutes from "./projectContentRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationCrewRoutes from "./notificationCrewRoutes";
 import takeoffSubRoutes from "./takeoffSubRoutes";
+import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
 
@@ -411,6 +412,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Subcontractor, Data Quality, Takeoff/Estimating, Quantity Category routes
   app.use(takeoffSubRoutes);
+  app.use(assemblyRoutes);
 
   // Internal Messaging System Routes (extracted to messagingRoutes.ts)
   await messagingSetup;

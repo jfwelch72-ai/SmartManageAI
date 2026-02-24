@@ -433,7 +433,7 @@ export const estimateHistory = pgTable("estimate_history", {
 });
 
 // Insert and Select Schemas
-export type SelectUser = Omit<User, 'passwordHash'>;
+export type SelectUser = Omit<typeof users.$inferSelect, 'passwordHash'>;
 
 export const insertAISettingsSchema = createInsertSchema(aiSettings).omit({
   id: true,
@@ -977,6 +977,62 @@ export type TakeoffSheet = typeof takeoffSheets.$inferSelect;
 export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+// Takeoff Assemblies - reusable templates that auto-calculate quantities from a measurement
+export const takeoffAssemblies = pgTable("takeoff_assemblies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  tradeType: text("trade_type"),
+  measurementType: text("measurement_type").notNull().default("LINEAR"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("takeoff_assemblies_org_idx").on(table.organizationId),
+}));
+
+export const insertTakeoffAssemblySchema = createInsertSchema(takeoffAssemblies).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffAssembly = z.infer<typeof insertTakeoffAssemblySchema>;
+export type TakeoffAssembly = typeof takeoffAssemblies.$inferSelect;
+
+// Takeoff Assembly Items - individual line items within an assembly with quantity formulas
+export const takeoffAssemblyItems = pgTable("takeoff_assembly_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assemblyId: varchar("assembly_id").notNull().references(() => takeoffAssemblies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  unit: text("unit").notNull(),
+  formula: text("formula").notNull(),
+  wasteFactor: doublePrecision("waste_factor").notNull().default(0),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  assemblyIdx: index("takeoff_assembly_items_assembly_idx").on(table.assemblyId),
+}));
+
+export const insertTakeoffAssemblyItemSchema = createInsertSchema(takeoffAssemblyItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffAssemblyItem = z.infer<typeof insertTakeoffAssemblyItemSchema>;
+export type TakeoffAssemblyItem = typeof takeoffAssemblyItems.$inferSelect;
+
+// Takeoff Measurement Assemblies - links a measurement to an assembly for computed quantities
+export const takeoffMeasurementAssemblies = pgTable("takeoff_measurement_assemblies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  measurementId: varchar("measurement_id").notNull().references(() => takeoffMeasurements.id, { onDelete: "cascade" }),
+  assemblyId: varchar("assembly_id").notNull().references(() => takeoffAssemblies.id, { onDelete: "cascade" }),
+  overrides: text("overrides"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  measurementIdx: index("takeoff_meas_assembly_meas_idx").on(table.measurementId),
+  assemblyIdx: index("takeoff_meas_assembly_asm_idx").on(table.assemblyId),
+}));
+
+export const insertTakeoffMeasurementAssemblySchema = createInsertSchema(takeoffMeasurementAssemblies).omit({ id: true, createdAt: true });
+export type InsertTakeoffMeasurementAssembly = z.infer<typeof insertTakeoffMeasurementAssemblySchema>;
+export type TakeoffMeasurementAssembly = typeof takeoffMeasurementAssemblies.$inferSelect;
 
 export const insertProjectSpecSchema = createInsertSchema(projectSpecs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectSpec = z.infer<typeof insertProjectSpecSchema>;

@@ -11,9 +11,10 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
+import AssemblyPanel from "@/components/AssemblyPanel";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -35,6 +36,12 @@ import {
   type Point,
   type ArcSegment
 } from "@shared/utils/geometry";
+import {
+  findSnapTargets,
+  findNearestSnap,
+  applyOrthoLock,
+  type SnapResult,
+} from "@/utils/snapping";
 
 type Tool = 
   | "select" 
@@ -167,6 +174,13 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   
   // AI Takeoff panel state
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  
+  // Snapping state
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [orthoLock, setOrthoLock] = useState(false);
+  const [currentSnap, setCurrentSnap] = useState<SnapResult | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<Point | null>(null);
+  const shiftHeldRef = useRef(false);
   
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -569,13 +583,62 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     // Position already updated via dragmove, just clear drag flag
   };
 
+  const snapTargets = useMemo(
+    () => (snapEnabled ? findSnapTargets(measurements) : []),
+    [measurements, snapEnabled]
+  );
+
+  const resolvePoint = useCallback(
+    (rawPoint: Point): Point => {
+      let pt = rawPoint;
+      if (orthoLock && drawingPoints.length > 0) {
+        pt = applyOrthoLock(pt, drawingPoints[drawingPoints.length - 1]);
+      }
+      if (snapEnabled && snapTargets.length > 0) {
+        const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
+        if (snap.isSnapped) return snap.snappedPoint;
+      }
+      return pt;
+    },
+    [orthoLock, snapEnabled, snapTargets, drawingPoints, stageScale]
+  );
+
+  const handleStageMouseMove = useCallback(
+    (e: any) => {
+      const stage = e.target.getStage();
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+      const transform = stage.getAbsoluteTransform().copy().invert();
+      let pt: Point = transform.point(pointer);
+
+      if (orthoLock && drawingPoints.length > 0) {
+        pt = applyOrthoLock(pt, drawingPoints[drawingPoints.length - 1]);
+      }
+
+      setCursorPosition(pt);
+
+      if (snapEnabled && snapTargets.length > 0) {
+        const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
+        setCurrentSnap(snap.isSnapped ? snap : null);
+      } else {
+        setCurrentSnap(null);
+      }
+    },
+    [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints]
+  );
+
   const handleStageClick = (e: any) => {
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     
     // Transform pointer position to sheet space (accounting for pan/zoom)
     const transform = stage.getAbsoluteTransform().copy().invert();
-    const point = transform.point(pointerPosition);
+    let point = transform.point(pointerPosition);
+
+    const isDrawingTool = ["linear", "arc", "area", "volume", "count"].includes(activeTool);
+    if (isDrawingTool) {
+      point = resolvePoint(point);
+    }
     
     // Clear selection when clicking empty space with select tool
     // Only clear if clicking the stage itself, not a shape
@@ -1083,6 +1146,22 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  // Shift key tracking for ortho-lock
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeldRef.current = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeldRef.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
   // PHASE 2.2b: Spacebar temporary pan - hold spacebar to temporarily switch to pan mode
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1336,6 +1415,39 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         <Separator className="my-2 w-12" />
         <Tooltip>
           <TooltipTrigger asChild>
+            <Button
+              variant={snapEnabled ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setSnapEnabled(!snapEnabled)}
+              data-testid="button-toggle-snap"
+              className="toggle-elevate"
+            >
+              <Magnet className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{snapEnabled ? "Snap: ON" : "Snap: OFF"}</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={orthoLock ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setOrthoLock(!orthoLock)}
+              data-testid="button-toggle-ortho"
+              className="toggle-elevate"
+            >
+              <CornerDownRight className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{orthoLock ? "Ortho: ON (90°)" : "Ortho: OFF"}</p>
+          </TooltipContent>
+        </Tooltip>
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button 
               variant="ghost" 
               size="icon" 
@@ -1446,6 +1558,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               y={stagePosition.y}
               onMouseDown={handleStageMouseDown}
               onMouseUp={handleStageMouseUp}
+              onMouseMove={handleStageMouseMove}
               onDblClick={(e) => {
                 if ((activeTool === "area" || activeTool === "volume") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
@@ -1701,6 +1814,60 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                     stroke="red"
                     strokeWidth={2}
                     dash={[10, 5]}
+                  />
+                )}
+
+                {/* Snap indicator */}
+                {currentSnap && currentSnap.isSnapped && currentSnap.snapTarget && (
+                  <>
+                    <Circle
+                      x={currentSnap.snappedPoint.x}
+                      y={currentSnap.snappedPoint.y}
+                      radius={8 / stageScale}
+                      stroke="#f59e0b"
+                      strokeWidth={2 / stageScale}
+                      fill="transparent"
+                    />
+                    <Line
+                      points={[
+                        currentSnap.snappedPoint.x - 12 / stageScale, currentSnap.snappedPoint.y,
+                        currentSnap.snappedPoint.x + 12 / stageScale, currentSnap.snappedPoint.y,
+                      ]}
+                      stroke="#f59e0b"
+                      strokeWidth={1 / stageScale}
+                    />
+                    <Line
+                      points={[
+                        currentSnap.snappedPoint.x, currentSnap.snappedPoint.y - 12 / stageScale,
+                        currentSnap.snappedPoint.x, currentSnap.snappedPoint.y + 12 / stageScale,
+                      ]}
+                      stroke="#f59e0b"
+                      strokeWidth={1 / stageScale}
+                    />
+                    <Text
+                      x={currentSnap.snappedPoint.x + 14 / stageScale}
+                      y={currentSnap.snappedPoint.y - 6 / stageScale}
+                      text={currentSnap.snapTarget.type === "endpoint" ? "End" : "Mid"}
+                      fontSize={11 / stageScale}
+                      fill="#f59e0b"
+                      fontStyle="bold"
+                    />
+                  </>
+                )}
+
+                {/* Ortho-lock guide line */}
+                {orthoLock && isDrawing && drawingPoints.length > 0 && cursorPosition && (
+                  <Line
+                    points={[
+                      drawingPoints[drawingPoints.length - 1].x,
+                      drawingPoints[drawingPoints.length - 1].y,
+                      cursorPosition.x,
+                      cursorPosition.y,
+                    ]}
+                    stroke="#06b6d4"
+                    strokeWidth={1 / stageScale}
+                    dash={[6 / stageScale, 4 / stageScale]}
+                    opacity={0.6}
                   />
                 )}
               </Layer>
@@ -2191,6 +2358,17 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 </div>
               </CardContent>
             </Card>
+
+            {/* Assemblies */}
+            {selectedSheet && (
+              <Card>
+                <CardContent className="pt-6">
+                  <AssemblyPanel
+                    selectedMeasurementId={selectedMeasurementId}
+                  />
+                </CardContent>
+              </Card>
+            )}
           </div>
         </ScrollArea>
       </div>
