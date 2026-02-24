@@ -1137,6 +1137,252 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
   }
 });
 
+// ====================
+// Sheet Page Management
+// ====================
+
+// Rename a sheet
+router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { sheetName } = req.body;
+    const { takeoffSheets, projects } = await import("@shared/schema");
+
+    if (!sheetName || typeof sheetName !== "string" || sheetName.trim().length === 0) {
+      res.status(400).json({ error: "sheetName is required" });
+      return;
+    }
+
+    const [sheet] = await db
+      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
+      .from(takeoffSheets)
+      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
+      .where(eq(takeoffSheets.id, id))
+      .limit(1);
+
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, sheet.projectId), eq(crewMembers.userId, req.user!.id)))
+        .limit(1);
+      if (!assignment) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
+    const [updated] = await db
+      .update(takeoffSheets)
+      .set({ sheetName: sanitizeShortText(sheetName.trim()), updatedAt: new Date() })
+      .where(eq(takeoffSheets.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Error renaming sheet:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Reorder sheets (batch update sheetIndex)
+router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const { order } = req.body;
+    const { takeoffSheets, projects } = await import("@shared/schema");
+
+    if (!Array.isArray(order) || order.length === 0) {
+      res.status(400).json({ error: "order must be a non-empty array of { id, sheetIndex }" });
+      return;
+    }
+
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, projectId), eq(crewMembers.userId, req.user!.id)))
+        .limit(1);
+      if (!assignment) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
+    const now = new Date();
+    for (const item of order) {
+      if (!item.id || typeof item.sheetIndex !== "number") continue;
+      await db
+        .update(takeoffSheets)
+        .set({ sheetIndex: item.sheetIndex, updatedAt: now })
+        .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.projectId, projectId)));
+    }
+
+    const sheets = await db
+      .select()
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.projectId, projectId))
+      .orderBy(takeoffSheets.sheetIndex);
+
+    res.json(sheets);
+  } catch (error: any) {
+    console.error("Error reordering sheets:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Duplicate a sheet (copies sheet + its measurements)
+router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { takeoffSheets, takeoffMeasurements, projects } = await import("@shared/schema");
+
+    const [sourceSheet] = await db
+      .select()
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, id))
+      .limit(1);
+
+    if (!sourceSheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, sourceSheet.projectId), eq(crewMembers.userId, req.user!.id)))
+        .limit(1);
+      if (!assignment) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
+    const allSheets = await db
+      .select({ sheetIndex: takeoffSheets.sheetIndex })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.projectId, sourceSheet.projectId));
+
+    const maxIndex = allSheets.reduce((max, s) => Math.max(max, s.sheetIndex), 0);
+
+    const [newSheet] = await db
+      .insert(takeoffSheets)
+      .values({
+        projectId: sourceSheet.projectId,
+        planId: sourceSheet.planId,
+        imageUrl: sourceSheet.imageUrl,
+        sheetIndex: maxIndex + 1,
+        sheetName: `${sourceSheet.sheetName || "Sheet"} (Copy)`,
+        scalePxPerFoot: sourceSheet.scalePxPerFoot,
+        units: sourceSheet.units,
+      })
+      .returning();
+
+    const sourceMeasurements = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.sheetId, id));
+
+    if (sourceMeasurements.length > 0) {
+      await db.insert(takeoffMeasurements).values(
+        sourceMeasurements.map((m) => ({
+          sheetId: newSheet.id,
+          categoryId: m.categoryId,
+          type: m.type,
+          label: m.label,
+          points: m.points,
+          arcData: m.arcData,
+          depthFeet: m.depthFeet,
+          count: m.count,
+          note: m.note,
+          color: m.color,
+          visible: m.visible,
+          source: m.source,
+          status: m.status,
+          computedLengthFt: m.computedLengthFt,
+          computedAreaFt2: m.computedAreaFt2,
+          computedVolumeCy: m.computedVolumeCy,
+          metadata: m.metadata,
+        }))
+      );
+    }
+
+    res.status(201).json({ sheet: newSheet, measurementsCopied: sourceMeasurements.length });
+  } catch (error: any) {
+    console.error("Error duplicating sheet:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Delete a sheet and its measurements
+router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { takeoffSheets, projects } = await import("@shared/schema");
+
+    const [sheet] = await db
+      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
+      .from(takeoffSheets)
+      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
+      .where(eq(takeoffSheets.id, id))
+      .limit(1);
+
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, sheet.projectId), eq(crewMembers.userId, req.user!.id)))
+        .limit(1);
+      if (!assignment) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
+    await db.delete(takeoffSheets).where(eq(takeoffSheets.id, id));
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error deleting sheet:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Delete a quantity category
 router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
   try {

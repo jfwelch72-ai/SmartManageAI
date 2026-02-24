@@ -11,11 +11,12 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -171,6 +172,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState("#3b82f6");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  
+  // Sheet management state
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   
   // AI Takeoff panel state
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -329,6 +335,75 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       toast({ title: "Error", description: "Failed to delete category", variant: "destructive" });
     },
   });
+
+  const renameSheetMutation = useMutation({
+    mutationFn: async ({ sheetId, sheetName }: { sheetId: string; sheetName: string }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/sheets/${sheetId}/rename`, { sheetName });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      setRenameDialogOpen(false);
+      toast({ title: "Sheet renamed" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to rename sheet", variant: "destructive" });
+    },
+  });
+
+  const duplicateSheetMutation = useMutation({
+    mutationFn: async (sheetId: string) => {
+      const res = await apiRequest("POST", `/api/takeoff/sheets/${sheetId}/duplicate`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      if (data?.sheet?.id) setSelectedSheet(data.sheet.id);
+      toast({ title: "Sheet duplicated", description: `${data?.measurementsCopied || 0} measurements copied` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to duplicate sheet", variant: "destructive" });
+    },
+  });
+
+  const deleteSheetMutation = useMutation({
+    mutationFn: async (sheetId: string) => {
+      return await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      setSelectedSheet(sheets.length > 1 ? sheets.find(s => s.id !== selectedSheet)?.id || null : null);
+      setDeleteSheetConfirmOpen(false);
+      toast({ title: "Sheet deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete sheet", variant: "destructive" });
+    },
+  });
+
+  const reorderSheetsMutation = useMutation({
+    mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
+      const res = await apiRequest("PATCH", `/api/projects/${projectId}/takeoff/sheets/reorder`, { order });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to reorder sheets", variant: "destructive" });
+    },
+  });
+
+  const handleMoveSheet = (direction: "up" | "down") => {
+    if (!selectedSheet) return;
+    const idx = sheets.findIndex(s => s.id === selectedSheet);
+    if (idx < 0) return;
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= sheets.length) return;
+    const reordered = [...sheets];
+    [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+    reorderSheetsMutation.mutate(reordered.map((s, i) => ({ id: s.id, sheetIndex: i })));
+  };
 
   // PERFORMANCE OPTIMIZATION: Single comprehensive aggregation - O(N) once per measurements change
   const aggregatedMeasurements = useMemo(() => {
@@ -1498,6 +1573,53 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 ))}
               </SelectContent>
             </Select>
+            {selectedSheet && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-sheet-actions">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem
+                    onClick={() => { setRenameValue(currentSheet?.sheetName || ""); setRenameDialogOpen(true); }}
+                    data-testid="menu-rename-sheet"
+                  >
+                    <Pencil className="h-4 w-4 mr-2" /> Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => duplicateSheetMutation.mutate(selectedSheet)}
+                    disabled={duplicateSheetMutation.isPending}
+                    data-testid="menu-duplicate-sheet"
+                  >
+                    <Copy className="h-4 w-4 mr-2" /> Duplicate
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleMoveSheet("up")}
+                    disabled={sheets.findIndex(s => s.id === selectedSheet) <= 0}
+                    data-testid="menu-move-sheet-up"
+                  >
+                    <ArrowUp className="h-4 w-4 mr-2" /> Move Up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleMoveSheet("down")}
+                    disabled={sheets.findIndex(s => s.id === selectedSheet) >= sheets.length - 1}
+                    data-testid="menu-move-sheet-down"
+                  >
+                    <ArrowDown className="h-4 w-4 mr-2" /> Move Down
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteSheetConfirmOpen(true)}
+                    data-testid="menu-delete-sheet"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete Sheet
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {currentSheet && (
               <Badge variant="outline" data-testid="badge-calibration-status">
                 {currentSheet.scalePxPerFoot 
@@ -2372,6 +2494,62 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           </div>
         </ScrollArea>
       </div>
+
+      {/* Rename Sheet Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename Sheet</DialogTitle>
+            <DialogDescription>Enter a new name for this sheet.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Sheet name..."
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && renameValue.trim() && selectedSheet) {
+                renameSheetMutation.mutate({ sheetId: selectedSheet, sheetName: renameValue.trim() });
+              }
+            }}
+            data-testid="input-rename-sheet"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)} data-testid="button-cancel-rename">Cancel</Button>
+            <Button
+              onClick={() => selectedSheet && renameSheetMutation.mutate({ sheetId: selectedSheet, sheetName: renameValue.trim() })}
+              disabled={!renameValue.trim() || renameSheetMutation.isPending}
+              data-testid="button-confirm-rename"
+            >
+              {renameSheetMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Sheet Confirmation Dialog */}
+      <Dialog open={deleteSheetConfirmOpen} onOpenChange={setDeleteSheetConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Sheet</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{currentSheet?.sheetName}"? This will also remove all measurements on this sheet. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteSheetConfirmOpen(false)} data-testid="button-cancel-delete-sheet">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => selectedSheet && deleteSheetMutation.mutate(selectedSheet)}
+              disabled={deleteSheetMutation.isPending}
+              data-testid="button-confirm-delete-sheet"
+            >
+              {deleteSheetMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Note Dialog */}
       <DialogPrimitive.Root open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>

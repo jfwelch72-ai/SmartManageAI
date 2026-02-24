@@ -67,6 +67,32 @@ router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
   }
 });
 
+router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
+    const revision = await docService.getRevisionById(orgId, req.params.id);
+    if (!revision) return res.status(404).json({ error: "Revision not found" });
+    if (!revision.storageKey) return res.status(404).json({ error: "No file associated with this revision" });
+
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(revision.storageKey);
+      const [signedUrl] = await objectFile.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      });
+      res.json({ url: signedUrl });
+    } catch {
+      res.status(500).json({ error: "Failed to generate preview URL" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get preview URL" });
+  }
+});
+
 router.get("/:docId/compare", requireAuth, async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
