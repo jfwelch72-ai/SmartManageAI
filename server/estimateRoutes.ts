@@ -525,6 +525,64 @@ export function registerEstimateRoutes(app: Express) {
     }
   });
 
+  // Production rate labor estimation — must be before /:estimateId routes to avoid route shadowing
+  app.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const { description, unit, quantity, workdayHours, organizationId: rawRequestedOrgId } = req.body;
+      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
+        ? rawRequestedOrgId.trim() 
+        : null;
+      let targetOrgId: string | null = null;
+
+      if (isSuperAdmin) {
+        if (!requestedOrgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        const orgExists = await db.query.organizations.findFirst({
+          where: eq(organizations.id, requestedOrgId),
+        });
+        if (!orgExists) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = requestedOrgId;
+      } else {
+        if (!orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        if (requestedOrgId && requestedOrgId !== orgId) {
+          return res.status(404).json({ error: "Not found" });
+        }
+        targetOrgId = orgId;
+      }
+      
+      if (!description || !unit || quantity === undefined || !targetOrgId) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      const laborEstimate = await estimateLaborHoursFromProductionRate(
+        description,
+        unit,
+        Number(quantity),
+        targetOrgId,
+        workdayHours ? Number(workdayHours) : 8
+      );
+
+      res.json({ estimate: laborEstimate });
+    } catch (error) {
+      if (error instanceof OrganizationRequiredError) {
+        return res.status(404).json({ error: "Not found" });
+      }
+      console.error("Error estimating labor hours:", error);
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+
   // Add manual line item
   app.post("/api/estimates/:estimateId/line-items", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -1223,63 +1281,6 @@ Provide comprehensive financial analysis and recommendations.`
       }
       console.error("Error looking up production rate by SOW item:", error);
       res.status(500).json({ error: "Failed to lookup production rate" });
-    }
-  });
-
-  app.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess || !hasManagementAccess(req.user!.role)) {
-        return res.status(404).json({ error: "Not found" });
-      }
-
-      const { description, unit, quantity, workdayHours, organizationId: rawRequestedOrgId } = req.body;
-      const requestedOrgId = typeof rawRequestedOrgId === 'string' && rawRequestedOrgId.trim().length > 0 
-        ? rawRequestedOrgId.trim() 
-        : null;
-      let targetOrgId: string | null = null;
-
-      if (isSuperAdmin) {
-        if (!requestedOrgId) {
-          return res.status(404).json({ error: "Not found" });
-        }
-        const orgExists = await db.query.organizations.findFirst({
-          where: eq(organizations.id, requestedOrgId),
-        });
-        if (!orgExists) {
-          return res.status(404).json({ error: "Not found" });
-        }
-        targetOrgId = requestedOrgId;
-      } else {
-        if (!orgId) {
-          return res.status(404).json({ error: "Not found" });
-        }
-        if (requestedOrgId && requestedOrgId !== orgId) {
-          return res.status(404).json({ error: "Not found" });
-        }
-        targetOrgId = orgId;
-      }
-      
-      if (!description || !unit || quantity === undefined || !targetOrgId) {
-        return res.status(404).json({ error: "Not found" });
-      }
-
-      const laborEstimate = await estimateLaborHoursFromProductionRate(
-        description,
-        unit,
-        Number(quantity),
-        targetOrgId,
-        workdayHours ? Number(workdayHours) : 8
-      );
-
-      res.json({ estimate: laborEstimate });
-    } catch (error) {
-      if (error instanceof OrganizationRequiredError) {
-        return res.status(404).json({ error: "Not found" });
-      }
-      console.error("Error estimating labor hours:", error);
-      res.status(404).json({ error: "Not found" });
     }
   });
 

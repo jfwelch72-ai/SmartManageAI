@@ -17780,6 +17780,61 @@ SmartManageAI Construction Management Platform
     }
   });
 
+  // Get upcoming maintenance due (for alerts) — must be before /:equipmentId routes to avoid route shadowing
+  app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.json([]);
+      }
+      
+      const now = new Date();
+      const alertWindow = new Date();
+      alertWindow.setDate(alertWindow.getDate() + 14); // 2 weeks ahead
+      
+      // SECURITY: Build conditions with org filter
+      const conditions = [
+        eq(equipmentMaintenanceSchedules.isActive, true),
+        or(
+          // Date-based maintenance due within window
+          and(
+            sql`${equipmentMaintenanceSchedules.nextDueAt} IS NOT NULL`,
+            sql`${equipmentMaintenanceSchedules.nextDueAt} <= ${alertWindow}`
+          ),
+          // Hours-based maintenance due (within 50 hours)
+          sql`(${equipmentMaintenanceSchedules.nextDueHours}::numeric - COALESCE(${equipment.currentHours}::numeric, 0)) <= 50`
+        )
+      ];
+      
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const upcomingMaintenance = await db
+        .select({
+          scheduleId: equipmentMaintenanceSchedules.id,
+          equipmentId: equipmentMaintenanceSchedules.equipmentId,
+          equipmentName: equipment.name,
+          equipmentCode: equipment.equipmentCode,
+          maintenanceName: equipmentMaintenanceSchedules.name,
+          maintenanceType: equipmentMaintenanceSchedules.maintenanceType,
+          nextDueAt: equipmentMaintenanceSchedules.nextDueAt,
+          nextDueHours: equipmentMaintenanceSchedules.nextDueHours,
+          currentHours: equipment.currentHours,
+        })
+        .from(equipmentMaintenanceSchedules)
+        .innerJoin(equipment, eq(equipmentMaintenanceSchedules.equipmentId, equipment.id))
+        .where(and(...conditions))
+        .orderBy(equipmentMaintenanceSchedules.nextDueAt);
+      
+      res.json(upcomingMaintenance);
+    } catch (error) {
+      console.error("Get upcoming maintenance error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get equipment assignments for a piece of equipment
   app.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
     try {
@@ -18348,61 +18403,6 @@ SmartManageAI Construction Management Platform
       res.json(history);
     } catch (error) {
       console.error("Get maintenance history error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // Get upcoming maintenance due (for alerts)
-  app.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER"), async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      if (mustDenyAccess) {
-        return res.json([]);
-      }
-      
-      const now = new Date();
-      const alertWindow = new Date();
-      alertWindow.setDate(alertWindow.getDate() + 14); // 2 weeks ahead
-      
-      // SECURITY: Build conditions with org filter
-      const conditions = [
-        eq(equipmentMaintenanceSchedules.isActive, true),
-        or(
-          // Date-based maintenance due within window
-          and(
-            sql`${equipmentMaintenanceSchedules.nextDueAt} IS NOT NULL`,
-            sql`${equipmentMaintenanceSchedules.nextDueAt} <= ${alertWindow}`
-          ),
-          // Hours-based maintenance due (within 50 hours)
-          sql`(${equipmentMaintenanceSchedules.nextDueHours}::numeric - COALESCE(${equipment.currentHours}::numeric, 0)) <= 50`
-        )
-      ];
-      
-      if (shouldFilter && orgId) {
-        conditions.push(eq(equipment.organizationId, orgId));
-      }
-      
-      const upcomingMaintenance = await db
-        .select({
-          scheduleId: equipmentMaintenanceSchedules.id,
-          equipmentId: equipmentMaintenanceSchedules.equipmentId,
-          equipmentName: equipment.name,
-          equipmentCode: equipment.equipmentCode,
-          maintenanceName: equipmentMaintenanceSchedules.name,
-          maintenanceType: equipmentMaintenanceSchedules.maintenanceType,
-          nextDueAt: equipmentMaintenanceSchedules.nextDueAt,
-          nextDueHours: equipmentMaintenanceSchedules.nextDueHours,
-          currentHours: equipment.currentHours,
-        })
-        .from(equipmentMaintenanceSchedules)
-        .innerJoin(equipment, eq(equipmentMaintenanceSchedules.equipmentId, equipment.id))
-        .where(and(...conditions))
-        .orderBy(equipmentMaintenanceSchedules.nextDueAt);
-      
-      res.json(upcomingMaintenance);
-    } catch (error) {
-      console.error("Get upcoming maintenance error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

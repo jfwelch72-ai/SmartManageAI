@@ -5,6 +5,34 @@ import { logError } from "./utils/logger";
 
 const router = Router();
 
+// Fixed-path routes must come before /:docId parameterized routes to avoid route shadowing
+
+router.get("/revisions/:id", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const revision = await docService.getRevisionById(user.organizationId, req.params.id);
+    if (!revision) return res.status(404).json({ error: "Revision not found" });
+    res.json(revision);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get revision" });
+  }
+});
+
+router.post("/revisions/:id/supersede", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const result = await docService.supersedeRevision(user.organizationId, req.params.id);
+    if (!result) return res.status(404).json({ error: "Revision not found" });
+    res.json(result);
+  } catch (err) {
+    logError("Failed to supersede revision", { error: String(err) });
+    res.status(500).json({ error: "Failed to supersede" });
+  }
+});
+
 router.get("/:docId/revisions", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
@@ -37,32 +65,6 @@ router.post("/:docId/revisions", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Failed to create revision", { error: String(err) });
     res.status(500).json({ error: "Failed to create revision" });
-  }
-});
-
-router.get("/revisions/:id", requireAuth, async (req, res) => {
-  try {
-    const user = (req as any).user;
-    const revision = await docService.getRevisionById(user.organizationId, req.params.id);
-    if (!revision) return res.status(404).json({ error: "Revision not found" });
-    res.json(revision);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to get revision" });
-  }
-});
-
-router.post("/revisions/:id/supersede", requireAuth, async (req, res) => {
-  try {
-    const user = (req as any).user;
-    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Admin access required" });
-    }
-    const result = await docService.supersedeRevision(user.organizationId, req.params.id);
-    if (!result) return res.status(404).json({ error: "Revision not found" });
-    res.json(result);
-  } catch (err) {
-    logError("Failed to supersede revision", { error: String(err) });
-    res.status(500).json({ error: "Failed to supersede" });
   }
 });
 
