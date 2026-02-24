@@ -1,17 +1,13 @@
 import { Router, type Response } from "express";
 import { aiNotesService } from "./aiNotesService";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { parsePagination, getUserOrThrow } from "./utils/routeHelpers";
 import { db } from "./db";
 import { projects } from "@shared/schema";
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
-/**
- * POST /api/ai-notes/analyze
- * Trigger AI analysis on recent notes (ADMIN/MANAGER only)
- * Body: { sinceDate?: string, hoursBack?: number }
- */
 router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { sinceDate, hoursBack } = req.body;
@@ -25,7 +21,6 @@ router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER"), async (req
 
     const result = await aiNotesService.analyzeRecentNotes(req.user!.id, cutoffDate);
     
-    // Only return summary metadata, not full insights (users can query insights endpoint for filtered results)
     res.json({
       success: true,
       runId: result.runId,
@@ -40,17 +35,12 @@ router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER"), async (req
   }
 });
 
-/**
- * GET /api/ai-notes/insights
- * Get all insights (company-wide, filtered by user role for RBAC)
- * Query params: { limit?: number }
- */
 router.get("/insights", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-    // Pass user role for RBAC filtering
-    const insights = await aiNotesService.getAllInsights(limit, req.user!.role);
-    
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
+    const { limit } = parsePagination(req, { limit: 100 });
+    const insights = await aiNotesService.getAllInsights(limit, user.role);
     res.json({ insights });
   } catch (error) {
     console.error("Error fetching insights:", error);
@@ -61,16 +51,12 @@ router.get("/insights", requireAuth, async (req: AuthRequest, res: Response) => 
   }
 });
 
-/**
- * GET /api/ai-notes/insights/role
- * Get insights relevant to the current user's role
- * Query params: { limit?: number }
- */
 router.get("/insights/role", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-    const insights = await aiNotesService.getInsightsForRole(req.user!.role, limit);
-    
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
+    const { limit } = parsePagination(req);
+    const insights = await aiNotesService.getInsightsForRole(user.role, limit);
     res.json({ insights });
   } catch (error) {
     console.error("Error fetching role-based insights:", error);
@@ -81,23 +67,16 @@ router.get("/insights/role", requireAuth, async (req: AuthRequest, res: Response
   }
 });
 
-/**
- * GET /api/ai-notes/insights/project/:projectId
- * Get insights for a specific project (with project membership verification and RBAC filtering)
- * Query params: { limit?: number }
- */
 router.get("/insights/project/:projectId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
     const { projectId } = req.params;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-    const userId = req.user!.id;
-    const userRole = req.user!.role;
+    const { limit } = parsePagination(req);
 
-    // Admins and managers can access any project's insights
-    const isAdminOrManager = ["ADMIN", "MANAGER"].includes(userRole);
+    const isAdminOrManager = ["ADMIN", "MANAGER"].includes(user.role);
     
     if (!isAdminOrManager) {
-      // Verify user is assigned to this project (superintendent or estimator)
       const project = await db
         .select({ 
           id: projects.id, 
@@ -113,8 +92,8 @@ router.get("/insights/project/:projectId", requireAuth, async (req: AuthRequest,
       }
 
       const isAssignedToProject = 
-        project[0].superintendentId === userId || 
-        project[0].estimatorId === userId;
+        project[0].superintendentId === user.id || 
+        project[0].estimatorId === user.id;
 
       if (!isAssignedToProject) {
         return res.status(403).json({ 
@@ -124,9 +103,7 @@ router.get("/insights/project/:projectId", requireAuth, async (req: AuthRequest,
       }
     }
 
-    // Pass user role for RBAC filtering
-    const insights = await aiNotesService.getProjectInsights(projectId, limit, userRole);
-    
+    const insights = await aiNotesService.getProjectInsights(projectId, limit, user.role);
     res.json({ insights });
   } catch (error) {
     console.error("Error fetching project insights:", error);

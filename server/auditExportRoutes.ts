@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
+import { parsePagination } from "./utils/routeHelpers";
 import { db } from "./db";
 import { auditLog, users } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, type SQL } from "drizzle-orm";
@@ -16,13 +17,9 @@ router.get("/search", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireF
       userId: filterUserId,
       dateFrom,
       dateTo,
-      page = "1",
-      limit = "50",
     } = req.query as Record<string, string>;
 
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
-    const offset = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, offset } = parsePagination(req, { maxLimit: 100 });
 
     const conditions: SQL[] = [];
 

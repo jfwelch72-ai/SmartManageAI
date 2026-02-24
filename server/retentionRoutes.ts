@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
+import { getOrgId, getUserOrThrow } from "./utils/routeHelpers";
 import { db } from "./db";
 import { retentionPolicies, auditLog, messages, timeEntries, media } from "@shared/schema";
 import { eq, and, lt, sql, desc } from "drizzle-orm";
@@ -10,9 +11,8 @@ const router = Router();
 
 router.get("/policies", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("DATA_RETENTION"), async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const orgId = user.organizationId;
-    if (!orgId) return res.status(403).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const policies = await db.select()
       .from(retentionPolicies)
@@ -28,9 +28,8 @@ router.get("/policies", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requir
 
 router.post("/policies/seed", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("DATA_RETENTION"), async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const orgId = user.organizationId;
-    if (!orgId) return res.status(403).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const defaults = [
       { entityType: "AUDIT_LOGS" as const, retentionDays: 2555, action: "ARCHIVE" as const },
@@ -74,10 +73,10 @@ router.post("/policies/seed", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), 
 
 router.put("/policies/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("DATA_RETENTION"), async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const orgId = user.organizationId;
-    if (!orgId) return res.status(403).json({ error: "Organization required" });
-
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
     const { id } = req.params;
     const { retentionDays, action, enabled } = req.body;
 
@@ -117,9 +116,8 @@ router.put("/policies/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), re
 
 router.post("/preview", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("DATA_RETENTION"), async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const orgId = user.organizationId;
-    if (!orgId) return res.status(403).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const policies = await db.select()
       .from(retentionPolicies)
@@ -175,10 +173,10 @@ router.post("/preview", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requir
 
 router.post("/execute", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("DATA_RETENTION"), async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.user!;
-    const orgId = user.organizationId;
-    if (!orgId) return res.status(403).json({ error: "Organization required" });
-
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
     const { policyId, dryRun = true } = req.body;
 
     const policies = policyId
