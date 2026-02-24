@@ -494,6 +494,7 @@ function AssignSubscriptionDialog({
   const [selectedOrg, setSelectedOrg] = useState("");
   const [selectedPlan, setSelectedPlan] = useState("free");
   const [selectedStatus, setSelectedStatus] = useState("active");
+  const [selectedBillingProvider, setSelectedBillingProvider] = useState("manual");
 
   const { data: availableOrgs = [], isLoading: orgsLoading } = useQuery<{ id: string; name: string; tradeType: string | null }[]>({
     queryKey: ["/api/platform/organizations-without-subscription"],
@@ -501,7 +502,7 @@ function AssignSubscriptionDialog({
   });
 
   const createMutation = useMutation({
-    mutationFn: async (body: { organizationId: string; planTier: string; status: string }) => {
+    mutationFn: async (body: { organizationId: string; planTier: string; status: string; billingProvider: string }) => {
       const res = await apiRequest("POST", "/api/platform/subscriptions", body);
       return res.json();
     },
@@ -511,6 +512,7 @@ function AssignSubscriptionDialog({
       setSelectedOrg("");
       setSelectedPlan("free");
       setSelectedStatus("active");
+      setSelectedBillingProvider("manual");
       onClose();
     },
     onError: (err: any) => {
@@ -523,7 +525,7 @@ function AssignSubscriptionDialog({
       toast({ title: "Select an organization", variant: "destructive" });
       return;
     }
-    createMutation.mutate({ organizationId: selectedOrg, planTier: selectedPlan, status: selectedStatus });
+    createMutation.mutate({ organizationId: selectedOrg, planTier: selectedPlan, status: selectedStatus, billingProvider: selectedBillingProvider });
   };
 
   return (
@@ -578,6 +580,19 @@ function AssignSubscriptionDialog({
                 <SelectItem value="trialing">Trialing</SelectItem>
                 <SelectItem value="past_due">Past Due</SelectItem>
                 <SelectItem value="canceled">Canceled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Billing Provider</Label>
+            <Select value={selectedBillingProvider} onValueChange={setSelectedBillingProvider}>
+              <SelectTrigger data-testid="select-assign-billing-provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="stripe">Stripe</SelectItem>
+                <SelectItem value="internal">Internal</SelectItem>
               </SelectContent>
             </Select>
           </div>
