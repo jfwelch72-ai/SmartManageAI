@@ -230,4 +230,38 @@ router.get("/addenda/:id/acknowledgments", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/addenda/:id/preview-url", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const [addendum] = await db.select().from(addenda)
+      .where(and(
+        eq(addenda.id, req.params.id),
+        eq(addenda.organizationId, user.organizationId)
+      ));
+    if (!addendum) return res.status(404).json({ error: "Addendum not found" });
+
+    if (!addendum.storageKey) {
+      if (addendum.fileUrl) return res.json({ url: addendum.fileUrl });
+      return res.status(404).json({ error: "No file associated with this addendum" });
+    }
+
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(addendum.storageKey);
+      const [signedUrl] = await objectFile.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      });
+      res.json({ url: signedUrl });
+    } catch {
+      if (addendum.fileUrl) return res.json({ url: addendum.fileUrl });
+      res.status(500).json({ error: "Failed to generate preview URL" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get addendum preview URL" });
+  }
+});
+
 export default router;

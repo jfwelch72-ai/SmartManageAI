@@ -41,6 +41,8 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Test Infrastructure**: Vitest configured with npm test/test:watch/test:coverage scripts. Schema validation tests and route module structure tests established (254 tests passing).
 *   **Org Isolation Test Harness**: Automated multi-tenant isolation testing framework in server/__tests__/org-isolation/. Seeds two orgs, runs cross-org read/write/list/fuzz/snapshot tests against all org-scoped endpoints. Run via `npm run test:isolation`. Uses supertest for HTTP-level testing with real JWT auth tokens.
 *   **Subscription Management**: POST/DELETE routes and Assign/Delete subscription UI for Super Admin already implemented in platformAdminRoutes.ts and PlatformSubscriptions.tsx.
+*   **Phase 2 Takeoff Enhancements**: Sheet management (rename, reorder, duplicate, delete), visual revision comparison (side-by-side + overlay slider modes), and document revision preview URL endpoint.
+*   **Phase 3 Addenda Overlays & Advanced Calibration**: Addenda overlay system in TakeoffWorkspace (toggle addendum images as semi-transparent overlays on plan sheets with per-addendum opacity control). Added addenda preview-url endpoint. Advanced calibration tools: scale verification (measure known distance to check error %), multi-point calibration (average multiple references for higher accuracy), and calibration info display panel.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

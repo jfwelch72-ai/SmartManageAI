@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import AssemblyPanel from "@/components/AssemblyPanel";
@@ -181,6 +181,18 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // AI Takeoff panel state
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   
+  // Addenda overlay state
+  const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
+  const [addendaImages, setAddendaImages] = useState<Record<string, HTMLImageElement>>({});
+  
+  // Advanced calibration state
+  const [verifyMode, setVerifyMode] = useState<"idle" | "first-point" | "second-point">("idle");
+  const [verifyPoints, setVerifyPoints] = useState<{ x: number; y: number }[]>([]);
+  const [verifyExpectedDistance, setVerifyExpectedDistance] = useState("");
+  const [verifyResult, setVerifyResult] = useState<{ expected: number; measured: number; errorPct: number } | null>(null);
+  const [multiCalibPoints, setMultiCalibPoints] = useState<Array<{ points: [{ x: number; y: number }, { x: number; y: number }]; distance: number }>>([]);
+  const [multiCalibMode, setMultiCalibMode] = useState(false);
+  
   // Snapping state
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [orthoLock, setOrthoLock] = useState(false);
@@ -233,6 +245,42 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       });
     },
   });
+
+  // Fetch addenda for overlay panel
+  interface AddendumOverlayData {
+    id: string;
+    addendumNumber: number;
+    title: string;
+    status: string;
+    storageKey: string | null;
+    fileUrl: string | null;
+    fileName: string | null;
+  }
+  const { data: projectAddenda = [] } = useQuery<AddendumOverlayData[]>({
+    queryKey: ["/api/projects", projectId, "addenda"],
+  });
+
+  // Load addenda overlay images when toggled visible
+  useEffect(() => {
+    Object.entries(addendaOverlays).forEach(([addendumId, overlay]) => {
+      if (overlay.visible && !addendaImages[addendumId] && !overlay.imageUrl) {
+        fetch(`/api/addenda/${addendumId}/preview-url`, { credentials: "include" })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data?.url) {
+              setAddendaOverlays(prev => ({ ...prev, [addendumId]: { ...prev[addendumId], imageUrl: data.url } }));
+              const img = new window.Image();
+              img.crossOrigin = "anonymous";
+              img.onload = () => {
+                setAddendaImages(prev => ({ ...prev, [addendumId]: img }));
+              };
+              img.src = data.url;
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [addendaOverlays, addendaImages]);
 
   // Fetch measurements for selected sheet
   const { data: measurements = [], isLoading: measurementsLoading } = useQuery<TakeoffMeasurement[]>({
@@ -724,6 +772,28 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       return;
     }
     
+    // Scale verification click handling
+    if (verifyMode === "first-point") {
+      setVerifyPoints([point]);
+      setVerifyMode("second-point");
+      toast({ title: "First Point Set", description: "Click second point to complete verification" });
+      return;
+    } else if (verifyMode === "second-point") {
+      const newPoints = [verifyPoints[0], point];
+      setVerifyPoints(newPoints);
+      setVerifyMode("idle");
+      const expectedDist = parseFloat(verifyExpectedDistance);
+      if (expectedDist > 0 && currentSheet?.scalePxPerFoot) {
+        const pxDist = computePixelDistance(newPoints[0], newPoints[1]);
+        const measuredDist = pxDist / currentSheet.scalePxPerFoot;
+        const errorPct = Math.abs(measuredDist - expectedDist) / expectedDist * 100;
+        setVerifyResult({ expected: expectedDist, measured: measuredDist, errorPct });
+      } else {
+        toast({ title: "Error", description: "Enter an expected distance before verifying", variant: "destructive" });
+      }
+      return;
+    }
+
     if (activeTool === "calibrate") {
       if (calibrationMode === "first-point") {
         setCalibrationPoints([point]);
@@ -1703,6 +1773,19 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   <Text text="Select a sheet to begin" x={20} y={20} fontSize={16} fill="#888" />
                 )}
                 
+                {/* Addenda overlay images */}
+                {Object.entries(addendaOverlays).map(([addendumId, overlay]) => {
+                  if (!overlay.visible || !addendaImages[addendumId]) return null;
+                  return (
+                    <KonvaImage
+                      key={`addenda-overlay-${addendumId}`}
+                      image={addendaImages[addendumId]}
+                      opacity={overlay.opacity}
+                      listening={false}
+                    />
+                  );
+                })}
+
                 {/* Saved measurements */}
                 {measurements.map((m) => {
                   const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
@@ -1936,6 +2019,27 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                     stroke="red"
                     strokeWidth={2}
                     dash={[10, 5]}
+                  />
+                )}
+
+                {/* Verification points */}
+                {verifyPoints.map((point, i) => (
+                  <Circle
+                    key={`verify-${i}`}
+                    x={point.x}
+                    y={point.y}
+                    radius={8}
+                    fill="#f59e0b"
+                    stroke="white"
+                    strokeWidth={2}
+                  />
+                ))}
+                {verifyPoints.length === 2 && (
+                  <Line
+                    points={[verifyPoints[0].x, verifyPoints[0].y, verifyPoints[1].x, verifyPoints[1].y]}
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    dash={[8, 4]}
                   />
                 )}
 
@@ -2488,6 +2592,314 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   <AssemblyPanel
                     selectedMeasurementId={selectedMeasurementId}
                   />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Addenda Overlays */}
+            {selectedSheet && (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-primary" />
+                    <h3 className="font-semibold text-sm">Addenda Overlays</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Toggle addendum documents as overlays on the plan sheet.</p>
+                  {projectAddenda.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">No addenda for this project.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {projectAddenda.filter(a => {
+                        if (!a.storageKey && !a.fileUrl) return false;
+                        const key = a.storageKey || a.fileName || a.fileUrl || "";
+                        return /\.(png|jpg|jpeg|gif|webp|bmp|svg|tiff?)$/i.test(key);
+                      }).map((addendum) => {
+                        const overlay = addendaOverlays[addendum.id];
+                        const isVisible = overlay?.visible || false;
+                        const opacity = overlay?.opacity ?? 0.5;
+                        return (
+                          <div key={addendum.id} className="border rounded-md p-2 space-y-2" data-testid={`addenda-overlay-${addendum.id}`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={() => {
+                                    setAddendaOverlays(prev => ({
+                                      ...prev,
+                                      [addendum.id]: {
+                                        ...prev[addendum.id],
+                                        visible: !isVisible,
+                                        opacity: prev[addendum.id]?.opacity ?? 0.5,
+                                      },
+                                    }));
+                                  }}
+                                  data-testid={`button-toggle-addendum-${addendum.id}`}
+                                >
+                                  {isVisible ? <Eye className="w-4 h-4 text-primary" /> : <EyeOff className="w-4 h-4 text-muted-foreground" />}
+                                </Button>
+                                <span className="text-xs font-medium truncate">
+                                  #{addendum.addendumNumber} — {addendum.title}
+                                </span>
+                              </div>
+                              <Badge variant="outline" className="text-[10px] shrink-0">{addendum.status}</Badge>
+                            </div>
+                            {isVisible && (
+                              <div className="flex items-center gap-2 pl-8">
+                                <span className="text-[10px] text-muted-foreground w-10">Opacity</span>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  value={Math.round(opacity * 100)}
+                                  onChange={(e) => {
+                                    const newOpacity = parseInt(e.target.value) / 100;
+                                    setAddendaOverlays(prev => ({
+                                      ...prev,
+                                      [addendum.id]: { ...prev[addendum.id], opacity: newOpacity },
+                                    }));
+                                  }}
+                                  className="flex-1 h-1 accent-primary"
+                                  data-testid={`slider-opacity-addendum-${addendum.id}`}
+                                />
+                                <span className="text-[10px] text-muted-foreground w-8 text-right">{Math.round(opacity * 100)}%</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(() => {
+                        const imageAddenda = projectAddenda.filter(a => {
+                          if (!a.storageKey && !a.fileUrl) return false;
+                          const key = a.storageKey || a.fileName || a.fileUrl || "";
+                          return /\.(png|jpg|jpeg|gif|webp|bmp|svg|tiff?)$/i.test(key);
+                        });
+                        const nonImageCount = projectAddenda.length - imageAddenda.length;
+                        if (nonImageCount > 0) return (
+                          <p className="text-[10px] text-muted-foreground italic">
+                            {nonImageCount} addenda not shown (PDF or no file attached — only image overlays supported)
+                          </p>
+                        );
+                        return null;
+                      })()}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Calibration Info */}
+            {selectedSheet && currentSheet?.scalePxPerFoot && (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-primary" />
+                    <h3 className="font-semibold text-sm">Calibration Info</h3>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Scale:</span>
+                      <span className="font-mono">{currentSheet.scalePxPerFoot.toFixed(2)} px/{currentSheet.units || "ft"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Units:</span>
+                      <span>{currentSheet.units === "m" ? "Meters" : "Feet"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status:</span>
+                      <Badge variant="default" className="text-[10px]">
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> Calibrated
+                      </Badge>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => {
+                        setVerifyMode("first-point");
+                        setVerifyPoints([]);
+                        setVerifyResult(null);
+                        toast({ title: "Scale Verification", description: "Click two points on a known distance to verify accuracy" });
+                      }}
+                      data-testid="button-start-verify"
+                    >
+                      <Target className="w-3 h-3 mr-1" /> Verify Scale Accuracy
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => {
+                        setMultiCalibMode(true);
+                        setMultiCalibPoints([]);
+                        setCalibrationMode("first-point");
+                        setCalibrationPoints([]);
+                        toast({ title: "Multi-Point Calibration", description: "Take multiple reference measurements for higher accuracy. Click two points for each reference distance." });
+                      }}
+                      data-testid="button-start-multi-calib"
+                    >
+                      <Ruler className="w-3 h-3 mr-1" /> Multi-Point Calibration
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Scale Verification Panel */}
+            {(verifyMode !== "idle" || verifyResult) && (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">Scale Verification</h3>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setVerifyMode("idle"); setVerifyPoints([]); setVerifyResult(null); setVerifyExpectedDistance(""); }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {verifyMode === "first-point" ? "Click first point of known distance" : "Click second point to measure"}
+                  </p>
+                  <div>
+                    <Label className="text-xs">Expected Distance</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        value={verifyExpectedDistance}
+                        onChange={(e) => setVerifyExpectedDistance(e.target.value)}
+                        placeholder="e.g. 20"
+                        className="h-8 text-xs"
+                        data-testid="input-verify-distance"
+                      />
+                      <span className="text-xs text-muted-foreground self-center">{currentSheet?.units || "ft"}</span>
+                    </div>
+                  </div>
+                  {verifyResult && (
+                    <>
+                      <div className={`p-2 rounded text-xs ${verifyResult.errorPct <= 2 ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : verifyResult.errorPct <= 5 ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"} border`}>
+                        <div className="flex items-center gap-1 mb-1">
+                          {verifyResult.errorPct <= 2 ? <CheckCircle2 className="w-3 h-3 text-green-600" /> : <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                          <span className="font-medium">{verifyResult.errorPct <= 2 ? "Accurate" : verifyResult.errorPct <= 5 ? "Minor deviation" : "Significant deviation"}</span>
+                        </div>
+                        <div>Expected: {verifyResult.expected.toFixed(2)} {currentSheet?.units || "ft"}</div>
+                        <div>Measured: {verifyResult.measured.toFixed(2)} {currentSheet?.units || "ft"}</div>
+                        <div>Error: {verifyResult.errorPct.toFixed(1)}%</div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs"
+                        onClick={() => {
+                          setVerifyMode("first-point");
+                          setVerifyPoints([]);
+                          setVerifyResult(null);
+                        }}
+                        data-testid="button-verify-again"
+                      >
+                        <Target className="w-3 h-3 mr-1" /> Verify Again
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Multi-Point Calibration Panel */}
+            {multiCalibMode && (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm">Multi-Point Calibration</h3>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setMultiCalibMode(false); setMultiCalibPoints([]); setCalibrationMode("idle"); setCalibrationPoints([]); }}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add multiple reference measurements, then apply averaged calibration for better accuracy.
+                  </p>
+                  {multiCalibPoints.length > 0 && (
+                    <div className="space-y-1">
+                      {multiCalibPoints.map((entry, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs p-1 bg-muted rounded">
+                          <span>Ref #{i + 1}: {entry.distance} {currentSheet?.units || "ft"}</span>
+                          <span className="text-muted-foreground font-mono">{computePixelDistance(entry.points[0], entry.points[1]).toFixed(1)} px</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {calibrationPoints.length === 2 && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Distance for this reference</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          value={calibrationDistance}
+                          onChange={(e) => setCalibrationDistance(e.target.value)}
+                          placeholder="Distance"
+                          className="h-8 text-xs"
+                          data-testid="input-multi-calib-distance"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs"
+                          disabled={!calibrationDistance}
+                          onClick={() => {
+                            const dist = parseFloat(calibrationDistance);
+                            if (!dist || dist <= 0) return;
+                            setMultiCalibPoints(prev => [...prev, {
+                              points: [calibrationPoints[0], calibrationPoints[1]],
+                              distance: dist,
+                            }]);
+                            setCalibrationPoints([]);
+                            setCalibrationDistance("");
+                            setCalibrationMode("first-point");
+                            toast({ title: "Reference Added", description: `Reference #${multiCalibPoints.length + 1} recorded. Add more or apply.` });
+                          }}
+                          data-testid="button-add-multi-ref"
+                        >
+                          <Plus className="w-3 h-3 mr-1" /> Add
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {multiCalibPoints.length >= 2 && (
+                    <Button
+                      className="w-full text-xs"
+                      size="sm"
+                      onClick={async () => {
+                        const avgPxPerUnit = multiCalibPoints.reduce((sum, entry) => {
+                          const pxDist = computePixelDistance(entry.points[0], entry.points[1]);
+                          return sum + pxDist / entry.distance;
+                        }, 0) / multiCalibPoints.length;
+                        
+                        if (!Number.isFinite(avgPxPerUnit) || avgPxPerUnit <= 0) {
+                          toast({ title: "Error", description: "Invalid calibration result", variant: "destructive" });
+                          return;
+                        }
+
+                        try {
+                          await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+                            scalePxPerFoot: avgPxPerUnit,
+                            units: currentSheet?.units || "ft",
+                          });
+                          queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                          queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+                          setMultiCalibMode(false);
+                          setMultiCalibPoints([]);
+                          setCalibrationMode("idle");
+                          setCalibrationPoints([]);
+                          toast({ title: "Success", description: `Multi-point calibration applied (${multiCalibPoints.length} references averaged)` });
+                        } catch {
+                          toast({ title: "Error", description: "Failed to save calibration", variant: "destructive" });
+                        }
+                      }}
+                      data-testid="button-apply-multi-calib"
+                    >
+                      <Save className="w-3 h-3 mr-1" /> Apply Averaged Calibration ({multiCalibPoints.length} points)
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}
