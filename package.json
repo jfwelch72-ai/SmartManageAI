@@ -16,7 +16,10 @@
     "audit:integrations": "tsx audit/index.ts integrations",
     "audit:ai": "tsx audit/index.ts ai",
     "audit:report": "tsx audit/index.ts full",
-    "seed:test-company": "tsx scripts/seed-test-company.ts"
+    "seed:test-company": "tsx scripts/seed-test-company.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.17.3",
