@@ -20,7 +20,9 @@ import {
   BarChart3,
   Zap,
   Sparkles,
-  Rocket
+  Rocket,
+  Monitor,
+  Server
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -42,6 +44,22 @@ export default function BillingPage() {
   const { data: plansData } = usePlans();
 
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+  const toggleModeMutation = useMutation({
+    mutationFn: async (mode: "dev" | "production") => {
+      const res = await apiRequest("POST", "/api/billing/toggle-mode", { mode });
+      if (!res.ok) throw new Error("Failed to toggle mode");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Mode Changed", description: `Switched to ${data.isDevMode ? "Dev" : "Production"} mode.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/entitlements"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const changePlanMutation = useMutation({
     mutationFn: async (planTier: PlanTier) => {
@@ -112,11 +130,33 @@ export default function BillingPage() {
             Manage your plan, add-ons, and usage
           </p>
         </div>
-        {entitlements.isDevMode && (
+        {isSuperAdmin ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => toggleModeMutation.mutate(entitlements.isDevMode ? "production" : "dev")}
+              disabled={toggleModeMutation.isPending}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors cursor-pointer ${
+                entitlements.isDevMode
+                  ? "text-orange-500 border-orange-500 bg-orange-500/10 hover:bg-orange-500/20"
+                  : "text-green-500 border-green-500 bg-green-500/10 hover:bg-green-500/20"
+              }`}
+              data-testid="button-toggle-billing-mode"
+            >
+              {toggleModeMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : entitlements.isDevMode ? (
+                <Monitor className="w-3.5 h-3.5" />
+              ) : (
+                <Server className="w-3.5 h-3.5" />
+              )}
+              {entitlements.isDevMode ? "Dev Mode" : "Production"}
+            </button>
+          </div>
+        ) : entitlements.isDevMode ? (
           <Badge variant="outline" className="text-orange-500 border-orange-500">
             Dev Mode
           </Badge>
-        )}
+        ) : null}
       </div>
 
       <Card>

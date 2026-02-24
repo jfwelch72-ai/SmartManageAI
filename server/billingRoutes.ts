@@ -353,4 +353,35 @@ router.get("/usage", requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * POST /api/billing/toggle-mode
+ * Toggle between Dev Mode and Production Mode (super admin / admin only)
+ */
+router.post("/toggle-mode", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { mode } = req.body;
+    
+    if (!mode || !["dev", "production"].includes(mode)) {
+      return res.status(400).json({ error: "Mode must be 'dev' or 'production'" });
+    }
+
+    if (mode === "dev") {
+      process.env.BILLING_MODE = "manual";
+    } else {
+      delete process.env.BILLING_MODE;
+    }
+
+    logInfo("Billing mode toggled", { mode, by: req.user?.email });
+
+    res.json({ 
+      success: true, 
+      mode,
+      isDevMode: isDevMode(),
+    });
+  } catch (error) {
+    logError("Failed to toggle billing mode", undefined, error as Error);
+    res.status(500).json({ error: "Failed to toggle mode" });
+  }
+});
+
 export default router;
