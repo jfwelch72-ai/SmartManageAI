@@ -18,6 +18,13 @@ interface DashboardSectionProps {
 
 const COLUMN_ICONS = [LayoutList, Columns2, Columns3, Columns4];
 
+const GRID_CLASSES: Record<number, string> = {
+  1: "grid grid-cols-1 gap-3",
+  2: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+  3: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
+  4: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3",
+};
+
 export function DashboardSectionComponent({ section, sectionIndex, totalSections, onAddWidget }: DashboardSectionProps) {
   const { isEditMode, removeWidget, duplicateWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, duplicateSection, reorderSections } = useDashboardCustomization();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -202,7 +209,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
               )}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className={GRID_CLASSES[section.columns] || GRID_CLASSES[1]}>
               {visibleWidgets.map((widget, widgetIndex) => {
                 const WidgetComponent = getWidgetComponent(widget.type)!;
                 const widgetDef = getWidgetDefinition(widget.type);
