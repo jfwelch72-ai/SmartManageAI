@@ -628,6 +628,7 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
       minH: z.number().optional(),
       maxW: z.number().optional(),
       maxH: z.number().optional(),
+      config: z.record(z.any()).optional(),
     });
 
     const sectionSchema = z.object({
