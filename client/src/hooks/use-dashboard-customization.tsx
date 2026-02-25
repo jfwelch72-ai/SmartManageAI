@@ -16,6 +16,7 @@ export interface DashboardWidget {
   minH?: number;
   maxW?: number;
   maxH?: number;
+  config?: Record<string, any>;
 }
 
 export interface DashboardSection {
@@ -90,6 +91,8 @@ interface DashboardCustomizationContextType {
   addWidget: (type: string, sectionId?: string) => void;
   removeWidget: (widgetId: string, sectionId: string) => void;
   reorderWidgets: (sectionId: string, fromIndex: number, toIndex: number) => void;
+  updateWidgetConfig: (widgetId: string, sectionId: string, config: Record<string, any>) => void;
+  getWidgetConfig: (widgetId: string, sectionId: string) => Record<string, any> | undefined;
   updateSectionLayout: (sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
   addSection: (title: string, columns: number) => void;
   removeSection: (sectionId: string) => void;
@@ -372,6 +375,28 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     });
   }, []);
 
+  const updateWidgetConfig = useCallback((widgetId: string, sectionId: string, config: Record<string, any>) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s =>
+          s.id === sectionId
+            ? { ...s, widgets: s.widgets.map(w => w.id === widgetId ? { ...w, config: { ...w.config, ...config } } : w) }
+            : s
+        ),
+      };
+    });
+  }, []);
+
+  const getWidgetConfig = useCallback((widgetId: string, sectionId: string): Record<string, any> | undefined => {
+    if (!localLayout) return undefined;
+    const section = localLayout.sections.find(s => s.id === sectionId);
+    if (!section) return undefined;
+    const widget = section.widgets.find(w => w.id === widgetId);
+    return widget?.config;
+  }, [localLayout]);
+
   const updateSectionLayout = useCallback((sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
@@ -484,6 +509,8 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     addWidget,
     removeWidget,
     reorderWidgets,
+    updateWidgetConfig,
+    getWidgetConfig,
     updateSectionLayout,
     addSection,
     removeSection,

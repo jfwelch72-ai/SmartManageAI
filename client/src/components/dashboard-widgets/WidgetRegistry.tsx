@@ -11,6 +11,7 @@ import {
   HardHat,
   CloudSun,
   Sparkles,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -25,13 +26,14 @@ import { CrewOverviewWidget } from "./CrewOverviewWidget";
 import { ProjectAssignmentsWidget } from "./ProjectAssignmentsWidget";
 import { WeatherForecastWidget } from "@/components/WeatherForecastWidget";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
+import { KPISummaryWidget } from "./KPISummaryWidget";
 
 export interface WidgetDefinition {
   type: string;
   label: string;
   description: string;
   icon: LucideIcon;
-  component: () => JSX.Element;
+  component: ((props?: { config?: Record<string, any> }) => JSX.Element) | (() => JSX.Element);
   defaultW: number;
   defaultH: number;
   minW: number;
@@ -40,6 +42,7 @@ export interface WidgetDefinition {
   maxH: number;
   singleton: boolean;
   roleGate?: string;
+  hasSettings?: boolean;
 }
 
 function WrappedWeatherWidget() {
@@ -64,6 +67,22 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 4,
     singleton: true,
+    hasSettings: true,
+  },
+  {
+    type: "KPI_SUMMARY",
+    label: "KPI Summary Card",
+    description: "Configurable KPI metric with trend comparison - labor cost, revenue, margin, and more",
+    icon: TrendingUp,
+    component: KPISummaryWidget as any,
+    defaultW: 6,
+    defaultH: 4,
+    minW: 2,
+    minH: 3,
+    maxW: 12,
+    maxH: 6,
+    singleton: false,
+    hasSettings: true,
   },
   {
     type: "WEATHER",

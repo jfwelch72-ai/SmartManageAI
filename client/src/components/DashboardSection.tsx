@@ -1,11 +1,12 @@
 import { useMemo, useEffect, useState } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition, getWidgetComponent } from "@/components/dashboard-widgets/WidgetRegistry";
-import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList } from "lucide-react";
+import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { WidgetSettingsDialog, WIDGETS_WITH_SETTINGS } from "@/components/WidgetSettingsDialog";
 import { cn } from "@/lib/utils";
 
 interface DashboardSectionProps {
@@ -20,6 +21,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
   const { isEditMode, removeWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, reorderSections } = useDashboardCustomization();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(section.title);
+  const [settingsWidget, setSettingsWidget] = useState<{ id: string; type: string } | null>(null);
 
   useEffect(() => {
     setTitleDraft(section.title);
@@ -181,6 +183,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 const widgetDef = getWidgetDefinition(widget.type);
                 const visibleIndex = widgetIndex;
                 const totalVisible = visibleWidgets.length;
+                const hasSettings = WIDGETS_WITH_SETTINGS.has(widget.type);
                 return (
                   <div
                     key={widget.id}
@@ -193,6 +196,22 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                           {widgetDef?.label || widget.type}
                         </span>
                         <div className="flex items-center gap-0.5">
+                          {hasSettings && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => setSettingsWidget({ id: widget.id, type: widget.type })}
+                                  data-testid={`button-widget-settings-${widget.id}`}
+                                >
+                                  <Settings2 className="w-3 h-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Widget settings</TooltipContent>
+                            </Tooltip>
+                          )}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -243,10 +262,20 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                         </div>
                       </div>
                     )}
-                    <WidgetComponent />
+                    <WidgetComponent config={widget.config} />
                   </div>
                 );
               })}
+
+              {settingsWidget && (
+                <WidgetSettingsDialog
+                  open={!!settingsWidget}
+                  onOpenChange={(open) => { if (!open) setSettingsWidget(null); }}
+                  widgetId={settingsWidget.id}
+                  widgetType={settingsWidget.type}
+                  sectionId={section.id}
+                />
+              )}
             </div>
           )}
         </CardContent>

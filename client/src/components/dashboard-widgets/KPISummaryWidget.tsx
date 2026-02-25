@@ -1,0 +1,143 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
+
+export interface KPIConfig {
+  metric?: string;
+  dateRange?: string;
+  comparison?: string;
+}
+
+export const DEFAULT_KPI_CONFIG: KPIConfig = {
+  metric: "ACTIVE_PROJECTS",
+  dateRange: "THIS_MONTH",
+  comparison: "LAST_MONTH",
+};
+
+export const KPI_METRICS = [
+  { value: "TOTAL_LABOR_COST", label: "Total Labor Cost", format: "currency" },
+  { value: "REVENUE_THIS_MONTH", label: "Revenue This Month", format: "currency" },
+  { value: "ACTIVE_PROJECTS", label: "Active Projects", format: "number" },
+  { value: "OPEN_RFIS", label: "Open RFIs", format: "number" },
+  { value: "OUTSTANDING_PAYABLES", label: "Outstanding Payables", format: "currency" },
+  { value: "GROSS_MARGIN", label: "Gross Margin %", format: "percent" },
+];
+
+export const KPI_DATE_RANGES = [
+  { value: "THIS_WEEK", label: "This Week" },
+  { value: "THIS_MONTH", label: "This Month" },
+  { value: "THIS_QUARTER", label: "This Quarter" },
+  { value: "THIS_YEAR", label: "This Year" },
+];
+
+export const KPI_COMPARISONS = [
+  { value: "LAST_WEEK", label: "vs Last Week" },
+  { value: "LAST_MONTH", label: "vs Last Month" },
+  { value: "LAST_QUARTER", label: "vs Last Quarter" },
+];
+
+function formatValue(value: number, format: string): string {
+  switch (format) {
+    case "currency":
+      return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+    case "percent":
+      return `${value}%`;
+    default:
+      return value.toLocaleString();
+  }
+}
+
+interface KPISummaryWidgetProps {
+  config?: KPIConfig;
+}
+
+export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
+  const merged = { ...DEFAULT_KPI_CONFIG, ...config };
+  const metricDef = KPI_METRICS.find(m => m.value === merged.metric) || KPI_METRICS[2];
+
+  const { data, isLoading } = useQuery<{
+    value: number;
+    previousValue: number;
+    changePercent: number;
+    label: string;
+    dateRangeLabel: string;
+    isEstimated: boolean;
+  }>({
+    queryKey: ["/api/dashboard/kpi", merged.metric, merged.dateRange, merged.comparison],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        metric: merged.metric || "ACTIVE_PROJECTS",
+        dateRange: merged.dateRange || "THIS_MONTH",
+        comparison: merged.comparison || "LAST_MONTH",
+      });
+      const res = await fetch(`/api/dashboard/kpi?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch KPI data");
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
+  const comparisonLabel = KPI_COMPARISONS.find(c => c.value === merged.comparison)?.label || "vs previous";
+
+  if (isLoading) {
+    return (
+      <Card data-testid="kpi-summary-loading">
+        <CardContent className="py-4 px-4 sm:px-6">
+          <div className="animate-pulse space-y-2">
+            <div className="h-3 w-24 bg-muted rounded" />
+            <div className="h-8 w-32 bg-muted rounded" />
+            <div className="h-3 w-20 bg-muted rounded" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const changePercent = data?.changePercent || 0;
+  const isPositive = changePercent > 0;
+  const isNegative = changePercent < 0;
+  const isNeutral = changePercent === 0;
+
+  return (
+    <Card data-testid="kpi-summary-card">
+      <CardContent className="py-4 px-4 sm:px-6">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted-foreground truncate">{data?.label || metricDef.label}</p>
+            <p className="text-2xl sm:text-3xl font-bold mt-1 truncate">
+              {data ? formatValue(data.value, metricDef.format) : "--"}
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "text-xs gap-1",
+                  isPositive && "bg-green-500/10 text-green-600",
+                  isNegative && "bg-red-500/10 text-red-600",
+                  isNeutral && "bg-muted text-muted-foreground"
+                )}
+              >
+                {isPositive && <TrendingUp className="w-3 h-3" />}
+                {isNegative && <TrendingDown className="w-3 h-3" />}
+                {isNeutral && <Minus className="w-3 h-3" />}
+                {isPositive ? "+" : ""}{changePercent}%
+              </Badge>
+              <span className="text-[11px] text-muted-foreground">{comparisonLabel}</span>
+            </div>
+            {data?.isEstimated && (
+              <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
+                <AlertTriangle className="w-3 h-3" />
+                Estimated
+              </div>
+            )}
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-muted-foreground">{data?.dateRangeLabel || ""}</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
