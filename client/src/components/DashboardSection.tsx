@@ -66,6 +66,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
   }, [visibleWidgets, isEditMode]);
 
   const isMobile = containerWidth < 768;
+  const useGridLayout = isEditMode && !isMobile;
 
   const responsiveLayouts = useMemo(() => {
     const makeFullWidthLayout = (cols: number): Layout[] =>
@@ -243,7 +244,63 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 {isEditMode ? "Add widgets to this section from the widget library" : "No widgets in this section"}
               </p>
             </div>
-          ) : isMobile ? (
+          ) : useGridLayout ? (
+            <ResponsiveGridLayout
+              className="layout"
+              layouts={{
+                lg: layoutItems,
+                md: responsiveLayouts.md,
+                sm: responsiveLayouts.sm,
+                xs: responsiveLayouts.xs,
+              }}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
+              cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
+              rowHeight={40}
+              width={containerWidth}
+              isDraggable={isEditMode}
+              isResizable={isEditMode}
+              onLayoutChange={handleLayoutChange}
+              draggableHandle=".widget-drag-handle"
+              compactType="vertical"
+              margin={[12, 12]}
+            >
+              {visibleWidgets.map((widget) => {
+                const WidgetComponent = getWidgetComponent(widget.type)!;
+
+                return (
+                  <div
+                    key={widget.id}
+                    className="relative ring-2 ring-dashed ring-primary/30 rounded-lg"
+                    data-testid={`widget-container-${widget.id}`}
+                  >
+                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 bg-primary/10 rounded-t-lg">
+                      <div className="widget-drag-handle cursor-grab active:cursor-grabbing flex items-center gap-1 text-xs text-muted-foreground">
+                        <GripVertical className="w-4 h-4" />
+                        <span className="font-medium">
+                          {getWidgetDefinition(widget.type)?.label || widget.type}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeWidget(widget.id, section.id);
+                        }}
+                        data-testid={`button-remove-widget-${widget.id}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <div className="h-full overflow-hidden pt-7">
+                      <WidgetComponent />
+                    </div>
+                  </div>
+                );
+              })}
+            </ResponsiveGridLayout>
+          ) : (
             <div className="space-y-3">
               {visibleWidgets.map((widget) => {
                 const WidgetComponent = getWidgetComponent(widget.type)!;
@@ -280,64 +337,6 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 );
               })}
             </div>
-          ) : (
-            <ResponsiveGridLayout
-              className="layout"
-              layouts={{
-                lg: layoutItems,
-                md: responsiveLayouts.md,
-                sm: responsiveLayouts.sm,
-                xs: responsiveLayouts.xs,
-              }}
-              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
-              cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
-              rowHeight={40}
-              width={containerWidth}
-              isDraggable={isEditMode}
-              isResizable={isEditMode}
-              onLayoutChange={handleLayoutChange}
-              draggableHandle=".widget-drag-handle"
-              compactType="vertical"
-              margin={[12, 12]}
-            >
-              {visibleWidgets.map((widget) => {
-                const WidgetComponent = getWidgetComponent(widget.type)!;
-
-                return (
-                  <div
-                    key={widget.id}
-                    className={cn("relative", isEditMode && "ring-2 ring-dashed ring-primary/30 rounded-lg")}
-                    data-testid={`widget-container-${widget.id}`}
-                  >
-                    {isEditMode && (
-                      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 bg-primary/10 rounded-t-lg">
-                        <div className="widget-drag-handle cursor-grab active:cursor-grabbing flex items-center gap-1 text-xs text-muted-foreground">
-                          <GripVertical className="w-4 h-4" />
-                          <span className="font-medium">
-                            {getWidgetDefinition(widget.type)?.label || widget.type}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeWidget(widget.id, section.id);
-                          }}
-                          data-testid={`button-remove-widget-${widget.id}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
-                    <div className={cn("h-full overflow-hidden", isEditMode && "pt-7")}>
-                      <WidgetComponent />
-                    </div>
-                  </div>
-                );
-              })}
-            </ResponsiveGridLayout>
           )}
         </CardContent>
       )}
