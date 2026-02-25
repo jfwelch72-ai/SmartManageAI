@@ -156,20 +156,28 @@ function validatePalette(palette: Partial<UserColorPalette>, mode: 'light' | 'da
 // DEFAULT LAYOUT CONFIGURATION
 // ============================================
 
+const KNOWN_WIDGET_TYPES = [
+  'QUICK_STATS', 'WEATHER', 'AI_INSIGHTS', 'MESSAGES', 'NOTIFICATIONS',
+  'CALENDAR_EVENTS', 'AI_TASKS', 'OUTSTANDING_ITEMS', 'ACTIVE_PROJECTS',
+  'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS'
+];
+
 const DEFAULT_WIDGETS: DashboardLayoutConfig = {
   widgets: [
-    { id: 'welcome', type: 'WELCOME', x: 0, y: 0, w: 12, h: 2, visible: true },
-    { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 2, w: 12, h: 2, visible: true },
-    { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 4, w: 12, h: 3, visible: true },
-    { id: 'messages', type: 'MESSAGES', x: 0, y: 7, w: 4, h: 4, visible: true },
-    { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 7, w: 4, h: 4, visible: true },
-    { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 7, w: 4, h: 4, visible: true },
-    { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 11, w: 6, h: 4, visible: true },
-    { id: 'active-bids', type: 'ACTIVE_BIDS', x: 6, y: 11, w: 6, h: 4, visible: true },
-    { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 15, w: 12, h: 3, visible: true },
+    { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 6, minH: 2, maxW: 12, maxH: 4 },
+    { id: 'weather', type: 'WEATHER', x: 0, y: 3, w: 12, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
+    { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 7, w: 12, h: 5, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 8 },
+    { id: 'messages', type: 'MESSAGES', x: 0, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 18, w: 4, h: 5, visible: true, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+    { id: 'outstanding-items', type: 'OUTSTANDING_ITEMS', x: 4, y: 18, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 8, y: 18, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'active-bids', type: 'ACTIVE_BIDS', x: 0, y: 24, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+    { id: 'project-assignments', type: 'PROJECT_ASSIGNMENTS', x: 4, y: 24, w: 8, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
   ],
   gridCols: 12,
-  version: 1
+  version: 2
 };
 
 // Preset color palettes
@@ -505,6 +513,9 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
     if (layout) {
       try {
         const config = JSON.parse(layout.layoutConfig) as DashboardLayoutConfig;
+        if (!config.version || config.version < DEFAULT_WIDGETS.version) {
+          return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
+        }
         return res.json({ layout: config, isCustom: layout.isCustom });
       } catch {
         return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
@@ -568,6 +579,13 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
     });
 
     const { layout } = schema.parse(req.body);
+
+    const unknownTypes = layout.widgets
+      .map(w => w.type)
+      .filter(t => !KNOWN_WIDGET_TYPES.includes(t));
+    if (unknownTypes.length > 0) {
+      return res.status(400).json({ error: `Unknown widget types: ${unknownTypes.join(', ')}` });
+    }
 
     // Upsert layout
     const [existing] = await db.select().from(userDashboardLayouts)

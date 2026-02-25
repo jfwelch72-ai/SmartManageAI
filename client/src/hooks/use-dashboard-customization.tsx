@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getWidgetDefinition } from "@/components/dashboard-widgets/WidgetRegistry";
 
 interface DashboardWidget {
   id: string;
@@ -17,7 +18,7 @@ interface DashboardWidget {
   maxH?: number;
 }
 
-interface DashboardLayoutConfig {
+export interface DashboardLayoutConfig {
   widgets: DashboardWidget[];
   gridCols: number;
   version: number;
@@ -68,10 +69,17 @@ interface DashboardCustomizationContextType {
   permissions: UserPermissions;
   isLoadingPermissions: boolean;
   layout: DashboardLayoutConfig | null;
+  localLayout: DashboardLayoutConfig | null;
   isLoadingLayout: boolean;
   saveLayout: (layout: DashboardLayoutConfig) => Promise<void>;
   resetLayout: () => Promise<void>;
   isSavingLayout: boolean;
+  addWidget: (type: string) => void;
+  removeWidget: (id: string) => void;
+  updateLayout: (gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
+  hasUnsavedChanges: boolean;
+  saveCurrentLayout: () => Promise<void>;
+  discardChanges: () => void;
   activePalette: ColorPalette | null;
   isLoadingPalette: boolean;
   savedPalettes: ColorPalette[];
@@ -89,6 +97,7 @@ const DashboardCustomizationContext = createContext<DashboardCustomizationContex
 export function DashboardCustomizationProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const [isEditMode, setIsEditMode] = useState(false);
+  const [localLayout, setLocalLayout] = useState<DashboardLayoutConfig | null>(null);
 
   const { data: permissions = { canCustomizeDashboard: false, canCustomizeColorScheme: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
@@ -109,6 +118,12 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   const { data: presetPalettes = {} } = useQuery<Record<string, any>>({
     queryKey: ["/api/dashboard/palettes/presets"],
   });
+
+  useEffect(() => {
+    if (layoutData?.layout) {
+      setLocalLayout(layoutData.layout);
+    }
+  }, [layoutData]);
 
   const saveLayoutMutation = useMutation({
     mutationFn: async (layout: DashboardLayoutConfig) => {
@@ -234,12 +249,93 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
       toast({ title: "Permission denied", description: "You don't have permission to customize your dashboard", variant: "destructive" });
       return;
     }
+    if (value && layoutData?.layout) {
+      setLocalLayout(JSON.parse(JSON.stringify(layoutData.layout)));
+    }
+    if (!value && layoutData?.layout) {
+      setLocalLayout(layoutData.layout);
+    }
     setIsEditMode(value);
-  }, [permissions, toast]);
+  }, [permissions, toast, layoutData]);
 
   const toggleEditMode = useCallback(() => {
     setEditMode(!isEditMode);
   }, [isEditMode, setEditMode]);
+
+  const addWidget = useCallback((type: string) => {
+    const def = getWidgetDefinition(type);
+    if (!def) return;
+
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      const existingIds = prev.widgets.map(w => w.id);
+      let newId = type.toLowerCase().replace(/_/g, '-');
+      if (existingIds.includes(newId)) {
+        newId = `${newId}-${Date.now()}`;
+      }
+
+      const maxY = prev.widgets.reduce((max, w) => Math.max(max, w.y + w.h), 0);
+
+      const newWidget: DashboardWidget = {
+        id: newId,
+        type,
+        x: 0,
+        y: maxY,
+        w: def.defaultW,
+        h: def.defaultH,
+        visible: true,
+        minW: def.minW,
+        minH: def.minH,
+        maxW: def.maxW,
+        maxH: def.maxH,
+      };
+
+      return {
+        ...prev,
+        widgets: [...prev.widgets, newWidget],
+      };
+    });
+  }, []);
+
+  const removeWidget = useCallback((id: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        widgets: prev.widgets.filter(w => w.id !== id),
+      };
+    });
+  }, []);
+
+  const updateLayout = useCallback((gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      const updatedWidgets = prev.widgets.map(widget => {
+        const layoutItem = gridLayout.find(l => l.i === widget.id);
+        if (layoutItem) {
+          return { ...widget, x: layoutItem.x, y: layoutItem.y, w: layoutItem.w, h: layoutItem.h };
+        }
+        return widget;
+      });
+      return { ...prev, widgets: updatedWidgets };
+    });
+  }, []);
+
+  const hasUnsavedChanges = (() => {
+    if (!localLayout || !layoutData?.layout) return false;
+    return JSON.stringify(localLayout) !== JSON.stringify(layoutData.layout);
+  })();
+
+  const saveCurrentLayout = useCallback(async () => {
+    if (!localLayout) return;
+    await saveLayoutMutation.mutateAsync(localLayout);
+  }, [localLayout, saveLayoutMutation]);
+
+  const discardChanges = useCallback(() => {
+    if (layoutData?.layout) {
+      setLocalLayout(layoutData.layout);
+    }
+  }, [layoutData]);
 
   const value: DashboardCustomizationContextType = {
     isEditMode,
@@ -248,10 +344,17 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     permissions,
     isLoadingPermissions,
     layout: layoutData?.layout || null,
+    localLayout,
     isLoadingLayout,
     saveLayout: async (layout) => { await saveLayoutMutation.mutateAsync(layout); },
     resetLayout: async () => { await resetLayoutMutation.mutateAsync(); },
     isSavingLayout: saveLayoutMutation.isPending || resetLayoutMutation.isPending,
+    addWidget,
+    removeWidget,
+    updateLayout,
+    hasUnsavedChanges,
+    saveCurrentLayout,
+    discardChanges,
     activePalette: paletteData?.palette || null,
     isLoadingPalette,
     savedPalettes,

@@ -45,6 +45,8 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Phase 3 Addenda Overlays & Advanced Calibration**: Addenda overlay system in TakeoffWorkspace (toggle addendum images as semi-transparent overlays on plan sheets with per-addendum opacity control). Added addenda preview-url endpoint. Advanced calibration tools: scale verification (measure known distance to check error %), multi-point calibration (average multiple references for higher accuracy), and calibration info display panel.
 *   **Mobile & Offline Sync Backend**: Created `server/mobileSyncRoutes.ts` with 6 API endpoints (GET status, POST sync trigger, DELETE device, POST clear-offline, GET conflicts, PATCH resolve conflict) backed by `mobile_devices` and `offline_sync_queue` tables. Frontend conflict resolution buttons now wired with mutations. All routes enforce org-scoped isolation.
 *   **PWA Support**: Added Progressive Web App capability — `manifest.json`, service worker (`sw.js`), PWA icons (192x192 & 512x512), Apple meta tags in `index.html`, and service worker registration in `main.tsx` (production-only). Service worker uses network-first for navigation, cache-first for static assets, and skips API requests. `server/index.ts` sets no-cache headers for `sw.js`.
+*   **Dashboard Drag-and-Drop Editor**: Wix-style dashboard customization system using `react-grid-layout` (v2 API). Components: `DashboardGrid.tsx` (12-col responsive grid with drag/resize in edit mode), `WidgetLibrary.tsx` (slide-out Sheet panel with search, role-gated widgets, singleton detection), `WidgetRegistry.tsx` (12 widget types with size constraints), 10 self-contained widget components in `client/src/components/dashboard-widgets/`. Context: `use-dashboard-customization.tsx` provides `addWidget`, `removeWidget`, `updateLayout` with functional state updates. Backend: versioned `DEFAULT_WIDGETS` with automatic upgrade for old layouts, `KNOWN_WIDGET_TYPES` validation on save. Edit mode toolbar in `DashboardEditMode.tsx` with save/reset/discard flows and unsaved changes detection.
+*   **Theme Picker WCAG Fix**: All preset palette colors (default/forest/sunset/ocean) now pass WCAG AA 4.5:1 contrast ratio. Validation changed from hard 400 block to soft warning — saves succeed with `contrastWarnings` in response.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
@@ -57,6 +59,7 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **node-cron**: For scheduling backend tasks.
 *   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.
 *   **Recharts**: Library for data visualization charts.
+*   **react-grid-layout**: Drag-and-drop grid layout for the dashboard editor.
 *   **QuickBooks Online**: For accounting integrations.
 *   **Google Workspace (Gmail, Calendar)**: For email and calendar integrations.
 *   **Microsoft 365 (Mail, Calendar)**: For email and calendar integrations.

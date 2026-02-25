@@ -18,20 +18,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Edit, Lock, RotateCcw, Save, X, Settings2 } from "lucide-react";
+import { Edit, LayoutGrid, RotateCcw, Save, X, Settings2, Plus } from "lucide-react";
 import { useState } from "react";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 
 interface DashboardEditModeProps {
-  onSave?: () => void;
-  onReset?: () => void;
-  hasUnsavedChanges?: boolean;
+  onToggleWidgetLibrary?: () => void;
+  widgetLibraryOpen?: boolean;
 }
 
-export function DashboardEditMode({ onSave, onReset, hasUnsavedChanges = false }: DashboardEditModeProps) {
-  const { isEditMode, setEditMode, permissions, isSavingLayout, resetLayout } = useDashboardCustomization();
+export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: DashboardEditModeProps) {
+  const { isEditMode, setEditMode, permissions, isSavingLayout, resetLayout, hasUnsavedChanges, saveCurrentLayout, discardChanges, localLayout } = useDashboardCustomization();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
+
+  const widgetCount = localLayout?.widgets?.filter(w => w.visible).length || 0;
 
   const handleExitEditMode = () => {
     if (hasUnsavedChanges) {
@@ -41,14 +42,27 @@ export function DashboardEditMode({ onSave, onReset, hasUnsavedChanges = false }
     }
   };
 
-  const handleConfirmExit = () => {
-    setShowExitDialog(false);
-    setEditMode(false);
+  const handleSave = async () => {
+    try {
+      await saveCurrentLayout();
+      setEditMode(false);
+    } catch {
+    }
   };
 
   const handleResetLayout = async () => {
-    await resetLayout();
-    setShowResetDialog(false);
+    try {
+      await resetLayout();
+      setShowResetDialog(false);
+      setEditMode(false);
+    } catch {
+      setShowResetDialog(false);
+    }
+  };
+
+  const handleConfirmExit = () => {
+    discardChanges();
+    setShowExitDialog(false);
     setEditMode(false);
   };
 
@@ -64,6 +78,25 @@ export function DashboardEditMode({ onSave, onReset, hasUnsavedChanges = false }
             <Edit className="w-3 h-3" />
             Edit Mode
           </Badge>
+
+          <Badge variant="secondary" className="text-xs">
+            {widgetCount} widget{widgetCount !== 1 ? 's' : ''}
+          </Badge>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                size="sm" 
+                variant={widgetLibraryOpen ? "default" : "outline"}
+                onClick={onToggleWidgetLibrary}
+                data-testid="button-toggle-widget-library"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add Widget
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Browse and add widgets</TooltipContent>
+          </Tooltip>
           
           <Tooltip>
             <TooltipTrigger asChild>
@@ -81,17 +114,15 @@ export function DashboardEditMode({ onSave, onReset, hasUnsavedChanges = false }
             <TooltipContent>Reset to default layout</TooltipContent>
           </Tooltip>
 
-          {onSave && (
-            <Button 
-              size="sm" 
-              onClick={onSave}
-              disabled={isSavingLayout}
-              data-testid="button-save-layout"
-            >
-              <Save className="w-4 h-4 mr-1" />
-              Save
-            </Button>
-          )}
+          <Button 
+            size="sm" 
+            onClick={handleSave}
+            disabled={isSavingLayout || !hasUnsavedChanges}
+            data-testid="button-save-layout"
+          >
+            <Save className="w-4 h-4 mr-1" />
+            Save
+          </Button>
 
           <Button 
             size="sm" 
@@ -151,7 +182,7 @@ export function DashboardEditMode({ onSave, onReset, hasUnsavedChanges = false }
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => setEditMode(true)} data-testid="menu-customize-dashboard">
-          <Edit className="w-4 h-4 mr-2" />
+          <LayoutGrid className="w-4 h-4 mr-2" />
           Customize Dashboard
         </DropdownMenuItem>
         <DropdownMenuSeparator />
