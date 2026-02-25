@@ -90,12 +90,14 @@ interface DashboardCustomizationContextType {
   isSavingLayout: boolean;
   addWidget: (type: string, sectionId?: string) => void;
   removeWidget: (widgetId: string, sectionId: string) => void;
+  duplicateWidget: (widgetId: string, sectionId: string) => void;
   reorderWidgets: (sectionId: string, fromIndex: number, toIndex: number) => void;
   updateWidgetConfig: (widgetId: string, sectionId: string, config: Record<string, any>) => void;
   getWidgetConfig: (widgetId: string, sectionId: string) => Record<string, any> | undefined;
   updateSectionLayout: (sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
   addSection: (title: string, columns: number) => void;
   removeSection: (sectionId: string) => void;
+  duplicateSection: (sectionId: string) => void;
   updateSectionTitle: (sectionId: string, title: string) => void;
   updateSectionColumns: (sectionId: string, columns: number) => void;
   toggleSectionCollapse: (sectionId: string) => void;
@@ -345,6 +347,28 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     });
   }, []);
 
+  const duplicateWidget = useCallback((widgetId: string, sectionId: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s => {
+          if (s.id !== sectionId) return s;
+          const widgetIndex = s.widgets.findIndex(w => w.id === widgetId);
+          if (widgetIndex === -1) return s;
+          const original = s.widgets[widgetIndex];
+          const cloned: DashboardWidget = {
+            ...JSON.parse(JSON.stringify(original)),
+            id: `${original.type.toLowerCase().replace(/_/g, '-')}-${Date.now()}`,
+          };
+          const widgets = [...s.widgets];
+          widgets.splice(widgetIndex + 1, 0, cloned);
+          return { ...s, widgets };
+        }),
+      };
+    });
+  }, []);
+
   const removeWidget = useCallback((widgetId: string, sectionId: string) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
@@ -431,6 +455,29 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     });
   }, []);
 
+  const duplicateSection = useCallback((sectionId: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      const sectionIndex = prev.sections.findIndex(s => s.id === sectionId);
+      if (sectionIndex === -1) return prev;
+      const original = prev.sections[sectionIndex];
+      const now = Date.now();
+      const cloned: DashboardSection = {
+        id: `section-${now}`,
+        title: `${original.title} (Copy)`,
+        columns: original.columns,
+        collapsed: false,
+        widgets: original.widgets.map((w, i) => ({
+          ...JSON.parse(JSON.stringify(w)),
+          id: `${w.type.toLowerCase().replace(/_/g, '-')}-${now}-${i}`,
+        })),
+      };
+      const sections = [...prev.sections];
+      sections.splice(sectionIndex + 1, 0, cloned);
+      return { ...prev, sections };
+    });
+  }, []);
+
   const removeSection = useCallback((sectionId: string) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
@@ -508,12 +555,14 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     isSavingLayout: saveLayoutMutation.isPending || resetLayoutMutation.isPending,
     addWidget,
     removeWidget,
+    duplicateWidget,
     reorderWidgets,
     updateWidgetConfig,
     getWidgetConfig,
     updateSectionLayout,
     addSection,
     removeSection,
+    duplicateSection,
     updateSectionTitle,
     updateSectionColumns,
     toggleSectionCollapse,

@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useState } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition, getWidgetComponent } from "@/components/dashboard-widgets/WidgetRegistry";
-import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2 } from "lucide-react";
+import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList, Settings2, Copy, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -13,12 +13,13 @@ interface DashboardSectionProps {
   section: DashboardSectionType;
   sectionIndex: number;
   totalSections: number;
+  onAddWidget?: (sectionId: string) => void;
 }
 
 const COLUMN_ICONS = [LayoutList, Columns2, Columns3, Columns4];
 
-export function DashboardSectionComponent({ section, sectionIndex, totalSections }: DashboardSectionProps) {
-  const { isEditMode, removeWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, reorderSections } = useDashboardCustomization();
+export function DashboardSectionComponent({ section, sectionIndex, totalSections, onAddWidget }: DashboardSectionProps) {
+  const { isEditMode, removeWidget, duplicateWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, duplicateSection, reorderSections } = useDashboardCustomization();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(section.title);
   const [settingsWidget, setSettingsWidget] = useState<{ id: string; type: string } | null>(null);
@@ -151,6 +152,24 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
 
               <Tooltip>
                 <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 sm:h-7 sm:w-7" onClick={() => onAddWidget?.(section.id)} data-testid={`button-add-widget-${section.id}`}>
+                    <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Add widget</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 sm:h-7 sm:w-7" onClick={() => duplicateSection(section.id)} data-testid={`button-duplicate-section-${section.id}`}>
+                    <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Duplicate section</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-6 w-6 sm:h-7 sm:w-7 text-destructive hover:text-destructive" onClick={() => removeSection(section.id)} data-testid={`button-delete-section-${section.id}`}>
                     <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </Button>
@@ -171,10 +190,16 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
       {!section.collapsed && (
         <CardContent className="pt-0 px-2 pb-2">
           {visibleWidgets.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground border-2 border-dashed rounded-lg gap-2">
               <p className="text-sm">
-                {isEditMode ? "Add widgets to this section from the widget library" : "No widgets in this section"}
+                {isEditMode ? "No widgets in this section" : "No widgets in this section"}
               </p>
+              {isEditMode && (
+                <Button variant="outline" size="sm" onClick={() => onAddWidget?.(section.id)} data-testid={`button-add-widget-empty-${section.id}`}>
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                  Add Widget
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -212,6 +237,20 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                               <TooltipContent>Widget settings</TooltipContent>
                             </Tooltip>
                           )}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => duplicateWidget(widget.id, section.id)}
+                                data-testid={`button-duplicate-widget-${widget.id}`}
+                              >
+                                <Copy className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Duplicate widget</TooltipContent>
+                          </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button

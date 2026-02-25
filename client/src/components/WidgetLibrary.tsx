@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Sheet,
   SheetContent,
@@ -30,6 +30,7 @@ import { hasManagementAccess } from "@/lib/rbac";
 interface WidgetLibraryProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultSectionId?: string;
 }
 
 function isWidgetAvailableForRole(
@@ -43,11 +44,15 @@ function isWidgetAvailableForRole(
   return true;
 }
 
-export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
+export function WidgetLibrary({ open, onOpenChange, defaultSectionId }: WidgetLibraryProps) {
   const { user } = useAuth();
   const { localLayout, addWidget } = useDashboardCustomization();
   const [searchQuery, setSearchQuery] = useState("");
-  const [targetSectionId, setTargetSectionId] = useState<string>("");
+  const [targetSectionId, setTargetSectionId] = useState<string>(defaultSectionId || "");
+
+  useEffect(() => {
+    setTargetSectionId(defaultSectionId || "");
+  }, [defaultSectionId]);
 
   const sections = localLayout?.sections || [];
   const allWidgets = getAllWidgets(localLayout);

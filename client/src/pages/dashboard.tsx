@@ -27,6 +27,17 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { isEditMode, isLoadingLayout } = useDashboardCustomization();
   const [widgetLibraryOpen, setWidgetLibraryOpen] = useState(false);
+  const [widgetLibraryTargetSection, setWidgetLibraryTargetSection] = useState<string | undefined>(undefined);
+
+  const handleAddWidgetToSection = (sectionId: string) => {
+    setWidgetLibraryTargetSection(sectionId);
+    setWidgetLibraryOpen(true);
+  };
+
+  const handleWidgetLibraryOpenChange = (open: boolean) => {
+    setWidgetLibraryOpen(open);
+    if (!open) setWidgetLibraryTargetSection(undefined);
+  };
 
   if (isSuperAdmin(user?.role)) {
     return <Redirect to="/admin" />;
@@ -69,7 +80,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <ThemePicker />
               <DashboardEditMode 
-                onToggleWidgetLibrary={() => setWidgetLibraryOpen(!widgetLibraryOpen)}
+                onToggleWidgetLibrary={() => { setWidgetLibraryTargetSection(undefined); setWidgetLibraryOpen(!widgetLibraryOpen); }}
                 widgetLibraryOpen={widgetLibraryOpen}
               />
               {hasManagementAccess(user?.role) && !isEditMode && (
@@ -87,10 +98,10 @@ export default function DashboardPage() {
         {isLoadingLayout ? (
           <div className="text-center py-12 text-muted-foreground">Loading your dashboard...</div>
         ) : (
-          <DashboardGrid />
+          <DashboardGrid onAddWidgetToSection={handleAddWidgetToSection} />
         )}
 
-        <WidgetLibrary open={widgetLibraryOpen} onOpenChange={setWidgetLibraryOpen} />
+        <WidgetLibrary open={widgetLibraryOpen} onOpenChange={handleWidgetLibraryOpenChange} defaultSectionId={widgetLibraryTargetSection} />
       </main>
     </div>
   );

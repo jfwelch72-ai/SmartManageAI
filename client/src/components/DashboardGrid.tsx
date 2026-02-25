@@ -1,7 +1,11 @@
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { DashboardSectionComponent } from "@/components/DashboardSection";
 
-export function DashboardGrid() {
+interface DashboardGridProps {
+  onAddWidgetToSection?: (sectionId: string) => void;
+}
+
+export function DashboardGrid({ onAddWidgetToSection }: DashboardGridProps) {
   const { isEditMode, localLayout } = useDashboardCustomization();
   const sections = localLayout?.sections || [];
 
@@ -21,6 +25,7 @@ export function DashboardGrid() {
           section={section}
           sectionIndex={index}
           totalSections={sections.length}
+          onAddWidget={onAddWidgetToSection}
         />
       ))}
     </div>
