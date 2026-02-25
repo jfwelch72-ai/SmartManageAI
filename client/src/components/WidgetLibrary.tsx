@@ -75,7 +75,7 @@ export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[360px] sm:w-[400px]">
+      <SheetContent side="right" className="w-full sm:w-[400px]">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <LayoutGrid className="w-5 h-5" />

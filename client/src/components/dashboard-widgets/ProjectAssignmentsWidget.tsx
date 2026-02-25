@@ -64,19 +64,19 @@ export function ProjectAssignmentsWidget() {
           {projectAssignmentNotifications.map((notification) => (
             <div
               key={notification.id}
-              className="flex items-center justify-between p-3 bg-background rounded-md"
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-background rounded-md"
               data-testid={`assignment-notification-${notification.id}`}
             >
-              <div className="flex items-center gap-3">
-                <Bell className="w-4 h-4 text-blue-500" />
-                <div>
-                  <p className="text-sm font-medium">{notification.title}</p>
-                  <p className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-3 min-w-0">
+                <Bell className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{notification.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">
                     {notification.message}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0 pl-7 sm:pl-0">
                 {notification.relatedEntityId && (
                   <Button
                     variant="outline"

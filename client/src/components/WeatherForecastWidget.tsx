@@ -77,7 +77,7 @@ function DayCard({ day, isToday }: { day: WeatherDay; isToday: boolean }) {
 
   return (
     <div 
-      className={`flex-shrink-0 w-24 p-3 rounded-lg border bg-gradient-to-b ${gradient} ${isToday ? "ring-2 ring-primary" : ""}`}
+      className={`flex-shrink-0 w-20 sm:w-24 p-2 sm:p-3 rounded-lg border bg-gradient-to-b ${gradient} ${isToday ? "ring-2 ring-primary" : ""}`}
       data-testid={`weather-day-${day.date}`}
     >
       <div className="text-center">
@@ -217,7 +217,7 @@ export function WeatherForecastWidget({
         </div>
 
         {isSearching && (
-          <div className="mt-2 space-y-2">
+          <div className="relative mt-2 space-y-2">
             <Input
               placeholder="Search location..."
               value={searchQuery}
@@ -226,7 +226,7 @@ export function WeatherForecastWidget({
               data-testid="input-search-location"
             />
             {searchResults?.results && searchResults.results.length > 0 && (
-              <div className="absolute z-10 w-full max-w-xs bg-background border rounded-md shadow-lg mt-1">
+              <div className="absolute z-10 left-0 right-0 bg-background border rounded-md shadow-lg mt-1">
                 {searchResults.results.map((result, i) => (
                   <button
                     key={i}
@@ -249,17 +249,17 @@ export function WeatherForecastWidget({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Today</p>
-                <p className="text-3xl font-bold">{Math.round(todayConditions.tempHigh)}°F</p>
+                <p className="text-2xl sm:text-3xl font-bold">{Math.round(todayConditions.tempHigh)}°F</p>
                 <p className="text-sm text-muted-foreground">{todayConditions.conditions}</p>
               </div>
               <div className="text-center">
                 {(() => {
                   const TodayIcon = getWeatherIcon(todayConditions.weatherCode);
-                  return <TodayIcon className="w-16 h-16 text-foreground" />;
+                  return <TodayIcon className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />;
                 })()}
               </div>
             </div>
-            <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-1">
                 <Thermometer className="w-4 h-4" />
                 <span>L: {Math.round(todayConditions.tempLow)}°</span>

@@ -40,15 +40,15 @@ export function QuickStatsWidget() {
         onClick={() => setLocation("/projects?status=ACTIVE")}
         data-testid="stat-active-projects"
       >
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4 px-3 sm:px-6">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-2xl font-bold">
+            <div className="min-w-0">
+              <p className="text-lg sm:text-2xl font-bold truncate">
                 {stats?.activeProjectsCount || 0}
               </p>
-              <p className="text-xs text-muted-foreground">Active Projects</p>
+              <p className="text-xs text-muted-foreground truncate">Active Projects</p>
             </div>
-            <Briefcase className="w-6 h-6 text-muted-foreground/50" />
+            <Briefcase className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/50 flex-shrink-0" />
           </div>
         </CardContent>
       </Card>
@@ -59,13 +59,13 @@ export function QuickStatsWidget() {
           onClick={() => setLocation("/bids")}
           data-testid="stat-active-bids"
         >
-          <CardContent className="pt-4 pb-4">
+          <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4 px-3 sm:px-6">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-2xl font-bold">{bids.length}</p>
-                <p className="text-xs text-muted-foreground">Active Bids</p>
+              <div className="min-w-0">
+                <p className="text-lg sm:text-2xl font-bold truncate">{bids.length}</p>
+                <p className="text-xs text-muted-foreground truncate">Active Bids</p>
               </div>
-              <FileText className="w-6 h-6 text-muted-foreground/50" />
+              <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/50 flex-shrink-0" />
             </div>
           </CardContent>
         </Card>
@@ -76,13 +76,13 @@ export function QuickStatsWidget() {
         onClick={() => setLocation("/messages")}
         data-testid="stat-unread-messages"
       >
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4 px-3 sm:px-6">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-2xl font-bold">{totalUnreadMessages}</p>
-              <p className="text-xs text-muted-foreground">Unread Messages</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-2xl font-bold truncate">{totalUnreadMessages}</p>
+              <p className="text-xs text-muted-foreground truncate">Unread Messages</p>
             </div>
-            <MessageSquare className="w-6 h-6 text-muted-foreground/50" />
+            <MessageSquare className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/50 flex-shrink-0" />
           </div>
         </CardContent>
       </Card>
@@ -92,13 +92,13 @@ export function QuickStatsWidget() {
         onClick={() => setLocation("/calendar")}
         data-testid="stat-upcoming-events"
       >
-        <CardContent className="pt-4 pb-4">
+        <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4 px-3 sm:px-6">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-2xl font-bold">{upcomingEvents.length}</p>
-              <p className="text-xs text-muted-foreground">Upcoming Events</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-2xl font-bold truncate">{upcomingEvents.length}</p>
+              <p className="text-xs text-muted-foreground truncate">Upcoming Events</p>
             </div>
-            <Calendar className="w-6 h-6 text-muted-foreground/50" />
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/50 flex-shrink-0" />
           </div>
         </CardContent>
       </Card>

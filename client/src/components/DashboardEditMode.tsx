@@ -91,14 +91,14 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
   if (isEditMode) {
     return (
       <>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 gap-1">
             <Edit className="w-3 h-3" />
-            Edit Mode
+            <span className="hidden sm:inline">Edit Mode</span>
           </Badge>
 
           <Badge variant="secondary" className="text-xs">
-            {sectionCount} section{sectionCount !== 1 ? 's' : ''} · {widgetCount} widget{widgetCount !== 1 ? 's' : ''}
+            {sectionCount}s · {widgetCount}w
           </Badge>
 
           <Popover open={showAddSection} onOpenChange={setShowAddSection}>
@@ -106,8 +106,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
                   <Button size="sm" variant="outline" data-testid="button-add-section">
-                    <Layers className="w-4 h-4 mr-1" />
-                    Add Section
+                    <Layers className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline">Add Section</span>
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
@@ -161,8 +161,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
                 onClick={onToggleWidgetLibrary}
                 data-testid="button-toggle-widget-library"
               >
-                <Plus className="w-4 h-4 mr-1" />
-                Add Widget
+                <Plus className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Add Widget</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>Browse and add widgets</TooltipContent>
@@ -177,8 +177,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
                 disabled={isSavingLayout}
                 data-testid="button-reset-layout"
               >
-                <RotateCcw className="w-4 h-4 mr-1" />
-                Reset
+                <RotateCcw className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Reset</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>Reset to default layout</TooltipContent>
@@ -190,8 +190,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
             disabled={isSavingLayout || !hasUnsavedChanges}
             data-testid="button-save-layout"
           >
-            <Save className="w-4 h-4 mr-1" />
-            Save
+            <Save className="w-4 h-4 sm:mr-1" />
+            <span className="hidden sm:inline">Save</span>
           </Button>
 
           <Button 
@@ -201,8 +201,8 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
             disabled={isSavingLayout}
             data-testid="button-exit-edit-mode"
           >
-            <X className="w-4 h-4 mr-1" />
-            Done
+            <X className="w-4 h-4 sm:mr-1" />
+            <span className="hidden sm:inline">Done</span>
           </Button>
         </div>
 
