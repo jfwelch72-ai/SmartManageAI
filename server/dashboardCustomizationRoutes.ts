@@ -184,7 +184,7 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 6, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
       ],
     },
     {
@@ -193,8 +193,8 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
       columns: 1,
       collapsed: false,
       widgets: [
-        { id: 'weather', type: 'WEATHER', x: 0, y: 0, w: 12, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
-        { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 4, w: 12, h: 5, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 8 },
+        { id: 'weather', type: 'WEATHER', x: 0, y: 0, w: 12, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 4, w: 12, h: 5, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 8 },
       ],
     },
     {
@@ -203,9 +203,9 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
     {
@@ -214,9 +214,9 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
       columns: 3,
       collapsed: false,
       widgets: [
-        { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 0, w: 4, h: 5, visible: true, minW: 3, minH: 3, maxW: 8, maxH: 8 },
-        { id: 'outstanding-items', type: 'OUTSTANDING_ITEMS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 0, w: 4, h: 5, visible: true, minW: 2, minH: 3, maxW: 8, maxH: 8 },
+        { id: 'outstanding-items', type: 'OUTSTANDING_ITEMS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
       ],
     },
     {
@@ -225,8 +225,8 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
       columns: 2,
       collapsed: false,
       widgets: [
-        { id: 'active-bids', type: 'ACTIVE_BIDS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-        { id: 'project-assignments', type: 'PROJECT_ASSIGNMENTS', x: 4, y: 0, w: 8, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'active-bids', type: 'ACTIVE_BIDS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'project-assignments', type: 'PROJECT_ASSIGNMENTS', x: 4, y: 0, w: 8, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
       ],
     },
   ],

@@ -65,6 +65,31 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
     });
   }, [visibleWidgets, isEditMode]);
 
+  const isMobile = containerWidth < 768;
+
+  const responsiveLayouts = useMemo(() => {
+    const makeFullWidthLayout = (cols: number): Layout[] =>
+      visibleWidgets.map((w, i) => ({
+        i: w.id,
+        x: 0,
+        y: i * 6,
+        w: cols,
+        h: w.h,
+        minW: 1,
+        minH: w.minH || 2,
+        maxW: cols,
+        maxH: w.maxH || 12,
+        static: !isEditMode,
+        isDraggable: isEditMode,
+        isResizable: isEditMode,
+      }));
+    return {
+      md: makeFullWidthLayout(8),
+      sm: makeFullWidthLayout(4),
+      xs: makeFullWidthLayout(2),
+    };
+  }, [visibleWidgets, isEditMode]);
+
   const handleLayoutChange = useCallback(
     (newLayout: Layout[]) => {
       if (!isEditMode) return;
@@ -218,10 +243,52 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                 {isEditMode ? "Add widgets to this section from the widget library" : "No widgets in this section"}
               </p>
             </div>
+          ) : isMobile ? (
+            <div className="space-y-3">
+              {visibleWidgets.map((widget) => {
+                const WidgetComponent = getWidgetComponent(widget.type)!;
+                return (
+                  <div
+                    key={widget.id}
+                    className={cn("relative", isEditMode && "ring-2 ring-dashed ring-primary/30 rounded-lg")}
+                    data-testid={`widget-container-${widget.id}`}
+                  >
+                    {isEditMode && (
+                      <div className="flex items-center justify-between px-2 py-1 bg-primary/10 rounded-t-lg">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <GripVertical className="w-4 h-4" />
+                          <span className="font-medium">
+                            {getWidgetDefinition(widget.type)?.label || widget.type}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeWidget(widget.id, section.id);
+                          }}
+                          data-testid={`button-remove-widget-${widget.id}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
+                    <WidgetComponent />
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <ResponsiveGridLayout
               className="layout"
-              layouts={{ lg: layoutItems }}
+              layouts={{
+                lg: layoutItems,
+                md: responsiveLayouts.md,
+                sm: responsiveLayouts.sm,
+                xs: responsiveLayouts.xs,
+              }}
               breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
               cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
               rowHeight={40}
@@ -264,7 +331,7 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                         </Button>
                       </div>
                     )}
-                    <div className={cn("h-full overflow-auto", isEditMode && "pt-7")}>
+                    <div className={cn("h-full overflow-hidden", isEditMode && "pt-7")}>
                       <WidgetComponent />
                     </div>
                   </div>
