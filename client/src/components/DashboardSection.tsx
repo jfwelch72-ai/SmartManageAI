@@ -1,10 +1,7 @@
-import { useMemo, useCallback, useRef, useEffect, useState } from "react";
-import { ResponsiveGridLayout, type Layout } from "react-grid-layout";
-import "react-grid-layout/css/styles.css";
-import "react-resizable/css/styles.css";
+import { useMemo, useEffect, useState } from "react";
 import { useDashboardCustomization, type DashboardSection as DashboardSectionType } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition, getWidgetComponent } from "@/components/dashboard-widgets/WidgetRegistry";
-import { GripVertical, X, ChevronDown, ChevronRight, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList } from "lucide-react";
+import { GripVertical, X, ChevronDown, ChevronRight, ChevronUp, Pencil, Trash2, Check, Columns2, Columns3, Columns4, LayoutList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -20,22 +17,9 @@ interface DashboardSectionProps {
 const COLUMN_ICONS = [LayoutList, Columns2, Columns3, Columns4];
 
 export function DashboardSectionComponent({ section, sectionIndex, totalSections }: DashboardSectionProps) {
-  const { isEditMode, updateSectionLayout, removeWidget, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, reorderSections } = useDashboardCustomization();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(1200);
+  const { isEditMode, removeWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, reorderSections } = useDashboardCustomization();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(section.title);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     setTitleDraft(section.title);
@@ -44,60 +28,6 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
   const visibleWidgets = useMemo(() => {
     return section.widgets.filter((w) => w.visible && getWidgetComponent(w.type));
   }, [section.widgets]);
-
-  const layoutItems: Layout[] = useMemo(() => {
-    return visibleWidgets.map((w) => {
-      const def = getWidgetDefinition(w.type);
-      return {
-        i: w.id,
-        x: w.x,
-        y: w.y,
-        w: w.w,
-        h: w.h,
-        minW: w.minW || def?.minW || 2,
-        minH: w.minH || def?.minH || 2,
-        maxW: w.maxW || def?.maxW || 12,
-        maxH: w.maxH || def?.maxH || 12,
-        static: !isEditMode,
-        isDraggable: isEditMode,
-        isResizable: isEditMode,
-      };
-    });
-  }, [visibleWidgets, isEditMode]);
-
-  const isMobile = containerWidth < 768;
-  const useGridLayout = isEditMode && !isMobile;
-
-  const responsiveLayouts = useMemo(() => {
-    const makeFullWidthLayout = (cols: number): Layout[] =>
-      visibleWidgets.map((w, i) => ({
-        i: w.id,
-        x: 0,
-        y: i * 6,
-        w: cols,
-        h: w.h,
-        minW: 1,
-        minH: w.minH || 2,
-        maxW: cols,
-        maxH: w.maxH || 12,
-        static: !isEditMode,
-        isDraggable: isEditMode,
-        isResizable: isEditMode,
-      }));
-    return {
-      md: makeFullWidthLayout(8),
-      sm: makeFullWidthLayout(4),
-      xs: makeFullWidthLayout(2),
-    };
-  }, [visibleWidgets, isEditMode]);
-
-  const handleLayoutChange = useCallback(
-    (newLayout: Layout[]) => {
-      if (!isEditMode) return;
-      updateSectionLayout(section.id, newLayout);
-    },
-    [isEditMode, updateSectionLayout, section.id]
-  );
 
   const handleSaveTitle = () => {
     if (titleDraft.trim()) {
@@ -237,99 +167,80 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
       </CardHeader>
 
       {!section.collapsed && (
-        <CardContent className="pt-0 px-2 pb-2" ref={containerRef}>
+        <CardContent className="pt-0 px-2 pb-2">
           {visibleWidgets.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
               <p className="text-sm">
                 {isEditMode ? "Add widgets to this section from the widget library" : "No widgets in this section"}
               </p>
             </div>
-          ) : useGridLayout ? (
-            <ResponsiveGridLayout
-              className="layout"
-              layouts={{
-                lg: layoutItems,
-                md: responsiveLayouts.md,
-                sm: responsiveLayouts.sm,
-                xs: responsiveLayouts.xs,
-              }}
-              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
-              cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
-              rowHeight={40}
-              width={containerWidth}
-              isDraggable={isEditMode}
-              isResizable={isEditMode}
-              onLayoutChange={handleLayoutChange}
-              draggableHandle=".widget-drag-handle"
-              compactType="vertical"
-              margin={[12, 12]}
-            >
-              {visibleWidgets.map((widget) => {
-                const WidgetComponent = getWidgetComponent(widget.type)!;
-
-                return (
-                  <div
-                    key={widget.id}
-                    className="relative ring-2 ring-dashed ring-primary/30 rounded-lg"
-                    data-testid={`widget-container-${widget.id}`}
-                  >
-                    <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-2 py-1 bg-primary/10 rounded-t-lg">
-                      <div className="widget-drag-handle cursor-grab active:cursor-grabbing flex items-center gap-1 text-xs text-muted-foreground">
-                        <GripVertical className="w-4 h-4" />
-                        <span className="font-medium">
-                          {getWidgetDefinition(widget.type)?.label || widget.type}
-                        </span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeWidget(widget.id, section.id);
-                        }}
-                        data-testid={`button-remove-widget-${widget.id}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </Button>
-                    </div>
-                    <div className="h-full overflow-hidden pt-7">
-                      <WidgetComponent />
-                    </div>
-                  </div>
-                );
-              })}
-            </ResponsiveGridLayout>
           ) : (
             <div className="space-y-3">
-              {visibleWidgets.map((widget) => {
+              {visibleWidgets.map((widget, widgetIndex) => {
                 const WidgetComponent = getWidgetComponent(widget.type)!;
+                const widgetDef = getWidgetDefinition(widget.type);
+                const visibleIndex = widgetIndex;
+                const totalVisible = visibleWidgets.length;
                 return (
                   <div
                     key={widget.id}
-                    className={cn("relative", isEditMode && "ring-2 ring-dashed ring-primary/30 rounded-lg")}
+                    className={cn("relative group", isEditMode && "ring-1 ring-dashed ring-primary/20 rounded-lg")}
                     data-testid={`widget-container-${widget.id}`}
                   >
                     {isEditMode && (
-                      <div className="flex items-center justify-between px-2 py-1 bg-primary/10 rounded-t-lg">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <GripVertical className="w-4 h-4" />
-                          <span className="font-medium">
-                            {getWidgetDefinition(widget.type)?.label || widget.type}
-                          </span>
+                      <div className="flex items-center justify-between px-2 py-1 bg-muted/50 rounded-t-lg border-b border-border/50">
+                        <span className="text-xs font-medium text-muted-foreground truncate">
+                          {widgetDef?.label || widget.type}
+                        </span>
+                        <div className="flex items-center gap-0.5">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                disabled={visibleIndex === 0}
+                                onClick={() => reorderWidgets(section.id, visibleIndex, visibleIndex - 1)}
+                                data-testid={`button-widget-up-${widget.id}`}
+                              >
+                                <ChevronUp className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Move up</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                disabled={visibleIndex === totalVisible - 1}
+                                onClick={() => reorderWidgets(section.id, visibleIndex, visibleIndex + 1)}
+                                data-testid={`button-widget-down-${widget.id}`}
+                              >
+                                <ChevronDown className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Move down</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeWidget(widget.id, section.id);
+                                }}
+                                data-testid={`button-remove-widget-${widget.id}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Remove widget</TooltipContent>
+                          </Tooltip>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeWidget(widget.id, section.id);
-                          }}
-                          data-testid={`button-remove-widget-${widget.id}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
                       </div>
                     )}
                     <WidgetComponent />

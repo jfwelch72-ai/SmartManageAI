@@ -11,13 +11,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -25,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Edit, LayoutGrid, RotateCcw, Save, X, Settings2, Plus, Layers } from "lucide-react";
+import { Edit, RotateCcw, Save, X, Plus, Layers } from "lucide-react";
 import { useState } from "react";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 
@@ -244,24 +237,15 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" data-testid="button-dashboard-settings">
-          <Settings2 className="w-4 h-4" />
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button size="sm" variant="outline" onClick={() => setEditMode(true)} data-testid="button-edit-dashboard">
+          <Edit className="w-4 h-4 sm:mr-1" />
+          <span className="hidden sm:inline">Edit Dashboard</span>
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setEditMode(true)} data-testid="menu-customize-dashboard">
-          <LayoutGrid className="w-4 h-4 mr-2" />
-          Customize Dashboard
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setShowResetDialog(true)} data-testid="menu-reset-layout">
-          <RotateCcw className="w-4 h-4 mr-2" />
-          Reset to Default
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </TooltipTrigger>
+      <TooltipContent>Customize your dashboard layout</TooltipContent>
+    </Tooltip>
   );
 }
 

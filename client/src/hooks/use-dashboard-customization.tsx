@@ -89,6 +89,7 @@ interface DashboardCustomizationContextType {
   isSavingLayout: boolean;
   addWidget: (type: string, sectionId?: string) => void;
   removeWidget: (widgetId: string, sectionId: string) => void;
+  reorderWidgets: (sectionId: string, fromIndex: number, toIndex: number) => void;
   updateSectionLayout: (sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
   addSection: (title: string, columns: number) => void;
   removeSection: (sectionId: string) => void;
@@ -355,6 +356,22 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     });
   }, []);
 
+  const reorderWidgets = useCallback((sectionId: string, fromIndex: number, toIndex: number) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s => {
+          if (s.id !== sectionId) return s;
+          const widgets = [...s.widgets];
+          const [moved] = widgets.splice(fromIndex, 1);
+          widgets.splice(toIndex, 0, moved);
+          return { ...s, widgets };
+        }),
+      };
+    });
+  }, []);
+
   const updateSectionLayout = useCallback((sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
@@ -466,6 +483,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     isSavingLayout: saveLayoutMutation.isPending || resetLayoutMutation.isPending,
     addWidget,
     removeWidget,
+    reorderWidgets,
     updateSectionLayout,
     addSection,
     removeSection,
