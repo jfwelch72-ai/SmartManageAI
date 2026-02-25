@@ -9,9 +9,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus, Check, Search, LayoutGrid } from "lucide-react";
-import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
+import { useDashboardCustomization, getAllWidgets } from "@/hooks/use-dashboard-customization";
 import {
   WIDGET_REGISTRY,
   type WidgetDefinition,
@@ -39,10 +47,15 @@ export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
   const { user } = useAuth();
   const { localLayout, addWidget } = useDashboardCustomization();
   const [searchQuery, setSearchQuery] = useState("");
+  const [targetSectionId, setTargetSectionId] = useState<string>("");
 
+  const sections = localLayout?.sections || [];
+  const allWidgets = getAllWidgets(localLayout);
   const existingWidgetTypes = new Set(
-    localLayout?.widgets?.filter((w) => w.visible).map((w) => w.type) || []
+    allWidgets.filter((w) => w.visible).map((w) => w.type)
   );
+
+  const effectiveTargetSection = targetSectionId || (sections.length > 0 ? sections[sections.length - 1].id : "");
 
   const availableWidgets = WIDGET_REGISTRY.filter((widget) =>
     isWidgetAvailableForRole(widget, user?.role)
@@ -57,7 +70,7 @@ export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
     : availableWidgets;
 
   const handleAddWidget = (widget: WidgetDefinition) => {
-    addWidget(widget.type);
+    addWidget(widget.type, effectiveTargetSection);
   };
 
   return (
@@ -73,7 +86,25 @@ export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-4 mb-4">
+        <div className="mt-4 space-y-3">
+          {sections.length > 1 && (
+            <div className="space-y-1.5">
+              <Label htmlFor="target-section" className="text-xs text-muted-foreground">Add to section</Label>
+              <Select value={effectiveTargetSection} onValueChange={setTargetSectionId}>
+                <SelectTrigger id="target-section" className="h-8" data-testid="select-target-section">
+                  <SelectValue placeholder="Select section" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sections.map((s) => (
+                    <SelectItem key={s.id} value={s.id} data-testid={`section-option-${s.id}`}>
+                      {s.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -86,7 +117,7 @@ export function WidgetLibrary({ open, onOpenChange }: WidgetLibraryProps) {
           </div>
         </div>
 
-        <ScrollArea className="h-[calc(100vh-200px)]">
+        <ScrollArea className="h-[calc(100vh-240px)] mt-3">
           <div className="space-y-3 pr-4">
             {filteredWidgets.map((widget) => {
               const isAdded =

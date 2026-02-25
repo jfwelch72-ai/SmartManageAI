@@ -4100,8 +4100,16 @@ export interface DashboardWidgetConfig {
   maxH?: number;
 }
 
-export interface DashboardLayoutConfig {
+export interface DashboardSectionConfig {
+  id: string;
+  title: string;
+  columns: number;
+  collapsed: boolean;
   widgets: DashboardWidgetConfig[];
+}
+
+export interface DashboardLayoutConfig {
+  sections: DashboardSectionConfig[];
   gridCols: number;
   version: number;
 }

@@ -17,8 +17,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Edit, LayoutGrid, RotateCcw, Save, X, Settings2, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Edit, LayoutGrid, RotateCcw, Save, X, Settings2, Plus, Layers } from "lucide-react";
 import { useState } from "react";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 
@@ -28,11 +35,15 @@ interface DashboardEditModeProps {
 }
 
 export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: DashboardEditModeProps) {
-  const { isEditMode, setEditMode, permissions, isSavingLayout, resetLayout, hasUnsavedChanges, saveCurrentLayout, discardChanges, localLayout } = useDashboardCustomization();
+  const { isEditMode, setEditMode, permissions, isSavingLayout, resetLayout, hasUnsavedChanges, saveCurrentLayout, discardChanges, localLayout, addSection } = useDashboardCustomization();
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [showAddSection, setShowAddSection] = useState(false);
+  const [newSectionTitle, setNewSectionTitle] = useState("New Section");
+  const [newSectionCols, setNewSectionCols] = useState(1);
 
-  const widgetCount = localLayout?.widgets?.filter(w => w.visible).length || 0;
+  const sectionCount = localLayout?.sections?.length || 0;
+  const widgetCount = localLayout?.sections?.reduce((sum, s) => sum + s.widgets.filter(w => w.visible).length, 0) || 0;
 
   const handleExitEditMode = () => {
     if (hasUnsavedChanges) {
@@ -66,6 +77,13 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
     setEditMode(false);
   };
 
+  const handleAddSection = () => {
+    addSection(newSectionTitle.trim() || "New Section", newSectionCols);
+    setShowAddSection(false);
+    setNewSectionTitle("New Section");
+    setNewSectionCols(1);
+  };
+
   if (!permissions.canCustomizeDashboard) {
     return null;
   }
@@ -80,8 +98,60 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
           </Badge>
 
           <Badge variant="secondary" className="text-xs">
-            {widgetCount} widget{widgetCount !== 1 ? 's' : ''}
+            {sectionCount} section{sectionCount !== 1 ? 's' : ''} · {widgetCount} widget{widgetCount !== 1 ? 's' : ''}
           </Badge>
+
+          <Popover open={showAddSection} onOpenChange={setShowAddSection}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline" data-testid="button-add-section">
+                    <Layers className="w-4 h-4 mr-1" />
+                    Add Section
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Add a new section</TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-72" align="end">
+              <div className="space-y-3">
+                <h4 className="font-medium text-sm">New Section</h4>
+                <div className="space-y-2">
+                  <Label htmlFor="section-title" className="text-xs">Title</Label>
+                  <Input
+                    id="section-title"
+                    value={newSectionTitle}
+                    onChange={(e) => setNewSectionTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(); }}
+                    placeholder="Section name"
+                    className="h-8"
+                    data-testid="input-new-section-title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Columns</Label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4].map((cols) => (
+                      <Button
+                        key={cols}
+                        variant={newSectionCols === cols ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 h-8"
+                        onClick={() => setNewSectionCols(cols)}
+                        data-testid={`button-new-section-cols-${cols}`}
+                      >
+                        {cols}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <Button size="sm" className="w-full" onClick={handleAddSection} data-testid="button-confirm-add-section">
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Section
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <Tooltip>
             <TooltipTrigger asChild>

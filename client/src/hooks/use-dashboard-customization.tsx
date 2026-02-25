@@ -4,7 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getWidgetDefinition } from "@/components/dashboard-widgets/WidgetRegistry";
 
-interface DashboardWidget {
+export interface DashboardWidget {
   id: string;
   type: string;
   x: number;
@@ -18,8 +18,16 @@ interface DashboardWidget {
   maxH?: number;
 }
 
-export interface DashboardLayoutConfig {
+export interface DashboardSection {
+  id: string;
+  title: string;
+  columns: number;
+  collapsed: boolean;
   widgets: DashboardWidget[];
+}
+
+export interface DashboardLayoutConfig {
+  sections: DashboardSection[];
   gridCols: number;
   version: number;
 }
@@ -62,6 +70,11 @@ interface ColorPalette {
   darkBorder?: string;
 }
 
+export function getAllWidgets(layout: DashboardLayoutConfig | null): DashboardWidget[] {
+  if (!layout || !layout.sections) return [];
+  return layout.sections.flatMap(s => s.widgets);
+}
+
 interface DashboardCustomizationContextType {
   isEditMode: boolean;
   setEditMode: (value: boolean) => void;
@@ -74,9 +87,15 @@ interface DashboardCustomizationContextType {
   saveLayout: (layout: DashboardLayoutConfig) => Promise<void>;
   resetLayout: () => Promise<void>;
   isSavingLayout: boolean;
-  addWidget: (type: string) => void;
-  removeWidget: (id: string) => void;
-  updateLayout: (gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
+  addWidget: (type: string, sectionId?: string) => void;
+  removeWidget: (widgetId: string, sectionId: string) => void;
+  updateSectionLayout: (sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => void;
+  addSection: (title: string, columns: number) => void;
+  removeSection: (sectionId: string) => void;
+  updateSectionTitle: (sectionId: string, title: string) => void;
+  updateSectionColumns: (sectionId: string, columns: number) => void;
+  toggleSectionCollapse: (sectionId: string) => void;
+  reorderSections: (fromIndex: number, toIndex: number) => void;
   hasUnsavedChanges: boolean;
   saveCurrentLayout: () => Promise<void>;
   discardChanges: () => void;
@@ -279,26 +298,30 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     setEditMode(!isEditMode);
   }, [isEditMode, setEditMode]);
 
-  const addWidget = useCallback((type: string) => {
+  const addWidget = useCallback((type: string, sectionId?: string) => {
     const def = getWidgetDefinition(type);
     if (!def) return;
 
     setLocalLayout(prev => {
-      if (!prev) return prev;
-      const existingIds = prev.widgets.map(w => w.id);
+      if (!prev || prev.sections.length === 0) return prev;
+      const targetSectionId = sectionId || prev.sections[prev.sections.length - 1].id;
+      const targetSection = prev.sections.find(s => s.id === targetSectionId);
+      if (!targetSection) return prev;
+
+      const allIds = prev.sections.flatMap(s => s.widgets.map(w => w.id));
       let newId = type.toLowerCase().replace(/_/g, '-');
-      if (existingIds.includes(newId)) {
+      if (allIds.includes(newId)) {
         newId = `${newId}-${Date.now()}`;
       }
 
-      const maxY = prev.widgets.reduce((max, w) => Math.max(max, w.y + w.h), 0);
+      const maxY = targetSection.widgets.reduce((max, w) => Math.max(max, w.y + w.h), 0);
 
       const newWidget: DashboardWidget = {
         id: newId,
         type,
         x: 0,
         y: maxY,
-        w: def.defaultW,
+        w: Math.min(def.defaultW, 12),
         h: def.defaultH,
         visible: true,
         minW: def.minW,
@@ -309,32 +332,107 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
 
       return {
         ...prev,
-        widgets: [...prev.widgets, newWidget],
+        sections: prev.sections.map(s =>
+          s.id === targetSectionId
+            ? { ...s, widgets: [...s.widgets, newWidget] }
+            : s
+        ),
       };
     });
   }, []);
 
-  const removeWidget = useCallback((id: string) => {
+  const removeWidget = useCallback((widgetId: string, sectionId: string) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
       return {
         ...prev,
-        widgets: prev.widgets.filter(w => w.id !== id),
+        sections: prev.sections.map(s =>
+          s.id === sectionId
+            ? { ...s, widgets: s.widgets.filter(w => w.id !== widgetId) }
+            : s
+        ),
       };
     });
   }, []);
 
-  const updateLayout = useCallback((gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
+  const updateSectionLayout = useCallback((sectionId: string, gridLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
     setLocalLayout(prev => {
       if (!prev) return prev;
-      const updatedWidgets = prev.widgets.map(widget => {
-        const layoutItem = gridLayout.find(l => l.i === widget.id);
-        if (layoutItem) {
-          return { ...widget, x: layoutItem.x, y: layoutItem.y, w: layoutItem.w, h: layoutItem.h };
-        }
-        return widget;
-      });
-      return { ...prev, widgets: updatedWidgets };
+      return {
+        ...prev,
+        sections: prev.sections.map(s => {
+          if (s.id !== sectionId) return s;
+          const updatedWidgets = s.widgets.map(widget => {
+            const layoutItem = gridLayout.find(l => l.i === widget.id);
+            if (layoutItem) {
+              return { ...widget, x: layoutItem.x, y: layoutItem.y, w: layoutItem.w, h: layoutItem.h };
+            }
+            return widget;
+          });
+          return { ...s, widgets: updatedWidgets };
+        }),
+      };
+    });
+  }, []);
+
+  const addSection = useCallback((title: string, columns: number) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      const newSection: DashboardSection = {
+        id: `section-${Date.now()}`,
+        title,
+        columns: Math.min(Math.max(columns, 1), 4),
+        collapsed: false,
+        widgets: [],
+      };
+      return { ...prev, sections: [...prev.sections, newSection] };
+    });
+  }, []);
+
+  const removeSection = useCallback((sectionId: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return { ...prev, sections: prev.sections.filter(s => s.id !== sectionId) };
+    });
+  }, []);
+
+  const updateSectionTitle = useCallback((sectionId: string, title: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s => s.id === sectionId ? { ...s, title } : s),
+      };
+    });
+  }, []);
+
+  const updateSectionColumns = useCallback((sectionId: string, columns: number) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s => s.id === sectionId ? { ...s, columns: Math.min(Math.max(columns, 1), 4) } : s),
+      };
+    });
+  }, []);
+
+  const toggleSectionCollapse = useCallback((sectionId: string) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        sections: prev.sections.map(s => s.id === sectionId ? { ...s, collapsed: !s.collapsed } : s),
+      };
+    });
+  }, []);
+
+  const reorderSections = useCallback((fromIndex: number, toIndex: number) => {
+    setLocalLayout(prev => {
+      if (!prev) return prev;
+      const sections = [...prev.sections];
+      const [moved] = sections.splice(fromIndex, 1);
+      sections.splice(toIndex, 0, moved);
+      return { ...prev, sections };
     });
   }, []);
 
@@ -368,7 +466,13 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     isSavingLayout: saveLayoutMutation.isPending || resetLayoutMutation.isPending,
     addWidget,
     removeWidget,
-    updateLayout,
+    updateSectionLayout,
+    addSection,
+    removeSection,
+    updateSectionTitle,
+    updateSectionColumns,
+    toggleSectionCollapse,
+    reorderSections,
     hasUnsavedChanges,
     saveCurrentLayout,
     discardChanges,

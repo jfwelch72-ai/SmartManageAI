@@ -162,22 +162,76 @@ const KNOWN_WIDGET_TYPES = [
   'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS'
 ];
 
+function migrateV2ToV3(config: any): DashboardLayoutConfig {
+  return {
+    sections: [{
+      id: 'section-migrated',
+      title: 'Dashboard',
+      columns: 1,
+      collapsed: false,
+      widgets: config.widgets || [],
+    }],
+    gridCols: config.gridCols || 12,
+    version: 3,
+  };
+}
+
 const DEFAULT_WIDGETS: DashboardLayoutConfig = {
-  widgets: [
-    { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 6, minH: 2, maxW: 12, maxH: 4 },
-    { id: 'weather', type: 'WEATHER', x: 0, y: 3, w: 12, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
-    { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 7, w: 12, h: 5, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 8 },
-    { id: 'messages', type: 'MESSAGES', x: 0, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 12, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 18, w: 4, h: 5, visible: true, minW: 3, minH: 3, maxW: 8, maxH: 8 },
-    { id: 'outstanding-items', type: 'OUTSTANDING_ITEMS', x: 4, y: 18, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 8, y: 18, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'active-bids', type: 'ACTIVE_BIDS', x: 0, y: 24, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
-    { id: 'project-assignments', type: 'PROJECT_ASSIGNMENTS', x: 4, y: 24, w: 8, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
+  sections: [
+    {
+      id: 'section-key-metrics',
+      title: 'Key Metrics',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 6, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-weather-insights',
+      title: 'Weather & Insights',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'weather', type: 'WEATHER', x: 0, y: 0, w: 12, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'ai-insights', type: 'AI_INSIGHTS', x: 0, y: 4, w: 12, h: 5, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'calendar-events', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-operations',
+      title: 'Operations',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'ai-tasks', type: 'AI_TASKS', x: 0, y: 0, w: 4, h: 5, visible: true, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+        { id: 'outstanding-items', type: 'OUTSTANDING_ITEMS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'active-projects', type: 'ACTIVE_PROJECTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-pipeline',
+      title: 'Pipeline',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'active-bids', type: 'ACTIVE_BIDS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 3, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'project-assignments', type: 'PROJECT_ASSIGNMENTS', x: 4, y: 0, w: 8, h: 4, visible: true, minW: 6, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
   ],
   gridCols: 12,
-  version: 2
+  version: 3
 };
 
 // Preset color palettes
@@ -512,11 +566,15 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
 
     if (layout) {
       try {
-        const config = JSON.parse(layout.layoutConfig) as DashboardLayoutConfig;
-        if (!config.version || config.version < DEFAULT_WIDGETS.version) {
+        const config = JSON.parse(layout.layoutConfig);
+        if (config.version === 2 && config.widgets && !config.sections) {
+          const migrated = migrateV2ToV3(config);
+          return res.json({ layout: migrated, isCustom: layout.isCustom });
+        }
+        if (!config.version || config.version < 3) {
           return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
         }
-        return res.json({ layout: config, isCustom: layout.isCustom });
+        return res.json({ layout: config as DashboardLayoutConfig, isCustom: layout.isCustom });
       } catch {
         return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
       }
@@ -558,21 +616,31 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const widgetSchema = z.object({
+      id: z.string(),
+      type: z.string(),
+      x: z.number(),
+      y: z.number(),
+      w: z.number(),
+      h: z.number(),
+      visible: z.boolean(),
+      minW: z.number().optional(),
+      minH: z.number().optional(),
+      maxW: z.number().optional(),
+      maxH: z.number().optional(),
+    });
+
+    const sectionSchema = z.object({
+      id: z.string(),
+      title: z.string(),
+      columns: z.number().min(1).max(4),
+      collapsed: z.boolean(),
+      widgets: z.array(widgetSchema),
+    });
+
     const schema = z.object({
       layout: z.object({
-        widgets: z.array(z.object({
-          id: z.string(),
-          type: z.string(),
-          x: z.number(),
-          y: z.number(),
-          w: z.number(),
-          h: z.number(),
-          visible: z.boolean(),
-          minW: z.number().optional(),
-          minH: z.number().optional(),
-          maxW: z.number().optional(),
-          maxH: z.number().optional(),
-        })),
+        sections: z.array(sectionSchema),
         gridCols: z.number(),
         version: z.number(),
       }),
@@ -580,7 +648,8 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
 
     const { layout } = schema.parse(req.body);
 
-    const unknownTypes = layout.widgets
+    const allWidgets = layout.sections.flatMap(s => s.widgets);
+    const unknownTypes = allWidgets
       .map(w => w.type)
       .filter(t => !KNOWN_WIDGET_TYPES.includes(t));
     if (unknownTypes.length > 0) {
