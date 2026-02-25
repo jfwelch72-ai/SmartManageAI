@@ -186,7 +186,7 @@ const PRESET_PALETTES = {
       background: '0 0% 100%',
       foreground: '222 47% 11%',
       muted: '210 40% 96%',
-      mutedForeground: '215 16% 47%',
+      mutedForeground: '215 16% 43%',
       card: '0 0% 100%',
       cardForeground: '222 47% 11%',
       border: '214 32% 91%',
@@ -210,16 +210,16 @@ const PRESET_PALETTES = {
   forest: {
     name: 'Forest Green',
     light: {
-      primary: '142 76% 36%',
+      primary: '142 76% 30%',
       primaryForeground: '0 0% 100%',
       secondary: '138 30% 90%',
       secondaryForeground: '142 76% 20%',
-      accent: '142 50% 45%',
+      accent: '142 50% 32%',
       accentForeground: '0 0% 100%',
       background: '0 0% 100%',
       foreground: '142 76% 10%',
       muted: '138 30% 90%',
-      mutedForeground: '142 20% 40%',
+      mutedForeground: '142 20% 36%',
       card: '0 0% 100%',
       cardForeground: '142 76% 10%',
       border: '142 30% 85%',
@@ -229,7 +229,7 @@ const PRESET_PALETTES = {
       primaryForeground: '0 0% 0%',
       secondary: '142 30% 20%',
       secondaryForeground: '142 70% 85%',
-      accent: '142 50% 35%',
+      accent: '142 50% 30%',
       accentForeground: '0 0% 100%',
       background: '142 30% 8%',
       foreground: '142 10% 95%',
@@ -243,11 +243,11 @@ const PRESET_PALETTES = {
   sunset: {
     name: 'Sunset Orange',
     light: {
-      primary: '25 95% 53%',
+      primary: '25 95% 38%',
       primaryForeground: '0 0% 100%',
       secondary: '30 50% 92%',
       secondaryForeground: '25 95% 25%',
-      accent: '25 80% 55%',
+      accent: '25 80% 40%',
       accentForeground: '0 0% 100%',
       background: '0 0% 100%',
       foreground: '25 50% 10%',
@@ -262,7 +262,7 @@ const PRESET_PALETTES = {
       primaryForeground: '0 0% 0%',
       secondary: '25 40% 18%',
       secondaryForeground: '25 90% 85%',
-      accent: '25 80% 45%',
+      accent: '25 80% 38%',
       accentForeground: '0 0% 100%',
       background: '25 30% 8%',
       foreground: '25 10% 95%',
@@ -276,11 +276,11 @@ const PRESET_PALETTES = {
   ocean: {
     name: 'Ocean Blue',
     light: {
-      primary: '200 95% 45%',
+      primary: '200 95% 36%',
       primaryForeground: '0 0% 100%',
       secondary: '200 50% 92%',
       secondaryForeground: '200 95% 20%',
-      accent: '200 80% 50%',
+      accent: '200 80% 38%',
       accentForeground: '0 0% 100%',
       background: '0 0% 100%',
       foreground: '200 50% 10%',
@@ -295,7 +295,7 @@ const PRESET_PALETTES = {
       primaryForeground: '0 0% 0%',
       secondary: '200 40% 18%',
       secondaryForeground: '200 90% 85%',
-      accent: '200 70% 40%',
+      accent: '200 70% 33%',
       accentForeground: '0 0% 100%',
       background: '200 30% 8%',
       foreground: '200 10% 95%',
@@ -763,15 +763,7 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
     const lightValidation = validatePalette(data, 'light');
     const darkValidation = validatePalette(data, 'dark');
 
-    if (!lightValidation.isValid || !darkValidation.isValid) {
-      return res.status(400).json({
-        error: 'Color palette fails accessibility requirements',
-        validation: {
-          light: lightValidation,
-          dark: darkValidation,
-        }
-      });
-    }
+    const hasContrastWarnings = !lightValidation.isValid || !darkValidation.isValid;
 
     // If setting as active, deactivate other palettes
     if (data.setActive) {
@@ -790,7 +782,7 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
       paletteName: data.paletteName,
       isPreset: data.isPreset || false,
       isActive: data.setActive || false,
-      contrastValidated: true,
+      contrastValidated: !hasContrastWarnings,
       lastValidatedAt: new Date(),
       lightPrimary: data.lightPrimary,
       lightPrimaryForeground: data.lightPrimaryForeground,
@@ -820,7 +812,15 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
       darkBorder: data.darkBorder,
     }).returning();
 
-    res.json({ success: true, palette: newPalette });
+    const response: any = { success: true, palette: newPalette };
+    if (hasContrastWarnings) {
+      response.contrastWarnings = {
+        message: 'Some color pairs may have low contrast for accessibility',
+        light: lightValidation,
+        dark: darkValidation,
+      };
+    }
+    res.json(response);
   } catch (error) {
     console.error('Error saving palette:', error);
     res.status(500).json({ error: 'Failed to save palette' });
