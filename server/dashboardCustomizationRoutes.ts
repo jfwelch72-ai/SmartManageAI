@@ -234,6 +234,205 @@ const DEFAULT_WIDGETS: DashboardLayoutConfig = {
   version: 3
 };
 
+// ============================================
+// ROLE-BASED DEFAULT LAYOUTS
+// ============================================
+
+const FIELD_WORKER_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-my-work',
+      title: 'My Work',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'fw-time-week', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'TOTAL_LABOR_COST', dateRange: 'THIS_WEEK', comparison: 'LAST_WEEK' } },
+        { id: 'fw-active-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-schedule-safety',
+      title: 'Schedule & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'fw-schedule', type: 'SCHEDULE_IMPACT', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'fw-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-time',
+      title: 'Time & Calendar',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'fw-overtime', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'TOTAL_LABOR_COST', dateRange: 'THIS_WEEK', comparison: 'LAST_WEEK' } },
+        { id: 'fw-calendar', type: 'CALENDAR_EVENTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const PROJECT_MANAGER_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-project-kpis',
+      title: 'Project KPIs',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'pm-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'pm-workforce', type: 'WORKFORCE_SNAPSHOT', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-financial',
+      title: 'Financial',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'pm-cost-code', type: 'COST_CODE_BREAKDOWN', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'budget_vs_actual' } },
+        { id: 'pm-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+      ],
+    },
+    {
+      id: 'section-operations',
+      title: 'Operations',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'pm-subcontracts', type: 'DATA_LIST', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8, config: { entity: 'SUBCONTRACTS', status: '', sortBy: 'created_at', sortDir: 'desc', limit: 10 } },
+        { id: 'pm-sov', type: 'SOV_PROGRESS', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const ESTIMATOR_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-bid-overview',
+      title: 'Bid Overview',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'est-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'est-winrate', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_QUARTER', comparison: 'LAST_QUARTER' } },
+      ],
+    },
+    {
+      id: 'section-cost-analysis',
+      title: 'Cost Analysis',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'est-cost-code', type: 'COST_CODE_BREAKDOWN', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { mode: 'labor' } },
+        { id: 'est-trend', type: 'TREND_CHART', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'LABOR_COST', chartType: 'line', period: '90D', groupBy: 'none' } },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const CFO_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-financial-position',
+      title: 'Financial Position',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'cfo-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'cfo-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+      ],
+    },
+    {
+      id: 'section-liabilities-risk',
+      title: 'Liabilities & Risk',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'cfo-revenue', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+        { id: 'cfo-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-trending',
+      title: 'Trending',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'cfo-cashflow-trend', type: 'TREND_CHART', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'CASH_FLOW', chartType: 'line', period: '90D', groupBy: 'none' } },
+        { id: 'cfo-projects', type: 'DATA_LIST', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8, config: { entity: 'PROJECTS', status: 'active', sortBy: 'created_at', sortDir: 'desc', limit: 10 } },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const EXECUTIVE_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-executive-summary',
+      title: 'Executive Summary',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-revenue', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_YEAR', comparison: 'LAST_QUARTER' } },
+        { id: 'exec-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+      ],
+    },
+    {
+      id: 'section-pipeline-projects',
+      title: 'Pipeline & Projects',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'exec-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-risk-trends',
+      title: 'Risk & Trends',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-alerts', type: 'ALERTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'exec-labor-trend', type: 'TREND_CHART', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8, config: { metric: 'LABOR_COST', chartType: 'bar', period: '6M', groupBy: 'none' } },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+function getDefaultLayoutForRole(role: string): DashboardLayoutConfig {
+  switch (role) {
+    case 'HOURLY_EMPLOYEE':
+    case 'SUPERINTENDENT':
+      return FIELD_WORKER_LAYOUT;
+    case 'MANAGER':
+    case 'MAINTENANCE_MANAGER':
+      return PROJECT_MANAGER_LAYOUT;
+    case 'ESTIMATOR':
+      return ESTIMATOR_LAYOUT;
+    case 'OFFICE_MANAGER':
+      return CFO_LAYOUT;
+    case 'ADMIN':
+    case 'HUSTLER':
+      return EXECUTIVE_LAYOUT;
+    default:
+      return DEFAULT_WIDGETS;
+  }
+}
+
 // Preset color palettes
 const PRESET_PALETTES = {
   default: {
@@ -554,8 +753,10 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
 
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+
     if (!orgId) {
-      return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
+      return res.json({ layout: roleDefault, isCustom: false });
     }
 
     const [layout] = await db.select().from(userDashboardLayouts)
@@ -563,6 +764,8 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
         eq(userDashboardLayouts.organizationId, orgId),
         eq(userDashboardLayouts.userId, userId)
       ));
+
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
 
     if (layout) {
       try {
@@ -572,24 +775,25 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
           return res.json({ layout: migrated, isCustom: layout.isCustom });
         }
         if (!config.version || config.version < 3) {
-          return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
+          return res.json({ layout: roleDefault, isCustom: false });
         }
         return res.json({ layout: config as DashboardLayoutConfig, isCustom: layout.isCustom });
       } catch {
-        return res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
+        return res.json({ layout: roleDefault, isCustom: false });
       }
     }
 
-    res.json({ layout: DEFAULT_WIDGETS, isCustom: false });
+    res.json({ layout: roleDefault, isCustom: false });
   } catch (error) {
     console.error('Error fetching layout:', error);
     res.status(500).json({ error: 'Failed to fetch layout' });
   }
 });
 
-// Get default layout
+// Get default layout (role-aware)
 router.get('/layout/default', requireAuth, async (req: AuthRequest, res: Response) => {
-  res.json({ layout: DEFAULT_WIDGETS });
+  const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+  res.json({ layout: roleDefault });
 });
 
 // Save user's dashboard layout
@@ -694,8 +898,10 @@ router.post('/layout/reset', requireAuth, async (req: AuthRequest, res: Response
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
 
+    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
+
     if (!orgId) {
-      return res.json({ layout: DEFAULT_WIDGETS });
+      return res.json({ layout: roleDefault });
     }
 
     // Delete custom layout
@@ -705,7 +911,7 @@ router.post('/layout/reset', requireAuth, async (req: AuthRequest, res: Response
         eq(userDashboardLayouts.userId, userId)
       ));
 
-    res.json({ success: true, layout: DEFAULT_WIDGETS });
+    res.json({ success: true, layout: roleDefault });
   } catch (error) {
     console.error('Error resetting layout:', error);
     res.status(500).json({ error: 'Failed to reset layout' });
