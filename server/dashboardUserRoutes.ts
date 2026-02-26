@@ -1497,4 +1497,85 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
   }
 });
 
+// ====================
+// Workforce Snapshot Widget
+// ====================
+
+router.get("/api/dashboard/workforce-snapshot", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ activeWorkers: 0, totalWorkers: 0, overtimePercent: 0, laborCostToday: 0, absentWorkers: 0 });
+    }
+
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
+
+    const orgCond = shouldFilter && orgId ? sql`AND u."organization_id" = ${orgId}` : sql``;
+
+    // Total field workers in the org (non-admin roles that typically log time)
+    const totalResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT u."id")::int as count
+      FROM "users" u
+      WHERE u."is_active" = true
+        AND u."role"::text IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'MAINTENANCE_MANAGER', 'MANAGER', 'HUSTLER')
+        ${orgCond}
+    `);
+    const totalWorkers = (totalResult.rows[0] as any)?.count || 0;
+
+    // Active workers today: distinct users with time entries dated today OR open clock shifts
+    // Scope consistently by user.organization_id to match totalWorkers definition
+    const activeResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT worker_id)::int as count FROM (
+        SELECT te."user_id" as worker_id
+        FROM "time_entries" te
+        JOIN "users" u ON te."user_id" = u."id"
+        WHERE te."date"::date = ${todayStr}::date
+          ${orgCond}
+        UNION
+        SELECT tcs."user_id" as worker_id
+        FROM "time_clock_shifts" tcs
+        JOIN "users" u ON tcs."user_id" = u."id"
+        WHERE (tcs."clock_in"::date = ${todayStr}::date OR tcs."clock_out" IS NULL)
+          ${orgCond}
+      ) active_workers
+    `);
+    const activeWorkers = (activeResult.rows[0] as any)?.count || 0;
+
+    // Overtime % and labor cost from today's time entries (scoped by user org)
+    const hoursResult = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(te."hours_regular"::numeric), 0) as total_regular,
+        COALESCE(SUM(te."hours_overtime"::numeric), 0) as total_overtime,
+        COALESCE(SUM(
+          te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
+          + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75)
+        ), 0) as labor_cost
+      FROM "time_entries" te
+      JOIN "users" u ON te."user_id" = u."id"
+      WHERE te."date"::date = ${todayStr}::date
+        ${orgCond}
+    `);
+    const totalRegular = parseFloat((hoursResult.rows[0] as any)?.total_regular) || 0;
+    const totalOvertime = parseFloat((hoursResult.rows[0] as any)?.total_overtime) || 0;
+    const laborCostToday = parseFloat((hoursResult.rows[0] as any)?.labor_cost) || 0;
+    const totalHours = totalRegular + totalOvertime;
+    const overtimePercent = totalHours > 0 ? (totalOvertime / totalHours) * 100 : 0;
+
+    const absentWorkers = Math.max(0, totalWorkers - activeWorkers);
+
+    res.json({
+      activeWorkers,
+      totalWorkers,
+      overtimePercent: Math.round(overtimePercent * 10) / 10,
+      laborCostToday: Math.round(laborCostToday * 100) / 100,
+      absentWorkers,
+    });
+  } catch (error) {
+    console.error("Workforce snapshot error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

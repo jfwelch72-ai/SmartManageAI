@@ -33,6 +33,7 @@ import { KPISummaryWidget } from "./KPISummaryWidget";
 import { TrendChartWidget } from "./TrendChartWidget";
 import { ListWidget } from "./ListWidget";
 import { AlertsWidget } from "./AlertsWidget";
+import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -132,6 +133,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 12,
     maxH: 12,
+    singleton: false,
+    hasSettings: false,
+  },
+  {
+    type: "WORKFORCE_SNAPSHOT",
+    label: "Workforce Snapshot",
+    description: "Today's workforce metrics — active workers, overtime %, labor cost, and absent workers",
+    icon: HardHat,
+    component: WorkforceSnapshotWidget,
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 6,
     singleton: false,
     hasSettings: false,
   },
