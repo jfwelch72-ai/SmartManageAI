@@ -14,6 +14,7 @@ import {
   TrendingUp,
   LineChart,
   List,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -31,6 +32,7 @@ import { AIInsightsWidget } from "@/components/AIInsightsWidget";
 import { KPISummaryWidget } from "./KPISummaryWidget";
 import { TrendChartWidget } from "./TrendChartWidget";
 import { ListWidget } from "./ListWidget";
+import { AlertsWidget } from "./AlertsWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -117,6 +119,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 12,
     singleton: false,
     hasSettings: true,
+  },
+  {
+    type: "ALERTS",
+    label: "Alerts",
+    description: "Dynamic alerts for insurance expiry, budget overruns, unapproved time, late payments, and low margins",
+    icon: AlertTriangle,
+    component: AlertsWidget,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 12,
+    singleton: false,
+    hasSettings: false,
   },
   {
     type: "WEATHER",

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems } from "@shared/schema";
 import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -1139,6 +1139,360 @@ router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => 
     res.json({ items, entity, total });
   } catch (error) {
     console.error("List widget data error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Dashboard Alerts Widget
+// ====================
+
+interface Alert {
+  id: string;
+  type: "INSURANCE_EXPIRING" | "OVER_BUDGET" | "UNAPPROVED_TIME" | "LATE_SUB_PAYMENT" | "LOW_MARGIN";
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  entityId?: string;
+  link?: string;
+}
+
+router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ alerts: [], counts: { critical: 0, warning: 0, info: 0 } });
+    }
+
+    const alerts: Alert[] = [];
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // 1. Insurance Expiring — organization documents
+    try {
+      const orgDocCond = shouldFilter && orgId ? sql`AND od."organization_id" = ${orgId}` : sql``;
+      const docResult = await db.execute(sql`
+        SELECT od."id", od."name", od."type"::text, od."expires_at", od."organization_id",
+               o."name" as org_name
+        FROM "organization_documents" od
+        JOIN "organizations" o ON od."organization_id" = o."id"
+        WHERE od."is_active" = true
+          AND od."expires_at" IS NOT NULL
+          AND od."expires_at" <= ${thirtyDaysFromNow.toISOString()}::date
+          ${orgDocCond}
+        ORDER BY od."expires_at" ASC
+        LIMIT 20
+      `);
+      for (const row of docResult.rows as any[]) {
+        const expiresAt = new Date(row.expires_at);
+        const isExpired = expiresAt <= now;
+        const docType = (row.type || "").replace(/_/g, " ").replace(/INSURANCE CERT /i, "").toLowerCase();
+        alerts.push({
+          id: `ins-doc-${row.id}`,
+          type: "INSURANCE_EXPIRING",
+          severity: isExpired ? "critical" : "warning",
+          title: isExpired ? "Insurance Expired" : "Insurance Expiring Soon",
+          description: `${row.name || docType} for ${row.org_name} ${isExpired ? "expired" : "expires"} ${expiresAt.toLocaleDateString()}`,
+          entityId: row.organization_id,
+        });
+      }
+
+      // CRM organisations insurance
+      const crmCond = shouldFilter && orgId ? sql`AND co."organization_id" = ${orgId}` : sql``;
+      const crmResult = await db.execute(sql`
+        SELECT co."id", co."name" as company_name,
+               co."insurance_expiration", co."wc_insurance_expiration"
+        FROM "crm_organisations" co
+        WHERE (
+          (co."insurance_expiration" IS NOT NULL AND co."insurance_expiration" <= ${thirtyDaysFromNow.toISOString()}::timestamp)
+          OR (co."wc_insurance_expiration" IS NOT NULL AND co."wc_insurance_expiration" <= ${thirtyDaysFromNow.toISOString()}::timestamp)
+        )
+        ${crmCond}
+        LIMIT 20
+      `);
+      for (const row of crmResult.rows as any[]) {
+        if (row.insurance_expiration) {
+          const exp = new Date(row.insurance_expiration);
+          if (exp <= thirtyDaysFromNow) {
+            alerts.push({
+              id: `ins-crm-gl-${row.id}`,
+              type: "INSURANCE_EXPIRING",
+              severity: exp <= now ? "critical" : "warning",
+              title: exp <= now ? "Vendor Insurance Expired" : "Vendor Insurance Expiring",
+              description: `General liability for ${row.company_name || "vendor"} ${exp <= now ? "expired" : "expires"} ${exp.toLocaleDateString()}`,
+              entityId: row.id,
+            });
+          }
+        }
+        if (row.wc_insurance_expiration) {
+          const exp = new Date(row.wc_insurance_expiration);
+          if (exp <= thirtyDaysFromNow) {
+            alerts.push({
+              id: `ins-crm-wc-${row.id}`,
+              type: "INSURANCE_EXPIRING",
+              severity: exp <= now ? "critical" : "warning",
+              title: exp <= now ? "Workers Comp Expired" : "Workers Comp Expiring",
+              description: `Workers comp for ${row.company_name || "vendor"} ${exp <= now ? "expired" : "expires"} ${exp.toLocaleDateString()}`,
+              entityId: row.id,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Alerts: insurance check error:", e);
+    }
+
+    // 2. Over Budget Projects
+    try {
+      const projOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+      const budgetResult = await db.execute(sql`
+        SELECT
+          p."id", p."name", p."code",
+          COALESCE(p."contract_amount", p."budget", 0)::numeric as base_budget,
+          COALESCE((
+            SELECT SUM(co2."amount"::numeric)
+            FROM "change_orders" co2
+            WHERE co2."project_id" = p."id" AND co2."status"::text = 'APPROVED'
+          ), 0) as approved_cos,
+          COALESCE((
+            SELECT SUM(
+              te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
+              + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75)
+            )
+            FROM "time_entries" te
+            JOIN "users" u ON te."user_id" = u."id"
+            WHERE te."project_id" = p."id"
+          ), 0) as labor_cost,
+          COALESCE((
+            SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
+            FROM "procurement_items" pi
+            WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
+          ), 0) as material_cost
+        FROM "projects" p
+        WHERE p."status"::text = 'ACTIVE'
+          ${projOrgCond}
+        LIMIT 50
+      `);
+      for (const row of budgetResult.rows as any[]) {
+        const baseBudget = parseFloat(row.base_budget) || 0;
+        if (baseBudget <= 0) continue;
+        const adjustedBudget = baseBudget + (parseFloat(row.approved_cos) || 0);
+        const actualCost = (parseFloat(row.labor_cost) || 0) + (parseFloat(row.material_cost) || 0);
+        const variance = adjustedBudget - actualCost;
+        const variancePct = (variance / adjustedBudget) * 100;
+
+        if (variancePct < 0) {
+          alerts.push({
+            id: `budget-${row.id}`,
+            type: "OVER_BUDGET",
+            severity: "critical",
+            title: "Project Over Budget",
+            description: `${row.name} is $${Math.abs(variance).toLocaleString(undefined, { maximumFractionDigits: 0 })} over budget (${Math.abs(variancePct).toFixed(1)}%)`,
+            entityId: row.id,
+            link: `/projects/${row.code}`,
+          });
+        } else if (variancePct < 10) {
+          alerts.push({
+            id: `budget-${row.id}`,
+            type: "OVER_BUDGET",
+            severity: "warning",
+            title: "Budget Nearly Exhausted",
+            description: `${row.name} has only ${variancePct.toFixed(1)}% budget remaining ($${variance.toLocaleString(undefined, { maximumFractionDigits: 0 })} left)`,
+            entityId: row.id,
+            link: `/projects/${row.code}`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Alerts: budget check error:", e);
+    }
+
+    // 3. Unapproved Time Entries
+    try {
+      const teOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+      const criticalTimeResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count
+        FROM "time_entries" te
+        JOIN "projects" p ON te."project_id" = p."id"
+        WHERE te."approval_status"::text = 'PENDING'
+          AND te."created_at" < ${sevenDaysAgo.toISOString()}::timestamp
+          ${teOrgCond}
+      `);
+      const criticalCount = (criticalTimeResult.rows[0] as any)?.count || 0;
+
+      const warningTimeResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count
+        FROM "time_entries" te
+        JOIN "projects" p ON te."project_id" = p."id"
+        WHERE te."approval_status"::text = 'PENDING'
+          AND te."created_at" >= ${sevenDaysAgo.toISOString()}::timestamp
+          AND te."created_at" < ${fortyEightHoursAgo.toISOString()}::timestamp
+          ${teOrgCond}
+      `);
+      const warningCount = (warningTimeResult.rows[0] as any)?.count || 0;
+
+      if (criticalCount > 0) {
+        alerts.push({
+          id: "time-critical",
+          type: "UNAPPROVED_TIME",
+          severity: "critical",
+          title: "Time Entries Overdue for Approval",
+          description: `${criticalCount} time ${criticalCount === 1 ? "entry" : "entries"} pending approval for over 7 days`,
+        });
+      }
+      if (warningCount > 0) {
+        alerts.push({
+          id: "time-warning",
+          type: "UNAPPROVED_TIME",
+          severity: "warning",
+          title: "Unapproved Time Entries",
+          description: `${warningCount} time ${warningCount === 1 ? "entry" : "entries"} pending approval for over 48 hours`,
+        });
+      }
+    } catch (e) {
+      console.error("Alerts: time entry check error:", e);
+    }
+
+    // 4. Late Subcontractor Payments
+    try {
+      const subOrgCond = shouldFilter && orgId ? sql`AND sp."organization_id" = ${orgId}` : sql``;
+      const latePayResult = await db.execute(sql`
+        SELECT sp."id", sp."amount", sp."invoice_number",
+               sc."contract_number",
+               co."company_name" as sub_name
+        FROM "subcontractor_payments" sp
+        JOIN "subcontractor_contracts" sc ON sp."contract_id" = sc."id"
+        LEFT JOIN "crm_organisations" co ON sc."subcontractor_id" = co."id"
+        WHERE sp."status" = 'APPROVED'
+          AND sp."paid_at" IS NULL
+          AND sp."approved_at" < ${sevenDaysAgo.toISOString()}::timestamp
+          ${subOrgCond}
+        LIMIT 20
+      `);
+      for (const row of latePayResult.rows as any[]) {
+        alerts.push({
+          id: `subpay-${row.id}`,
+          type: "LATE_SUB_PAYMENT",
+          severity: "critical",
+          title: "Late Subcontractor Payment",
+          description: `$${parseFloat(row.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })} owed to ${row.sub_name || row.contract_number} (approved but unpaid 7+ days)`,
+          entityId: row.id,
+        });
+      }
+
+      // Check billing schedule past due
+      const billingOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+      const lateBillingResult = await db.execute(sql`
+        SELECT sbs."id", sbs."description", sbs."scheduled_amount", sbs."scheduled_date",
+               sc."contract_number",
+               co."company_name" as sub_name
+        FROM "subcontractor_billing_schedule" sbs
+        JOIN "subcontractor_contracts" sc ON sbs."contract_id" = sc."id"
+        JOIN "projects" p ON sc."project_id" = p."id"
+        LEFT JOIN "crm_organisations" co ON sc."subcontractor_id" = co."id"
+        WHERE sbs."status" = 'PENDING'
+          AND sbs."scheduled_date" IS NOT NULL
+          AND sbs."scheduled_date" < ${now.toISOString()}::timestamp
+          ${billingOrgCond}
+        LIMIT 20
+      `);
+      for (const row of lateBillingResult.rows as any[]) {
+        const scheduledDate = new Date(row.scheduled_date);
+        const daysLate = Math.floor((now.getTime() - scheduledDate.getTime()) / (1000 * 60 * 60 * 24));
+        alerts.push({
+          id: `subbill-${row.id}`,
+          type: "LATE_SUB_PAYMENT",
+          severity: daysLate > 14 ? "critical" : "warning",
+          title: "Past Due Subcontractor Milestone",
+          description: `$${parseFloat(row.scheduled_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })} to ${row.sub_name || row.contract_number} is ${daysLate} days past due`,
+          entityId: row.id,
+        });
+      }
+    } catch (e) {
+      console.error("Alerts: subcontractor payment check error:", e);
+    }
+
+    // 5. Low Gross Margin
+    try {
+      const marginOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+      const marginResult = await db.execute(sql`
+        SELECT
+          p."id", p."name", p."code",
+          COALESCE(p."contract_amount", p."budget", 0)::numeric as base_budget,
+          COALESCE((
+            SELECT SUM(co2."amount"::numeric)
+            FROM "change_orders" co2
+            WHERE co2."project_id" = p."id" AND co2."status"::text = 'APPROVED'
+          ), 0) as approved_cos,
+          COALESCE((
+            SELECT SUM(
+              te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
+              + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75)
+            )
+            FROM "time_entries" te
+            JOIN "users" u ON te."user_id" = u."id"
+            WHERE te."project_id" = p."id"
+          ), 0) as labor_cost,
+          COALESCE((
+            SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
+            FROM "procurement_items" pi
+            WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
+          ), 0) as material_cost
+        FROM "projects" p
+        WHERE p."status"::text = 'ACTIVE'
+          ${marginOrgCond}
+        LIMIT 50
+      `);
+      for (const row of marginResult.rows as any[]) {
+        const baseBudget = parseFloat(row.base_budget) || 0;
+        if (baseBudget <= 0) continue;
+        const adjustedBudget = baseBudget + (parseFloat(row.approved_cos) || 0);
+        const actualCost = (parseFloat(row.labor_cost) || 0) + (parseFloat(row.material_cost) || 0);
+        const margin = adjustedBudget - actualCost;
+        const marginPct = (margin / adjustedBudget) * 100;
+
+        if (marginPct >= 0 && marginPct < 5) {
+          alerts.push({
+            id: `margin-${row.id}`,
+            type: "LOW_MARGIN",
+            severity: "critical",
+            title: "Critically Low Margin",
+            description: `${row.name} has only ${marginPct.toFixed(1)}% gross margin ($${margin.toLocaleString(undefined, { maximumFractionDigits: 0 })} remaining)`,
+            entityId: row.id,
+            link: `/projects/${row.code}`,
+          });
+        } else if (marginPct >= 5 && marginPct < 15) {
+          alerts.push({
+            id: `margin-${row.id}`,
+            type: "LOW_MARGIN",
+            severity: "warning",
+            title: "Low Gross Margin",
+            description: `${row.name} margin is ${marginPct.toFixed(1)}% — below 15% threshold`,
+            entityId: row.id,
+            link: `/projects/${row.code}`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Alerts: margin check error:", e);
+    }
+
+    // Sort: critical first, then warning, then info
+    const severityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+    alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+
+    const counts = {
+      critical: alerts.filter(a => a.severity === "critical").length,
+      warning: alerts.filter(a => a.severity === "warning").length,
+      info: alerts.filter(a => a.severity === "info").length,
+    };
+
+    res.json({ alerts, counts });
+  } catch (error) {
+    console.error("Alerts endpoint error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
