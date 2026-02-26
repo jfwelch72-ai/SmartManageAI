@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations } from "@shared/schema";
 import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
-import { eq, and, sql, gte, lte, desc } from "drizzle-orm";
+import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit } from "./auditLogger";
@@ -910,6 +910,235 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
     res.json({ points, metric, period, groupBy });
   } catch (error) {
     console.error("Trend data error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Dashboard List Widget Data
+// ====================
+
+const LIST_ENTITIES = ["PROJECTS", "ORGANIZATIONS", "TIME_ENTRIES", "PAY_RUNS", "SUBCONTRACTS", "CHANGE_ORDERS"] as const;
+const LIST_LIMITS = [5, 10, 20] as const;
+
+const ENTITY_SORT_FIELDS: Record<string, string[]> = {
+  PROJECTS: ["name", "status", "created_at", "start_date", "contract_amount"],
+  ORGANIZATIONS: ["name", "trade_type", "created_at"],
+  TIME_ENTRIES: ["date", "hours_regular", "approval_status", "created_at"],
+  PAY_RUNS: ["pay_period_start", "status", "total_labor_cost", "created_at"],
+  SUBCONTRACTS: ["contract_number", "status", "contract_amount", "start_date", "created_at"],
+  CHANGE_ORDERS: ["change_order_number", "status", "amount", "created_at"],
+};
+
+router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const entity = req.query.entity as string;
+    const status = (req.query.status as string) || "";
+    const sortBy = (req.query.sortBy as string) || "created_at";
+    const sortDir = (req.query.sortDir as string) || "desc";
+    const limit = parseInt(req.query.limit as string) || 5;
+
+    if (!entity || !LIST_ENTITIES.includes(entity as any)) {
+      return res.status(400).json({ error: `Invalid entity. Must be one of: ${LIST_ENTITIES.join(", ")}` });
+    }
+    if (!LIST_LIMITS.includes(limit as any)) {
+      return res.status(400).json({ error: `Invalid limit. Must be one of: ${LIST_LIMITS.join(", ")}` });
+    }
+    const allowedSorts = ENTITY_SORT_FIELDS[entity] || [];
+    const safeSortBy = allowedSorts.includes(sortBy) ? sortBy : "created_at";
+
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ items: [], entity, total: 0 });
+    }
+
+    const orderDir = sortDir === "asc" ? sql`ASC` : sql`DESC`;
+    let items: any[] = [];
+    let total = 0;
+
+    switch (entity) {
+      case "PROJECTS": {
+        const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const statusCond = status ? sql`AND p."status"::text = ${status}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count FROM "projects" p WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT p."id", p."name", p."client_name", p."status"::text, p."start_date",
+                 p."contract_amount", p."created_at", p."code"
+          FROM "projects" p
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`p."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          code: r.code,
+          title: r.name,
+          subtitle: r.client_name,
+          status: r.status,
+          date: r.start_date || r.created_at,
+          amount: r.contract_amount ? parseFloat(r.contract_amount) : null,
+          link: `/projects/${r.code}`,
+        }));
+        break;
+      }
+
+      case "ORGANIZATIONS": {
+        const statusCond = status ? sql`AND o."onboarding_status"::text = ${status}` : sql``;
+        const orgCond = shouldFilter && orgId ? sql`AND o."id" = ${orgId}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count FROM "organizations" o WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT o."id", o."name", o."trade_type"::text, o."onboarding_status"::text as status,
+                 o."created_at", o."slug"
+          FROM "organizations" o
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`o."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          title: r.name,
+          subtitle: r.trade_type?.replace(/_/g, " ") || "Unknown",
+          status: r.status,
+          date: r.created_at,
+          amount: null,
+        }));
+        break;
+      }
+
+      case "TIME_ENTRIES": {
+        const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const statusCond = status ? sql`AND te."approval_status"::text = ${status}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count
+          FROM "time_entries" te
+          JOIN "projects" p ON te."project_id" = p."id"
+          WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT te."id", te."date", te."hours_regular", te."hours_overtime",
+                 te."approval_status"::text as status, te."created_at",
+                 p."name" as project_name, u."first_name", u."last_name"
+          FROM "time_entries" te
+          JOIN "projects" p ON te."project_id" = p."id"
+          JOIN "users" u ON te."user_id" = u."id"
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`te."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          title: r.project_name,
+          subtitle: `${r.first_name} ${r.last_name}`,
+          status: r.status,
+          date: r.date,
+          amount: parseFloat(r.hours_regular || "0") + parseFloat(r.hours_overtime || "0"),
+          amountLabel: "hrs",
+        }));
+        break;
+      }
+
+      case "PAY_RUNS": {
+        const orgCond = shouldFilter && orgId ? sql`AND pr."organization_id" = ${orgId}` : sql``;
+        const statusCond = status ? sql`AND pr."status"::text = ${status}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count FROM "pay_runs" pr WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT pr."id", pr."run_number", pr."pay_period_start", pr."pay_period_end",
+                 pr."status"::text, pr."total_labor_cost", pr."total_workers", pr."created_at"
+          FROM "pay_runs" pr
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`pr."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          title: r.run_number || "Pay Run",
+          subtitle: `${new Date(r.pay_period_start).toLocaleDateString()} – ${new Date(r.pay_period_end).toLocaleDateString()}`,
+          status: r.status,
+          date: r.created_at,
+          amount: r.total_labor_cost ? parseFloat(r.total_labor_cost) : null,
+        }));
+        break;
+      }
+
+      case "SUBCONTRACTS": {
+        const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const statusCond = status ? sql`AND sc."status" = ${status}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count
+          FROM "subcontractor_contracts" sc
+          JOIN "projects" p ON sc."project_id" = p."id"
+          WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT sc."id", sc."contract_number", sc."status", sc."contract_amount",
+                 sc."start_date", sc."created_at",
+                 p."name" as project_name,
+                 co."company_name" as sub_name
+          FROM "subcontractor_contracts" sc
+          JOIN "projects" p ON sc."project_id" = p."id"
+          LEFT JOIN "crm_organisations" co ON sc."subcontractor_id" = co."id"
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`sc."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          title: r.contract_number,
+          subtitle: `${r.sub_name || "Unknown"} — ${r.project_name}`,
+          status: r.status,
+          date: r.start_date || r.created_at,
+          amount: r.contract_amount ? parseFloat(r.contract_amount) : null,
+        }));
+        break;
+      }
+
+      case "CHANGE_ORDERS": {
+        const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const statusCond = status ? sql`AND co."status"::text = ${status}` : sql``;
+        const countResult = await db.execute(sql`
+          SELECT COUNT(*)::int as count
+          FROM "change_orders" co
+          JOIN "projects" p ON co."project_id" = p."id"
+          WHERE true ${orgCond} ${statusCond}
+        `);
+        total = (countResult.rows[0] as any)?.count || 0;
+        const result = await db.execute(sql`
+          SELECT co."id", co."change_order_number", co."description", co."status"::text,
+                 co."amount", co."created_at",
+                 p."name" as project_name, p."code" as project_code
+          FROM "change_orders" co
+          JOIN "projects" p ON co."project_id" = p."id"
+          WHERE true ${orgCond} ${statusCond}
+          ORDER BY ${sql.raw(`co."${safeSortBy}"`)} ${orderDir} NULLS LAST
+          LIMIT ${limit}
+        `);
+        items = (result.rows as any[]).map(r => ({
+          id: r.id,
+          title: `CO-${r.change_order_number}`,
+          subtitle: `${r.project_name} — ${(r.description || "").substring(0, 60)}`,
+          status: r.status,
+          date: r.created_at,
+          amount: r.amount ? parseFloat(r.amount) : null,
+        }));
+        break;
+      }
+    }
+
+    res.json({ items, entity, total });
+  } catch (error) {
+    console.error("List widget data error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -13,6 +13,7 @@ import {
   Sparkles,
   TrendingUp,
   LineChart,
+  List,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -29,6 +30,7 @@ import { WeatherForecastWidget } from "@/components/WeatherForecastWidget";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
 import { KPISummaryWidget } from "./KPISummaryWidget";
 import { TrendChartWidget } from "./TrendChartWidget";
+import { ListWidget } from "./ListWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -98,6 +100,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 12,
     maxH: 10,
+    singleton: false,
+    hasSettings: true,
+  },
+  {
+    type: "DATA_LIST",
+    label: "Data List",
+    description: "Filtered, sorted list of projects, organizations, time entries, pay runs, subcontracts, or change orders",
+    icon: List,
+    component: ListWidget as any,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 12,
     singleton: false,
     hasSettings: true,
   },
