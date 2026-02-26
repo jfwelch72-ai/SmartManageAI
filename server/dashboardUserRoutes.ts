@@ -1578,4 +1578,86 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, async (req: AuthReq
   }
 });
 
+// ====================
+// Cash Position Widget
+// ====================
+
+router.get("/api/dashboard/cash-position", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ accountsReceivable: 0, accountsPayable: 0, payrollLiability: 0, netCashFlow: 0 });
+    }
+
+    const orgCond = shouldFilter && orgId ? sql`AND i."organization_id" = ${orgId}` : sql``;
+    const projOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+    const payOrgCond = shouldFilter && orgId ? sql`AND sp."organization_id" = ${orgId}` : sql``;
+    const prOrgCond = shouldFilter && orgId ? sql`AND pr."organization_id" = ${orgId}` : sql``;
+
+    // 1. Accounts Receivable: outstanding T&M invoices (SENT but not PAID/VOID)
+    let accountsReceivable = 0;
+    try {
+      const arResult = await db.execute(sql`
+        SELECT COALESCE(SUM(i."total"::numeric), 0) as total
+        FROM "tm_invoices" i
+        WHERE i."status"::text = 'SENT'
+          ${orgCond}
+      `);
+      accountsReceivable = parseFloat((arResult.rows[0] as any)?.total) || 0;
+    } catch (e) {
+      console.error("Cash position: AR error:", e);
+    }
+
+    // 2. Accounts Payable: unpaid subcontractor payments + committed procurement costs
+    let accountsPayable = 0;
+    try {
+      const subPayResult = await db.execute(sql`
+        SELECT COALESCE(SUM(sp."amount"::numeric), 0) as total
+        FROM "subcontractor_payments" sp
+        WHERE sp."status" IN ('PENDING', 'APPROVED')
+          ${payOrgCond}
+      `);
+      accountsPayable += parseFloat((subPayResult.rows[0] as any)?.total) || 0;
+
+      const procResult = await db.execute(sql`
+        SELECT COALESCE(SUM(pi."quantity"::numeric * pi."unit_cost"::numeric), 0) as total
+        FROM "procurement_items" pi
+        JOIN "projects" p ON pi."project_id" = p."id"
+        WHERE pi."status"::text IN ('ORDERED', 'DELIVERED')
+          ${projOrgCond}
+      `);
+      accountsPayable += parseFloat((procResult.rows[0] as any)?.total) || 0;
+    } catch (e) {
+      console.error("Cash position: AP error:", e);
+    }
+
+    // 3. Payroll Liability: unpaid pay runs
+    let payrollLiability = 0;
+    try {
+      const payrollResult = await db.execute(sql`
+        SELECT COALESCE(SUM(pr."total_labor_cost"::numeric), 0) as total
+        FROM "pay_runs" pr
+        WHERE pr."status"::text IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'PROCESSING')
+          ${prOrgCond}
+      `);
+      payrollLiability = parseFloat((payrollResult.rows[0] as any)?.total) || 0;
+    } catch (e) {
+      console.error("Cash position: payroll error:", e);
+    }
+
+    const netCashFlow = accountsReceivable - accountsPayable - payrollLiability;
+
+    res.json({
+      accountsReceivable: Math.round(accountsReceivable * 100) / 100,
+      accountsPayable: Math.round(accountsPayable * 100) / 100,
+      payrollLiability: Math.round(payrollLiability * 100) / 100,
+      netCashFlow: Math.round(netCashFlow * 100) / 100,
+    });
+  } catch (error) {
+    console.error("Cash position error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

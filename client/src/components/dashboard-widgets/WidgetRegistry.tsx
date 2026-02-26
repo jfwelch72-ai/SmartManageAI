@@ -15,6 +15,7 @@ import {
   LineChart,
   List,
   AlertTriangle,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -34,6 +35,7 @@ import { TrendChartWidget } from "./TrendChartWidget";
 import { ListWidget } from "./ListWidget";
 import { AlertsWidget } from "./AlertsWidget";
 import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
+import { CashPositionWidget } from "./CashPositionWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -142,6 +144,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     description: "Today's workforce metrics — active workers, overtime %, labor cost, and absent workers",
     icon: HardHat,
     component: WorkforceSnapshotWidget,
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 6,
+    singleton: false,
+    hasSettings: false,
+  },
+  {
+    type: "CASH_POSITION",
+    label: "Cash Position",
+    description: "Financial snapshot — accounts receivable, payable, payroll liability, and net cash flow",
+    icon: Landmark,
+    component: CashPositionWidget,
     defaultW: 6,
     defaultH: 4,
     minW: 4,
