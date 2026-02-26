@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems } from "@shared/schema";
 import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -1810,6 +1810,91 @@ router.get("/api/dashboard/sov-progress", requireAuth, async (req: AuthRequest, 
     });
   } catch (error) {
     console.error("SOV progress error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Bid Pipeline Widget
+// ====================
+
+router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ activeBids: 0, pipelineValue: 0, winRate: 0, laborExposure: 0, awardedCount: 0, lostCount: 0 });
+    }
+
+    const orgCond = shouldFilter && orgId ? sql`AND b."gc_organization_id" = ${orgId}` : sql``;
+
+    let activeBids = 0;
+    let pipelineValue = 0;
+    let winRate = 0;
+    let laborExposure = 0;
+    let awardedCount = 0;
+    let lostCount = 0;
+
+    try {
+      const activeResult = await db.execute(sql`
+        SELECT
+          COUNT(*) as active_count,
+          COALESCE(SUM(b."bid_amount"::numeric), 0) as pipeline_value
+        FROM "bids" b
+        WHERE b."status"::text = 'ACTIVE'
+          ${orgCond}
+      `);
+      const row = activeResult.rows[0] as any;
+      activeBids = parseInt(row?.active_count) || 0;
+      pipelineValue = parseFloat(row?.pipeline_value) || 0;
+    } catch (e) {
+      console.error("Bid pipeline: active bids error:", e);
+    }
+
+    try {
+      const rateResult = await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE b."status"::text = 'AWARDED') as awarded,
+          COUNT(*) FILTER (WHERE b."status"::text = 'LOST') as lost
+        FROM "bids" b
+        WHERE b."status"::text IN ('AWARDED', 'LOST')
+          ${orgCond}
+      `);
+      const row = rateResult.rows[0] as any;
+      awardedCount = parseInt(row?.awarded) || 0;
+      lostCount = parseInt(row?.lost) || 0;
+      const total = awardedCount + lostCount;
+      if (total > 0) {
+        winRate = Math.round((awardedCount / total) * 10000) / 100;
+      }
+    } catch (e) {
+      console.error("Bid pipeline: win rate error:", e);
+    }
+
+    try {
+      const laborResult = await db.execute(sql`
+        SELECT COALESCE(SUM(eli."labor_cost"::numeric), 0) as labor_exposure
+        FROM "estimate_line_items" eli
+        JOIN "estimates" e ON eli."estimate_id" = e."id"
+        JOIN "bids" b ON e."bid_id" = b."id"
+        WHERE b."status"::text = 'ACTIVE'
+          ${orgCond}
+      `);
+      laborExposure = parseFloat((laborResult.rows[0] as any)?.labor_exposure) || 0;
+    } catch (e) {
+      console.error("Bid pipeline: labor exposure error:", e);
+    }
+
+    res.json({
+      activeBids,
+      pipelineValue: Math.round(pipelineValue * 100) / 100,
+      winRate,
+      laborExposure: Math.round(laborExposure * 100) / 100,
+      awardedCount,
+      lostCount,
+    });
+  } catch (error) {
+    console.error("Bid pipeline error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -37,6 +37,7 @@ import { AlertsWidget } from "./AlertsWidget";
 import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
 import { CashPositionWidget } from "./CashPositionWidget";
 import { SOVProgressWidget } from "./SOVProgressWidget";
+import { BidPipelineWidget } from "./BidPipelineWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -181,6 +182,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 12,
     maxH: 8,
+    singleton: false,
+    hasSettings: false,
+  },
+  {
+    type: "BID_PIPELINE",
+    label: "Bid Pipeline",
+    description: "Active bids, pipeline value, win rate, and estimated labor exposure",
+    icon: Briefcase,
+    component: BidPipelineWidget,
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 6,
     singleton: false,
     hasSettings: false,
   },
