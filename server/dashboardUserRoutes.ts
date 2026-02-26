@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems } from "@shared/schema";
 import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -1656,6 +1656,160 @@ router.get("/api/dashboard/cash-position", requireAuth, async (req: AuthRequest,
     });
   } catch (error) {
     console.error("Cash position error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// SOV Progress Widget
+// ====================
+
+router.get("/api/dashboard/sov-progress", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({
+        billedPercent: 0,
+        completePercent: 0,
+        totalScheduledValue: 0,
+        totalCompletedToDate: 0,
+        totalBilled: 0,
+        laborCost: 0,
+        sovValue: 0,
+        laborToSovPercent: 0,
+        retainageHeld: 0,
+        avgRetainagePercent: 0,
+        projects: [],
+      });
+    }
+
+    const orgCond = shouldFilter && orgId ? sql`AND s."organization_id" = ${orgId}` : sql``;
+
+    // 1. Aggregate SOV totals (% billed vs % complete)
+    let billedPercent = 0;
+    let completePercent = 0;
+    let totalScheduledValue = 0;
+    let totalCompletedToDate = 0;
+    let totalBilled = 0;
+
+    try {
+      const sovTotals = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(s."total_scheduled_value"::numeric), 0) as scheduled_value,
+          COALESCE(SUM(s."total_completed_to_date"::numeric), 0) as completed_to_date,
+          COALESCE(SUM(COALESCE(s."total_previously_completed"::numeric, 0) + COALESCE(s."total_this_period"::numeric, 0)), 0) as total_billed
+        FROM "schedule_of_values" s
+        WHERE s."status"::text NOT IN ('ARCHIVED', 'DRAFT')
+          ${orgCond}
+      `);
+      const row = sovTotals.rows[0] as any;
+      totalScheduledValue = parseFloat(row?.scheduled_value) || 0;
+      totalCompletedToDate = parseFloat(row?.completed_to_date) || 0;
+      totalBilled = parseFloat(row?.total_billed) || 0;
+
+      if (totalScheduledValue > 0) {
+        completePercent = Math.round((totalCompletedToDate / totalScheduledValue) * 10000) / 100;
+        billedPercent = Math.round((totalBilled / totalScheduledValue) * 10000) / 100;
+      }
+    } catch (e) {
+      console.error("SOV progress: totals error:", e);
+    }
+
+    // 2. Per-project breakdown (top 5 active projects with SOVs)
+    let projectBreakdown: Array<{ name: string; billedPercent: number; completePercent: number }> = [];
+    try {
+      const projResult = await db.execute(sql`
+        SELECT
+          p."name" as project_name,
+          COALESCE(SUM(s."total_scheduled_value"::numeric), 0) as scheduled_value,
+          COALESCE(SUM(s."total_completed_to_date"::numeric), 0) as completed_to_date,
+          COALESCE(SUM(COALESCE(s."total_previously_completed"::numeric, 0) + COALESCE(s."total_this_period"::numeric, 0)), 0) as total_billed
+        FROM "schedule_of_values" s
+        JOIN "projects" p ON s."project_id" = p."id"
+        WHERE s."status"::text NOT IN ('ARCHIVED', 'DRAFT')
+          ${orgCond}
+        GROUP BY p."id", p."name"
+        HAVING SUM(s."total_scheduled_value"::numeric) > 0
+        ORDER BY SUM(s."total_scheduled_value"::numeric) DESC
+        LIMIT 5
+      `);
+      projectBreakdown = (projResult.rows as any[]).map((r) => {
+        const sv = parseFloat(r.scheduled_value) || 0;
+        return {
+          name: r.project_name || "Unnamed Project",
+          billedPercent: sv > 0 ? Math.round((parseFloat(r.total_billed) / sv) * 10000) / 100 : 0,
+          completePercent: sv > 0 ? Math.round((parseFloat(r.completed_to_date) / sv) * 10000) / 100 : 0,
+        };
+      });
+    } catch (e) {
+      console.error("SOV progress: project breakdown error:", e);
+    }
+
+    // 3. Labor cost vs SOV value
+    let laborCost = 0;
+    let sovValue = totalScheduledValue;
+    let laborToSovPercent = 0;
+    try {
+      const laborResult = await db.execute(sql`
+        SELECT COALESCE(SUM(
+          (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
+          COALESCE(u."cost_rate"::numeric, 50)
+        ), 0) as labor_cost
+        FROM "time_entries" te
+        JOIN "users" u ON te."user_id" = u."id"
+        WHERE EXISTS (
+          SELECT 1 FROM "schedule_of_values" s
+          WHERE s."project_id" = te."project_id"
+            AND s."status"::text NOT IN ('ARCHIVED', 'DRAFT')
+            ${orgCond}
+        )
+      `);
+      laborCost = parseFloat((laborResult.rows[0] as any)?.labor_cost) || 0;
+      if (sovValue > 0) {
+        laborToSovPercent = Math.round((laborCost / sovValue) * 10000) / 100;
+      }
+    } catch (e) {
+      console.error("SOV progress: labor cost error:", e);
+    }
+
+    // 4. Retainage held
+    let retainageHeld = 0;
+    let avgRetainagePercent = 0;
+    try {
+      const retResult = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(s."total_retainage"::numeric), 0) as retainage_held,
+          CASE
+            WHEN COUNT(*) > 0 THEN COALESCE(AVG(s."retainage_percent"::numeric), 0)
+            ELSE 0
+          END as avg_retainage_percent
+        FROM "schedule_of_values" s
+        WHERE s."status"::text NOT IN ('ARCHIVED', 'DRAFT')
+          ${orgCond}
+      `);
+      const retRow = retResult.rows[0] as any;
+      retainageHeld = parseFloat(retRow?.retainage_held) || 0;
+      avgRetainagePercent = Math.round((parseFloat(retRow?.avg_retainage_percent) || 0) * 100) / 100;
+    } catch (e) {
+      console.error("SOV progress: retainage error:", e);
+    }
+
+    res.json({
+      billedPercent,
+      completePercent,
+      totalScheduledValue: Math.round(totalScheduledValue * 100) / 100,
+      totalCompletedToDate: Math.round(totalCompletedToDate * 100) / 100,
+      totalBilled: Math.round(totalBilled * 100) / 100,
+      laborCost: Math.round(laborCost * 100) / 100,
+      sovValue: Math.round(sovValue * 100) / 100,
+      laborToSovPercent,
+      retainageHeld: Math.round(retainageHeld * 100) / 100,
+      avgRetainagePercent,
+      projects: projectBreakdown,
+    });
+  } catch (error) {
+    console.error("SOV progress error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

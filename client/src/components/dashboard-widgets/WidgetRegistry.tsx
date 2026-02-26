@@ -36,6 +36,7 @@ import { ListWidget } from "./ListWidget";
 import { AlertsWidget } from "./AlertsWidget";
 import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
 import { CashPositionWidget } from "./CashPositionWidget";
+import { SOVProgressWidget } from "./SOVProgressWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -165,6 +166,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 3,
     maxW: 12,
     maxH: 6,
+    singleton: false,
+    hasSettings: false,
+  },
+  {
+    type: "SOV_PROGRESS",
+    label: "SOV Progress",
+    description: "Schedule of Values progress — % billed vs % complete, labor cost vs SOV, and retainage held",
+    icon: ClipboardList,
+    component: SOVProgressWidget,
+    defaultW: 6,
+    defaultH: 5,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 8,
     singleton: false,
     hasSettings: false,
   },
