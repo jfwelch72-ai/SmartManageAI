@@ -157,7 +157,7 @@ function validatePalette(palette: Partial<UserColorPalette>, mode: 'light' | 'da
 // ============================================
 
 const KNOWN_WIDGET_TYPES = [
-  'QUICK_STATS', 'KPI_SUMMARY', 'WEATHER', 'AI_INSIGHTS', 'MESSAGES', 'NOTIFICATIONS',
+  'QUICK_STATS', 'KPI_SUMMARY', 'TREND_CHART', 'WEATHER', 'AI_INSIGHTS', 'MESSAGES', 'NOTIFICATIONS',
   'CALENDAR_EVENTS', 'AI_TASKS', 'OUTSTANDING_ITEMS', 'ACTIVE_PROJECTS',
   'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS'
 ];

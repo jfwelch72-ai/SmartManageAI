@@ -38,6 +38,7 @@ The platform utilizes a modern web stack with a multi-tenant architecture, prior
 *   **Dashboard Customization**: WYSIWYG editor with section-based layout (v3), configurable widgets, and a widget configuration system. Widgets support duplication and per-section adding.
 *   **WCAG Compliance**: Theme picker colors meet WCAG AA 4.5:1 contrast ratio.
 *   **OAuth Social Login**: Integration with Google and Apple for user authentication.
+*   **Trend Chart Widget**: New `TREND_CHART` widget type (non-singleton, all roles, hasSettings). Renders line or bar chart via Recharts. Configurable: Metric (Labor Cost, Revenue, Bid Win Rate, Overtime Hours, Cash Flow), Chart Type (Line/Bar), Time Period (7D/30D/90D/6M/1Y), Group By (None/Project/Trade). Backend: `GET /api/dashboard/trend?metric=X&period=Y&groupBy=Z` aggregates from `time_entries`, `projects`, `bids` tables with org-scoping. Multi-series support for grouped data. Components: `TrendChartWidget.tsx`, `TrendChartSettings.tsx`.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

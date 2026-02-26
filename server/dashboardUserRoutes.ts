@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries } from "@shared/schema";
 import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, gte, lte, desc } from "drizzle-orm";
 import { z } from "zod";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit } from "./auditLogger";
@@ -642,6 +642,274 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
     console.error("Change password error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Dashboard Trend Chart Data
+// ====================
+
+const TREND_METRICS = ["LABOR_COST", "REVENUE", "BID_WIN_RATE", "OVERTIME_HOURS", "CASH_FLOW"] as const;
+const TREND_PERIODS = ["7D", "30D", "90D", "6M", "1Y"] as const;
+const TREND_GROUP_BY = ["NONE", "PROJECT", "TRADE"] as const;
+
+function getPeriodDates(period: string): { start: Date; end: Date; bucketFormat: string } {
+  const end = new Date();
+  const start = new Date();
+
+  switch (period) {
+    case "7D":
+      start.setDate(end.getDate() - 7);
+      return { start, end, bucketFormat: "YYYY-MM-DD" };
+    case "30D":
+      start.setDate(end.getDate() - 30);
+      return { start, end, bucketFormat: "YYYY-MM-DD" };
+    case "90D":
+      start.setDate(end.getDate() - 90);
+      return { start, end, bucketFormat: "YYYY-\"W\"IW" };
+    case "6M":
+      start.setMonth(end.getMonth() - 6);
+      return { start, end, bucketFormat: "YYYY-\"W\"IW" };
+    case "1Y":
+      start.setFullYear(end.getFullYear() - 1);
+      return { start, end, bucketFormat: "YYYY-MM" };
+    default:
+      start.setDate(end.getDate() - 30);
+      return { start, end, bucketFormat: "YYYY-MM-DD" };
+  }
+}
+
+router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const metric = req.query.metric as string;
+    const period = (req.query.period as string) || "30D";
+    const groupBy = (req.query.groupBy as string) || "NONE";
+
+    if (!metric || !TREND_METRICS.includes(metric as any)) {
+      return res.status(400).json({ error: `Invalid metric. Must be one of: ${TREND_METRICS.join(", ")}` });
+    }
+    if (!TREND_PERIODS.includes(period as any)) {
+      return res.status(400).json({ error: `Invalid period. Must be one of: ${TREND_PERIODS.join(", ")}` });
+    }
+    if (!TREND_GROUP_BY.includes(groupBy as any)) {
+      return res.status(400).json({ error: `Invalid groupBy. Must be one of: ${TREND_GROUP_BY.join(", ")}` });
+    }
+
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ points: [], metric, period, groupBy });
+    }
+
+    const { start, end, bucketFormat } = getPeriodDates(period);
+
+    const orgFilter = shouldFilter && orgId
+      ? sql`AND p."gc_organization_id" = ${orgId}`
+      : sql``;
+
+    const orgFilterDirect = shouldFilter && orgId
+      ? sql`AND "gc_organization_id" = ${orgId}`
+      : sql``;
+
+    let groupSelect: ReturnType<typeof sql>;
+    let groupByClause: ReturnType<typeof sql>;
+    if (groupBy === "PROJECT") {
+      groupSelect = sql`p."name" as "group"`;
+      groupByClause = sql`GROUP BY bucket, p."name"`;
+    } else if (groupBy === "TRADE") {
+      groupSelect = sql`COALESCE(o."trade_type"::text, 'UNKNOWN') as "group"`;
+      groupByClause = sql`GROUP BY bucket, o."trade_type"::text`;
+    } else {
+      groupSelect = sql`'All' as "group"`;
+      groupByClause = sql`GROUP BY bucket`;
+    }
+
+    let points: Array<{ date: string; value: number; group?: string }> = [];
+
+    switch (metric) {
+      case "LABOR_COST": {
+        const tradeJoin = groupBy === "TRADE"
+          ? sql`LEFT JOIN "organizations" o ON p."gc_organization_id" = o."id"`
+          : sql``;
+
+        const result = await db.execute(sql`
+          SELECT
+            to_char(te."date", ${bucketFormat}) as bucket,
+            ${groupSelect},
+            COALESCE(SUM(
+              (CAST(te."hours_regular" AS numeric) * 45) +
+              (CAST(te."hours_overtime" AS numeric) * 67.5)
+            ), 0) as value
+          FROM "time_entries" te
+          JOIN "projects" p ON te."project_id" = p."id"
+          ${tradeJoin}
+          WHERE te."date" >= ${start} AND te."date" <= ${end}
+          ${orgFilter}
+          ${groupByClause}
+          ORDER BY bucket
+        `);
+        points = (result.rows as any[]).map(r => ({
+          date: r.bucket,
+          value: parseFloat(r.value) || 0,
+          group: groupBy !== "NONE" ? r.group : undefined,
+        }));
+        break;
+      }
+
+      case "REVENUE": {
+        const tradeJoin = groupBy === "TRADE"
+          ? sql`LEFT JOIN "organizations" o ON p."gc_organization_id" = o."id"`
+          : sql``;
+
+        const groupSelectRev = groupBy === "PROJECT"
+          ? sql`p."name" as "group"`
+          : groupBy === "TRADE"
+            ? sql`COALESCE(o."trade_type"::text, 'UNKNOWN') as "group"`
+            : sql`'All' as "group"`;
+
+        const groupByRev = groupBy === "PROJECT"
+          ? sql`GROUP BY bucket, p."name"`
+          : groupBy === "TRADE"
+            ? sql`GROUP BY bucket, o."trade_type"::text`
+            : sql`GROUP BY bucket`;
+
+        const result = await db.execute(sql`
+          SELECT
+            to_char(p."created_at", ${bucketFormat}) as bucket,
+            ${groupSelectRev},
+            COALESCE(SUM(CAST(COALESCE(p."contract_amount", '0') AS numeric)), 0) as value
+          FROM "projects" p
+          ${tradeJoin}
+          WHERE p."created_at" >= ${start} AND p."created_at" <= ${end}
+          ${orgFilterDirect.append(sql``)}
+          ${groupByRev}
+          ORDER BY bucket
+        `);
+        points = (result.rows as any[]).map(r => ({
+          date: r.bucket,
+          value: parseFloat(r.value) || 0,
+          group: groupBy !== "NONE" ? r.group : undefined,
+        }));
+        break;
+      }
+
+      case "BID_WIN_RATE": {
+        const tradeJoin = groupBy === "TRADE"
+          ? sql`LEFT JOIN "organizations" o ON b."gc_organization_id" = o."id"`
+          : sql``;
+
+        const groupSelectBid = groupBy === "PROJECT"
+          ? sql`b."name" as "group"`
+          : groupBy === "TRADE"
+            ? sql`COALESCE(o."trade_type"::text, 'UNKNOWN') as "group"`
+            : sql`'All' as "group"`;
+
+        const groupByBid = groupBy === "PROJECT"
+          ? sql`GROUP BY bucket, b."name"`
+          : groupBy === "TRADE"
+            ? sql`GROUP BY bucket, o."trade_type"::text`
+            : sql`GROUP BY bucket`;
+
+        const bidOrgFilter = shouldFilter && orgId
+          ? sql`AND b."gc_organization_id" = ${orgId}`
+          : sql``;
+
+        const result = await db.execute(sql`
+          SELECT
+            to_char(b."created_at", ${bucketFormat}) as bucket,
+            ${groupSelectBid},
+            CASE
+              WHEN COUNT(*) = 0 THEN 0
+              ELSE ROUND((COUNT(*) FILTER (WHERE b."status" = 'AWARDED')::numeric / COUNT(*)::numeric) * 100, 1)
+            END as value
+          FROM "bids" b
+          ${tradeJoin}
+          WHERE b."created_at" >= ${start} AND b."created_at" <= ${end}
+          ${bidOrgFilter}
+          ${groupByBid}
+          ORDER BY bucket
+        `);
+        points = (result.rows as any[]).map(r => ({
+          date: r.bucket,
+          value: parseFloat(r.value) || 0,
+          group: groupBy !== "NONE" ? r.group : undefined,
+        }));
+        break;
+      }
+
+      case "OVERTIME_HOURS": {
+        const tradeJoin = groupBy === "TRADE"
+          ? sql`LEFT JOIN "organizations" o ON p."gc_organization_id" = o."id"`
+          : sql``;
+
+        const result = await db.execute(sql`
+          SELECT
+            to_char(te."date", ${bucketFormat}) as bucket,
+            ${groupSelect},
+            COALESCE(SUM(CAST(te."hours_overtime" AS numeric)), 0) as value
+          FROM "time_entries" te
+          JOIN "projects" p ON te."project_id" = p."id"
+          ${tradeJoin}
+          WHERE te."date" >= ${start} AND te."date" <= ${end}
+          ${orgFilter}
+          ${groupByClause}
+          ORDER BY bucket
+        `);
+        points = (result.rows as any[]).map(r => ({
+          date: r.bucket,
+          value: parseFloat(r.value) || 0,
+          group: groupBy !== "NONE" ? r.group : undefined,
+        }));
+        break;
+      }
+
+      case "CASH_FLOW": {
+        const revenueResult = await db.execute(sql`
+          SELECT
+            to_char(p."created_at", ${bucketFormat}) as bucket,
+            COALESCE(SUM(CAST(COALESCE(p."contract_amount", '0') AS numeric)), 0) as value
+          FROM "projects" p
+          WHERE p."created_at" >= ${start} AND p."created_at" <= ${end}
+          ${orgFilterDirect}
+          GROUP BY bucket
+          ORDER BY bucket
+        `);
+
+        const costResult = await db.execute(sql`
+          SELECT
+            to_char(te."date", ${bucketFormat}) as bucket,
+            COALESCE(SUM(
+              (CAST(te."hours_regular" AS numeric) * 45) +
+              (CAST(te."hours_overtime" AS numeric) * 67.5)
+            ), 0) as value
+          FROM "time_entries" te
+          JOIN "projects" p ON te."project_id" = p."id"
+          WHERE te."date" >= ${start} AND te."date" <= ${end}
+          ${orgFilter}
+          GROUP BY bucket
+          ORDER BY bucket
+        `);
+
+        const revenueMap = new Map<string, number>();
+        (revenueResult.rows as any[]).forEach(r => revenueMap.set(r.bucket, parseFloat(r.value) || 0));
+        const costMap = new Map<string, number>();
+        (costResult.rows as any[]).forEach(r => costMap.set(r.bucket, parseFloat(r.value) || 0));
+
+        const allBuckets = new Set([...revenueMap.keys(), ...costMap.keys()]);
+        points = Array.from(allBuckets)
+          .sort()
+          .map(bucket => ({
+            date: bucket,
+            value: (revenueMap.get(bucket) || 0) - (costMap.get(bucket) || 0),
+          }));
+        break;
+      }
+    }
+
+    res.json({ points, metric, period, groupBy });
+  } catch (error) {
+    console.error("Trend data error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

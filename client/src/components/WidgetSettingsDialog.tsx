@@ -13,6 +13,7 @@ import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { getWidgetDefinition } from "@/components/dashboard-widgets/WidgetRegistry";
 import { QuickStatsSettings, type QuickStatsConfig, DEFAULT_QUICK_STATS_CONFIG } from "@/components/dashboard-widgets/QuickStatsSettings";
 import { KPISummarySettings, type KPIConfig, DEFAULT_KPI_CONFIG } from "@/components/dashboard-widgets/KPISummarySettings";
+import { TrendChartSettings, type TrendChartConfig, DEFAULT_TREND_CONFIG } from "@/components/dashboard-widgets/TrendChartSettings";
 
 interface WidgetSettingsDialogProps {
   open: boolean;
@@ -22,7 +23,7 @@ interface WidgetSettingsDialogProps {
   sectionId: string;
 }
 
-export const WIDGETS_WITH_SETTINGS = new Set(["QUICK_STATS", "KPI_SUMMARY"]);
+export const WIDGETS_WITH_SETTINGS = new Set(["QUICK_STATS", "KPI_SUMMARY", "TREND_CHART"]);
 
 export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType, sectionId }: WidgetSettingsDialogProps) {
   const { getWidgetConfig, updateWidgetConfig } = useDashboardCustomization();
@@ -54,6 +55,13 @@ export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType,
         return (
           <KPISummarySettings
             config={{ ...DEFAULT_KPI_CONFIG, ...localConfig } as KPIConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "TREND_CHART":
+        return (
+          <TrendChartSettings
+            config={{ ...DEFAULT_TREND_CONFIG, ...localConfig } as TrendChartConfig}
             onChange={(config) => setLocalConfig(config)}
           />
         );

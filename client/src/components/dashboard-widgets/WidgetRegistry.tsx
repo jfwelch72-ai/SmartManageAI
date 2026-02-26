@@ -12,6 +12,7 @@ import {
   CloudSun,
   Sparkles,
   TrendingUp,
+  LineChart,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -27,6 +28,7 @@ import { ProjectAssignmentsWidget } from "./ProjectAssignmentsWidget";
 import { WeatherForecastWidget } from "@/components/WeatherForecastWidget";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
 import { KPISummaryWidget } from "./KPISummaryWidget";
+import { TrendChartWidget } from "./TrendChartWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -81,6 +83,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 3,
     maxW: 12,
     maxH: 6,
+    singleton: false,
+    hasSettings: true,
+  },
+  {
+    type: "TREND_CHART",
+    label: "Trend Chart",
+    description: "Line or bar chart showing metrics over time — labor cost, revenue, bid win rate, overtime, cash flow",
+    icon: LineChart,
+    component: TrendChartWidget as any,
+    defaultW: 12,
+    defaultH: 6,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 10,
     singleton: false,
     hasSettings: true,
   },
