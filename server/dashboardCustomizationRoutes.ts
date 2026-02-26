@@ -765,8 +765,6 @@ router.get('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
         eq(userDashboardLayouts.userId, userId)
       ));
 
-    const roleDefault = getDefaultLayoutForRole(req.user!.role || '');
-
     if (layout) {
       try {
         const config = JSON.parse(layout.layoutConfig);

@@ -1,13 +1,17 @@
 import cron from "node-cron";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
+import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog } from "@shared/schema";
-import { eq, and, lt } from "drizzle-orm";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState } from "@shared/schema";
+import { eq, and, lt, lte } from "drizzle-orm";
+import { getProvider } from "../integrations/registry";
+import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
+let syncScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -28,7 +32,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention scheduler)");
+  syncScheduleTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      await processSyncSchedules();
+    } catch (err) {
+      logError("Sync schedule processing failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention and sync schedulers)");
 }
 
 export function stopJobRunner() {
@@ -39,6 +51,10 @@ export function stopJobRunner() {
   if (retentionTask) {
     retentionTask.stop();
     retentionTask = null;
+  }
+  if (syncScheduleTask) {
+    syncScheduleTask.stop();
+    syncScheduleTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -97,6 +113,143 @@ async function processRetentionPolicies() {
       logInfo("Retention policy executed", { entityType: policy.entityType, action: policy.action });
     } catch (err) {
       logError("Retention policy failed", { policyId: policy.id, error: String(err) });
+    }
+  }
+}
+
+function computeNextRunAt(frequency: string): Date {
+  const now = new Date();
+  switch (frequency) {
+    case "hourly":
+      return new Date(now.getTime() + 60 * 60 * 1000);
+    case "every_6h":
+      return new Date(now.getTime() + 6 * 60 * 60 * 1000);
+    case "daily":
+      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    case "weekly":
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    default:
+      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  }
+}
+
+async function processSyncSchedules() {
+  const now = new Date();
+  const dueSchedules = await db.select().from(qboSyncSchedules)
+    .where(and(
+      eq(qboSyncSchedules.isActive, true),
+      lte(qboSyncSchedules.nextRunAt, now)
+    ));
+
+  if (dueSchedules.length === 0) return;
+
+  logInfo("Processing due sync schedules", { count: dueSchedules.length });
+
+  for (const schedule of dueSchedules) {
+    const startTime = Date.now();
+    try {
+      let connection = await connectionService.getConnection(schedule.connectionId, schedule.organizationId);
+      if (!connection || connection.status !== "active") {
+        logError("Sync schedule skipped: connection inactive", { scheduleId: schedule.id });
+        continue;
+      }
+
+      const metadata = (connection.metadata as Record<string, any>) || {};
+      if (metadata.expiresAt && new Date(metadata.expiresAt) < now) {
+        const provider = getProvider(connection.provider);
+        if (provider && metadata.refreshToken) {
+          try {
+            const newTokens = await provider.refreshToken(connection);
+            await connectionService.storeConnectionTokens(connection.id, schedule.organizationId, newTokens);
+            connection = (await connectionService.getConnection(connection.id, schedule.organizationId))!;
+            logInfo("Token refreshed for scheduled sync", { connectionId: connection.id });
+          } catch (refreshErr) {
+            logError("Token refresh failed for scheduled sync", { error: String(refreshErr) });
+            continue;
+          }
+        }
+      }
+
+      let result;
+      switch (schedule.operation) {
+        case "chart_of_accounts":
+          result = await importChartOfAccounts(connection, false);
+          break;
+        case "customers":
+          result = await exportCustomers(connection, [], false);
+          break;
+        case "subcontractor_payments":
+          result = await exportSubcontractorPayments(connection, false);
+          break;
+        case "purchase_orders":
+          result = await exportPurchaseOrders(connection, undefined, false);
+          break;
+        case "reconcile_payments":
+          result = await reconcilePayments(connection, false);
+          break;
+        default:
+          logError("Unknown scheduled sync operation", { operation: schedule.operation });
+          continue;
+      }
+
+      const duration = Date.now() - startTime;
+
+      const syncLog = {
+        operation: schedule.operation,
+        dryRun: false,
+        result,
+        duration,
+        triggeredBy: "scheduler",
+        triggeredAt: new Date().toISOString(),
+      };
+
+      const [existing] = await db.select().from(integrationSyncState)
+        .where(and(
+          eq(integrationSyncState.connectionId, connection.id),
+          eq(integrationSyncState.entityType, `sync_log_${schedule.operation}`)
+        ));
+
+      const prevLogs = (existing?.metadata as any)?.logs || [];
+      prevLogs.unshift(syncLog);
+      const logs = prevLogs.slice(0, 50);
+
+      if (existing) {
+        await db.update(integrationSyncState)
+          .set({
+            metadata: { logs, latestResult: result },
+            lastSyncAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(integrationSyncState.id, existing.id));
+      } else {
+        await db.insert(integrationSyncState).values({
+          organizationId: schedule.organizationId,
+          connectionId: connection.id,
+          entityType: `sync_log_${schedule.operation}`,
+          metadata: { logs, latestResult: result },
+          lastSyncAt: new Date(),
+        });
+      }
+
+      await db.update(qboSyncSchedules)
+        .set({
+          lastRunAt: now,
+          nextRunAt: computeNextRunAt(schedule.frequency),
+          updatedAt: new Date(),
+        })
+        .where(eq(qboSyncSchedules.id, schedule.id));
+
+      logInfo("Scheduled sync completed", { operation: schedule.operation, duration, success: result?.success });
+    } catch (err) {
+      logError("Scheduled sync failed", { scheduleId: schedule.id, operation: schedule.operation, error: String(err) });
+
+      await db.update(qboSyncSchedules)
+        .set({
+          lastRunAt: now,
+          nextRunAt: computeNextRunAt(schedule.frequency),
+          updatedAt: new Date(),
+        })
+        .where(eq(qboSyncSchedules.id, schedule.id));
     }
   }
 }

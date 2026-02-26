@@ -1,8 +1,8 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationSyncState } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { integrationSyncState, qboAccountMappings, payRuns, payRunLineItems, subcontractorPayments, subcontractorContracts, crmOrganisations, procurementItems, projects, tmInvoices, users } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
 
 function getQboBaseUrl(): string {
@@ -66,6 +66,123 @@ async function qboPost(realmId: string, accessToken: string, endpoint: string, b
   } catch (err) {
     clearTimeout(timeout);
     throw err;
+  }
+}
+
+async function getAccountMappings(connectionId: string, organizationId: string): Promise<Map<string, { qboAccountId: string; qboAccountName: string }>> {
+  const mappings = await db.select().from(qboAccountMappings)
+    .where(and(
+      eq(qboAccountMappings.connectionId, connectionId),
+      eq(qboAccountMappings.organizationId, organizationId),
+    ));
+
+  const map = new Map<string, { qboAccountId: string; qboAccountName: string }>();
+  for (const m of mappings) {
+    map.set(`${m.costCode}:${m.mappingType}`, { qboAccountId: m.qboAccountId, qboAccountName: m.qboAccountName });
+  }
+  return map;
+}
+
+async function getDefaultExpenseAccount(connectionId: string): Promise<{ value: string; name: string } | null> {
+  const [coaState] = await db.select().from(integrationSyncState)
+    .where(and(
+      eq(integrationSyncState.connectionId, connectionId),
+      eq(integrationSyncState.entityType, "chart_of_accounts")
+    ));
+
+  const accounts = (coaState?.metadata as any)?.accounts || [];
+  const expenseAccounts = accounts.filter((a: any) => a.classification === "Expense" && a.active);
+  const uncategorized = expenseAccounts.find((a: any) =>
+    a.name?.toLowerCase().includes("uncategorized") ||
+    a.name?.toLowerCase().includes("miscellaneous") ||
+    a.accountSubType === "OtherMiscellaneousExpense"
+  );
+  const fallback = uncategorized || expenseAccounts[0];
+  if (fallback) {
+    return { value: fallback.qboId, name: fallback.name };
+  }
+  return null;
+}
+
+async function getDefaultLiabilityAccount(connectionId: string): Promise<{ value: string; name: string } | null> {
+  const [coaState] = await db.select().from(integrationSyncState)
+    .where(and(
+      eq(integrationSyncState.connectionId, connectionId),
+      eq(integrationSyncState.entityType, "chart_of_accounts")
+    ));
+
+  const accounts = (coaState?.metadata as any)?.accounts || [];
+  const liabilityAccounts = accounts.filter((a: any) =>
+    (a.classification === "Liability" || a.accountType === "Other Current Liability") && a.active
+  );
+  const payrollLiab = liabilityAccounts.find((a: any) =>
+    a.name?.toLowerCase().includes("payroll") ||
+    a.name?.toLowerCase().includes("wages")
+  );
+  const fallback = payrollLiab || liabilityAccounts[0];
+  if (fallback) {
+    return { value: fallback.qboId, name: fallback.name };
+  }
+  return null;
+}
+
+async function getOrCreateVendor(realmId: string, accessToken: string, vendorName: string): Promise<string> {
+  const query = encodeURIComponent(`SELECT * FROM Vendor WHERE DisplayName = '${vendorName.replace(/'/g, "\\'")}'`);
+  const data = await qboFetch(realmId, accessToken, `query?query=${query}`);
+  const existing = data?.QueryResponse?.Vendor;
+  if (existing && existing.length > 0) {
+    return existing[0].Id;
+  }
+
+  const result = await qboPost(realmId, accessToken, "vendor", {
+    DisplayName: vendorName,
+  });
+  return result?.Vendor?.Id;
+}
+
+async function getExportedIds(connectionId: string, entityType: string): Promise<Set<string>> {
+  const [state] = await db.select().from(integrationSyncState)
+    .where(and(
+      eq(integrationSyncState.connectionId, connectionId),
+      eq(integrationSyncState.entityType, entityType)
+    ));
+
+  const meta = state?.metadata as any;
+  return new Set(meta?.exportedIds || []);
+}
+
+async function trackExportedId(connectionId: string, organizationId: string, entityType: string, newId: string, qboId?: string): Promise<void> {
+  const [existing] = await db.select().from(integrationSyncState)
+    .where(and(
+      eq(integrationSyncState.connectionId, connectionId),
+      eq(integrationSyncState.entityType, entityType)
+    ));
+
+  const meta = existing?.metadata as any || {};
+  const exportedIds = meta.exportedIds || [];
+  const idMapping = meta.idMapping || {};
+
+  if (!exportedIds.includes(newId)) {
+    exportedIds.push(newId);
+  }
+  if (qboId) {
+    idMapping[newId] = qboId;
+  }
+
+  const updatedMeta = { ...meta, exportedIds, idMapping, lastExportAt: new Date().toISOString() };
+
+  if (existing) {
+    await db.update(integrationSyncState)
+      .set({ metadata: updatedMeta, lastSyncAt: new Date(), updatedAt: new Date() })
+      .where(eq(integrationSyncState.id, existing.id));
+  } else {
+    await db.insert(integrationSyncState).values({
+      organizationId,
+      connectionId,
+      entityType,
+      metadata: updatedMeta,
+      lastSyncAt: new Date(),
+    });
   }
 }
 
@@ -172,6 +289,7 @@ export async function exportInvoice(
     lineItems: Array<{ description: string; amount: number; accountRef?: string }>;
     dueDate?: string;
     docNumber?: string;
+    localInvoiceId?: string;
   },
   dryRun: boolean = false
 ): Promise<SyncResult> {
@@ -201,7 +319,12 @@ export async function exportInvoice(
     if (invoice.docNumber) qboInvoice.DocNumber = invoice.docNumber;
 
     const result = await qboPost(metadata.realmId, metadata.accessToken || "", "invoice", qboInvoice);
-    logInfo("QBO invoice exported", { invoiceId: result?.Invoice?.Id });
+    const qboInvoiceId = result?.Invoice?.Id;
+    logInfo("QBO invoice exported", { invoiceId: qboInvoiceId });
+
+    if (invoice.localInvoiceId && qboInvoiceId) {
+      await trackExportedId(connection.id, connection.organizationId, "exported_invoices", invoice.localInvoiceId, qboInvoiceId);
+    }
 
     return { success: true, entityType: "invoice", direction: "export", created: 1, updated: 0, skipped: 0, errors: [] };
   } catch (err) {
@@ -240,4 +363,450 @@ export async function importPaymentStatus(
   }
 
   return { success: errors.length === 0, entityType: "payment", direction: "import", created: 0, updated, skipped: 0, errors };
+}
+
+export async function exportPayroll(
+  connection: IntegrationConnection,
+  payRunId: string,
+  dryRun: boolean = false
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let created = 0;
+  let skipped = 0;
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_payroll");
+    if (exportedIds.has(payRunId)) {
+      logInfo("QBO payroll already exported", { payRunId });
+      return { success: true, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors: [] };
+    }
+
+    const [payRun] = await db.select().from(payRuns)
+      .where(and(
+        eq(payRuns.id, payRunId),
+        eq(payRuns.organizationId, connection.organizationId)
+      ));
+
+    if (!payRun) {
+      return { success: false, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors: [{ message: "Pay run not found" }] };
+    }
+
+    if (!["APPROVED", "PAID"].includes(payRun.status)) {
+      return { success: false, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors: [{ message: `Pay run must be APPROVED or PAID (current: ${payRun.status})` }] };
+    }
+
+    const lineItems = await db.select({
+      costCode: payRunLineItems.costCode,
+      totalAmount: payRunLineItems.totalAmount,
+      regularHours: payRunLineItems.regularHours,
+      overtimeHours: payRunLineItems.overtimeHours,
+      userName: users.firstName,
+      userLastName: users.lastName,
+      projectName: projects.name,
+    })
+      .from(payRunLineItems)
+      .leftJoin(users, eq(payRunLineItems.userId, users.id))
+      .leftJoin(projects, eq(payRunLineItems.projectId, projects.id))
+      .where(eq(payRunLineItems.payRunId, payRunId));
+
+    if (lineItems.length === 0) {
+      return { success: true, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 1, errors: [{ message: "No line items found" }] };
+    }
+
+    const accountMappings = await getAccountMappings(connection.id, connection.organizationId);
+    const defaultExpenseAccount = await getDefaultExpenseAccount(connection.id);
+    const defaultLiabilityAccount = await getDefaultLiabilityAccount(connection.id);
+
+    if (!defaultExpenseAccount) {
+      return { success: false, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors: [{ message: "No expense accounts found in Chart of Accounts. Please sync Chart of Accounts first." }] };
+    }
+
+    const costCodeGroups = new Map<string, { total: number; descriptions: string[] }>();
+    for (const item of lineItems) {
+      const code = item.costCode || "UNASSIGNED";
+      const existing = costCodeGroups.get(code) || { total: 0, descriptions: [] };
+      existing.total += Number(item.totalAmount || 0);
+      const workerName = [item.userName, item.userLastName].filter(Boolean).join(" ") || "Worker";
+      existing.descriptions.push(`${workerName} - ${item.projectName || "Project"} (${item.regularHours}h reg, ${item.overtimeHours}h OT)`);
+      costCodeGroups.set(code, existing);
+    }
+
+    if (dryRun) {
+      return {
+        success: true,
+        entityType: "payroll",
+        direction: "export",
+        created: 1,
+        updated: 0,
+        skipped: 0,
+        errors: [],
+      };
+    }
+
+    const journalLines: any[] = [];
+    let totalDebit = 0;
+    let lineNum = 1;
+
+    const liabilityAccountRef = defaultLiabilityAccount || defaultExpenseAccount;
+
+    for (const [costCode, group] of costCodeGroups) {
+      const mapping = accountMappings.get(`${costCode}:cost_code`);
+      const accountRef = mapping
+        ? { value: mapping.qboAccountId, name: mapping.qboAccountName }
+        : defaultExpenseAccount!;
+
+      journalLines.push({
+        DetailType: "JournalEntryLineDetail",
+        Amount: Math.round(group.total * 100) / 100,
+        Description: `Payroll - ${costCode}: ${group.descriptions.slice(0, 3).join("; ")}${group.descriptions.length > 3 ? ` (+${group.descriptions.length - 3} more)` : ""}`,
+        JournalEntryLineDetail: {
+          PostingType: "Debit",
+          AccountRef: accountRef,
+        },
+        LineNum: lineNum++,
+      });
+      totalDebit += group.total;
+    }
+
+    journalLines.push({
+      DetailType: "JournalEntryLineDetail",
+      Amount: Math.round(totalDebit * 100) / 100,
+      Description: `Payroll liability - Run #${payRun.runNumber || payRunId} (${payRun.payPeriodStart} to ${payRun.payPeriodEnd})`,
+      JournalEntryLineDetail: {
+        PostingType: "Credit",
+        AccountRef: liabilityAccountRef,
+      },
+      LineNum: lineNum,
+    });
+
+    const journalEntry = {
+      TxnDate: payRun.payPeriodEnd,
+      PrivateNote: `SmartManageAI Pay Run #${payRun.runNumber || payRunId}`,
+      Line: journalLines,
+    };
+
+    const result = await qboPost(metadata.realmId, metadata.accessToken || "", "journalentry", journalEntry);
+    const qboJournalId = result?.JournalEntry?.Id;
+    logInfo("QBO payroll journal entry created", { payRunId, qboJournalId });
+
+    await trackExportedId(connection.id, connection.organizationId, "exported_payroll", payRunId, qboJournalId);
+    created = 1;
+
+    return { success: true, entityType: "payroll", direction: "export", created, updated: 0, skipped, errors };
+  } catch (err) {
+    logError("QBO payroll export failed", { error: String(err), payRunId });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+export async function exportSubcontractorPayments(
+  connection: IntegrationConnection,
+  dryRun: boolean = false
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let created = 0;
+  let skipped = 0;
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_sub_payments");
+
+    const payments = await db.select({
+      payment: subcontractorPayments,
+      contractNumber: subcontractorContracts.contractNumber,
+      scopeOfWork: subcontractorContracts.scopeOfWork,
+      subcontractorId: subcontractorContracts.subcontractorId,
+    })
+      .from(subcontractorPayments)
+      .innerJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+      .where(and(
+        eq(subcontractorPayments.organizationId, connection.organizationId),
+        inArray(subcontractorPayments.status, ["APPROVED", "PAID"])
+      ));
+
+    if (payments.length === 0) {
+      return { success: true, entityType: "subcontractor_bill", direction: "export", created: 0, updated: 0, skipped: 0, errors: [] };
+    }
+
+    const accountMappings = await getAccountMappings(connection.id, connection.organizationId);
+    const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
+
+    if (!defaultExpAccount) {
+      return { success: false, entityType: "subcontractor_bill", direction: "export", created: 0, updated: 0, skipped: 0, errors: [{ message: "No expense accounts found in Chart of Accounts. Please sync Chart of Accounts first." }] };
+    }
+
+    const subIds = [...new Set(payments.map(p => p.subcontractorId))];
+    const subs = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
+      .from(crmOrganisations)
+      .where(inArray(crmOrganisations.id, subIds));
+    const subNameMap = new Map(subs.map(s => [s.id, s.name]));
+
+    for (const { payment, contractNumber, scopeOfWork, subcontractorId } of payments) {
+      if (exportedIds.has(payment.id)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const vendorName = subNameMap.get(subcontractorId) || `Subcontractor ${subcontractorId}`;
+
+        if (dryRun) {
+          created++;
+          continue;
+        }
+
+        const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", vendorName);
+
+        const costCodeKey = scopeOfWork ? `${scopeOfWork}:cost_code` : null;
+        const mappedAccount = costCodeKey ? accountMappings.get(costCodeKey) : null;
+        const lineAccountRef = mappedAccount
+          ? { value: mappedAccount.qboAccountId, name: mappedAccount.qboAccountName }
+          : defaultExpAccount;
+
+        const bill = {
+          VendorRef: { value: vendorId },
+          DocNumber: payment.invoiceNumber || `SUB-${contractNumber}-${payment.paymentNumber}`,
+          TxnDate: payment.paymentDate ? new Date(payment.paymentDate).toISOString().split("T")[0] : undefined,
+          Line: [
+            {
+              DetailType: "AccountBasedExpenseLineDetail",
+              Amount: Number(payment.amount),
+              Description: `${scopeOfWork} - Payment #${payment.paymentNumber}${payment.retentionHeld ? ` (Retention: $${payment.retentionHeld})` : ""}`,
+              AccountBasedExpenseLineDetail: {
+                AccountRef: lineAccountRef,
+              },
+            },
+          ],
+        };
+
+        const result = await qboPost(metadata.realmId, metadata.accessToken || "", "bill", bill);
+        const qboBillId = result?.Bill?.Id;
+        logInfo("QBO bill exported for sub payment", { paymentId: payment.id, qboBillId });
+
+        await trackExportedId(connection.id, connection.organizationId, "exported_sub_payments", payment.id, qboBillId);
+        created++;
+      } catch (err) {
+        errors.push({ entityId: payment.id, message: String(err) });
+      }
+    }
+
+    logInfo("QBO subcontractor payments export completed", { created, skipped, errors: errors.length });
+    return { success: errors.length === 0, entityType: "subcontractor_bill", direction: "export", created, updated: 0, skipped, errors };
+  } catch (err) {
+    logError("QBO subcontractor payments export failed", { error: String(err) });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "subcontractor_bill", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+export async function exportPurchaseOrders(
+  connection: IntegrationConnection,
+  projectId?: string,
+  dryRun: boolean = false
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let created = 0;
+  let skipped = 0;
+
+  try {
+    const exportedIds = await getExportedIds(connection.id, "exported_purchase_orders");
+
+    const conditions = [
+      eq(projects.gcOrganizationId, connection.organizationId),
+      inArray(procurementItems.status, ["ORDERED", "RECEIVED"]),
+    ];
+    if (projectId) {
+      conditions.push(eq(procurementItems.projectId, projectId));
+    }
+
+    const items = await db.select({
+      item: procurementItems,
+      projectName: projects.name,
+    })
+      .from(procurementItems)
+      .innerJoin(projects, eq(procurementItems.projectId, projects.id))
+      .where(and(...conditions));
+
+    if (items.length === 0) {
+      return { success: true, entityType: "purchase_order", direction: "export", created: 0, updated: 0, skipped: 0, errors: [] };
+    }
+
+    const accountMappings = await getAccountMappings(connection.id, connection.organizationId);
+    const defaultExpAccount = await getDefaultExpenseAccount(connection.id);
+
+    if (!defaultExpAccount) {
+      return { success: false, entityType: "purchase_order", direction: "export", created: 0, updated: 0, skipped: 0, errors: [{ message: "No expense accounts found in Chart of Accounts. Please sync Chart of Accounts first." }] };
+    }
+
+    const poGroups = new Map<string, Array<{ item: typeof items[0]["item"]; projectName: string | null }>>();
+    for (const row of items) {
+      const poNum = row.item.poNumber || `PO-${row.item.id}`;
+      const group = poGroups.get(poNum) || [];
+      group.push({ item: row.item, projectName: row.projectName });
+      poGroups.set(poNum, group);
+    }
+
+    for (const [poNumber, groupItems] of poGroups) {
+      if (exportedIds.has(poNumber)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const vendorName = groupItems[0].item.vendor || "Unknown Vendor";
+
+        if (dryRun) {
+          created++;
+          continue;
+        }
+
+        const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", vendorName);
+
+        const lines = groupItems.map((g, idx) => {
+          const costCode = g.item.costCode || "";
+          const mapping = costCode ? accountMappings.get(`${costCode}:cost_code`) : null;
+          const lineAccountRef = mapping
+            ? { value: mapping.qboAccountId, name: mapping.qboAccountName }
+            : defaultExpAccount;
+
+          return {
+            DetailType: "AccountBasedExpenseLineDetail",
+            Amount: Number(g.item.quantity || 0) * Number(g.item.unitCost || 0),
+            Description: `${g.item.description} (${g.item.quantity} ${g.item.unit || "units"} @ $${g.item.unitCost}) - ${g.projectName || "Project"}`,
+            AccountBasedExpenseLineDetail: {
+              AccountRef: lineAccountRef,
+            },
+            LineNum: idx + 1,
+          };
+        });
+
+        const po = {
+          VendorRef: { value: vendorId },
+          DocNumber: poNumber,
+          Line: lines,
+        };
+
+        const result = await qboPost(metadata.realmId, metadata.accessToken || "", "purchaseorder", po);
+        const qboPoId = result?.PurchaseOrder?.Id;
+        logInfo("QBO purchase order exported", { poNumber, qboPoId });
+
+        await trackExportedId(connection.id, connection.organizationId, "exported_purchase_orders", poNumber, qboPoId);
+        created++;
+      } catch (err) {
+        errors.push({ entityId: poNumber, message: String(err) });
+      }
+    }
+
+    logInfo("QBO purchase orders export completed", { created, skipped, errors: errors.length });
+    return { success: errors.length === 0, entityType: "purchase_order", direction: "export", created, updated: 0, skipped, errors };
+  } catch (err) {
+    logError("QBO purchase orders export failed", { error: String(err) });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "purchase_order", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+  }
+}
+
+export async function reconcilePayments(
+  connection: IntegrationConnection,
+  dryRun: boolean = false
+): Promise<SyncResult> {
+  const metadata = connection.metadata as Record<string, any> || {};
+  const errors: SyncError[] = [];
+  let updated = 0;
+  let skipped = 0;
+
+  try {
+    const [syncState] = await db.select().from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, connection.id),
+        eq(integrationSyncState.entityType, "exported_invoices")
+      ));
+
+    const stateMeta = syncState?.metadata as any;
+    const idMapping = stateMeta?.idMapping || {};
+    const localIds = Object.keys(idMapping);
+
+    if (localIds.length === 0) {
+      return { success: true, entityType: "payment_reconciliation", direction: "import", created: 0, updated: 0, skipped: 0, errors: [{ message: "No exported invoices found to reconcile" }] };
+    }
+
+    const localInvoices = await db.select().from(tmInvoices)
+      .where(and(
+        eq(tmInvoices.organizationId, connection.organizationId),
+        inArray(tmInvoices.id, localIds)
+      ));
+
+    const statusChanges: Array<{ localId: string; oldStatus: string; newStatus: string }> = [];
+
+    for (const localInvoice of localInvoices) {
+      const qboInvoiceId = idMapping[localInvoice.id];
+      if (!qboInvoiceId) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const data = await qboFetch(
+          metadata.realmId,
+          metadata.accessToken || "",
+          `invoice/${qboInvoiceId}`
+        );
+
+        const qboInv = data?.Invoice;
+        if (!qboInv) {
+          skipped++;
+          continue;
+        }
+
+        const balance = Number(qboInv.Balance || 0);
+        const total = Number(qboInv.TotalAmt || 0);
+        let newStatus: string;
+        if (balance === 0 && total > 0) {
+          newStatus = "PAID";
+        } else if (balance > 0 && balance < total) {
+          newStatus = "SENT";
+        } else {
+          newStatus = "SENT";
+        }
+
+        if (localInvoice.status === "PAID" || localInvoice.status === "CANCELLED") {
+          skipped++;
+          continue;
+        }
+
+        if (localInvoice.status !== newStatus) {
+          if (!dryRun) {
+            await db.update(tmInvoices)
+              .set({ status: newStatus, updatedAt: new Date() })
+              .where(eq(tmInvoices.id, localInvoice.id));
+          }
+          statusChanges.push({ localId: localInvoice.id, oldStatus: localInvoice.status, newStatus });
+          updated++;
+        } else {
+          skipped++;
+        }
+      } catch (err) {
+        errors.push({ entityId: localInvoice.id, message: String(err) });
+      }
+    }
+
+    logInfo("QBO payment reconciliation completed", { updated, skipped, errors: errors.length, changes: statusChanges });
+
+    return {
+      success: errors.length === 0,
+      entityType: "payment_reconciliation",
+      direction: "import",
+      created: 0,
+      updated,
+      skipped,
+      errors,
+    };
+  } catch (err) {
+    logError("QBO payment reconciliation failed", { error: String(err) });
+    errors.push({ message: String(err) });
+    return { success: false, entityType: "payment_reconciliation", direction: "import", created: 0, updated: 0, skipped: 0, errors };
+  }
 }

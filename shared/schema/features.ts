@@ -5022,6 +5022,47 @@ export const insertIntegrationSyncStateSchema = createInsertSchema(integrationSy
 export type InsertIntegrationSyncState = z.infer<typeof insertIntegrationSyncStateSchema>;
 export type IntegrationSyncState = typeof integrationSyncState.$inferSelect;
 
+export const qboAccountMappings = pgTable("qbo_account_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  costCode: text("cost_code").notNull(),
+  qboAccountId: text("qbo_account_id").notNull(),
+  qboAccountName: text("qbo_account_name").notNull(),
+  mappingType: text("mapping_type").notNull().default("cost_code"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("qbo_account_mappings_org_idx").on(table.organizationId),
+  connectionIdx: index("qbo_account_mappings_connection_idx").on(table.connectionId),
+  uniqueMapping: unique("qbo_account_mappings_unique").on(table.organizationId, table.connectionId, table.costCode, table.mappingType),
+}));
+
+export const insertQboAccountMappingSchema = createInsertSchema(qboAccountMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertQboAccountMapping = z.infer<typeof insertQboAccountMappingSchema>;
+export type QboAccountMapping = typeof qboAccountMappings.$inferSelect;
+
+export const qboSyncSchedules = pgTable("qbo_sync_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  operation: text("operation").notNull(),
+  frequency: text("frequency").notNull().default("daily"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("qbo_sync_schedules_org_idx").on(table.organizationId),
+  connectionIdx: index("qbo_sync_schedules_connection_idx").on(table.connectionId),
+  activeIdx: index("qbo_sync_schedules_active_idx").on(table.isActive, table.nextRunAt),
+}));
+
+export const insertQboSyncScheduleSchema = createInsertSchema(qboSyncSchedules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertQboSyncSchedule = z.infer<typeof insertQboSyncScheduleSchema>;
+export type QboSyncSchedule = typeof qboSyncSchedules.$inferSelect;
+
 // Table 4b: zapier_webhooks – outgoing webhook configs for the Zapier provider
 export const zapierWebhooks = pgTable("zapier_webhooks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
