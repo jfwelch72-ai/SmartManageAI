@@ -372,11 +372,15 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
 // OAuth Routes for Gmail and Outlook
 // ============================================================================
 
-// OAuth configuration - these should be set as environment variables
+function getBaseUrl(req: import("express").Request): string {
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+  return `${proto}://${host}`;
+}
+
 const GMAIL_CONFIG = {
   clientId: process.env.GOOGLE_CLIENT_ID || "",
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-  redirectUri: process.env.GOOGLE_REDIRECT_URI || "",
   scopes: [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
@@ -388,7 +392,6 @@ const GMAIL_CONFIG = {
 const OUTLOOK_CONFIG = {
   clientId: process.env.MICROSOFT_CLIENT_ID || "",
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET || "",
-  redirectUri: process.env.MICROSOFT_REDIRECT_URI || "",
   scopes: [
     "https://graph.microsoft.com/Mail.Read",
     "https://graph.microsoft.com/Mail.Send",
@@ -396,6 +399,14 @@ const OUTLOOK_CONFIG = {
     "offline_access",
   ],
 };
+
+function getGmailRedirectUri(req: import("express").Request): string {
+  return process.env.GOOGLE_REDIRECT_URI || `${getBaseUrl(req)}/api/email/oauth/gmail/callback`;
+}
+
+function getOutlookRedirectUri(req: import("express").Request): string {
+  return process.env.MICROSOFT_REDIRECT_URI || `${getBaseUrl(req)}/api/email/oauth/outlook/callback`;
+}
 
 // GET /api/email/oauth/gmail/initiate - Start Gmail OAuth flow
 router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) => {
@@ -418,9 +429,10 @@ router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) =
       timestamp: Date.now()
     })).toString("base64url");
 
+    const gmailRedirectUri = getGmailRedirectUri(req);
     const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     authUrl.searchParams.set("client_id", GMAIL_CONFIG.clientId);
-    authUrl.searchParams.set("redirect_uri", GMAIL_CONFIG.redirectUri);
+    authUrl.searchParams.set("redirect_uri", gmailRedirectUri);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("scope", GMAIL_CONFIG.scopes.join(" "));
     authUrl.searchParams.set("access_type", "offline");
@@ -469,7 +481,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
         code: code as string,
         client_id: GMAIL_CONFIG.clientId,
         client_secret: GMAIL_CONFIG.clientSecret,
-        redirect_uri: GMAIL_CONFIG.redirectUri,
+        redirect_uri: getGmailRedirectUri(req),
         grant_type: "authorization_code",
       }),
     });
@@ -569,9 +581,10 @@ router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res)
       timestamp: Date.now()
     })).toString("base64url");
 
+    const outlookRedirectUri = getOutlookRedirectUri(req);
     const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
     authUrl.searchParams.set("client_id", OUTLOOK_CONFIG.clientId);
-    authUrl.searchParams.set("redirect_uri", OUTLOOK_CONFIG.redirectUri);
+    authUrl.searchParams.set("redirect_uri", outlookRedirectUri);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("scope", OUTLOOK_CONFIG.scopes.join(" "));
     authUrl.searchParams.set("response_mode", "query");
@@ -619,7 +632,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
         code: code as string,
         client_id: OUTLOOK_CONFIG.clientId,
         client_secret: OUTLOOK_CONFIG.clientSecret,
-        redirect_uri: OUTLOOK_CONFIG.redirectUri,
+        redirect_uri: getOutlookRedirectUri(req),
         grant_type: "authorization_code",
       }),
     });
@@ -708,10 +721,10 @@ router.get("/oauth/outlook/callback", async (req, res) => {
 router.get("/oauth/status", requireAuth, async (req: AuthRequest, res) => {
   return res.json({
     gmail: {
-      configured: !!(GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret && GMAIL_CONFIG.redirectUri),
+      configured: !!(GMAIL_CONFIG.clientId && GMAIL_CONFIG.clientSecret),
     },
     outlook: {
-      configured: !!(OUTLOOK_CONFIG.clientId && OUTLOOK_CONFIG.clientSecret && OUTLOOK_CONFIG.redirectUri),
+      configured: !!(OUTLOOK_CONFIG.clientId && OUTLOOK_CONFIG.clientSecret),
     },
   });
 });
