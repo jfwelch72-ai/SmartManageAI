@@ -1960,7 +1960,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRe
             COALESCE(te."cost_code", 'Unassigned') as cost_code,
             SUM(
               (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
-              COALESCE(u."cost_rate"::numeric, 50)
+              COALESCE(u."cost_rate_regular"::numeric, 50)
             ) as actual
           FROM "time_entries" te
           JOIN "users" u ON te."user_id" = u."id"
@@ -1971,7 +1971,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRe
           GROUP BY COALESCE(te."cost_code", 'Unassigned')
           ORDER BY SUM(
             (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
-            COALESCE(u."cost_rate"::numeric, 50)
+            COALESCE(u."cost_rate_regular"::numeric, 50)
           ) DESC
           LIMIT 10
         `);
@@ -2014,7 +2014,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRe
           COALESCE(te."cost_code", 'Unassigned') as cost_code,
           SUM(
             (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
-            COALESCE(u."cost_rate"::numeric, 50)
+            COALESCE(u."cost_rate_regular"::numeric, 50)
           ) as labor_cost,
           SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric) as total_hours
         FROM "time_entries" te
@@ -2026,7 +2026,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRe
         GROUP BY COALESCE(te."cost_code", 'Unassigned')
         ORDER BY SUM(
           (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
-          COALESCE(u."cost_rate"::numeric, 50)
+          COALESCE(u."cost_rate_regular"::numeric, 50)
         ) DESC
       `);
 
@@ -2070,6 +2070,211 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRe
     });
   } catch (error) {
     console.error("Cost code breakdown error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ============================
+// Schedule Impact Widget
+// ============================
+
+router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({
+        dailyAllocation: [],
+        projectForecast: [],
+        conflicts: [],
+        summary: { totalAssignedNext7Days: 0, peakDay: null, peakWorkers: 0, conflictCount: 0 },
+      });
+    }
+
+    const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split("T")[0];
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + 6);
+    const endStr = endDate.toISOString().split("T")[0];
+
+    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const next7Days: Array<{ date: string; dayLabel: string }> = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      next7Days.push({
+        date: d.toISOString().split("T")[0],
+        dayLabel: dayLabels[d.getDay()],
+      });
+    }
+
+    // 1. Daily Allocation - workers assigned per day via crew_project_assignments
+    let dailyAllocation: Array<{ date: string; dayLabel: string; assignedWorkers: number; projectCount: number }> = [];
+
+    try {
+      const dailyResult = await db.execute(sql`
+        SELECT
+          d.day::date as day_date,
+          COUNT(DISTINCT cm."user_id") as worker_count,
+          COUNT(DISTINCT cpa."project_id") as project_count
+        FROM generate_series(${todayStr}::date, ${endStr}::date, '1 day'::interval) AS d(day)
+        LEFT JOIN "crew_project_assignments" cpa
+          ON (cpa."start_date"::date <= d.day::date AND (cpa."end_date"::date >= d.day::date OR cpa."end_date" IS NULL))
+        LEFT JOIN "crew_members" cm ON cm."crew_id" = cpa."crew_id"
+        LEFT JOIN "projects" p ON cpa."project_id" = p."id"
+        WHERE 1=1 ${orgCond}
+        GROUP BY d.day::date
+        ORDER BY d.day::date
+      `);
+
+      const dailyMap = new Map<string, { workers: number; projects: number }>();
+      for (const row of dailyResult.rows as any[]) {
+        const dateKey = new Date(row.day_date).toISOString().split("T")[0];
+        dailyMap.set(dateKey, {
+          workers: parseInt(row.worker_count) || 0,
+          projects: parseInt(row.project_count) || 0,
+        });
+      }
+
+      dailyAllocation = next7Days.map(d => ({
+        date: d.date,
+        dayLabel: d.dayLabel,
+        assignedWorkers: dailyMap.get(d.date)?.workers || 0,
+        projectCount: dailyMap.get(d.date)?.projects || 0,
+      }));
+    } catch (e) {
+      console.error("Schedule impact: daily allocation error:", e);
+      dailyAllocation = next7Days.map(d => ({ date: d.date, dayLabel: d.dayLabel, assignedWorkers: 0, projectCount: 0 }));
+    }
+
+    // 2. Project Forecast - top 5 projects by worker count
+    let projectForecast: Array<{ projectId: string; projectName: string; crewCount: number; workerCount: number; startDate: string | null; endDate: string | null }> = [];
+
+    try {
+      const forecastResult = await db.execute(sql`
+        SELECT
+          p."id" as project_id,
+          p."name" as project_name,
+          COUNT(DISTINCT cpa."crew_id") as crew_count,
+          COUNT(DISTINCT cm."user_id") as worker_count,
+          MIN(cpa."start_date")::text as start_date,
+          MAX(cpa."end_date")::text as end_date
+        FROM "crew_project_assignments" cpa
+        JOIN "projects" p ON cpa."project_id" = p."id"
+        LEFT JOIN "crew_members" cm ON cm."crew_id" = cpa."crew_id"
+        WHERE (cpa."start_date"::date <= ${endStr}::date OR cpa."start_date" IS NULL)
+          AND (cpa."end_date"::date >= ${todayStr}::date OR cpa."end_date" IS NULL)
+          ${orgCond}
+        GROUP BY p."id", p."name"
+        ORDER BY COUNT(DISTINCT cm."user_id") DESC
+        LIMIT 5
+      `);
+
+      projectForecast = (forecastResult.rows as any[]).map(row => ({
+        projectId: row.project_id,
+        projectName: row.project_name,
+        crewCount: parseInt(row.crew_count) || 0,
+        workerCount: parseInt(row.worker_count) || 0,
+        startDate: row.start_date ? row.start_date.split("T")[0] : null,
+        endDate: row.end_date ? row.end_date.split("T")[0] : null,
+      }));
+    } catch (e) {
+      console.error("Schedule impact: project forecast error:", e);
+    }
+
+    // 3. Conflicts - workers assigned to multiple projects on same day
+    let conflicts: Array<{ userId: string; userName: string; date: string; projects: string[] }> = [];
+    let conflictCount = 0;
+
+    try {
+      const conflictCountResult = await db.execute(sql`
+        SELECT COUNT(*) as total FROM (
+          SELECT cm."user_id", d.day::date
+          FROM generate_series(${todayStr}::date, ${endStr}::date, '1 day'::interval) AS d(day)
+          JOIN "crew_project_assignments" cpa
+            ON (cpa."start_date"::date <= d.day::date AND (cpa."end_date"::date >= d.day::date OR cpa."end_date" IS NULL))
+          JOIN "crew_members" cm ON cm."crew_id" = cpa."crew_id"
+          JOIN "projects" p ON cpa."project_id" = p."id"
+          WHERE 1=1 ${orgCond}
+          GROUP BY cm."user_id", d.day::date
+          HAVING COUNT(DISTINCT cpa."project_id") > 1
+        ) conflicts_sub
+      `);
+      conflictCount = parseInt((conflictCountResult.rows as any[])[0]?.total) || 0;
+
+      const conflictResult = await db.execute(sql`
+        SELECT
+          cm."user_id",
+          u."full_name" as user_name,
+          d.day::date as conflict_date,
+          array_agg(DISTINCT p."name") as project_names
+        FROM generate_series(${todayStr}::date, ${endStr}::date, '1 day'::interval) AS d(day)
+        JOIN "crew_project_assignments" cpa
+          ON (cpa."start_date"::date <= d.day::date AND (cpa."end_date"::date >= d.day::date OR cpa."end_date" IS NULL))
+        JOIN "crew_members" cm ON cm."crew_id" = cpa."crew_id"
+        JOIN "projects" p ON cpa."project_id" = p."id"
+        JOIN "users" u ON cm."user_id" = u."id"
+        WHERE 1=1 ${orgCond}
+        GROUP BY cm."user_id", u."full_name", d.day::date
+        HAVING COUNT(DISTINCT cpa."project_id") > 1
+        ORDER BY d.day::date, u."full_name"
+        LIMIT 10
+      `);
+
+      conflicts = (conflictResult.rows as any[]).map(row => ({
+        userId: row.user_id,
+        userName: row.user_name || "Unknown",
+        date: new Date(row.conflict_date).toISOString().split("T")[0],
+        projects: row.project_names || [],
+      }));
+    } catch (e) {
+      console.error("Schedule impact: conflicts error:", e);
+    }
+
+    // Unique workers across the 7-day window
+    let totalUniqueWorkers = 0;
+    try {
+      const uniqueResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT cm."user_id")::int as total
+        FROM "crew_project_assignments" cpa
+        JOIN "crew_members" cm ON cm."crew_id" = cpa."crew_id"
+        JOIN "projects" p ON cpa."project_id" = p."id"
+        WHERE (cpa."start_date"::date <= ${endStr}::date OR cpa."start_date" IS NULL)
+          AND (cpa."end_date"::date >= ${todayStr}::date OR cpa."end_date" IS NULL)
+          ${orgCond}
+      `);
+      totalUniqueWorkers = parseInt((uniqueResult.rows as any[])[0]?.total) || 0;
+    } catch (e) {
+      console.error("Schedule impact: unique workers error:", e);
+    }
+
+    // Summary
+    let peakDay: string | null = null;
+    let peakWorkers = 0;
+
+    for (const day of dailyAllocation) {
+      if (day.assignedWorkers > peakWorkers) {
+        peakWorkers = day.assignedWorkers;
+        peakDay = day.dayLabel;
+      }
+    }
+
+    res.json({
+      dailyAllocation,
+      projectForecast,
+      conflicts,
+      summary: {
+        totalAssignedNext7Days: totalUniqueWorkers,
+        peakDay,
+        peakWorkers,
+        conflictCount,
+      },
+    });
+  } catch (error) {
+    console.error("Schedule impact error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

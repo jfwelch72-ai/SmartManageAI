@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Landmark,
   PieChart,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -40,6 +41,7 @@ import { CashPositionWidget } from "./CashPositionWidget";
 import { SOVProgressWidget } from "./SOVProgressWidget";
 import { BidPipelineWidget } from "./BidPipelineWidget";
 import { CostCodeBreakdownWidget } from "./CostCodeBreakdownWidget";
+import { ScheduleImpactWidget } from "./ScheduleImpactWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -216,6 +218,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: false,
     hasSettings: true,
+  },
+  {
+    type: "SCHEDULE_IMPACT",
+    label: "Schedule Impact",
+    description: "Labor allocation next 7 days, project manpower forecast, and overbooking conflicts",
+    icon: CalendarDays,
+    component: ScheduleImpactWidget,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 8,
+    singleton: false,
+    hasSettings: false,
   },
   {
     type: "WEATHER",
