@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
+import { SiGoogle, SiApple } from "react-icons/si";
 
 interface LoginFormProps {
   onLogin: (email: string, password: string) => void;
@@ -27,6 +28,36 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="space-y-3 mb-4">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { window.location.href = "/api/auth/google"; }}
+            data-testid="button-login-google"
+          >
+            <SiGoogle className="w-4 h-4 mr-2" />
+            Continue with Google
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { window.location.href = "/api/auth/apple"; }}
+            data-testid="button-login-apple"
+          >
+            <SiApple className="w-4 h-4 mr-2" />
+            Continue with Apple
+          </Button>
+        </div>
+
+        <div className="relative my-4">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">or continue with email</span>
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>

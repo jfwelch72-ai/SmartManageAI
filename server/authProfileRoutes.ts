@@ -127,6 +127,12 @@ const upload = multer({
         return;
       }
 
+      if (!user.passwordHash) {
+        const provider = user.oauthProvider === "google" ? "Google" : user.oauthProvider === "apple" ? "Apple" : "social login";
+        res.status(401).json({ error: `This account uses ${provider}. Please sign in with ${provider} instead.` });
+        return;
+      }
+
       const isValid = await verifyPassword(password, user.passwordHash);
       
       if (!isValid) {

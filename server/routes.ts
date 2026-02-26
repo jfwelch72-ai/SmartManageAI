@@ -120,6 +120,7 @@ import auditExportRoutes from "./auditExportRoutes";
 import retentionRoutes from "./retentionRoutes";
 import privacyRoutes from "./privacyRoutes";
 import authProfileRoutes from "./authProfileRoutes";
+import oauthRoutes from "./oauthRoutes";
 import workforceRoutes from "./workforceRoutes";
 import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
@@ -280,6 +281,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth & Profile routes (extracted to authProfileRoutes.ts)
   app.use(authProfileRoutes);
+
+  // OAuth social login routes (Google, Apple)
+  app.use(oauthRoutes);
 
   // Workforce/Workers routes (extracted to workforceRoutes.ts)
   app.use(workforceRoutes);

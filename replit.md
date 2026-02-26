@@ -1,57 +1,43 @@
 # SmartManageAI Construction Management Platform
 
 ## Overview
-SmartManageAI is a white-label SaaS construction management platform designed to manage the entire construction project lifecycle. It centralizes project data, user management, and daily operations to enhance efficiency, compliance, and oversight across multiple contracting specialties. The platform supports multi-tenancy, features AI-driven onboarding, dynamic navigation, trade-specific dashboards, and a comprehensive suite of tools for project management, estimating, CRM, and compliance. The vision is to provide a robust, scalable solution that adapts to various construction trades, improving project outcomes and operational efficiency.
+SmartManageAI is a white-label SaaS platform designed to manage the entire construction project lifecycle for various trades. It centralizes project data, user management, and daily operations to enhance efficiency, compliance, and oversight. Key features include AI-driven onboarding, dynamic navigation, trade-specific dashboards, and comprehensive tools for project management, estimating, CRM, compliance, and workforce management. The platform aims to be a robust, scalable solution that improves project outcomes and operational efficiency across the construction industry.
 
 ## User Preferences
 I prefer clear, concise explanations and direct answers. I value an iterative development approach, focusing on delivering functional components incrementally. Please ask for my confirmation before implementing any major architectural changes or refactoring large portions of the codebase. I also prefer detailed explanations for complex solutions or significant design decisions.
 
 ## System Architecture
-The platform employs a modern web stack, prioritizing security, scalability, and user experience with a multi-tenant architecture.
+The platform utilizes a modern web stack with a multi-tenant architecture, prioritizing security, scalability, and user experience.
 
-**Key Technology Stack**:
+**Technology Stack**:
 *   **Frontend**: React with TypeScript, Wouter, TanStack Query, Tailwind CSS, and shadcn/ui.
 *   **Backend**: Express.js in TypeScript, secured with CORS, rate limiting, and JWT token versioning.
 *   **Database**: PostgreSQL on Neon, managed with Drizzle ORM.
-*   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, token versioning, and Role-Based Access Control (RBAC) across ten user roles.
+*   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, Role-Based Access Control (RBAC) across ten user roles, and OAuth social login (Google, Apple) with CSRF protection and email verification.
 
 **Core Architectural Decisions & Features**:
-*   **Multi-Tenancy & Trade-Specific Customization**: Supports distinct organizations with AI-driven onboarding and dynamic features based on trade type (e.g., APIs, navigation, dashboards, Master Scope of Work items).
-*   **AI Integration**: Extensive AI functionalities including AI Senior PM + CFO System for generation, analysis, scheduling, automation (e.g., AI Auto-Takeoff, AI Scheduling Assistant, AI Change Order Generator), and an AI Governance System with daily limits and audit trails.
-*   **Project Lifecycle Management**: Comprehensive CRUD operations and workflows for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material Tracking, including a guided Bid Cost Builder Workflow.
-*   **Estimating Engine**: Features interactive drawing tools, multi-page PDF rendering, an enhanced material calculator, and a hierarchical line item builder.
+*   **Multi-Tenancy & Customization**: Supports distinct organizations with AI-driven onboarding and dynamic features tailored to trade type (e.g., APIs, navigation, dashboards, Master Scope of Work items).
+*   **AI Integration**: Features AI for generation, analysis, scheduling, automation (e.g., AI Auto-Takeoff, AI Scheduling Assistant, AI Change Order Generator), and an AI Governance System with daily limits and audit trails.
+*   **Project Lifecycle Management**: Comprehensive workflows for Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material Tracking, including a guided Bid Cost Builder Workflow.
+*   **Estimating Engine**: Includes interactive drawing tools, multi-page PDF rendering, material calculation, and a hierarchical line item builder.
 *   **CRM System**: Manages various organizational entities with vendor pricing, rental equipment catalogs, and type-specific fields.
-*   **Workforce Management**: Includes a native time-clock with GPS, shift management, labor hour tracking, Manager Approval Workflow, and an Overtime Request System. Also features a dedicated Workforce Management page with KPI dashboards, ratings, and rewards.
+*   **Workforce Management**: Features a native time-clock with GPS, shift management, labor hour tracking, Manager Approval Workflow, Overtime Request System, and KPI dashboards.
 *   **Compliance & Audit**: Comprehensive audit logging, document management with versioning, expiration tracking, and an Approval Workflows Framework.
-*   **Production Rate Tracking**: Comprehensive analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM), integrating with AI for insights.
-*   **Unified SOW Tracking System**: Ensures scope of work items are consistently linked across the project lifecycle, with auto-seeding based on trade type during onboarding.
-*   **Communication & Collaboration**: Unified Messaging System (Team Messages, Portal Chat), Client Portal Chat, and Subcontractor Portal System for secure document access.
+*   **Production Rate Tracking**: Analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM), integrating with AI for insights.
+*   **Unified SOW Tracking System**: Ensures consistent linking of scope of work items across the project lifecycle, with auto-seeding based on trade type.
+*   **Communication & Collaboration**: Unified Messaging System (Team Messages, Portal Chat), Client Portal Chat, and Subcontractor Portal System.
 *   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, and publishing controls.
-*   **Enterprise Features**: Includes SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention policies, and GDPR compliance tooling (ROPA, Data Subject Request workflow). These are gated by feature flags and a 4-tier subscription model.
-*   **Integration Hub**: Provider-agnostic framework supporting QuickBooks Online, Google Workspace, Microsoft 365, DocuSign, and Zapier for centralized connection management and event handling.
-*   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, source tracking, and a UI for revision history and comparison.
+*   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, and GDPR compliance tooling, gated by feature flags and a 4-tier subscription model.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling.
+*   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, source tracking, and UI for history and comparison.
 *   **Addenda Tracking System**: Full addenda lifecycle management per project, including status workflow, related document linking, and acknowledgment tracking.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs with snapshot trending.
 *   **Background Jobs Framework**: node-cron based job runner with outbox dispatcher.
-
-## Recent Changes (Feb 2026)
-*   **Backend Route Extraction**: Extracted all 265 route handlers from the monolithic routes.ts (16,007 lines) into 10+ domain-specific route files. routes.ts is now 488 lines of pure wiring (imports + app.use). Route files: dashboardUserRoutes, projectCoreRoutes, crmVendorRoutes, scopeConfigRoutes, projectContentRoutes, projectOpsRoutes, notificationCrewRoutes, takeoffSubRoutes, messagingRoutes, equipmentMgmtRoutes (plus previously extracted authProfileRoutes, workforceRoutes, bidRoutes2).
-*   **Schema Split**: Split the 7,845-line shared/schema.ts into 4 domain modules: shared/schema/enums.ts, core.ts, operations.ts, features.ts with a barrel index.ts. All imports via `@shared/schema` continue working.
-*   **project-detail.tsx Decomposition**: Extracted 9 tab components into client/src/components/project-tabs/ (ChangeOrdersTab, OverviewTab, SubcontractorsTab, LaborTab, PlansTab, ProcurementTab, ReceiptsTab, MediaTab, TimeTab). Reduced from 5,438 to 2,098 lines.
-*   **Test Infrastructure**: Vitest configured with npm test/test:watch/test:coverage scripts. Schema validation tests and route module structure tests established (254 tests passing).
-*   **Org Isolation Test Harness**: Automated multi-tenant isolation testing framework in server/__tests__/org-isolation/. Seeds two orgs, runs cross-org read/write/list/fuzz/snapshot tests against all org-scoped endpoints. Run via `npm run test:isolation`. Uses supertest for HTTP-level testing with real JWT auth tokens.
-*   **Subscription Management**: POST/DELETE routes and Assign/Delete subscription UI for Super Admin already implemented in platformAdminRoutes.ts and PlatformSubscriptions.tsx.
-*   **Phase 2 Takeoff Enhancements**: Sheet management (rename, reorder, duplicate, delete), visual revision comparison (side-by-side + overlay slider modes), and document revision preview URL endpoint.
-*   **Phase 3 Addenda Overlays & Advanced Calibration**: Addenda overlay system in TakeoffWorkspace (toggle addendum images as semi-transparent overlays on plan sheets with per-addendum opacity control). Added addenda preview-url endpoint. Advanced calibration tools: scale verification (measure known distance to check error %), multi-point calibration (average multiple references for higher accuracy), and calibration info display panel.
-*   **Mobile & Offline Sync Backend**: Created `server/mobileSyncRoutes.ts` with 6 API endpoints (GET status, POST sync trigger, DELETE device, POST clear-offline, GET conflicts, PATCH resolve conflict) backed by `mobile_devices` and `offline_sync_queue` tables. Frontend conflict resolution buttons now wired with mutations. All routes enforce org-scoped isolation.
-*   **PWA Support**: Added Progressive Web App capability — `manifest.json`, service worker (`sw.js`), PWA icons (192x192 & 512x512), Apple meta tags in `index.html`, and service worker registration in `main.tsx` (production-only). Service worker uses network-first for navigation, cache-first for static assets, and skips API requests. `server/index.ts` sets no-cache headers for `sw.js`.
-*   **Dashboard Customization Editor**: WYSIWYG dashboard customization system. Layout version **v3** with **section-based** architecture: `DashboardLayoutConfig { sections: DashboardSection[], gridCols, version }`. Each section has `id`, `title`, `columns` (1-4), `collapsed`, `widgets[]`. Both view and edit mode render widgets as a vertical stack (full width, natural height) — no react-grid-layout grid. Components: `DashboardGrid.tsx` (renders sections vertically), `DashboardSection.tsx` (per-section Card with vertical widget stack, inline title editing, column selector 1-4, collapse/expand, reorder up/down, delete; in edit mode widgets get move up/down and remove controls), `WidgetLibrary.tsx` (slide-out Sheet with search, role-gated widgets, section selector for target), `WidgetRegistry.tsx` (12 widget types with size constraints), 10 widget components in `client/src/components/dashboard-widgets/`. Context: `use-dashboard-customization.tsx` provides section CRUD (`addSection`, `removeSection`, `updateSectionTitle`, `updateSectionColumns`, `toggleSectionCollapse`, `reorderSections`) plus `addWidget(type, sectionId)`, `removeWidget(widgetId, sectionId)`, `reorderWidgets(sectionId, fromIndex, toIndex)`, `updateSectionLayout`. Backend: v3 `DEFAULT_WIDGETS` with 5 default sections (Key Metrics, Weather & Insights, Communications, Operations, Pipeline), v2→v3 auto-migration via `migrateV2ToV3()`, per-section Zod validation. Edit mode toolbar in `DashboardEditMode.tsx` with direct "Edit Dashboard" button (one-click entry), Add Section popover, Add Widget, save/reset/discard flows.
-*   **Theme Picker WCAG Fix**: All preset palette colors (default/forest/sunset/ocean) now pass WCAG AA 4.5:1 contrast ratio. Validation changed from hard 400 block to soft warning — saves succeed with `contrastWarnings` in response.
-*   **Dashboard Mobile Responsiveness**: `DashboardSection` renders all widgets as a simple vertical stack (full width, natural height) in both view and edit mode — `react-grid-layout` is no longer used for widget rendering. This ensures WYSIWYG consistency between edit and view modes. Individual widgets (QuickStats, Weather, CrewOverview, ProjectAssignments) have responsive sizing with `sm:` breakpoints. WidgetLibrary sheet uses `w-full sm:w-[400px]`.
-*   **Widget Configuration System**: Added per-widget `config?: Record<string, any>` field to `DashboardWidget`. `updateWidgetConfig(widgetId, sectionId, config)` and `getWidgetConfig(widgetId, sectionId)` in context. `WidgetSettingsDialog` component dispatches to type-specific settings panels. Widgets with `hasSettings: true` in WidgetRegistry show a gear icon in edit mode. `WIDGETS_WITH_SETTINGS` set in WidgetSettingsDialog.tsx tracks configurable types.
-*   **Quick Stats Widget Configuration**: Users can toggle which stat cards to show (Active Projects, Active Bids, Unread Messages, Upcoming Events) via settings dialog. Config stored as `QuickStatsConfig` in widget config. Grid columns auto-adjust based on visible card count.
-*   **KPI Summary Card Widget**: New `KPI_SUMMARY` widget type (non-singleton, all roles). Configurable metric (Total Labor Cost, Revenue This Month, Active Projects, Open RFIs, Outstanding Payables, Gross Margin %), date range (This Week/Month/Quarter/Year), and comparison period (vs Last Week/Month/Quarter). Backend endpoint `GET /api/dashboard/kpi?metric=X&dateRange=Y&comparison=Z` returns value, previousValue, changePercent, label, dateRangeLabel. Financial metrics use estimated data from project counts. Components: `KPISummaryWidget.tsx`, `KPISummarySettings.tsx`.
-*   **Dashboard Duplicate & Per-Section Add Widget**: Added `duplicateWidget(widgetId, sectionId)` and `duplicateSection(sectionId)` to dashboard customization context. Duplicate deep-clones via JSON with new unique IDs. Each section header in edit mode now has a Plus button to open WidgetLibrary pre-targeted to that section, plus a Copy button to clone the section. Each widget toolbar in edit mode has a Copy button to duplicate. `DashboardGrid` accepts `onAddWidgetToSection` prop; `WidgetLibrary` accepts `defaultSectionId` prop for pre-selection.
+*   **Takeoff Enhancements**: Sheet management, visual revision comparison (side-by-side + overlay slider modes), and addenda overlays in TakeoffWorkspace with advanced calibration tools.
+*   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support with a service worker.
+*   **Dashboard Customization**: WYSIWYG editor with section-based layout (v3), configurable widgets, and a widget configuration system. Widgets support duplication and per-section adding.
+*   **WCAG Compliance**: Theme picker colors meet WCAG AA 4.5:1 contrast ratio.
+*   **OAuth Social Login**: Integration with Google and Apple for user authentication.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
@@ -62,11 +48,11 @@ The platform employs a modern web stack, prioritizing security, scalability, and
 *   **Bcrypt**: For password hashing.
 *   **Uppy**: For enhanced file uploads.
 *   **node-cron**: For scheduling backend tasks.
-*   **react-konva, konva, pdfjs-dist, xlsx**: Libraries for interactive drawing, PDF rendering, and document processing.
-*   **Recharts**: Library for data visualization charts.
-*   **react-grid-layout**: Drag-and-drop grid layout for the dashboard editor.
+*   **react-konva, konva, pdfjs-dist, xlsx**: For interactive drawing, PDF rendering, and document processing.
+*   **Recharts**: For data visualization charts.
+*   **react-grid-layout**: For dashboard editor layout.
 *   **QuickBooks Online**: For accounting integrations.
 *   **Google Workspace (Gmail, Calendar)**: For email and calendar integrations.
 *   **Microsoft 365 (Mail, Calendar)**: For email and calendar integrations.
 *   **DocuSign**: For e-signature workflows.
-*   **@node-saml/node-saml**: SAML 2.0 Service Provider for enterprise SSO.
+*   **@node-saml/node-saml**: For SAML 2.0 Service Provider.

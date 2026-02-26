@@ -31,6 +31,27 @@ export default function LoginPage() {
   const [loadingFreshAdmin, setLoadingFreshAdmin] = useState(false);
   const isDev = import.meta.env.DEV;
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("error");
+    if (oauthError) {
+      const messages: Record<string, string> = {
+        google_failed: "Google sign-in failed. Please try again.",
+        google_not_configured: "Google sign-in is not configured yet.",
+        google_no_email: "Could not retrieve your email from Google.",
+        apple_failed: "Apple sign-in failed. Please try again.",
+        apple_not_configured: "Apple sign-in is not configured yet.",
+        apple_no_email: "Could not retrieve your email from Apple.",
+      };
+      toast({
+        title: "Sign-in Error",
+        description: messages[oauthError] || "Social sign-in failed. Please try again.",
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", "/login");
+    }
+  }, [toast]);
+
   // Helper to determine where to redirect user after login
   const getRedirectPath = (userData: { organizationId?: string | null; role?: string }) => {
     if (isSuperAdmin(userData.role)) {
