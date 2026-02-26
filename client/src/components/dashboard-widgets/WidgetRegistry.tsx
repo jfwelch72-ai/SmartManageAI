@@ -16,6 +16,7 @@ import {
   List,
   AlertTriangle,
   Landmark,
+  PieChart,
   type LucideIcon,
 } from "lucide-react";
 import { QuickStatsWidget } from "./QuickStatsWidget";
@@ -38,6 +39,7 @@ import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
 import { CashPositionWidget } from "./CashPositionWidget";
 import { SOVProgressWidget } from "./SOVProgressWidget";
 import { BidPipelineWidget } from "./BidPipelineWidget";
+import { CostCodeBreakdownWidget } from "./CostCodeBreakdownWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -199,6 +201,21 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 6,
     singleton: false,
     hasSettings: false,
+  },
+  {
+    type: "COST_CODE_BREAKDOWN",
+    label: "Cost Code Breakdown",
+    description: "Labor by cost code (pie chart) or budget vs actual comparison (bar chart)",
+    icon: PieChart,
+    component: CostCodeBreakdownWidget,
+    defaultW: 6,
+    defaultH: 5,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 8,
+    singleton: false,
+    hasSettings: true,
   },
   {
     type: "WEATHER",

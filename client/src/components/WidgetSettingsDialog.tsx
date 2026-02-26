@@ -15,6 +15,7 @@ import { QuickStatsSettings, type QuickStatsConfig, DEFAULT_QUICK_STATS_CONFIG }
 import { KPISummarySettings, type KPIConfig, DEFAULT_KPI_CONFIG } from "@/components/dashboard-widgets/KPISummarySettings";
 import { TrendChartSettings, type TrendChartConfig, DEFAULT_TREND_CONFIG } from "@/components/dashboard-widgets/TrendChartSettings";
 import { ListWidgetSettings, type ListWidgetConfig, DEFAULT_LIST_CONFIG } from "@/components/dashboard-widgets/ListWidgetSettings";
+import { CostCodeBreakdownSettings, type CostCodeBreakdownConfig, DEFAULT_COST_CODE_CONFIG } from "@/components/dashboard-widgets/CostCodeBreakdownSettings";
 
 interface WidgetSettingsDialogProps {
   open: boolean;
@@ -24,7 +25,7 @@ interface WidgetSettingsDialogProps {
   sectionId: string;
 }
 
-export const WIDGETS_WITH_SETTINGS = new Set(["QUICK_STATS", "KPI_SUMMARY", "TREND_CHART", "DATA_LIST"]);
+export const WIDGETS_WITH_SETTINGS = new Set(["QUICK_STATS", "KPI_SUMMARY", "TREND_CHART", "DATA_LIST", "COST_CODE_BREAKDOWN"]);
 
 export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType, sectionId }: WidgetSettingsDialogProps) {
   const { getWidgetConfig, updateWidgetConfig } = useDashboardCustomization();
@@ -70,6 +71,13 @@ export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType,
         return (
           <ListWidgetSettings
             config={{ ...DEFAULT_LIST_CONFIG, ...localConfig } as ListWidgetConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "COST_CODE_BREAKDOWN":
+        return (
+          <CostCodeBreakdownSettings
+            config={{ ...DEFAULT_COST_CODE_CONFIG, ...localConfig } as CostCodeBreakdownConfig}
             onChange={(config) => setLocalConfig(config)}
           />
         );

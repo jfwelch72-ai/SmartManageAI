@@ -1899,4 +1899,179 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
   }
 });
 
+// ============================
+// Cost Code Breakdown Widget
+// ============================
+
+router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ items: [], totalLaborCost: 0, totalBudgeted: 0, totalActual: 0 });
+    }
+
+    const mode = (req.query.mode as string) || "labor";
+    const projectId = req.query.projectId as string | undefined;
+
+    const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+    const projectCond = projectId ? sql`AND te."project_id" = ${projectId}` : sql``;
+
+    if (mode === "budget_vs_actual") {
+      let items: Array<{ costCode: string; budgeted: number; actual: number }> = [];
+      let totalBudgeted = 0;
+      let totalActual = 0;
+
+      try {
+        const budgetProjectCond = projectId
+          ? (shouldFilter && orgId
+            ? sql`AND e."project_id" = ${projectId} AND EXISTS (SELECT 1 FROM "projects" pp WHERE pp."id" = ${projectId} AND pp."gc_organization_id" = ${orgId})`
+            : sql`AND e."project_id" = ${projectId}`)
+          : sql``;
+        const budgetOrgCond = (!projectId && shouldFilter && orgId)
+          ? sql`AND (
+              (e."project_id" IS NOT NULL AND EXISTS (SELECT 1 FROM "projects" pp WHERE pp."id" = e."project_id" AND pp."gc_organization_id" = ${orgId}))
+              OR (e."bid_id" IS NOT NULL AND EXISTS (SELECT 1 FROM "bids" bb WHERE bb."id" = e."bid_id" AND bb."gc_organization_id" = ${orgId}))
+            )`
+          : sql``;
+
+        const budgetResult = await db.execute(sql`
+          SELECT
+            COALESCE(eli."work_type_code", 'Unassigned') as cost_code,
+            SUM(eli."labor_cost"::numeric) as budgeted
+          FROM "estimate_line_items" eli
+          JOIN "estimates" e ON eli."estimate_id" = e."id"
+          WHERE eli."labor_cost"::numeric > 0
+            ${budgetProjectCond}
+            ${budgetOrgCond}
+          GROUP BY COALESCE(eli."work_type_code", 'Unassigned')
+          ORDER BY SUM(eli."labor_cost"::numeric) DESC
+          LIMIT 10
+        `);
+
+        const budgetMap = new Map<string, number>();
+        for (const row of budgetResult.rows as any[]) {
+          budgetMap.set(row.cost_code, parseFloat(row.budgeted) || 0);
+          totalBudgeted += parseFloat(row.budgeted) || 0;
+        }
+
+        const actualResult = await db.execute(sql`
+          SELECT
+            COALESCE(te."cost_code", 'Unassigned') as cost_code,
+            SUM(
+              (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
+              COALESCE(u."cost_rate"::numeric, 50)
+            ) as actual
+          FROM "time_entries" te
+          JOIN "users" u ON te."user_id" = u."id"
+          JOIN "projects" p ON te."project_id" = p."id"
+          WHERE 1=1
+            ${orgCond}
+            ${projectCond}
+          GROUP BY COALESCE(te."cost_code", 'Unassigned')
+          ORDER BY SUM(
+            (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
+            COALESCE(u."cost_rate"::numeric, 50)
+          ) DESC
+          LIMIT 10
+        `);
+
+        const allCodes = new Set<string>();
+        const actualMap = new Map<string, number>();
+        for (const row of actualResult.rows as any[]) {
+          actualMap.set(row.cost_code, parseFloat(row.actual) || 0);
+          totalActual += parseFloat(row.actual) || 0;
+          allCodes.add(row.cost_code);
+        }
+        for (const code of budgetMap.keys()) {
+          allCodes.add(code);
+        }
+
+        items = Array.from(allCodes).map(code => ({
+          costCode: code,
+          budgeted: Math.round((budgetMap.get(code) || 0) * 100) / 100,
+          actual: Math.round((actualMap.get(code) || 0) * 100) / 100,
+        })).sort((a, b) => Math.max(b.budgeted, b.actual) - Math.max(a.budgeted, a.actual)).slice(0, 10);
+      } catch (e) {
+        console.error("Cost code breakdown: budget vs actual error:", e);
+      }
+
+      return res.json({
+        items,
+        totalBudgeted: Math.round(totalBudgeted * 100) / 100,
+        totalActual: Math.round(totalActual * 100) / 100,
+        totalLaborCost: 0,
+      });
+    }
+
+    // Default: labor mode
+    let items: Array<{ costCode: string; laborCost: number; hours: number }> = [];
+    let totalLaborCost = 0;
+
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          COALESCE(te."cost_code", 'Unassigned') as cost_code,
+          SUM(
+            (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
+            COALESCE(u."cost_rate"::numeric, 50)
+          ) as labor_cost,
+          SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric) as total_hours
+        FROM "time_entries" te
+        JOIN "users" u ON te."user_id" = u."id"
+        JOIN "projects" p ON te."project_id" = p."id"
+        WHERE 1=1
+          ${orgCond}
+          ${projectCond}
+        GROUP BY COALESCE(te."cost_code", 'Unassigned')
+        ORDER BY SUM(
+          (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
+          COALESCE(u."cost_rate"::numeric, 50)
+        ) DESC
+      `);
+
+      const rows = result.rows as any[];
+      const top10 = rows.slice(0, 10);
+      const rest = rows.slice(10);
+
+      for (const row of top10) {
+        const cost = parseFloat(row.labor_cost) || 0;
+        items.push({
+          costCode: row.cost_code,
+          laborCost: Math.round(cost * 100) / 100,
+          hours: Math.round((parseFloat(row.total_hours) || 0) * 100) / 100,
+        });
+        totalLaborCost += cost;
+      }
+
+      if (rest.length > 0) {
+        let otherCost = 0;
+        let otherHours = 0;
+        for (const row of rest) {
+          otherCost += parseFloat(row.labor_cost) || 0;
+          otherHours += parseFloat(row.total_hours) || 0;
+        }
+        items.push({
+          costCode: "Other",
+          laborCost: Math.round(otherCost * 100) / 100,
+          hours: Math.round(otherHours * 100) / 100,
+        });
+        totalLaborCost += otherCost;
+      }
+    } catch (e) {
+      console.error("Cost code breakdown: labor error:", e);
+    }
+
+    res.json({
+      items,
+      totalLaborCost: Math.round(totalLaborCost * 100) / 100,
+      totalBudgeted: 0,
+      totalActual: 0,
+    });
+  } catch (error) {
+    console.error("Cost code breakdown error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
