@@ -87,6 +87,7 @@ import sovRoutes from "./sovRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
+import socialMediaRoutes from "./socialMediaRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
 import kpiRoutes from "./kpiRoutes";
@@ -231,6 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Website Builder routes
   app.use("/api/website", websiteBuilderRoutes);
+  app.use("/api/social", socialMediaRoutes);
 
   // Register Labor Rate routes
   app.use("/api/labor-rates", laborRateRoutes);

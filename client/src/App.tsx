@@ -70,6 +70,7 @@ import RFIsPage from "@/pages/rfis";
 import TransmittalsPage from "@/pages/transmittals";
 import SubmittalsPage from "@/pages/submittals";
 import WebsiteBuilderPage from "@/pages/website-builder";
+import SocialMediaPage from "@/pages/social-media";
 import BidWizardPage from "@/pages/bid-wizard";
 import EmailAssistantPage from "@/pages/email-assistant";
 import HustlerDashboard from "@/pages/hustler-dashboard";
@@ -290,6 +291,7 @@ function Router() {
       <Route path="/transmittals" component={() => <ProtectedRoute component={TransmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/submittals" component={() => <ProtectedRoute component={SubmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} />} />
+      <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       

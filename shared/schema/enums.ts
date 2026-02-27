@@ -352,7 +352,9 @@ export const websitePageTypeEnum = pgEnum("website_page_type", ["HOME", "ABOUT",
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
 export const blogCommentStatusEnum = pgEnum("blog_comment_status", ["PENDING", "APPROVED", "REJECTED", "SPAM"]);
 export const websiteProjectStatusEnum = pgEnum("website_project_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
-export const socialPlatformEnum = pgEnum("social_platform", ["FACEBOOK", "INSTAGRAM", "LINKEDIN", "TWITTER", "TIKTOK", "YOUTUBE"]);
+export const socialPlatformEnum = pgEnum("social_platform", ["FACEBOOK", "INSTAGRAM", "LINKEDIN", "TWITTER", "TIKTOK", "YOUTUBE", "PINTEREST"]);
+export const socialPostStatusEnum = pgEnum("social_post_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SCHEDULED", "QUEUED", "POSTED", "FAILED"]);
+export const socialAccountStatusEnum = pgEnum("social_account_status", ["CONNECTED", "DISCONNECTED", "EXPIRED", "ERROR"]);
 
 // Main Website Configuration
 export const websiteDeploymentActionEnum = pgEnum("website_deployment_action", [

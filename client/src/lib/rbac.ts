@@ -336,6 +336,9 @@ export const RoutePermissions = {
   // Website Builder routes (ADMIN only - organization feature)
   WEBSITE_BUILDER: (role?: string) => isOrganizationAdmin(role),
 
+  // Social Media Management (ADMIN and MANAGER)
+  SOCIAL_MEDIA: (role?: string) => role === "ADMIN" || role === "MANAGER",
+
   // Contractor user access (everyone except SUPER_ADMIN)
   DASHBOARD: (role?: string) => hasContractorAccess(role),
   PROJECTS: (role?: string) => hasContractorAccess(role),
@@ -696,6 +699,12 @@ export const NavigationConfig = {
       label: "Website Builder",
       testId: "nav-website-builder",
       visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/social-media",
+      label: "Social Media",
+      testId: "nav-social-media",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER",
     },
     {
       href: "/manage-workers",

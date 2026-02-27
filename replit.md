@@ -54,6 +54,17 @@ The platform utilizes a modern web stack with a multi-tenant architecture, prior
     *   **Select From Library Flow**: Scope Settings page (`/scope-settings`) "Add Work Type" button upgraded to dropdown with "Add Manually" (existing) and "Select From Library" (new multi-select modal with search, review/edit step, and batch creation)
     *   **Extending**: Add trades to `trades.json`, scopes to `scopes.json` (update `EXPECTED_*` counts in `index.ts`); add calibration rates by scope_id; all cross-references validated at load time
 
+*   **Social Media Management System**: Comprehensive social content management with scheduling, AI generation, and multi-platform support.
+    *   **Database Tables**: `social_accounts` (connected platform accounts with encrypted tokens), `social_media_posts` (managed posts with full lifecycle), `social_post_analytics` (per-post metrics)
+    *   **Enums**: `socialPostStatusEnum` (DRAFT → PENDING_APPROVAL → APPROVED → SCHEDULED → QUEUED → POSTED / FAILED), `socialAccountStatusEnum` (CONNECTED, DISCONNECTED, EXPIRED, ERROR)
+    *   **Platforms**: FACEBOOK, INSTAGRAM, LINKEDIN, TWITTER, TIKTOK, YOUTUBE, PINTEREST
+    *   **Backend API**: `server/socialMediaRoutes.ts` mounted at `/api/social` — full CRUD for accounts (encrypted AES-256-CBC token storage) and posts, calendar view, stats dashboard, AI content generation, approval workflow, bulk operations, duplicate, reschedule
+    *   **Background Worker**: `server/jobs/jobRunner.ts` — 2-minute cron job processes scheduled posts (marks as POSTED at scheduled time), handles recurring post creation (daily/weekly/monthly), retry logic with 3-attempt max
+    *   **Frontend**: `client/src/pages/social-media.tsx` at route `/social-media` — 4 views: Dashboard (stats + connected accounts + recent posts), List (filterable/searchable post cards), Calendar (monthly view with post dots), Accounts (connect/disconnect platforms)
+    *   **Create/Edit Dialog**: Platform selector, content textarea with platform-specific character limits, AI content generator (topic → GPT-4o), hashtag management, scheduling with recurring options, campaign tags, tone selector, UTM parameters
+    *   **Access**: ADMIN, MANAGER roles via RBAC; sidebar nav entry after Website Builder
+    *   **Phase 2 (future)**: Direct OAuth callbacks per platform, auto-posting via platform APIs, analytics pull, comment management, content recycling
+
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
 *   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.
