@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
 import WebsiteComponentsTab, {
@@ -926,6 +927,7 @@ function PublishingTab({ website, onPublish, publishPending }: { website: Websit
 export default function WebsiteBuilderPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("setup");
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -1092,20 +1094,6 @@ export default function WebsiteBuilderPage() {
     youtubeUrl: null,
     tiktokUrl: null
   });
-
-  // AI Social Post Generator state
-  const [socialPostForm, setSocialPostForm] = useState({
-    platform: "FACEBOOK",
-    topic: "",
-    tone: "professional"
-  });
-  const [generatedSocialPost, setGeneratedSocialPost] = useState<{
-    content: string;
-    hashtags: string[];
-    suggestedImagePrompt: string;
-    bestTimeToPost: string;
-    engagementTips: string;
-  } | null>(null);
 
   const { data: websiteData, isLoading: loadingWebsite } = useQuery<{ hasWebsite: boolean; website: Website | null }>({
     queryKey: ["/api/website"],
@@ -1375,27 +1363,6 @@ export default function WebsiteBuilderPage() {
     },
     onError: (error: any) => {
       toast({ title: "Error saving social links", description: error.message, variant: "destructive" });
-    }
-  });
-
-  const generateSocialPostMutation = useMutation({
-    mutationFn: async (data: typeof socialPostForm) => {
-      const response = await apiRequest("POST", "/api/website/social/generate-post", data);
-      return response.json() as Promise<{
-        content: string;
-        hashtags: string[];
-        suggestedImagePrompt: string;
-        bestTimeToPost: string;
-        engagementTips: string;
-      }>;
-    },
-    onSuccess: (data) => {
-      setGeneratedSocialPost(data);
-      queryClient.invalidateQueries({ queryKey: ["/api/website/social/history"] });
-      toast({ title: "Social post generated successfully" });
-    },
-    onError: (error: any) => {
-      toast({ title: "Error generating post", description: error.message, variant: "destructive" });
     }
   });
 
@@ -2075,6 +2042,93 @@ export default function WebsiteBuilderPage() {
               </CardFooter>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Share2 className="h-5 w-5" />
+                Social Media Links
+              </CardTitle>
+              <CardDescription>Connect your social media profiles to display on your website</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiFacebook className="h-4 w-4 text-blue-600" />
+                    Facebook
+                  </Label>
+                  <Input
+                    value={socialForm.facebookUrl || socialLinks?.facebookUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, facebookUrl: e.target.value }))}
+                    placeholder="https://facebook.com/yourcompany"
+                    data-testid="input-facebook-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiInstagram className="h-4 w-4 text-pink-600" />
+                    Instagram
+                  </Label>
+                  <Input
+                    value={socialForm.instagramUrl || socialLinks?.instagramUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, instagramUrl: e.target.value }))}
+                    placeholder="https://instagram.com/yourcompany"
+                    data-testid="input-instagram-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiLinkedin className="h-4 w-4 text-blue-700" />
+                    LinkedIn
+                  </Label>
+                  <Input
+                    value={socialForm.linkedinUrl || socialLinks?.linkedinUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, linkedinUrl: e.target.value }))}
+                    placeholder="https://linkedin.com/company/yourcompany"
+                    data-testid="input-linkedin-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiYoutube className="h-4 w-4 text-red-600" />
+                    YouTube
+                  </Label>
+                  <Input
+                    value={socialForm.youtubeUrl || socialLinks?.youtubeUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, youtubeUrl: e.target.value }))}
+                    placeholder="https://youtube.com/@yourcompany"
+                    data-testid="input-youtube-url"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <SiTiktok className="h-4 w-4" />
+                    TikTok
+                  </Label>
+                  <Input
+                    value={socialForm.tiktokUrl || socialLinks?.tiktokUrl || ""}
+                    onChange={(e) => setSocialForm(prev => ({ ...prev, tiktokUrl: e.target.value }))}
+                    placeholder="https://tiktok.com/@yourcompany"
+                    data-testid="input-tiktok-url"
+                  />
+                </div>
+              </div>
+              <Button 
+                className="w-full mt-4"
+                onClick={() => saveSocialMutation.mutate(socialForm)}
+                disabled={saveSocialMutation.isPending}
+                data-testid="button-save-social"
+              >
+                {saveSocialMutation.isPending ? (
+                  <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
+                )}
+                Save Social Links
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="layout" className="space-y-6">
@@ -2587,225 +2641,52 @@ export default function WebsiteBuilderPage() {
         </TabsContent>
 
         <TabsContent value="social" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Share2 className="h-5 w-5" />
-                  Social Media Links
-                </CardTitle>
-                <CardDescription>Connect your social media profiles</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <SiFacebook className="h-4 w-4 text-blue-600" />
-                    Facebook
-                  </Label>
-                  <Input
-                    value={socialForm.facebookUrl || socialLinks?.facebookUrl || ""}
-                    onChange={(e) => setSocialForm(prev => ({ ...prev, facebookUrl: e.target.value }))}
-                    placeholder="https://facebook.com/yourcompany"
-                    data-testid="input-facebook-url"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <SiInstagram className="h-4 w-4 text-pink-600" />
-                    Instagram
-                  </Label>
-                  <Input
-                    value={socialForm.instagramUrl || socialLinks?.instagramUrl || ""}
-                    onChange={(e) => setSocialForm(prev => ({ ...prev, instagramUrl: e.target.value }))}
-                    placeholder="https://instagram.com/yourcompany"
-                    data-testid="input-instagram-url"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <SiLinkedin className="h-4 w-4 text-blue-700" />
-                    LinkedIn
-                  </Label>
-                  <Input
-                    value={socialForm.linkedinUrl || socialLinks?.linkedinUrl || ""}
-                    onChange={(e) => setSocialForm(prev => ({ ...prev, linkedinUrl: e.target.value }))}
-                    placeholder="https://linkedin.com/company/yourcompany"
-                    data-testid="input-linkedin-url"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <SiYoutube className="h-4 w-4 text-red-600" />
-                    YouTube
-                  </Label>
-                  <Input
-                    value={socialForm.youtubeUrl || socialLinks?.youtubeUrl || ""}
-                    onChange={(e) => setSocialForm(prev => ({ ...prev, youtubeUrl: e.target.value }))}
-                    placeholder="https://youtube.com/@yourcompany"
-                    data-testid="input-youtube-url"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <SiTiktok className="h-4 w-4" />
-                    TikTok
-                  </Label>
-                  <Input
-                    value={socialForm.tiktokUrl || socialLinks?.tiktokUrl || ""}
-                    onChange={(e) => setSocialForm(prev => ({ ...prev, tiktokUrl: e.target.value }))}
-                    placeholder="https://tiktok.com/@yourcompany"
-                    data-testid="input-tiktok-url"
-                  />
-                </div>
-                <Button 
-                  className="w-full mt-4"
-                  onClick={() => saveSocialMutation.mutate(socialForm)}
-                  disabled={saveSocialMutation.isPending}
-                  data-testid="button-save-social"
-                >
-                  {saveSocialMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 mr-1" />
-                  )}
-                  Save Social Links
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wand2 className="h-5 w-5" />
-                  AI Social Post Generator
-                </CardTitle>
-                <CardDescription>Generate engaging social media content</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Platform</Label>
-                  <Select value={socialPostForm.platform} onValueChange={(v) => setSocialPostForm(prev => ({ ...prev, platform: v }))}>
-                    <SelectTrigger data-testid="select-social-platform">
-                      <SelectValue placeholder="Select platform" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FACEBOOK">Facebook</SelectItem>
-                      <SelectItem value="INSTAGRAM">Instagram</SelectItem>
-                      <SelectItem value="LINKEDIN">LinkedIn</SelectItem>
-                      <SelectItem value="TWITTER">X (Twitter)</SelectItem>
-                      <SelectItem value="TIKTOK">TikTok</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Tone</Label>
-                  <Select value={socialPostForm.tone} onValueChange={(v) => setSocialPostForm(prev => ({ ...prev, tone: v }))}>
-                    <SelectTrigger data-testid="select-social-tone">
-                      <SelectValue placeholder="Select tone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="professional">Professional</SelectItem>
-                      <SelectItem value="casual">Casual</SelectItem>
-                      <SelectItem value="friendly">Friendly</SelectItem>
-                      <SelectItem value="informative">Informative</SelectItem>
-                      <SelectItem value="promotional">Promotional</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Topic / Theme</Label>
-                  <Textarea
-                    value={socialPostForm.topic}
-                    onChange={(e) => setSocialPostForm(prev => ({ ...prev, topic: e.target.value }))}
-                    placeholder="Describe what you want to post about... (e.g., Showcase a recent project completion, Share safety tips for summer construction)"
-                    rows={3}
-                    data-testid="input-social-topic"
-                  />
-                </div>
-                <Button 
-                  className="w-full" 
-                  onClick={() => generateSocialPostMutation.mutate(socialPostForm)}
-                  disabled={generateSocialPostMutation.isPending || !socialPostForm.topic.trim()}
-                  data-testid="button-generate-social"
-                >
-                  {generateSocialPostMutation.isPending ? (
-                    <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4 mr-1" />
-                  )}
-                  Generate Post
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Generated Post Display */}
-          {generatedSocialPost && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Generated Post
-                </CardTitle>
-                <CardDescription>Review and copy your AI-generated content</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Post Content</Label>
-                  <div className="relative">
-                    <div className="p-4 bg-muted rounded-lg whitespace-pre-wrap" data-testid="text-generated-post">
-                      {generatedSocialPost.content}
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="absolute top-2 right-2"
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedSocialPost.content + (generatedSocialPost.hashtags?.length ? '\n\n' + generatedSocialPost.hashtags.map(h => '#' + h).join(' ') : ''));
-                        toast({ title: "Copied to clipboard" });
-                      }}
-                      data-testid="button-copy-post"
-                    >
-                      <Copy className="h-4 w-4 mr-1" />
-                      Copy
-                    </Button>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Share2 className="h-5 w-5" />
+                Social Media Manager
+              </CardTitle>
+              <CardDescription>
+                Create, schedule, and manage your social media content across all platforms
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                  <Clock className="h-5 w-5 text-purple-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Scheduling</p>
+                    <p className="text-xs text-muted-foreground">Schedule posts across platforms with recurring options</p>
                   </div>
                 </div>
-                {generatedSocialPost.hashtags && generatedSocialPost.hashtags.length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Suggested Hashtags</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {generatedSocialPost.hashtags.map((tag, i) => (
-                        <Badge key={i} variant="secondary" data-testid={`badge-hashtag-${i}`}>#{tag}</Badge>
-                      ))}
-                    </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                  <Sparkles className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">AI Generation</p>
+                    <p className="text-xs text-muted-foreground">Generate engaging content with AI for any platform</p>
                   </div>
-                )}
-                <div className="grid grid-cols-2 gap-4">
-                  {generatedSocialPost.bestTimeToPost && (
-                    <div className="space-y-1">
-                      <Label className="text-sm text-muted-foreground">Best Time to Post</Label>
-                      <p className="text-sm font-medium" data-testid="text-best-time">{generatedSocialPost.bestTimeToPost}</p>
-                    </div>
-                  )}
-                  {generatedSocialPost.engagementTips && (
-                    <div className="space-y-1">
-                      <Label className="text-sm text-muted-foreground">Engagement Tips</Label>
-                      <p className="text-sm" data-testid="text-engagement-tips">{generatedSocialPost.engagementTips}</p>
-                    </div>
-                  )}
                 </div>
-                {generatedSocialPost.suggestedImagePrompt && (
-                  <div className="space-y-2">
-                    <Label>Suggested Image Prompt</Label>
-                    <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg" data-testid="text-image-prompt">
-                      {generatedSocialPost.suggestedImagePrompt}
-                    </p>
+                <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                  <BarChart3 className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Dashboard</p>
+                    <p className="text-xs text-muted-foreground">Track posts, campaigns, and connected accounts</p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Manage your social media presence with a full content calendar, AI-powered post generation, multi-platform scheduling, and campaign tracking. Social media profile links for your website can be configured in the Setup tab.
+              </p>
+              <Button
+                onClick={() => navigate("/social-media")}
+                data-testid="button-open-social-media"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open Social Media Manager
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">

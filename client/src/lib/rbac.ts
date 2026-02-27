@@ -701,12 +701,6 @@ export const NavigationConfig = {
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/social-media",
-      label: "Social Media",
-      testId: "nav-social-media",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER",
-    },
-    {
       href: "/manage-workers",
       label: "Workforce Management",
       testId: "nav-manage-workers",
