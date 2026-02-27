@@ -89,6 +89,7 @@ import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
+import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
@@ -232,6 +233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Email Account routes
   app.use("/api/email", emailAccountRoutes);
+  app.use("/api/kpis", kpiRoutes);
 
   // Register Email AI routes (threads, messages, tasks, summaries)
   app.use("/api/email", emailAiRoutes);

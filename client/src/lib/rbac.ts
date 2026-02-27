@@ -294,6 +294,9 @@ export const RoutePermissions = {
 
   // Payroll Management
   PAYROLL_MANAGEMENT: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
+
+  // KPI Management (ADMIN, MANAGER, SUPERINTENDENT, HUSTLER)
+  KPI_MANAGEMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
 };
 
 /**
@@ -672,6 +675,12 @@ export const NavigationConfig = {
       testId: "nav-enterprise-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/kpi-management",
+      label: "KPI Management",
+      testId: "nav-kpi-management",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
+    },
   ],
 
   toolsMenu: [
@@ -679,6 +688,12 @@ export const NavigationConfig = {
       href: "/calculator",
       label: "Calculator",
       testId: "nav-calculator",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
+      href: "/my-kpis",
+      label: "My KPIs",
+      testId: "nav-my-kpis",
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
