@@ -1,0 +1,192 @@
+[
+  {
+    "id": "F_Q_EA",
+    "name": "Each quantity",
+    "expr": "qty_ea = quantity_ea"
+  },
+  {
+    "id": "F_Q_LF",
+    "name": "Linear feet quantity",
+    "expr": "qty_lf = length_ft"
+  },
+  {
+    "id": "F_Q_SF",
+    "name": "Square feet quantity",
+    "expr": "qty_sf = area_sf"
+  },
+  {
+    "id": "F_Q_SY",
+    "name": "Square yards quantity",
+    "expr": "qty_sy = area_sy"
+  },
+  {
+    "id": "F_Q_CY",
+    "name": "Cubic yards quantity",
+    "expr": "qty_cy = volume_cy"
+  },
+  {
+    "id": "F_Q_TON",
+    "name": "Tons quantity",
+    "expr": "qty_ton = weight_ton"
+  },
+  {
+    "id": "F_Q_LS",
+    "name": "Lump sum quantity",
+    "expr": "qty_ls = 1"
+  },
+  {
+    "id": "F_Q_AC",
+    "name": "Acres quantity",
+    "expr": "qty_ac = area_acres"
+  },
+  {
+    "id": "F_AREA_RECT",
+    "name": "Area rectangle",
+    "expr": "area_sf = length_ft * width_ft"
+  },
+  {
+    "id": "F_VOL_RECT",
+    "name": "Volume rectangle",
+    "expr": "volume_cf = length_ft * width_ft * thickness_ft"
+  },
+  {
+    "id": "F_CF_TO_CY",
+    "name": "Convert cubic feet to cubic yards",
+    "expr": "volume_cy = volume_cf / 27"
+  },
+  {
+    "id": "F_THICK_IN_TO_FT",
+    "name": "Thickness inches to feet",
+    "expr": "thickness_ft = thickness_in / 12"
+  },
+  {
+    "id": "F_DEDUCT_OPENINGS",
+    "name": "Deduct openings from area",
+    "expr": "net_area_sf = gross_area_sf - sum(opening_area_sf[])"
+  },
+  {
+    "id": "F_WASTE",
+    "name": "Apply waste factor",
+    "expr": "qty_waste = qty * (1 + waste_pct)"
+  },
+  {
+    "id": "F_LAPS_OVERLAP",
+    "name": "Apply lap/overlap factor",
+    "expr": "qty_with_laps = qty * (1 + overlap_pct)"
+  },
+  {
+    "id": "F_SF_TO_SY",
+    "name": "SF to SY",
+    "expr": "area_sy = area_sf / 9"
+  },
+  {
+    "id": "F_SF_TO_SQ",
+    "name": "SF to squares (roof)",
+    "expr": "squares = area_sf / 100"
+  },
+  {
+    "id": "F_CONC_SLAB_CY",
+    "name": "Concrete slab CY",
+    "expr": "concrete_cy = area_sf * (thickness_in/12) / 27"
+  },
+  {
+    "id": "F_CONC_FOOTING_CY",
+    "name": "Footing CY (LF * width * depth)",
+    "expr": "concrete_cy = length_ft * (width_in/12) * (thickness_in/12) / 27"
+  },
+  {
+    "id": "F_TRENCH_CY",
+    "name": "Trench volume CY",
+    "expr": "trench_cy = length_ft * trench_width_ft * trench_depth_ft / 27"
+  },
+  {
+    "id": "F_TRUCKLOADS",
+    "name": "Truckloads from CY",
+    "expr": "loads = volume_cy / truck_capacity_cy"
+  },
+  {
+    "id": "F_PAINT_GAL",
+    "name": "Paint gallons",
+    "expr": "gallons = (area_sf * coats) / coverage_sf_per_gal / efficiency_factor"
+  },
+  {
+    "id": "F_STUD_COUNT",
+    "name": "Stud count from wall length",
+    "expr": "studs = floor((wall_length_ft*12)/stud_spacing_in) + 1"
+  },
+  {
+    "id": "F_SHEETS",
+    "name": "Sheets from SF",
+    "expr": "sheets = ceil(area_sf / sheet_area_sf)"
+  },
+  {
+    "id": "F_ASPHALT_TON",
+    "name": "Asphalt tons from area and thickness",
+    "expr": "tons = area_sf * (thickness_in/12) * asphalt_unit_weight_lb_per_cf / 2000"
+  },
+  {
+    "id": "L_LABOR_QTY_OVER_RATE",
+    "name": "Labor hours from quantity and production rate",
+    "expr": "labor_hours = qty / production_rate_units_per_hr"
+  },
+  {
+    "id": "L_LABOR_COST",
+    "name": "Labor cost from hours and crew cost",
+    "expr": "labor_cost = labor_hours * crew_cost_per_hr"
+  },
+  {
+    "id": "L_DURATION_FROM_LABOR",
+    "name": "Duration from labor hours",
+    "expr": "duration_days = labor_hours / (crew_size_effective * hours_per_day)"
+  },
+  {
+    "id": "L_ACTIVITY_MULT",
+    "name": "Activity multiplier",
+    "expr": "labor_hours_adj = labor_hours * activity_multiplier"
+  },
+  {
+    "id": "E_EQUIP_COST",
+    "name": "Equipment cost from hours and rate",
+    "expr": "equip_cost = equip_hours * equip_rate_per_hr"
+  },
+  {
+    "id": "E_EQUIP_HOURS_FROM_QTY",
+    "name": "Equipment hours from qty and equip production",
+    "expr": "equip_hours = qty / equip_production_units_per_hr"
+  },
+  {
+    "id": "F_COMPACTION_SHRINK",
+    "name": "Compaction shrink/swell adjustment",
+    "expr": "adj_volume_cy = volume_cy * (1 + swell_pct - shrink_pct)"
+  },
+  {
+    "id": "F_REBAR_WEIGHT",
+    "name": "Rebar weight from LF and lb/ft",
+    "expr": "rebar_lb = rebar_length_ft * weight_lb_per_ft; rebar_ton = rebar_lb/2000"
+  },
+  {
+    "id": "F_SLOPE_MULT",
+    "name": "Slope multiplier to convert plan area to surface area",
+    "expr": "surface_area_sf = plan_area_sf * slope_multiplier"
+  },
+  {
+    "id": "F_ALLOWANCE",
+    "name": "Allowance line",
+    "expr": "allowance_amount = allowance_value"
+  },
+  {
+    "id": "F_OH_PROFIT",
+    "name": "Markup",
+    "expr": "sell_price = direct_cost * (1 + overhead_pct + profit_pct)"
+  },
+  {
+    "id": "F_BURDEN",
+    "name": "Labor burden",
+    "expr": "loaded_rate = base_rate * (1 + burden_pct)"
+  },
+  {
+    "id": "F_CREW_COST",
+    "name": "Crew hourly cost",
+    "expr": "crew_cost_per_hr = sum(role_rate_per_hr[])"
+  }
+]

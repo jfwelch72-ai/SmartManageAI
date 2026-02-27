@@ -1,0 +1,1056 @@
+[
+  {
+    "material_family_id": "concrete_ready_mix",
+    "display_name": "Ready Mix",
+    "group": "concrete",
+    "canonical_uom": "CY",
+    "attributes": [
+      "psi",
+      "slump",
+      "air_entrainment",
+      "fiber",
+      "admixtures"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "concrete_curing_compound",
+    "display_name": "Curing Compound",
+    "group": "concrete",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "concrete_vapor_barrier_poly",
+    "display_name": "Vapor Barrier Poly",
+    "group": "concrete",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "concrete_fiber_reinforcement",
+    "display_name": "Fiber Reinforcement",
+    "group": "concrete",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "concrete_sealant_joint",
+    "display_name": "Sealant Joint",
+    "group": "concrete",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "reinforcing_rebar",
+    "display_name": "Rebar",
+    "group": "reinforcing",
+    "canonical_uom": "TON",
+    "attributes": [
+      "bar_size",
+      "grade",
+      "epoxy_coated"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "reinforcing_wwf_mesh",
+    "display_name": "Wwf Mesh",
+    "group": "reinforcing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "reinforcing_chairs_spacers",
+    "display_name": "Chairs Spacers",
+    "group": "reinforcing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "reinforcing_tie_wire",
+    "display_name": "Tie Wire",
+    "group": "reinforcing",
+    "canonical_uom": "LB",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "reinforcing_dowels_epoxy",
+    "display_name": "Dowels Epoxy",
+    "group": "reinforcing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_cmu_block",
+    "display_name": "Cmu Block",
+    "group": "masonry",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_brick",
+    "display_name": "Brick",
+    "group": "masonry",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_stone_veneer",
+    "display_name": "Stone Veneer",
+    "group": "masonry",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_mortar",
+    "display_name": "Mortar",
+    "group": "masonry",
+    "canonical_uom": "BAG",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_grout",
+    "display_name": "Grout",
+    "group": "masonry",
+    "canonical_uom": "BAG",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_flashing_weeps",
+    "display_name": "Flashing Weeps",
+    "group": "masonry",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "masonry_masonry_sealer",
+    "display_name": "Masonry Sealer",
+    "group": "masonry",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_dimensional_lumber",
+    "display_name": "Dimensional Lumber",
+    "group": "wood",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_engineered_lumber",
+    "display_name": "Engineered Lumber",
+    "group": "wood",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_osb_sheathing",
+    "display_name": "Osb Sheathing",
+    "group": "wood",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_plywood",
+    "display_name": "Plywood",
+    "group": "wood",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_connectors_hardware",
+    "display_name": "Connectors Hardware",
+    "group": "wood",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "wood_fasteners",
+    "display_name": "Fasteners",
+    "group": "wood",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_structural_steel",
+    "display_name": "Structural Steel",
+    "group": "metals",
+    "canonical_uom": "TON",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_metal_deck",
+    "display_name": "Metal Deck",
+    "group": "metals",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_cold_formed_studs",
+    "display_name": "Cold Formed Studs",
+    "group": "metals",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_sheet_metal",
+    "display_name": "Sheet Metal",
+    "group": "metals",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_anchors",
+    "display_name": "Anchors",
+    "group": "metals",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "metals_welding_consumables",
+    "display_name": "Welding Consumables",
+    "group": "metals",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_tpo_membrane",
+    "display_name": "Tpo Membrane",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_pvc_membrane",
+    "display_name": "Pvc Membrane",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_epdm_membrane",
+    "display_name": "Epdm Membrane",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_mod_bit",
+    "display_name": "Mod Bit",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_bur",
+    "display_name": "Bur",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_shingles",
+    "display_name": "Shingles",
+    "group": "roofing",
+    "canonical_uom": "SQ",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_roof_insulation_polyiso",
+    "display_name": "Roof Insulation Polyiso",
+    "group": "roofing",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_flashing_metal",
+    "display_name": "Flashing Metal",
+    "group": "roofing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_edge_metal",
+    "display_name": "Edge Metal",
+    "group": "roofing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "roofing_sealants",
+    "display_name": "Sealants",
+    "group": "roofing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_fiberglass_batt",
+    "display_name": "Fiberglass Batt",
+    "group": "insulation",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_mineral_wool",
+    "display_name": "Mineral Wool",
+    "group": "insulation",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_xps",
+    "display_name": "Xps",
+    "group": "insulation",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_eps",
+    "display_name": "Eps",
+    "group": "insulation",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_spray_foam",
+    "display_name": "Spray Foam",
+    "group": "insulation",
+    "canonical_uom": "BF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "insulation_duct_wrap",
+    "display_name": "Duct Wrap",
+    "group": "insulation",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_gypsum_board",
+    "display_name": "Gypsum Board",
+    "group": "drywall",
+    "canonical_uom": "SF",
+    "attributes": [
+      "thickness_in",
+      "type",
+      "length_ft"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_joint_compound",
+    "display_name": "Joint Compound",
+    "group": "drywall",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_tape",
+    "display_name": "Tape",
+    "group": "drywall",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_corner_bead",
+    "display_name": "Corner Bead",
+    "group": "drywall",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_drywall_screws",
+    "display_name": "Drywall Screws",
+    "group": "drywall",
+    "canonical_uom": "LB",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "drywall_access_panels",
+    "display_name": "Access Panels",
+    "group": "drywall",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_primer",
+    "display_name": "Primer",
+    "group": "paint",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_paint_latex",
+    "display_name": "Paint Latex",
+    "group": "paint",
+    "canonical_uom": "GAL",
+    "attributes": [
+      "sheen",
+      "interior_exterior",
+      "voc_class"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_paint_epoxy",
+    "display_name": "Paint Epoxy",
+    "group": "paint",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_masking",
+    "display_name": "Masking",
+    "group": "paint",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_caulk",
+    "display_name": "Caulk",
+    "group": "paint",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "paint_abrasives",
+    "display_name": "Abrasives",
+    "group": "paint",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_carpet_tile",
+    "display_name": "Carpet Tile",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_carpet_roll",
+    "display_name": "Carpet Roll",
+    "group": "flooring",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_lvt",
+    "display_name": "Lvt",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_vct",
+    "display_name": "Vct",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_sheet_vinyl",
+    "display_name": "Sheet Vinyl",
+    "group": "flooring",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_hardwood",
+    "display_name": "Hardwood",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_rubber_flooring",
+    "display_name": "Rubber Flooring",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_tile",
+    "display_name": "Tile",
+    "group": "flooring",
+    "canonical_uom": "SF",
+    "attributes": [
+      "tile_size",
+      "material",
+      "slip_rating"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_thinset",
+    "display_name": "Thinset",
+    "group": "flooring",
+    "canonical_uom": "BAG",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_grout",
+    "display_name": "Grout",
+    "group": "flooring",
+    "canonical_uom": "BAG",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "flooring_underlayment",
+    "display_name": "Underlayment",
+    "group": "flooring",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_pex",
+    "display_name": "Pipe Pex",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_copper",
+    "display_name": "Pipe Copper",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [
+      "diameter_in",
+      "type_L_M_K",
+      "insulation"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_cpvc",
+    "display_name": "Pipe Cpvc",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_pvc",
+    "display_name": "Pipe Pvc",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_abs",
+    "display_name": "Pipe Abs",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_pipe_cast_iron",
+    "display_name": "Pipe Cast Iron",
+    "group": "plumbing",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_fittings",
+    "display_name": "Fittings",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_valves",
+    "display_name": "Valves",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_hangers",
+    "display_name": "Hangers",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_insulation_plumbing",
+    "display_name": "Insulation Plumbing",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_fixtures",
+    "display_name": "Fixtures",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "plumbing_water_heater",
+    "display_name": "Water Heater",
+    "group": "plumbing",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_conduit_emt",
+    "display_name": "Conduit Emt",
+    "group": "electrical",
+    "canonical_uom": "LF",
+    "attributes": [
+      "diameter_in"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_conduit_pvc",
+    "display_name": "Conduit Pvc",
+    "group": "electrical",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_conduit_rmc",
+    "display_name": "Conduit Rmc",
+    "group": "electrical",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_conductors",
+    "display_name": "Conductors",
+    "group": "electrical",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_boxes",
+    "display_name": "Boxes",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_devices",
+    "display_name": "Devices",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_breakers",
+    "display_name": "Breakers",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_panels",
+    "display_name": "Panels",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_fixtures",
+    "display_name": "Fixtures",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_connectors",
+    "display_name": "Connectors",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "electrical_grounding",
+    "display_name": "Grounding",
+    "group": "electrical",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_cat6",
+    "display_name": "Cat6",
+    "group": "low_voltage",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_fiber",
+    "display_name": "Fiber",
+    "group": "low_voltage",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_racks",
+    "display_name": "Racks",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_patch_panels",
+    "display_name": "Patch Panels",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_cameras",
+    "display_name": "Cameras",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_readers",
+    "display_name": "Readers",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_alarm_devices",
+    "display_name": "Alarm Devices",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "low_voltage_speakers_av",
+    "display_name": "Speakers Av",
+    "group": "low_voltage",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_duct_galv",
+    "display_name": "Duct Galv",
+    "group": "hvac",
+    "canonical_uom": "LF",
+    "attributes": [
+      "gauge",
+      "pressure_class",
+      "insulation"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_duct_flex",
+    "display_name": "Duct Flex",
+    "group": "hvac",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_dampers",
+    "display_name": "Dampers",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_diffusers",
+    "display_name": "Diffusers",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_rtu",
+    "display_name": "Rtu",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_vav",
+    "display_name": "Vav",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_lineset_copper",
+    "display_name": "Lineset Copper",
+    "group": "hvac",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_hvac_controls",
+    "display_name": "Hvac Controls",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "hvac_mechanical_insulation",
+    "display_name": "Mechanical Insulation",
+    "group": "hvac",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_aggregate_base",
+    "display_name": "Aggregate Base",
+    "group": "site",
+    "canonical_uom": "TON",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_geotextile",
+    "display_name": "Geotextile",
+    "group": "site",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_geogrid",
+    "display_name": "Geogrid",
+    "group": "site",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_silt_fence",
+    "display_name": "Silt Fence",
+    "group": "site",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_wattles",
+    "display_name": "Wattles",
+    "group": "site",
+    "canonical_uom": "EA",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_topsoil",
+    "display_name": "Topsoil",
+    "group": "site",
+    "canonical_uom": "CY",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_sod",
+    "display_name": "Sod",
+    "group": "site",
+    "canonical_uom": "SF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_seed",
+    "display_name": "Seed",
+    "group": "site",
+    "canonical_uom": "LB",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_mulch",
+    "display_name": "Mulch",
+    "group": "site",
+    "canonical_uom": "CY",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_asphalt_hma",
+    "display_name": "Asphalt Hma",
+    "group": "site",
+    "canonical_uom": "TON",
+    "attributes": [
+      "mix_type",
+      "lift_thickness_in"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_tack_coat",
+    "display_name": "Tack Coat",
+    "group": "site",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_striping_paint",
+    "display_name": "Striping Paint",
+    "group": "site",
+    "canonical_uom": "GAL",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "site_fence_chain_link",
+    "display_name": "Fence Chain Link",
+    "group": "site",
+    "canonical_uom": "LF",
+    "attributes": [],
+    "notes": ""
+  },
+  {
+    "material_family_id": "misc_consumables",
+    "display_name": "Consumables",
+    "group": "misc",
+    "canonical_uom": "EA",
+    "attributes": [
+      "description"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "misc_fasteners",
+    "display_name": "Fasteners",
+    "group": "misc",
+    "canonical_uom": "EA",
+    "attributes": [
+      "type",
+      "size"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "misc_adhesives",
+    "display_name": "Adhesives",
+    "group": "misc",
+    "canonical_uom": "GAL",
+    "attributes": [
+      "type"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "misc_sealants",
+    "display_name": "Sealants",
+    "group": "misc",
+    "canonical_uom": "GAL",
+    "attributes": [
+      "type"
+    ],
+    "notes": ""
+  },
+  {
+    "material_family_id": "equipment_rental_equipment",
+    "display_name": "Rental Equipment",
+    "group": "equipment",
+    "canonical_uom": "DAY",
+    "attributes": [
+      "equipment_type"
+    ],
+    "notes": ""
+  }
+]

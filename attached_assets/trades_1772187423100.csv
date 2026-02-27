@@ -1,0 +1,231 @@
+trade_id,trade_name,trade_category
+general_contractor_gc,General Contractor (GC),01_Precon_General_Conditions
+commissioning_agent_cx,Commissioning Agent (Cx),01_Precon_General_Conditions
+construction_manager_cm_at_risk,Construction Manager / CM-at-Risk,01_Precon_General_Conditions
+general_trades_carpentry_gc_self_perform,General Trades / Carpentry (GC self-perform),01_Precon_General_Conditions
+jobsite_logistics_temporary_facilities,Jobsite Logistics / Temporary Facilities,01_Precon_General_Conditions
+owner_s_rep_program_manager,Owner's Rep / Program Manager,01_Precon_General_Conditions
+quality_control_qa_qc,Quality Control / QA-QC,01_Precon_General_Conditions
+safety_site_safety_officer,Safety / Site Safety Officer,01_Precon_General_Conditions
+scanning_reality_capture,Scanning / Reality Capture,01_Precon_General_Conditions
+survey_layout,Survey & Layout,01_Precon_General_Conditions
+asphalt_paving,Asphalt Paving,02_Site_Civil
+concrete_paving_flatwork_exterior,Concrete Paving / Flatwork (Exterior),02_Site_Civil
+concrete_restoration_exterior,Concrete Restoration (Exterior),02_Site_Civil
+curb_gutter_machine_form,Curb & Gutter (Machine/Form),02_Site_Civil
+demolition_site,Demolition (Site),02_Site_Civil
+dewatering,Dewatering,02_Site_Civil
+directional_boring_hdd,Directional Boring / HDD,02_Site_Civil
+earthwork_mass_excavation,Earthwork / Mass Excavation,02_Site_Civil
+erosion_sediment_control,Erosion & Sediment Control,02_Site_Civil
+fencing_gates,Fencing & Gates,02_Site_Civil
+gas_utility_civil,Gas Utility (Civil),02_Site_Civil
+grading_fine_grading,Grading / Fine Grading,02_Site_Civil
+hardscape_pavers,Hardscape / Pavers,02_Site_Civil
+irrigation,Irrigation,02_Site_Civil
+landscaping,Landscaping,02_Site_Civil
+retaining_walls_segmental_concrete,Retaining Walls (Segmental/Concrete),02_Site_Civil
+sanitary_sewer_civil,Sanitary Sewer (Civil),02_Site_Civil
+shoring_excavation_support,Shoring / Excavation Support,02_Site_Civil
+site_clearing_grubbing,Site Clearing & Grubbing,02_Site_Civil
+site_lighting_electrical,Site Lighting (Electrical),02_Site_Civil
+soil_stabilization,Soil Stabilization,02_Site_Civil
+storm_drain_civil,Storm Drain (Civil),02_Site_Civil
+striping_pavement_markings,Striping / Pavement Markings,02_Site_Civil
+telecom_duct_bank_civil,Telecom / Duct Bank (Civil),02_Site_Civil
+traffic_control,Traffic Control,02_Site_Civil
+tree_removal_arborist,Tree Removal / Arborist,02_Site_Civil
+trenching_backfill,Trenching & Backfill,02_Site_Civil
+waterline_civil,Waterline (Civil),02_Site_Civil
+caissons_drilled_piers,Caissons / Drilled Piers,03_Concrete_Structural
+concrete_cast_in_place,Concrete (Cast-in-Place),03_Concrete_Structural
+concrete_decorative_stamped,Concrete (Decorative / Stamped),03_Concrete_Structural
+concrete_foundations,Concrete (Foundations),03_Concrete_Structural
+concrete_polished,Concrete (Polished),03_Concrete_Structural
+concrete_structural_elevated,Concrete (Structural / Elevated),03_Concrete_Structural
+concrete_tilt_up,Concrete (Tilt-Up),03_Concrete_Structural
+concrete_repair_restoration,Concrete Repair / Restoration,03_Concrete_Structural
+formwork_shoring,Formwork & Shoring,03_Concrete_Structural
+helical_piles,Helical Piles,03_Concrete_Structural
+masonry_brick,Masonry (Brick),03_Concrete_Structural
+masonry_cmu,Masonry (CMU),03_Concrete_Structural
+masonry_stone,Masonry (Stone),03_Concrete_Structural
+masonry_restoration_tuckpointing,Masonry Restoration / Tuckpointing,03_Concrete_Structural
+micropiles,Micropiles,03_Concrete_Structural
+post_tensioning,Post-Tensioning,03_Concrete_Structural
+precast_concrete_erection,Precast Concrete Erection,03_Concrete_Structural
+rebar_installation,Rebar Installation,03_Concrete_Structural
+shotcrete_gunite,Shotcrete / Gunite,03_Concrete_Structural
+underpinning,Underpinning,03_Concrete_Structural
+bollards_protective_metals,Bollards / Protective Metals,04_Steel_Metals
+handrails_guardrails,Handrails & Guardrails,04_Steel_Metals
+metal_deck_floor_roof,Metal Deck (Floor/Roof),04_Steel_Metals
+metal_fabrication_shop,Metal Fabrication Shop,04_Steel_Metals
+miscellaneous_metals,Miscellaneous Metals,04_Steel_Metals
+ornamental_metals,Ornamental Metals,04_Steel_Metals
+rigging_crane_services,Rigging / Crane Services,04_Steel_Metals
+sheet_metal_architectural,Sheet Metal (Architectural),04_Steel_Metals
+stairs_railings,Stairs & Railings,04_Steel_Metals
+structural_steel_erection,Structural Steel Erection,04_Steel_Metals
+structural_steel_supply,Structural Steel Supply,04_Steel_Metals
+welding_field_welding,Welding / Field Welding,04_Steel_Metals
+acoustical_wood_ceilings,Acoustical Wood Ceilings,05_Framing_Carpentry
+blocking_backing,Blocking & Backing,05_Framing_Carpentry
+cabinetry_casework_install,Cabinetry / Casework Install,05_Framing_Carpentry
+decks_porches,Decks & Porches,05_Framing_Carpentry
+doors_trim_carpentry,Doors & Trim (Carpentry),05_Framing_Carpentry
+finish_carpentry,Finish Carpentry,05_Framing_Carpentry
+heavy_timber,Heavy Timber,05_Framing_Carpentry
+millwork_install,Millwork Install,05_Framing_Carpentry
+rough_carpentry_wood_framing,Rough Carpentry (Wood Framing),05_Framing_Carpentry
+sheathing_nail_base,Sheathing & Nail Base,05_Framing_Carpentry
+stair_carpentry,Stair Carpentry,05_Framing_Carpentry
+trusses_supply_set,Trusses (Supply & Set),05_Framing_Carpentry
+air_barrier_wrb,Air Barrier / WRB,06_Building_Envelope
+canopies_awnings,Canopies / Awnings,06_Building_Envelope
+damp_proofing,Damp Proofing,06_Building_Envelope
+eifs,EIFS,06_Building_Envelope
+exterior_louvers_screens,Exterior Louvers / Screens,06_Building_Envelope
+fire_safing_insulation,Fire/Safing Insulation,06_Building_Envelope
+flashing_sheet_metal_roof,Flashing & Sheet Metal (Roof),06_Building_Envelope
+fluid_applied_membranes,Fluid-Applied Membranes,06_Building_Envelope
+gutters_downspouts,Gutters & Downspouts,06_Building_Envelope
+insulation_thermal,Insulation (Thermal),06_Building_Envelope
+metal_roofing,Metal Roofing,06_Building_Envelope
+roof_accessories_coping_edge_walkpads,Roof Accessories (Coping/Edge/Walkpads),06_Building_Envelope
+roofing_modified_bitumen_bur,Roofing (Modified Bitumen/BUR),06_Building_Envelope
+roofing_shingle,Roofing (Shingle),06_Building_Envelope
+roofing_tpo_pvc_epdm,Roofing (TPO/PVC/EPDM),06_Building_Envelope
+sealants_caulking,Sealants & Caulking,06_Building_Envelope
+siding_fiber_cement,Siding (Fiber Cement),06_Building_Envelope
+siding_metal_panels,Siding (Metal Panels),06_Building_Envelope
+siding_vinyl_engineered_wood,Siding (Vinyl/Engineered Wood),06_Building_Envelope
+stucco,Stucco,06_Building_Envelope
+waterproofing_below_grade,Waterproofing (Below Grade),06_Building_Envelope
+access_control_doors,Access Control (Doors),07_Openings_Glazing
+automatic_doors,Automatic Doors,07_Openings_Glazing
+curtain_wall,Curtain Wall,07_Openings_Glazing
+glass_railings,Glass Railings,07_Openings_Glazing
+glazing_interior_exterior,Glazing (Interior/Exterior),07_Openings_Glazing
+hardware_locksets,Hardware & Locksets,07_Openings_Glazing
+hollow_metal_doors_frames,Hollow Metal Doors & Frames,07_Openings_Glazing
+loading_dock_equipment,Loading Dock Equipment,07_Openings_Glazing
+overhead_doors,Overhead Doors,07_Openings_Glazing
+skylights,Skylights,07_Openings_Glazing
+storefront_aluminum,Storefront (Aluminum),07_Openings_Glazing
+windows_residential_light_comm,Windows (Residential/Light Comm),07_Openings_Glazing
+wood_doors_frames,Wood Doors & Frames,07_Openings_Glazing
+acoustical_ceilings_act,Acoustical Ceilings (ACT),08_Interiors_Drywall_Ceilings
+drywall_finishing_tape_mud,Drywall Finishing (Tape/Mud),08_Interiors_Drywall_Ceilings
+drywall_hanging,Drywall Hanging,08_Interiors_Drywall_Ceilings
+firestopping,Firestopping,08_Interiors_Drywall_Ceilings
+gypsum_ceilings_soffits,Gypsum Ceilings / Soffits,08_Interiors_Drywall_Ceilings
+metal_stud_framing_interior,Metal Stud Framing (Interior),08_Interiors_Drywall_Ceilings
+movable_partitions,Movable Partitions,08_Interiors_Drywall_Ceilings
+plaster_veneer_plaster,Plaster / Veneer Plaster,08_Interiors_Drywall_Ceilings
+shaftwall_area_separation_walls,Shaftwall / Area Separation Walls,08_Interiors_Drywall_Ceilings
+soundproofing_acoustics,Soundproofing / Acoustics,08_Interiors_Drywall_Ceilings
+specialties_install_boards_accessories,Specialties Install (Boards/Accessories),08_Interiors_Drywall_Ceilings
+spray_fireproofing_sfrm_intumescent,Spray Fireproofing (SFRM/Intumescent),08_Interiors_Drywall_Ceilings
+toilet_partitions,Toilet Partitions,08_Interiors_Drywall_Ceilings
+wall_protection_frp_corner_guards,Wall Protection (FRP/Corner Guards),08_Interiors_Drywall_Ceilings
+carpet,Carpet,09_Finishes
+concrete_sealer_coatings,Concrete Sealer / Coatings,09_Finishes
+countertops_quartz_granite_solid_surface,Countertops (Quartz/Granite/Solid Surface),09_Finishes
+epoxy_resinous_floors,Epoxy / Resinous Floors,09_Finishes
+hardwood_engineered_wood,Hardwood / Engineered Wood,09_Finishes
+lvt_lvp,LVT/LVP,09_Finishes
+laminate_flooring,Laminate Flooring,09_Finishes
+painting_interior_exterior,Painting (Interior/Exterior),09_Finishes
+polished_concrete_finish_trade,Polished Concrete (Finish Trade),09_Finishes
+rubber_flooring,Rubber Flooring,09_Finishes
+specialty_coatings_intumescent_high_perf,Specialty Coatings (Intumescent/High-Perf),09_Finishes
+stone_tile,Stone Tile,09_Finishes
+terrazzo,Terrazzo,09_Finishes
+tile_ceramic_porcelain,Tile (Ceramic/Porcelain),09_Finishes
+vct_sheet_vinyl,VCT/Sheet Vinyl,09_Finishes
+wallcovering,Wallcovering,09_Finishes
+backflow_testing,Backflow / Testing,10_MEP_Plumbing
+gas_piping,Gas Piping,10_MEP_Plumbing
+grease_interceptor,Grease Interceptor,10_MEP_Plumbing
+hydronics_pipefitting_mechanical,Hydronics (Pipefitting - Mechanical),10_MEP_Plumbing
+lab_acid_waste,Lab / Acid Waste,10_MEP_Plumbing
+medical_gas,Medical Gas,10_MEP_Plumbing
+plumbing_commercial_service,Plumbing (Commercial Service),10_MEP_Plumbing
+plumbing_finish_fixtures,Plumbing (Finish Fixtures),10_MEP_Plumbing
+plumbing_rough_in,Plumbing (Rough-In),10_MEP_Plumbing
+site_plumbing_tie_ins,Site Plumbing Tie-Ins,10_MEP_Plumbing
+steam_piping,Steam Piping,10_MEP_Plumbing
+sump_ejector_pumps,Sump / Ejector Pumps,10_MEP_Plumbing
+water_heaters_tank_tankless,Water Heaters (Tank/Tankless),10_MEP_Plumbing
+bas_controls,BAS Controls,11_MEP_HVAC
+hvac_boilers,HVAC (Boilers),11_MEP_HVAC
+hvac_chillers,HVAC (Chillers),11_MEP_HVAC
+hvac_commercial_rtu,HVAC (Commercial RTU),11_MEP_HVAC
+hvac_ductwork_sheet_metal,HVAC (Ductwork / Sheet Metal),11_MEP_HVAC
+hvac_equipment_install,HVAC (Equipment Install),11_MEP_HVAC
+hvac_exhaust_ventilation,HVAC (Exhaust / Ventilation),11_MEP_HVAC
+hvac_refrigerant_vrf,HVAC (Refrigerant / VRF),11_MEP_HVAC
+hvac_vav_terminal_units,HVAC (VAV / Terminal Units),11_MEP_HVAC
+insulation_mechanical,Insulation (Mechanical),11_MEP_HVAC
+kitchen_hoods_make_up_air,Kitchen Hoods / Make-Up Air,11_MEP_HVAC
+testing_adjusting_balancing_tab,"Testing, Adjusting & Balancing (TAB)",11_MEP_HVAC
+ev_charging,EV Charging,12_MEP_Electrical
+electrical_branch_rough_in,Electrical (Branch / Rough-In),12_MEP_Electrical
+electrical_devices_trim,Electrical (Devices & Trim),12_MEP_Electrical
+electrical_service_distribution,Electrical (Service & Distribution),12_MEP_Electrical
+emergency_lighting_egress,Emergency Lighting / Egress,12_MEP_Electrical
+generator_ats,Generator & ATS,12_MEP_Electrical
+grounding_bonding,Grounding & Bonding,12_MEP_Electrical
+lighting_controls,Lighting & Controls,12_MEP_Electrical
+lightning_protection,Lightning Protection,12_MEP_Electrical
+site_electrical,Site Electrical,12_MEP_Electrical
+solar_pv,Solar PV,12_MEP_Electrical
+ups_power_conditioning,UPS / Power Conditioning,12_MEP_Electrical
+a_v_commercial,A/V (Commercial),13_LowVoltage_Security_Fire
+access_control_panels_readers,Access Control (Panels/Readers),13_LowVoltage_Security_Fire
+bms_network_integration,BMS Network Integration,13_LowVoltage_Security_Fire
+cctv_video_surveillance,CCTV / Video Surveillance,13_LowVoltage_Security_Fire
+fiber_optics,Fiber Optics,13_LowVoltage_Security_Fire
+fire_alarm_fa,Fire Alarm (FA),13_LowVoltage_Security_Fire
+intercom_paging,Intercom / Paging,13_LowVoltage_Security_Fire
+intrusion_alarm,Intrusion Alarm,13_LowVoltage_Security_Fire
+low_voltage_structured_cabling,Low Voltage (Structured Cabling),13_LowVoltage_Security_Fire
+nurse_call,Nurse Call,13_LowVoltage_Security_Fire
+sound_masking,Sound Masking,13_LowVoltage_Security_Fire
+wireless_das,Wireless / DAS,13_LowVoltage_Security_Fire
+fire_extinguishers_install_service,Fire Extinguishers (Install/Service),14_Fire_Protection
+fire_pump,Fire Pump,14_Fire_Protection
+fire_sprinkler_dry_preaction,Fire Sprinkler (Dry/Preaction),14_Fire_Protection
+fire_sprinkler_wet,Fire Sprinkler (Wet),14_Fire_Protection
+special_hazards_clean_agent_deluge,Special Hazards (Clean Agent/Deluge),14_Fire_Protection
+standpipe,Standpipe,14_Fire_Protection
+bleachers_athletic_equipment,Bleachers / Athletic Equipment,15_Specialty_Systems
+conveyors_warehouse,Conveyors (Warehouse),15_Specialty_Systems
+dock_levelers,Dock Levelers,15_Specialty_Systems
+elevators_traction_hydraulic,Elevators (Traction/Hydraulic),15_Specialty_Systems
+modular_buildings,Modular Buildings,15_Specialty_Systems
+operable_walls,Operable Walls,15_Specialty_Systems
+overhead_crane_systems,Overhead Crane Systems,15_Specialty_Systems
+playground_equipment,Playground Equipment,15_Specialty_Systems
+pool_spa,Pool / Spa,15_Specialty_Systems
+pre_engineered_metal_buildings_pemb,Pre-Engineered Metal Buildings (PEMB),15_Specialty_Systems
+residential_lift,Residential Lift,15_Specialty_Systems
+septic_systems,Septic Systems,15_Specialty_Systems
+signage_interior_exterior,Signage (Interior/Exterior),15_Specialty_Systems
+solar_thermal,Solar Thermal,15_Specialty_Systems
+specialty_equipment_install,Specialty Equipment Install,15_Specialty_Systems
+wayfinding_graphics,Wayfinding Graphics,15_Specialty_Systems
+well_drilling,Well Drilling,15_Specialty_Systems
+asbestos_abatement,Asbestos Abatement,16_Environmental_Remediation
+contaminated_soil_remediation,Contaminated Soil Remediation,16_Environmental_Remediation
+hazmat_regulated_waste_handling,Hazmat / Regulated Waste Handling,16_Environmental_Remediation
+lead_abatement,Lead Abatement,16_Environmental_Remediation
+mold_remediation,Mold Remediation,16_Environmental_Remediation
+tank_removal_ust_ast,Tank Removal (UST/AST),16_Environmental_Remediation
+concrete_joint_sealing,Concrete Joint Sealing,17_Maintenance_Repairs
+crack_injection,Crack Injection,17_Maintenance_Repairs
+handyman_general_repair,Handyman / General Repair,17_Maintenance_Repairs
+punchlist_crew,Punchlist Crew,17_Maintenance_Repairs
+roof_repair_leak_response,Roof Repair / Leak Response,17_Maintenance_Repairs
+sealcoating,Sealcoating,17_Maintenance_Repairs
