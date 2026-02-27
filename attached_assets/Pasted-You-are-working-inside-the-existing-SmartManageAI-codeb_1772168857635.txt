@@ -1,0 +1,121 @@
+You are working inside the existing SmartManageAI codebase (multi-tenant, RBAC, security-hardened). 
+
+GOAL:
+Add 8 new organization-level roles to the RBAC system WITHOUT breaking or removing any existing roles, permissions, routes, security guards, onboarding flows, or dev login/test user access. This must be additive-only, backwards compatible, and fully multi-tenant safe.
+
+NEW ROLES TO ADD (org-scoped roles; NOT platform-wide):
+1) SALES
+2) MARKETING
+3) SAFETY_MANAGER
+4) HR_MANAGER
+5) EQUIPMENT_MANAGER
+6) PROJECT_ENGINEER
+7) PROCUREMENT_MANAGER
+8) DISPATCHER
+
+CONSTRAINTS / NON-NEGOTIABLES:
+- DO NOT delete or rename any existing roles:
+  SUPER_ADMIN, ADMIN, HUSTLER, MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER, MAINTENANCE_MANAGER, HOURLY_EMPLOYEE, VENDOR
+- DO NOT weaken multi-tenant isolation. Every query and mutation must remain constrained by organization_id and existing guards.
+- Keep “effective role” behavior for HUSTLER intact.
+- Keep dev/test login buttons intact.
+- Maintain audit logging patterns and monitoring where present.
+- Follow current coding conventions, schema approach (Drizzle), and permission checking patterns.
+
+DELIVERABLES:
+1) Update backend role enums/types (shared + server) to include the 8 roles.
+2) Update database schema / migrations if roles are stored as enum/constraints.
+3) Add a centralized permission map for all roles (existing + new) that defines allowed modules/actions.
+4) Add API guards/middleware helpers to check:
+   - org membership
+   - role OR permission
+   - optional project assignment (where appropriate)
+5) Update frontend role labels, role pickers, invite-user flows, and any “create user” UI to include the 8 new roles.
+6) Add seed/test data updates so dev can quickly create users for each new role in a test org.
+7) Add automated tests (or at minimum a test harness script) verifying:
+   - role assignment works
+   - permission checks pass/fail correctly
+   - org boundary is enforced
+8) Update documentation (walkthrough content / AI walkthrough / onboarding text if it lists roles) to include the new roles.
+
+ROLE INTENT + DEFAULT PERMISSIONS (additive; align with modules that already exist):
+Implement as permissions-based (preferred) but still expose the role name. If the app currently checks role directly, add the new roles in the appropriate places to avoid regressions.
+
+A) SALES
+- Can access CRM / leads / opportunities / pipeline (read/write)
+- Can create proposals/quotes if such module exists (read/write)
+- Can view customer contact info and communications
+- Should NOT access payroll, banking, full job-cost financials, or company-wide settings
+- Can view high-level revenue pipeline totals (not full P&L)
+
+B) MARKETING
+- Can access marketing campaigns, lead sources, website/leads intake modules (read/write)
+- Can view CRM lead source analytics
+- Should NOT access payroll, banking, job-cost financials
+- Limited access to contact lists as needed for campaigns (respect privacy constraints)
+
+C) SAFETY_MANAGER
+- Can access safety logs, incident reports, toolbox talks, training/cert tracking (read/write)
+- Can view job site roster and schedules
+- Can create safety tasks assigned to supers/crews
+- Should NOT access payroll/banking or estimate financial details
+
+D) HR_MANAGER
+- Can access hiring pipeline/applicants (if exists), onboarding tasks, employee profiles, certifications, performance reviews (read/write)
+- Can view timesheets at a summary level if needed for HR (NOT pay rates unless already allowed)
+- Should NOT access banking, invoices, or full financial dashboards unless your existing Office Manager already does
+
+E) EQUIPMENT_MANAGER
+- Can access equipment registry, assignments, maintenance logs, utilization, buy vs rent tools (read/write)
+- Can create maintenance work orders and assign to maintenance manager/superintendents
+- Can view project schedules enough to plan equipment allocation
+- Should NOT access payroll/banking
+
+F) PROJECT_ENGINEER
+- Can access RFIs, submittals, docs, drawings/specs, meeting minutes, change-event workflows (read/write)
+- Can create tasks and route for approval
+- Can see schedule and commitments but not payroll/banking
+
+G) PROCUREMENT_MANAGER
+- Can access material requests, POs, vendor catalogs, lead times, deliveries, receiving (read/write)
+- Can see budgets/allowances by cost code as needed (read only, limited)
+- Should NOT see payroll/banking
+
+H) DISPATCHER
+- Can access crew/tech schedules, assignments, daily plans, route/dispatch board (read/write)
+- Can see customer address/job location
+- Cannot access payroll/banking, full financials
+- Can communicate updates to field users (notifications/messages) if supported
+
+IMPLEMENTATION STEPS (DO THESE IN ORDER):
+1) Locate where roles are defined (likely shared/schema.ts + server auth/RBAC utilities). Add the 8 roles everywhere necessary.
+2) If roles are stored as DB enum, create a migration to extend enum safely.
+3) Create/extend a Permission enum list and a role->permissions map that includes:
+   - existing roles mapped to current behavior (do not change current access)
+   - new roles mapped as described above
+4) Update route-level guards:
+   - Ensure each module’s routes check permissions, not only role checks
+   - If some routes check role directly, extend them to include the new roles or refactor to permission checks carefully without changing existing access.
+5) Update user invite/create flows:
+   - Add these roles to the dropdown/selector
+   - Add human-friendly labels and short descriptions
+6) Update any UI conditionals for navigation visibility:
+   - show/hide modules based on permissions
+7) Add minimal tests:
+   - create users in two orgs; verify cannot access cross-org data
+   - create one user per new role and verify allowed endpoints return 200 and forbidden return 403
+8) Update walkthrough / onboarding role explanations so non-construction users understand what each role does.
+
+OUTPUT REQUIRED:
+- Print a concise “Implementation Summary” at the end:
+  - files changed
+  - migrations added
+  - roles added
+  - permission map created/updated
+  - tests added and how to run
+  - any TODOs
+
+IMPORTANT:
+If you encounter modules that do not yet exist (e.g., dispatch board, safety module), STILL implement the RBAC roles and permission stubs now so future modules can rely on them. Do not block on missing UI; just wire role + permission scaffolding and safe guards.
+
+DO NOT make large refactors beyond what is necessary to add roles safely.
