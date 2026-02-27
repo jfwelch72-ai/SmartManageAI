@@ -2,6 +2,8 @@ import { openai, AI_MODEL_GPT4O } from './openaiClient';
 import { db } from '../db';
 import { masterSowItems, masterModifierCategories, masterModifiers, tradeTypeEnum } from '@shared/schema';
 import { eq, inArray } from 'drizzle-orm';
+import { getTrades, getTradeCategories, getTradesByCategory, type Trade } from '../data/onboarding';
+import { mapOnboardingTradeIdToLegacy, isValidTradeType } from '@shared/tradeTypeUtils';
 
 export interface TradeDiscoveryResult {
   primaryTrade: string;
@@ -69,42 +71,52 @@ const ALL_TRADES = [
   ...TRADE_CATEGORIES.SUPPORT_SERVICES
 ];
 
-const TRADE_DISCOVERY_PROMPT = `You are an expert construction industry analyst specializing in trade classification and project scoping.
+function buildLibraryTradeTaxonomy(): { categories: Record<string, string[]>; allTradeIds: string[] } {
+  const categories: Record<string, string[]> = {};
+  const allTradeIds: string[] = [];
+  for (const cat of getTradeCategories()) {
+    const trades = getTradesByCategory(cat);
+    categories[cat] = trades.map(t => t.trade_id);
+    allTradeIds.push(...categories[cat]);
+  }
+  return { categories, allTradeIds };
+}
 
-Your task is to analyze a project description and identify the most relevant construction trades from our comprehensive taxonomy of 73 trades.
+const LIBRARY_TAXONOMY = buildLibraryTradeTaxonomy();
 
-AVAILABLE TRADES (grouped by category):
+const EXTENDED_ALL_TRADES = [...new Set([...ALL_TRADES, ...LIBRARY_TAXONOMY.allTradeIds])];
 
-CIVIL/SITE/ENVIRONMENTAL:
-${TRADE_CATEGORIES.CIVIL_SITE.join(', ')}
+function buildTradeDiscoveryPrompt(): string {
+  const categoryBlock = Object.entries(LIBRARY_TAXONOMY.categories)
+    .map(([cat, tradeIds]) => `${cat}:\n${tradeIds.join(', ')}`)
+    .join('\n\n');
 
-STRUCTURAL/BUILDING:
-${TRADE_CATEGORIES.STRUCTURAL_BUILDING.join(', ')}
+  return `You are an expert construction industry analyst specializing in trade classification and project scoping.
 
-MEP/SPECIALTY:
-${TRADE_CATEGORIES.MEP_SPECIALTY.join(', ')}
+Your task is to analyze a project description and identify the most relevant construction trades from our comprehensive taxonomy of ${LIBRARY_TAXONOMY.allTradeIds.length} trades.
 
-SUPPORT SERVICES:
-${TRADE_CATEGORIES.SUPPORT_SERVICES.join(', ')}
+AVAILABLE TRADES (grouped by ${Object.keys(LIBRARY_TAXONOMY.categories).length} categories):
 
-GENERAL TRADES:
-${TRADE_CATEGORIES.ORIGINAL_TRADES.join(', ')}
+${categoryBlock}
+
+LEGACY TRADE CODES (also accepted):
+${ALL_TRADES.join(', ')}
 
 IMPORTANT GUIDELINES:
-1. Identify the PRIMARY trade that best matches the project scope
+1. Identify the PRIMARY trade that best matches the project scope — prefer specific library trade_ids (e.g., "concrete_cast_in_place") over legacy codes (e.g., "CONCRETE")
 2. List RELATED trades that would typically be involved or subcontracted
 3. Assign confidence scores (0.0-1.0) based on how clearly the project matches
-4. Consider both explicit mentions and implied work (e.g., "building a parking lot" implies CONCRETE_PAVING, STRIPING_AND_SIGNAGE, EROSION_CONTROL)
+4. Consider both explicit mentions and implied work (e.g., "building a parking lot" implies asphalt_paving, striping_pavement_markings, erosion_control_seeding)
 5. Identify key work items that would be part of this project
 6. Note any special considerations (permits, environmental, safety, etc.)
 
 Respond with JSON matching this EXACT structure:
 {
-  "primaryTrade": "TRADE_TYPE_HERE",
+  "primaryTrade": "trade_id_here",
   "primaryTradeConfidence": 0.85,
   "relatedTrades": [
     {
-      "tradeType": "TRADE_TYPE",
+      "tradeType": "trade_id",
       "relevance": 0.75,
       "reason": "Why this trade is relevant"
     }
@@ -117,6 +129,9 @@ Respond with JSON matching this EXACT structure:
   },
   "aiNotes": "Additional observations about the project scope"
 }`;
+}
+
+const TRADE_DISCOVERY_PROMPT = buildTradeDiscoveryPrompt();
 
 export async function discoverTradesFromDescription(context: TradeMatchingContext): Promise<TradeDiscoveryResult> {
   console.log('[TradeDiscoveryService] Analyzing project for trade matching');
@@ -150,13 +165,18 @@ Identify the primary trade and all related trades that would be involved in this
 
     const result = JSON.parse(content) as TradeDiscoveryResult;
     
-    // Validate that returned trades are in our taxonomy
-    if (!ALL_TRADES.includes(result.primaryTrade)) {
+    if (!EXTENDED_ALL_TRADES.includes(result.primaryTrade)) {
       result.primaryTrade = 'GENERAL_CONTRACTOR';
       result.primaryTradeConfidence = 0.5;
     }
     
-    result.relatedTrades = result.relatedTrades.filter(t => ALL_TRADES.includes(t.tradeType));
+    if (!isValidTradeType(result.primaryTrade)) {
+      const legacyType = mapOnboardingTradeIdToLegacy(result.primaryTrade);
+      (result as any).libraryTradeId = result.primaryTrade;
+      (result as any).legacyTradeType = legacyType;
+    }
+    
+    result.relatedTrades = result.relatedTrades.filter(t => EXTENDED_ALL_TRADES.includes(t.tradeType));
 
     console.log(`[TradeDiscoveryService] Identified primary trade: ${result.primaryTrade} (${result.primaryTradeConfidence} confidence), ${result.relatedTrades.length} related trades`);
     
@@ -244,4 +264,4 @@ export async function getTradeModifierCategories(tradeTypes: string[]): Promise<
   }));
 }
 
-export { TRADE_CATEGORIES, ALL_TRADES };
+export { TRADE_CATEGORIES, ALL_TRADES, EXTENDED_ALL_TRADES, LIBRARY_TAXONOMY };

@@ -1,0 +1,137 @@
+[
+  {
+    "scope_id": "concrete_cast_in_place_furnish_install_slab_on_grade",
+    "labor_rate_per_unit": 3.5,
+    "material_cost_per_unit": 8.5,
+    "equipment_rate_per_unit": 1.25,
+    "production_rate_units_per_hr": 25,
+    "crew_size_default": 6,
+    "notes": "4\" slab, SF basis, includes finish"
+  },
+  {
+    "scope_id": "concrete_cast_in_place_furnish_install_continuous_strip_footings",
+    "labor_rate_per_unit": 12,
+    "material_cost_per_unit": 18,
+    "equipment_rate_per_unit": 3,
+    "production_rate_units_per_hr": 8,
+    "crew_size_default": 5,
+    "notes": "Per LF, includes form/pour/strip"
+  },
+  {
+    "scope_id": "rebar_installation_furnish_install_general_scope_item",
+    "labor_rate_per_unit": 850,
+    "material_cost_per_unit": 1100,
+    "equipment_rate_per_unit": 50,
+    "production_rate_units_per_hr": 0.15,
+    "crew_size_default": 4,
+    "notes": "Per TON placed"
+  },
+  {
+    "scope_id": "drywall_hanging_furnish_install_gypsum_board_walls",
+    "labor_rate_per_unit": 0.85,
+    "material_cost_per_unit": 0.55,
+    "equipment_rate_per_unit": 0.05,
+    "production_rate_units_per_hr": 60,
+    "crew_size_default": 2,
+    "notes": "SF basis, standard hang"
+  },
+  {
+    "scope_id": "drywall_finishing_tape_mud_furnish_install_general_scope_item",
+    "labor_rate_per_unit": 0.65,
+    "material_cost_per_unit": 0.15,
+    "equipment_rate_per_unit": 0.02,
+    "production_rate_units_per_hr": 80,
+    "crew_size_default": 2,
+    "notes": "SF basis, Level 4"
+  },
+  {
+    "scope_id": "painting_interior_exterior_furnish_install_paint_walls",
+    "labor_rate_per_unit": 0.55,
+    "material_cost_per_unit": 0.25,
+    "equipment_rate_per_unit": 0.02,
+    "production_rate_units_per_hr": 120,
+    "crew_size_default": 2,
+    "notes": "SF basis, 2 coats latex"
+  },
+  {
+    "scope_id": "carpet_furnish_install_tile",
+    "labor_rate_per_unit": 0.75,
+    "material_cost_per_unit": 3.5,
+    "equipment_rate_per_unit": 0.05,
+    "production_rate_units_per_hr": 80,
+    "crew_size_default": 2,
+    "notes": "SF basis, carpet tile with adhesive"
+  },
+  {
+    "scope_id": "tile_ceramic_porcelain_furnish_install_flooring",
+    "labor_rate_per_unit": 6,
+    "material_cost_per_unit": 4.5,
+    "equipment_rate_per_unit": 0.25,
+    "production_rate_units_per_hr": 15,
+    "crew_size_default": 2,
+    "notes": "SF basis, 12x24 porcelain thinset"
+  },
+  {
+    "scope_id": "acoustical_ceilings_act_furnish_install_general_scope_item",
+    "labor_rate_per_unit": 1.5,
+    "material_cost_per_unit": 2.25,
+    "equipment_rate_per_unit": 0.15,
+    "production_rate_units_per_hr": 40,
+    "crew_size_default": 2,
+    "notes": "SF basis, 2x2 standard grid"
+  },
+  {
+    "scope_id": "electrical_branch_rough_in_furnish_install_conduit_emt_pvc_rmc",
+    "labor_rate_per_unit": 4.5,
+    "material_cost_per_unit": 2.5,
+    "equipment_rate_per_unit": 0.25,
+    "production_rate_units_per_hr": 20,
+    "crew_size_default": 2,
+    "notes": "LF basis, EMT 3/4 in"
+  },
+  {
+    "scope_id": "plumbing_rough_in_furnish_install_domestic_water_piping",
+    "labor_rate_per_unit": 8,
+    "material_cost_per_unit": 4,
+    "equipment_rate_per_unit": 0.5,
+    "production_rate_units_per_hr": 12,
+    "crew_size_default": 2,
+    "notes": "LF basis, copper 3/4 in"
+  },
+  {
+    "scope_id": "hvac_ductwork_sheet_metal_furnish_install_supply_ductwork",
+    "labor_rate_per_unit": 6.5,
+    "material_cost_per_unit": 5,
+    "equipment_rate_per_unit": 0.5,
+    "production_rate_units_per_hr": 15,
+    "crew_size_default": 3,
+    "notes": "LF basis, rectangular galvanized"
+  },
+  {
+    "scope_id": "asphalt_paving_furnish_install_asphalt_surface_course",
+    "labor_rate_per_unit": 1.25,
+    "material_cost_per_unit": 2.5,
+    "equipment_rate_per_unit": 1.5,
+    "production_rate_units_per_hr": 200,
+    "crew_size_default": 8,
+    "notes": "SF basis, 2 in course"
+  },
+  {
+    "scope_id": "metal_stud_framing_interior_furnish_install_general_scope_item",
+    "labor_rate_per_unit": 1.75,
+    "material_cost_per_unit": 1.25,
+    "equipment_rate_per_unit": 0.1,
+    "production_rate_units_per_hr": 35,
+    "crew_size_default": 3,
+    "notes": "SF wall basis, 3-5/8 20ga"
+  },
+  {
+    "scope_id": "roofing_tpo_pvc_epdm_furnish_install_roof_membrane",
+    "labor_rate_per_unit": 2,
+    "material_cost_per_unit": 3.5,
+    "equipment_rate_per_unit": 0.35,
+    "production_rate_units_per_hr": 50,
+    "crew_size_default": 5,
+    "notes": "SF basis, 60 mil TPO fully adhered"
+  }
+]

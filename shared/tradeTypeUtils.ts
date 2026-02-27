@@ -258,6 +258,134 @@ export const TRADE_TYPE_ALIASES: Record<string, TradeType> = {
   'renewable energy': 'SOLAR',
 };
 
+export const EXTENDED_TRADE_REGISTRY: Record<string, TradeType> = {
+  'general_contractor_gc': 'GENERAL_CONTRACTOR',
+  'concrete_cast_in_place': 'CONCRETE',
+  'concrete_foundations': 'CONCRETE',
+  'concrete_precast': 'CONCRETE',
+  'concrete_tilt_up': 'CONCRETE',
+  'concrete_post_tension': 'CONCRETE',
+  'rebar_installation': 'CONCRETE',
+  'concrete_polishing_finishing': 'CONCRETE',
+  'concrete_repair_restoration': 'CONCRETE',
+  'concrete_cutting_coring': 'CONCRETE',
+  'concrete_pumping': 'CONCRETE',
+  'shotcrete': 'CONCRETE',
+  'electrical_branch_rough_in': 'ELECTRICAL',
+  'electrical_service_distribution': 'ELECTRICAL',
+  'electrical_underground_duct_bank': 'ELECTRICAL',
+  'electrical_overhead_utility': 'ELECTRICAL',
+  'electrical_fire_alarm': 'ELECTRICAL',
+  'electrical_generator_ups': 'ELECTRICAL',
+  'electrical_lighting_controls': 'ELECTRICAL',
+  'electrical_testing_commissioning': 'ELECTRICAL',
+  'plumbing_rough_in': 'PLUMBING',
+  'plumbing_fixtures_trim': 'PLUMBING',
+  'plumbing_underground_utilities': 'PLUMBING',
+  'plumbing_medical_gas': 'PLUMBING',
+  'plumbing_backflow_prevention': 'PLUMBING',
+  'hvac_ductwork_sheet_metal': 'HVAC',
+  'hvac_piping': 'HVAC',
+  'hvac_equipment_setting': 'HVAC',
+  'hvac_controls_automation': 'HVAC',
+  'hvac_testing_balancing': 'HVAC',
+  'hvac_refrigeration': 'HVAC',
+  'roofing_tpo_pvc_epdm': 'ROOFING',
+  'roofing_shingle': 'ROOFING',
+  'roofing_metal_panel': 'ROOFING',
+  'roofing_built_up_modified_bitumen': 'ROOFING',
+  'roofing_slate_tile': 'ROOFING',
+  'roofing_spray_foam': 'ROOFING',
+  'roofing_green_vegetated': 'ROOFING',
+  'carpentry_rough': 'FRAMING',
+  'carpentry_finish_trim': 'FRAMING',
+  'metal_stud_framing_interior': 'FRAMING',
+  'metal_stud_framing_exterior': 'FRAMING',
+  'drywall_hanging': 'DRYWALL',
+  'drywall_finishing_tape_mud': 'DRYWALL',
+  'painting_interior_exterior': 'PAINTING',
+  'industrial_coatings': 'PAINTING',
+  'specialty_finishes_venetian_plaster': 'PAINTING',
+  'lvt_lvp': 'FLOORING',
+  'carpet': 'FLOORING',
+  'tile_ceramic_porcelain': 'TILE',
+  'hardwood_engineered': 'FLOORING',
+  'polished_concrete_epoxy_floor': 'FLOORING',
+  'rubber_sport_flooring': 'FLOORING',
+  'terrazzo': 'FLOORING',
+  'landscaping_planting': 'LANDSCAPING',
+  'landscaping_irrigation': 'LANDSCAPING',
+  'landscaping_hardscape': 'LANDSCAPING',
+  'demolition_selective_interior': 'DEMOLITION',
+  'demolition_structural': 'DEMOLITION',
+  'demolition_hazmat_abatement': 'DEMOLITION',
+  'structural_steel_erection': 'STEEL_ERECTION',
+  'structural_steel_fabrication': 'STEEL_ERECTION',
+  'misc_metals_ornamental_iron': 'STEEL_ERECTION',
+  'masonry_cmu': 'MASONRY',
+  'masonry_brick_veneer': 'MASONRY',
+  'masonry_stone_natural_manufactured': 'MASONRY',
+  'masonry_restoration': 'MASONRY',
+  'insulation_thermal': 'INSULATION',
+  'insulation_firestopping': 'INSULATION',
+  'insulation_acoustical': 'INSULATION',
+  'glazing_storefront_curtain_wall': 'WINDOWS_DOORS',
+  'glazing_windows_residential_commercial': 'WINDOWS_DOORS',
+  'door_hardware_installation': 'WINDOWS_DOORS',
+  'specialty_glass_mirrors': 'WINDOWS_DOORS',
+  'fire_sprinkler_wet': 'FIRE_PROTECTION',
+  'fire_sprinkler_dry_preaction': 'FIRE_PROTECTION',
+  'fire_suppression_clean_agent': 'FIRE_PROTECTION',
+  'fire_pump_installation': 'FIRE_PROTECTION',
+  'waterproofing_below_grade': 'WATERPROOFING',
+  'waterproofing_above_grade': 'WATERPROOFING',
+  'caulking_joint_sealants': 'WATERPROOFING',
+  'asphalt_paving': 'ASPHALT_PAVING',
+  'concrete_paving_sidewalks': 'ASPHALT_PAVING',
+  'striping_pavement_markings': 'ASPHALT_PAVING',
+  'low_voltage_fire_alarm': 'LOW_VOLTAGE',
+  'low_voltage_security_access_control': 'LOW_VOLTAGE',
+  'low_voltage_av_telecom': 'LOW_VOLTAGE',
+  'low_voltage_nurse_call': 'LOW_VOLTAGE',
+  'solar_pv_rooftop': 'SOLAR',
+  'solar_pv_ground_mount': 'SOLAR',
+  'solar_battery_storage': 'SOLAR',
+  'earthwork_grading': 'EARTHWORK',
+  'earthwork_excavation': 'EARTHWORK',
+  'earthwork_backfill_compaction': 'EARTHWORK',
+  'site_utilities_storm_sewer_water': 'EARTHWORK',
+  'erosion_control_seeding': 'EARTHWORK',
+  'siding_exterior_cladding': 'SIDING',
+  'eifs_stucco': 'SIDING',
+  'metal_wall_panels': 'SIDING',
+  'cabinetry_millwork': 'CABINETRY',
+  'countertops_solid_surface': 'COUNTERTOPS',
+  'fencing_gates': 'FENCING',
+  'decking_outdoor_structures': 'DECKING',
+  'acoustical_ceilings_act': 'OTHER',
+  'elevator_escalator': 'OTHER',
+  'signage_wayfinding': 'OTHER',
+  'swimming_pool_construction': 'OTHER',
+};
+
+export function mapOnboardingTradeIdToLegacy(onboardingTradeId: string): TradeType {
+  return EXTENDED_TRADE_REGISTRY[onboardingTradeId] || 'OTHER';
+}
+
+export function normalizeToOnboardingTradeId(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const lower = input.toLowerCase().trim().replace(/\s+/g, '_');
+  if (EXTENDED_TRADE_REGISTRY[lower] !== undefined) {
+    return lower;
+  }
+  for (const [tradeId] of Object.entries(EXTENDED_TRADE_REGISTRY)) {
+    if (tradeId.includes(lower) || lower.includes(tradeId)) {
+      return tradeId;
+    }
+  }
+  return null;
+}
+
 /**
  * Normalize a trade type string to a valid TradeType enum value.
  * Maps common variations, abbreviations, and misspellings to valid trade types.

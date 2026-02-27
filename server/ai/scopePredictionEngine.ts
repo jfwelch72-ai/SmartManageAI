@@ -3,6 +3,8 @@ import { db } from '../db';
 import { masterSowItems, masterModifiers, masterModifierCategories, organizationSowItems } from '@shared/schema';
 import { eq, inArray, and, like, or, sql } from 'drizzle-orm';
 import { ALL_TRADES, TRADE_CATEGORIES } from './tradeDiscoveryService';
+import { getScopesByTradeId, getTradeById, type Scope } from '../data/onboarding';
+import { mapOnboardingTradeIdToLegacy } from '@shared/tradeTypeUtils';
 
 export interface ScopePredictionContext {
   tradeType: string;
@@ -108,8 +110,19 @@ export async function predictRelevantScopeItems(
     ))
     .limit(100);
 
-  if (masterItems.length === 0) {
-    console.log('[ScopePredictionEngine] No master items found, returning empty result');
+  const libraryScopes = getLibraryScopesForContext(context);
+  const libraryScopeItems = libraryScopes.map((s, i) => ({
+    id: `lib_${s.scope_id}`,
+    tradeType: s.trade_id,
+    name: s.scope_name,
+    code: s.scope_id,
+    categoryName: s.category,
+    defaultUomCode: s.uom,
+    description: s.line_item_name_pattern,
+  }));
+
+  if (masterItems.length === 0 && libraryScopeItems.length === 0) {
+    console.log('[ScopePredictionEngine] No master items or library scopes found, returning empty result');
     return {
       predictedItems: [],
       suggestedModifiers: [],
@@ -117,6 +130,10 @@ export async function predictRelevantScopeItems(
       completenessScore: 0,
       missingScopeAreas: [],
     };
+  }
+
+  if (masterItems.length === 0 && libraryScopeItems.length > 0) {
+    console.log(`[ScopePredictionEngine] No DB items, using ${libraryScopeItems.length} library scopes as candidates`);
   }
 
   // Get modifiers for the trade
@@ -147,8 +164,12 @@ export async function predictRelevantScopeItems(
         .limit(50)
     : [];
 
-  // Use AI to rank and predict relevant items
-  const itemsList = masterItems.map(item => ({
+  const allCandidateItems = [
+    ...masterItems,
+    ...libraryScopeItems.slice(0, Math.max(0, 100 - masterItems.length)),
+  ];
+
+  const itemsList = allCandidateItems.map(item => ({
     id: item.id,
     name: item.name,
     category: item.categoryName,
@@ -187,7 +208,6 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
 
     const aiResult = JSON.parse(content);
     
-    // Map AI rankings back to full item data
     const rankedItemMap = new Map<string, { relevanceScore: number; reason: string }>();
     for (const ranked of aiResult.rankedItemIds || []) {
       rankedItemMap.set(ranked.id, {
@@ -196,10 +216,12 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
       });
     }
 
-    const predictedItems: PredictedScopeItem[] = masterItems
-      .filter(item => rankedItemMap.has(item.id))
-      .map(item => {
-        const ranking = rankedItemMap.get(item.id)!;
+    const allCandidateMap = new Map(allCandidateItems.map(item => [item.id, item]));
+
+    const predictedItems: PredictedScopeItem[] = [...rankedItemMap.entries()]
+      .map(([id, ranking]) => {
+        const item = allCandidateMap.get(id);
+        if (!item) return null;
         return {
           id: item.id,
           name: item.name,
@@ -208,10 +230,11 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
           defaultUomCode: item.defaultUomCode,
           relevanceScore: ranking.relevanceScore,
           reason: ranking.reason,
-          isFromMaster: true,
+          isFromMaster: !item.id.startsWith('lib_'),
           tradeType: item.tradeType,
         };
       })
+      .filter((item): item is PredictedScopeItem => item !== null)
       .sort((a, b) => b.relevanceScore - a.relevanceScore)
       .slice(0, limit);
 
@@ -449,6 +472,56 @@ export async function getModifiersForScopeItem(
       .filter(m => m.categoryId === cat.id)
       .map(m => ({ id: m.id, name: m.name, code: m.code })),
   }));
+}
+
+function getLibraryScopesForContext(context: ScopePredictionContext): Scope[] {
+  const tradeIdsToCheck: string[] = [];
+
+  const legacyToLibraryMap: Record<string, string[]> = {
+    'CONCRETE': ['concrete_cast_in_place', 'concrete_foundations', 'concrete_precast'],
+    'ELECTRICAL': ['electrical_branch_rough_in', 'electrical_service_distribution'],
+    'PLUMBING': ['plumbing_rough_in', 'plumbing_fixtures_trim'],
+    'HVAC': ['hvac_ductwork_sheet_metal', 'hvac_piping', 'hvac_equipment_setting'],
+    'ROOFING': ['roofing_tpo_pvc_epdm', 'roofing_shingle', 'roofing_metal_panel'],
+    'DRYWALL': ['drywall_hanging', 'drywall_finishing_tape_mud'],
+    'PAINTING': ['painting_interior_exterior'],
+    'FLOORING': ['lvt_lvp', 'carpet', 'tile_ceramic_porcelain', 'hardwood_engineered'],
+    'MASONRY': ['masonry_cmu', 'masonry_brick_veneer'],
+    'INSULATION': ['insulation_thermal'],
+    'DEMOLITION': ['demolition_selective_interior', 'demolition_structural'],
+    'STEEL_ERECTION': ['structural_steel_erection'],
+    'LANDSCAPING': ['landscaping_planting', 'landscaping_irrigation'],
+    'EARTHWORK': ['earthwork_grading', 'earthwork_excavation'],
+    'ASPHALT_PAVING': ['asphalt_paving'],
+    'FIRE_PROTECTION': ['fire_sprinkler_wet'],
+    'GLAZING': ['glazing_storefront_curtain_wall'],
+    'SOLAR': ['solar_pv_rooftop'],
+    'LOW_VOLTAGE': ['low_voltage_fire_alarm'],
+    'CARPENTRY': ['carpentry_rough', 'carpentry_finish_trim'],
+  };
+
+  if (legacyToLibraryMap[context.tradeType]) {
+    tradeIdsToCheck.push(...legacyToLibraryMap[context.tradeType]);
+  }
+
+  if (getTradeById(context.tradeType)) {
+    tradeIdsToCheck.push(context.tradeType);
+  }
+
+  for (const rt of context.relatedTrades || []) {
+    if (getTradeById(rt)) {
+      tradeIdsToCheck.push(rt);
+    } else if (legacyToLibraryMap[rt]) {
+      tradeIdsToCheck.push(...legacyToLibraryMap[rt]);
+    }
+  }
+
+  const uniqueIds = [...new Set(tradeIdsToCheck)];
+  const scopes: Scope[] = [];
+  for (const tid of uniqueIds) {
+    scopes.push(...getScopesByTradeId(tid));
+  }
+  return scopes;
 }
 
 export { TRADE_CATEGORIES, ALL_TRADES };

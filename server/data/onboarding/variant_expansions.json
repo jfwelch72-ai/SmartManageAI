@@ -1,0 +1,1240 @@
+[
+  {
+    "component_id": "concrete_cast_in_place__slab_on_grade",
+    "trade_id": "concrete_cast_in_place",
+    "variants": [
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__4in_3000psi_broom",
+        "display_name": "4 in 3000 PSI Broom Finish",
+        "qualifiers": {
+          "size": "4 in",
+          "grade": "3000 PSI",
+          "finish": "broom"
+        },
+        "default_parameters": {
+          "thickness_in": 4
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__4in_4000psi_broom",
+        "display_name": "4 in 4000 PSI Broom Finish",
+        "qualifiers": {
+          "size": "4 in",
+          "grade": "4000 PSI",
+          "finish": "broom"
+        },
+        "default_parameters": {
+          "thickness_in": 4
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__4in_4000psi_steel",
+        "display_name": "4 in 4000 PSI Steel Trowel",
+        "qualifiers": {
+          "size": "4 in",
+          "grade": "4000 PSI",
+          "finish": "steel trowel"
+        },
+        "default_parameters": {
+          "thickness_in": 4
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__5in_4000psi_broom",
+        "display_name": "5 in 4000 PSI Broom Finish",
+        "qualifiers": {
+          "size": "5 in",
+          "grade": "4000 PSI",
+          "finish": "broom"
+        },
+        "default_parameters": {
+          "thickness_in": 5
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__6in_4000psi_broom",
+        "display_name": "6 in 4000 PSI Broom Finish",
+        "qualifiers": {
+          "size": "6 in",
+          "grade": "4000 PSI",
+          "finish": "broom"
+        },
+        "default_parameters": {
+          "thickness_in": 6
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__6in_4000psi_steel",
+        "display_name": "6 in 4000 PSI Steel Trowel",
+        "qualifiers": {
+          "size": "6 in",
+          "grade": "4000 PSI",
+          "finish": "steel trowel"
+        },
+        "default_parameters": {
+          "thickness_in": 6
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__6in_5000psi_steel",
+        "display_name": "6 in 5000 PSI Steel Trowel",
+        "qualifiers": {
+          "size": "6 in",
+          "grade": "5000 PSI",
+          "finish": "steel trowel"
+        },
+        "default_parameters": {
+          "thickness_in": 6
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__slab_on_grade__8in_4000psi_broom",
+        "display_name": "8 in 4000 PSI Broom Finish",
+        "qualifiers": {
+          "size": "8 in",
+          "grade": "4000 PSI",
+          "finish": "broom"
+        },
+        "default_parameters": {
+          "thickness_in": 8
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "concrete_cast_in_place__continuous_strip_footings",
+    "trade_id": "concrete_cast_in_place",
+    "variants": [
+      {
+        "variant_id": "concrete_cast_in_place__continuous_strip_footings__12x24_3000psi",
+        "display_name": "12x24 in 3000 PSI",
+        "qualifiers": {
+          "size": "12x24 in",
+          "grade": "3000 PSI"
+        },
+        "default_parameters": {
+          "width_in": 12,
+          "thickness_in": 24
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__continuous_strip_footings__16x8_3000psi",
+        "display_name": "16x8 in 3000 PSI",
+        "qualifiers": {
+          "size": "16x8 in",
+          "grade": "3000 PSI"
+        },
+        "default_parameters": {
+          "width_in": 16,
+          "thickness_in": 8
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__continuous_strip_footings__24x12_4000psi",
+        "display_name": "24x12 in 4000 PSI",
+        "qualifiers": {
+          "size": "24x12 in",
+          "grade": "4000 PSI"
+        },
+        "default_parameters": {
+          "width_in": 24,
+          "thickness_in": 12
+        }
+      },
+      {
+        "variant_id": "concrete_cast_in_place__continuous_strip_footings__36x12_4000psi",
+        "display_name": "36x12 in 4000 PSI",
+        "qualifiers": {
+          "size": "36x12 in",
+          "grade": "4000 PSI"
+        },
+        "default_parameters": {
+          "width_in": 36,
+          "thickness_in": 12
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "rebar_installation__general_scope_item",
+    "trade_id": "rebar_installation",
+    "variants": [
+      {
+        "variant_id": "rebar_installation__general_scope_item__no3_gr60",
+        "display_name": "#3 Grade 60",
+        "qualifiers": {
+          "size": "#3",
+          "grade": "Grade 60"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 0.376
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no4_gr60",
+        "display_name": "#4 Grade 60",
+        "qualifiers": {
+          "size": "#4",
+          "grade": "Grade 60"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 0.668
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no5_gr60",
+        "display_name": "#5 Grade 60",
+        "qualifiers": {
+          "size": "#5",
+          "grade": "Grade 60"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 1.043
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no6_gr60",
+        "display_name": "#6 Grade 60",
+        "qualifiers": {
+          "size": "#6",
+          "grade": "Grade 60"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 1.502
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no7_gr60",
+        "display_name": "#7 Grade 60",
+        "qualifiers": {
+          "size": "#7",
+          "grade": "Grade 60"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 2.044
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no4_gr60_epoxy",
+        "display_name": "#4 Grade 60 Epoxy Coated",
+        "qualifiers": {
+          "size": "#4",
+          "grade": "Grade 60",
+          "finish": "epoxy coated"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 0.668
+        }
+      },
+      {
+        "variant_id": "rebar_installation__general_scope_item__no5_gr60_epoxy",
+        "display_name": "#5 Grade 60 Epoxy Coated",
+        "qualifiers": {
+          "size": "#5",
+          "grade": "Grade 60",
+          "finish": "epoxy coated"
+        },
+        "default_parameters": {
+          "weight_lb_per_ft": 1.043
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "drywall_hanging__gypsum_board_walls",
+    "trade_id": "drywall_hanging",
+    "variants": [
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__half_regular",
+        "display_name": "1/2 in Regular",
+        "qualifiers": {
+          "size": "1/2 in",
+          "type": "regular"
+        },
+        "default_parameters": {
+          "thickness_in": 0.5,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__half_moisture",
+        "display_name": "1/2 in Moisture Resistant",
+        "qualifiers": {
+          "size": "1/2 in",
+          "type": "moisture resistant"
+        },
+        "default_parameters": {
+          "thickness_in": 0.5,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__half_fire_rated",
+        "display_name": "1/2 in Type X (Fire Rated)",
+        "qualifiers": {
+          "size": "1/2 in",
+          "type": "Type X"
+        },
+        "default_parameters": {
+          "thickness_in": 0.5,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__fiveeighths_regular",
+        "display_name": "5/8 in Regular",
+        "qualifiers": {
+          "size": "5/8 in",
+          "type": "regular"
+        },
+        "default_parameters": {
+          "thickness_in": 0.625,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__fiveeighths_type_x",
+        "display_name": "5/8 in Type X (Fire Rated)",
+        "qualifiers": {
+          "size": "5/8 in",
+          "type": "Type X"
+        },
+        "default_parameters": {
+          "thickness_in": 0.625,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__fiveeighths_type_c",
+        "display_name": "5/8 in Type C (Enhanced Fire)",
+        "qualifiers": {
+          "size": "5/8 in",
+          "type": "Type C"
+        },
+        "default_parameters": {
+          "thickness_in": 0.625,
+          "sheet_area_sf": 32
+        }
+      },
+      {
+        "variant_id": "drywall_hanging__gypsum_board_walls__half_abuse_resistant",
+        "display_name": "1/2 in Abuse Resistant",
+        "qualifiers": {
+          "size": "1/2 in",
+          "type": "abuse resistant"
+        },
+        "default_parameters": {
+          "thickness_in": 0.5,
+          "sheet_area_sf": 32
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "painting_interior_exterior__paint_walls",
+    "trade_id": "painting_interior_exterior",
+    "variants": [
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__flat_1coat",
+        "display_name": "Flat 1 Coat",
+        "qualifiers": {
+          "finish": "flat",
+          "material": "latex"
+        },
+        "default_parameters": {
+          "coats": 1,
+          "coverage_sf_per_gal": 400
+        }
+      },
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__eggshell_2coat",
+        "display_name": "Eggshell 2 Coats",
+        "qualifiers": {
+          "finish": "eggshell",
+          "material": "latex"
+        },
+        "default_parameters": {
+          "coats": 2,
+          "coverage_sf_per_gal": 400
+        }
+      },
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__satin_2coat",
+        "display_name": "Satin 2 Coats",
+        "qualifiers": {
+          "finish": "satin",
+          "material": "latex"
+        },
+        "default_parameters": {
+          "coats": 2,
+          "coverage_sf_per_gal": 350
+        }
+      },
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__semigloss_2coat",
+        "display_name": "Semi-Gloss 2 Coats",
+        "qualifiers": {
+          "finish": "semi-gloss",
+          "material": "latex"
+        },
+        "default_parameters": {
+          "coats": 2,
+          "coverage_sf_per_gal": 350
+        }
+      },
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__gloss_2coat",
+        "display_name": "Gloss 2 Coats",
+        "qualifiers": {
+          "finish": "gloss",
+          "material": "latex"
+        },
+        "default_parameters": {
+          "coats": 2,
+          "coverage_sf_per_gal": 350
+        }
+      },
+      {
+        "variant_id": "painting_interior_exterior__paint_walls__epoxy_2coat",
+        "display_name": "Epoxy 2 Coats",
+        "qualifiers": {
+          "finish": "epoxy",
+          "material": "epoxy"
+        },
+        "default_parameters": {
+          "coats": 2,
+          "coverage_sf_per_gal": 300
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "roofing_tpo_pvc_epdm__roof_membrane",
+    "trade_id": "roofing_tpo_pvc_epdm",
+    "variants": [
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__tpo_45mil",
+        "display_name": "TPO 45 mil",
+        "qualifiers": {
+          "material": "TPO",
+          "size": "45 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__tpo_60mil",
+        "display_name": "TPO 60 mil",
+        "qualifiers": {
+          "material": "TPO",
+          "size": "60 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__tpo_80mil",
+        "display_name": "TPO 80 mil",
+        "qualifiers": {
+          "material": "TPO",
+          "size": "80 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__pvc_60mil",
+        "display_name": "PVC 60 mil",
+        "qualifiers": {
+          "material": "PVC",
+          "size": "60 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__pvc_80mil",
+        "display_name": "PVC 80 mil",
+        "qualifiers": {
+          "material": "PVC",
+          "size": "80 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__epdm_45mil",
+        "display_name": "EPDM 45 mil",
+        "qualifiers": {
+          "material": "EPDM",
+          "size": "45 mil"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_tpo_pvc_epdm__roof_membrane__epdm_60mil",
+        "display_name": "EPDM 60 mil",
+        "qualifiers": {
+          "material": "EPDM",
+          "size": "60 mil"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "roofing_shingle__air_vapor_barrier",
+    "trade_id": "roofing_shingle",
+    "variants": [
+      {
+        "variant_id": "roofing_shingle__air_vapor_barrier__3tab_25yr",
+        "display_name": "3-Tab 25 Year",
+        "qualifiers": {
+          "type": "3-tab",
+          "grade": "25 year"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_shingle__air_vapor_barrier__arch_30yr",
+        "display_name": "Architectural 30 Year",
+        "qualifiers": {
+          "type": "architectural",
+          "grade": "30 year"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_shingle__air_vapor_barrier__arch_50yr",
+        "display_name": "Architectural 50 Year (Lifetime)",
+        "qualifiers": {
+          "type": "architectural",
+          "grade": "50 year"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "roofing_shingle__air_vapor_barrier__impact_class4",
+        "display_name": "Impact Resistant Class 4",
+        "qualifiers": {
+          "type": "impact resistant",
+          "grade": "Class 4"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc",
+    "trade_id": "electrical_branch_rough_in",
+    "variants": [
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__emt_half",
+        "display_name": "EMT 1/2 in",
+        "qualifiers": {
+          "material": "EMT",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__emt_threequarter",
+        "display_name": "EMT 3/4 in",
+        "qualifiers": {
+          "material": "EMT",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__emt_1in",
+        "display_name": "EMT 1 in",
+        "qualifiers": {
+          "material": "EMT",
+          "size": "1 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__emt_1half",
+        "display_name": "EMT 1-1/2 in",
+        "qualifiers": {
+          "material": "EMT",
+          "size": "1-1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__rmc_half",
+        "display_name": "RMC 1/2 in",
+        "qualifiers": {
+          "material": "RMC",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__rmc_threequarter",
+        "display_name": "RMC 3/4 in",
+        "qualifiers": {
+          "material": "RMC",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__pvc_half",
+        "display_name": "PVC 1/2 in",
+        "qualifiers": {
+          "material": "PVC",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__pvc_threequarter",
+        "display_name": "PVC 3/4 in",
+        "qualifiers": {
+          "material": "PVC",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "electrical_branch_rough_in__conduit_emt_pvc_rmc__mc_cable",
+        "display_name": "MC Cable",
+        "qualifiers": {
+          "material": "MC cable"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "plumbing_rough_in__domestic_water_piping",
+    "trade_id": "plumbing_rough_in",
+    "variants": [
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__copper_half",
+        "display_name": "Copper 1/2 in",
+        "qualifiers": {
+          "material": "copper",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__copper_threequarter",
+        "display_name": "Copper 3/4 in",
+        "qualifiers": {
+          "material": "copper",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__copper_1in",
+        "display_name": "Copper 1 in",
+        "qualifiers": {
+          "material": "copper",
+          "size": "1 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__pex_half",
+        "display_name": "PEX 1/2 in",
+        "qualifiers": {
+          "material": "PEX",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__pex_threequarter",
+        "display_name": "PEX 3/4 in",
+        "qualifiers": {
+          "material": "PEX",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__pex_1in",
+        "display_name": "PEX 1 in",
+        "qualifiers": {
+          "material": "PEX",
+          "size": "1 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__cpvc_half",
+        "display_name": "CPVC 1/2 in",
+        "qualifiers": {
+          "material": "CPVC",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "plumbing_rough_in__domestic_water_piping__cpvc_threequarter",
+        "display_name": "CPVC 3/4 in",
+        "qualifiers": {
+          "material": "CPVC",
+          "size": "3/4 in"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "hvac_ductwork_sheet_metal__supply_ductwork",
+    "trade_id": "hvac_ductwork_sheet_metal",
+    "variants": [
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__rect_26ga",
+        "display_name": "Rectangular 26 ga Galvanized",
+        "qualifiers": {
+          "type": "rectangular",
+          "size": "26 ga",
+          "material": "galvanized"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__rect_24ga",
+        "display_name": "Rectangular 24 ga Galvanized",
+        "qualifiers": {
+          "type": "rectangular",
+          "size": "24 ga",
+          "material": "galvanized"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__rect_22ga",
+        "display_name": "Rectangular 22 ga Galvanized",
+        "qualifiers": {
+          "type": "rectangular",
+          "size": "22 ga",
+          "material": "galvanized"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__round_6in",
+        "display_name": "Round 6 in Spiral",
+        "qualifiers": {
+          "type": "round spiral",
+          "size": "6 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__round_8in",
+        "display_name": "Round 8 in Spiral",
+        "qualifiers": {
+          "type": "round spiral",
+          "size": "8 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__round_10in",
+        "display_name": "Round 10 in Spiral",
+        "qualifiers": {
+          "type": "round spiral",
+          "size": "10 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__round_12in",
+        "display_name": "Round 12 in Spiral",
+        "qualifiers": {
+          "type": "round spiral",
+          "size": "12 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "hvac_ductwork_sheet_metal__supply_ductwork__flex_6in",
+        "display_name": "Flex 6 in Insulated",
+        "qualifiers": {
+          "type": "flex insulated",
+          "size": "6 in"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "lvt_lvp__flooring",
+    "trade_id": "lvt_lvp",
+    "variants": [
+      {
+        "variant_id": "lvt_lvp__flooring__gluedown_2mm",
+        "display_name": "Glue-Down 2mm",
+        "qualifiers": {
+          "type": "glue-down",
+          "size": "2mm"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "lvt_lvp__flooring__gluedown_2.5mm",
+        "display_name": "Glue-Down 2.5mm",
+        "qualifiers": {
+          "type": "glue-down",
+          "size": "2.5mm"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "lvt_lvp__flooring__click_5mm",
+        "display_name": "Click-Lock SPC 5mm",
+        "qualifiers": {
+          "type": "click-lock SPC",
+          "size": "5mm"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "lvt_lvp__flooring__click_6mm",
+        "display_name": "Click-Lock SPC 6mm",
+        "qualifiers": {
+          "type": "click-lock SPC",
+          "size": "6mm"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "lvt_lvp__flooring__click_7mm_pad",
+        "display_name": "Click-Lock SPC 7mm w/ Pad",
+        "qualifiers": {
+          "type": "click-lock SPC",
+          "size": "7mm",
+          "finish": "attached pad"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "tile_ceramic_porcelain__flooring",
+    "trade_id": "tile_ceramic_porcelain",
+    "variants": [
+      {
+        "variant_id": "tile_ceramic_porcelain__flooring__ceramic_12x12",
+        "display_name": "Ceramic 12x12",
+        "qualifiers": {
+          "material": "ceramic",
+          "size": "12x12 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "tile_ceramic_porcelain__flooring__porcelain_12x24",
+        "display_name": "Porcelain 12x24",
+        "qualifiers": {
+          "material": "porcelain",
+          "size": "12x24 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "tile_ceramic_porcelain__flooring__porcelain_24x24",
+        "display_name": "Porcelain 24x24",
+        "qualifiers": {
+          "material": "porcelain",
+          "size": "24x24 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "tile_ceramic_porcelain__flooring__porcelain_lft",
+        "display_name": "Large Format Porcelain 24x48",
+        "qualifiers": {
+          "material": "porcelain",
+          "size": "24x48 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "tile_ceramic_porcelain__flooring__mosaic_2x2",
+        "display_name": "Mosaic 2x2",
+        "qualifiers": {
+          "material": "mosaic",
+          "size": "2x2 in"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "asphalt_paving__asphalt_base_course",
+    "trade_id": "asphalt_paving",
+    "variants": [
+      {
+        "variant_id": "asphalt_paving__asphalt_base_course__1.5in_sm9.5a",
+        "display_name": "1.5 in SM-9.5A Surface",
+        "qualifiers": {
+          "size": "1.5 in",
+          "type": "SM-9.5A"
+        },
+        "default_parameters": {
+          "thickness_in": 1.5
+        }
+      },
+      {
+        "variant_id": "asphalt_paving__asphalt_base_course__2in_sm12.5",
+        "display_name": "2 in SM-12.5 Surface",
+        "qualifiers": {
+          "size": "2 in",
+          "type": "SM-12.5"
+        },
+        "default_parameters": {
+          "thickness_in": 2
+        }
+      },
+      {
+        "variant_id": "asphalt_paving__asphalt_base_course__2in_im19.0",
+        "display_name": "2 in IM-19.0 Intermediate",
+        "qualifiers": {
+          "size": "2 in",
+          "type": "IM-19.0"
+        },
+        "default_parameters": {
+          "thickness_in": 2
+        }
+      },
+      {
+        "variant_id": "asphalt_paving__asphalt_base_course__3in_bm25.0",
+        "display_name": "3 in BM-25.0 Base",
+        "qualifiers": {
+          "size": "3 in",
+          "type": "BM-25.0"
+        },
+        "default_parameters": {
+          "thickness_in": 3
+        }
+      },
+      {
+        "variant_id": "asphalt_paving__asphalt_base_course__4in_bm25.0",
+        "display_name": "4 in BM-25.0 Base",
+        "qualifiers": {
+          "size": "4 in",
+          "type": "BM-25.0"
+        },
+        "default_parameters": {
+          "thickness_in": 4
+        }
+      }
+    ]
+  },
+  {
+    "component_id": "structural_steel_erection__general_scope_item",
+    "trade_id": "structural_steel_erection",
+    "variants": [
+      {
+        "variant_id": "structural_steel_erection__general_scope_item__a36",
+        "display_name": "A36 Standard",
+        "qualifiers": {
+          "grade": "A36"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "structural_steel_erection__general_scope_item__a992",
+        "display_name": "A992 Structural",
+        "qualifiers": {
+          "grade": "A992"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "structural_steel_erection__general_scope_item__a500_hss",
+        "display_name": "A500 HSS Tube",
+        "qualifiers": {
+          "grade": "A500",
+          "type": "HSS"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "structural_steel_erection__general_scope_item__galvanized",
+        "display_name": "Galvanized",
+        "qualifiers": {
+          "finish": "galvanized"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "acoustical_ceilings_act__general_scope_item",
+    "trade_id": "acoustical_ceilings_act",
+    "variants": [
+      {
+        "variant_id": "acoustical_ceilings_act__general_scope_item__2x2_standard",
+        "display_name": "2x2 Standard Mineral Fiber",
+        "qualifiers": {
+          "size": "2x2 ft",
+          "material": "mineral fiber"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "acoustical_ceilings_act__general_scope_item__2x4_standard",
+        "display_name": "2x4 Standard Mineral Fiber",
+        "qualifiers": {
+          "size": "2x4 ft",
+          "material": "mineral fiber"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "acoustical_ceilings_act__general_scope_item__2x2_tegular",
+        "display_name": "2x2 Tegular Edge",
+        "qualifiers": {
+          "size": "2x2 ft",
+          "type": "tegular"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "acoustical_ceilings_act__general_scope_item__2x2_high_nrc",
+        "display_name": "2x2 High NRC",
+        "qualifiers": {
+          "size": "2x2 ft",
+          "type": "high NRC"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "insulation_thermal__air_vapor_barrier",
+    "trade_id": "insulation_thermal",
+    "variants": [
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__r13_fiberglass",
+        "display_name": "R-13 Fiberglass Batt (3.5 in)",
+        "qualifiers": {
+          "grade": "R-13",
+          "material": "fiberglass batt",
+          "size": "3.5 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__r19_fiberglass",
+        "display_name": "R-19 Fiberglass Batt (6.25 in)",
+        "qualifiers": {
+          "grade": "R-19",
+          "material": "fiberglass batt",
+          "size": "6.25 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__r30_fiberglass",
+        "display_name": "R-30 Fiberglass Batt (10 in)",
+        "qualifiers": {
+          "grade": "R-30",
+          "material": "fiberglass batt",
+          "size": "10 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__r15_mineral_wool",
+        "display_name": "R-15 Mineral Wool (3.5 in)",
+        "qualifiers": {
+          "grade": "R-15",
+          "material": "mineral wool",
+          "size": "3.5 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__r23_mineral_wool",
+        "display_name": "R-23 Mineral Wool (5.5 in)",
+        "qualifiers": {
+          "grade": "R-23",
+          "material": "mineral wool",
+          "size": "5.5 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__spray_foam_oc_1in",
+        "display_name": "Open Cell Spray Foam 1 in",
+        "qualifiers": {
+          "material": "spray foam open cell",
+          "size": "1 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "insulation_thermal__air_vapor_barrier__spray_foam_cc_2in",
+        "display_name": "Closed Cell Spray Foam 2 in",
+        "qualifiers": {
+          "material": "spray foam closed cell",
+          "size": "2 in"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "masonry_cmu__cmu_wall_standard",
+    "trade_id": "masonry_cmu",
+    "variants": [
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__8in_standard",
+        "display_name": "8 in Standard Hollow",
+        "qualifiers": {
+          "size": "8 in",
+          "type": "standard hollow"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__8in_lightweight",
+        "display_name": "8 in Lightweight",
+        "qualifiers": {
+          "size": "8 in",
+          "type": "lightweight"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__8in_solid_grouted",
+        "display_name": "8 in Solid Grouted",
+        "qualifiers": {
+          "size": "8 in",
+          "type": "solid grouted"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__12in_standard",
+        "display_name": "12 in Standard Hollow",
+        "qualifiers": {
+          "size": "12 in",
+          "type": "standard hollow"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__12in_solid_grouted",
+        "display_name": "12 in Solid Grouted",
+        "qualifiers": {
+          "size": "12 in",
+          "type": "solid grouted"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__6in_standard",
+        "display_name": "6 in Standard Hollow",
+        "qualifiers": {
+          "size": "6 in",
+          "type": "standard hollow"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "masonry_cmu__cmu_wall_standard__8in_split_face",
+        "display_name": "8 in Split Face",
+        "qualifiers": {
+          "size": "8 in",
+          "type": "split face",
+          "finish": "split face"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "carpet__flooring",
+    "trade_id": "carpet",
+    "variants": [
+      {
+        "variant_id": "carpet__flooring__tile_standard",
+        "display_name": "Carpet Tile Standard Commercial",
+        "qualifiers": {
+          "type": "carpet tile",
+          "grade": "standard commercial"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "carpet__flooring__tile_premium",
+        "display_name": "Carpet Tile Premium",
+        "qualifiers": {
+          "type": "carpet tile",
+          "grade": "premium"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "carpet__flooring__broadloom_26oz",
+        "display_name": "Broadloom 26 oz",
+        "qualifiers": {
+          "type": "broadloom",
+          "size": "26 oz"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "carpet__flooring__broadloom_40oz",
+        "display_name": "Broadloom 40 oz",
+        "qualifiers": {
+          "type": "broadloom",
+          "size": "40 oz"
+        },
+        "default_parameters": {}
+      }
+    ]
+  },
+  {
+    "component_id": "fire_sprinkler_wet__general_scope_item",
+    "trade_id": "fire_sprinkler_wet",
+    "variants": [
+      {
+        "variant_id": "fire_sprinkler_wet__general_scope_item__pendant_half",
+        "display_name": "Pendant 1/2 in Standard",
+        "qualifiers": {
+          "type": "pendant",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "fire_sprinkler_wet__general_scope_item__upright_half",
+        "display_name": "Upright 1/2 in Standard",
+        "qualifiers": {
+          "type": "upright",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "fire_sprinkler_wet__general_scope_item__sidewall_half",
+        "display_name": "Sidewall 1/2 in",
+        "qualifiers": {
+          "type": "sidewall",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      },
+      {
+        "variant_id": "fire_sprinkler_wet__general_scope_item__concealed_half",
+        "display_name": "Concealed 1/2 in",
+        "qualifiers": {
+          "type": "concealed",
+          "size": "1/2 in"
+        },
+        "default_parameters": {}
+      }
+    ]
+  }
+]

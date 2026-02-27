@@ -21,6 +21,7 @@ import { openai, researchCustomTrade, TradeResearchResult } from "./ai/openaiCli
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
 import { getWalkthroughForRole, getTotalStepsForRole, getWalkthroughStep, generateWalkthroughPrompt, getPersonalizedWalkthrough, personalizeContent } from "./ai/walkthroughContent";
+import { getTrades, getTradeCategories, getTradesByCategory, getMaterialGroups, getMaterialsByGroup } from "./data/onboarding";
 
 const onboardingCompleteSchema = z.object({
   companyName: z.string()
@@ -654,6 +655,26 @@ async function getSowSuggestionsForTrade(tradeType: string): Promise<string[]> {
 }
 
 // Dynamic onboarding system prompt builder
+function buildOnboardingTaxonomyBlock(): string {
+  const categories = getTradeCategories();
+  return categories.map(cat => {
+    const trades = getTradesByCategory(cat);
+    const tradeNames = trades.slice(0, 20).map(t => t.trade_name).join(', ');
+    const suffix = trades.length > 20 ? ` (+${trades.length - 20} more)` : '';
+    return `**${cat}** (${trades.length} trades): ${tradeNames}${suffix}`;
+  }).join('\n');
+}
+
+function buildOnboardingMaterialBlock(): string {
+  const groups = getMaterialGroups();
+  return groups.map(g => {
+    const mats = getMaterialsByGroup(g);
+    const names = mats.slice(0, 8).map(m => m.display_name).join(', ');
+    const suffix = mats.length > 8 ? ` (+${mats.length - 8} more)` : '';
+    return `**${g}**: ${names}${suffix}`;
+  }).join('\n');
+}
+
 async function buildOnboardingSystemPrompt(): Promise<string> {
   // Fetch all trade templates for the prompt
   const templates = await db
@@ -726,6 +747,10 @@ When the user mentions their trade, map it to the closest matching trade type fr
 - "low voltage" or "AV/security" → LOW_VOLTAGE
 - "solar installer" → SOLAR
 
+## EXTENDED TRADE LIBRARY (230 trades across 17 categories):
+We also have a comprehensive library with 230 specialized trades and 2,946 pre-built scopes. When identifying the user's trade, try to match against both the 22 preset trades AND these extended categories:
+${buildOnboardingTaxonomyBlock()}
+
 **IMPORTANT: If the user's trade does NOT clearly match any of the above 22 trades, use tradeType: "OTHER" and gather custom configuration data. Examples of trades requiring OTHER:**
 - Pool/spa contractor
 - Chimney sweep
@@ -741,6 +766,9 @@ When the user mentions their trade, map it to the closest matching trade type fr
 
 ## Material Categories by Trade:
 ${materialSuggestions}
+
+## Extended Material Library (126 families across 17 groups):
+${buildOnboardingMaterialBlock()}
 
 ## Response Format:
 Always respond with valid JSON in this exact format:

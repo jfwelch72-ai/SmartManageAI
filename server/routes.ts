@@ -140,6 +140,7 @@ import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
+import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -179,6 +180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);
+
+  // Register onboarding library routes (read-only reference data)
+  app.use(onboardingLibraryRoutes);
 
   // Register daily notes routes
   app.use("/api", notesRoutes);

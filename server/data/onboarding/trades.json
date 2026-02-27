@@ -1,0 +1,1612 @@
+[
+  {
+    "trade_id": "general_contractor_gc",
+    "trade_name": "General Contractor (GC)",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "commissioning_agent_cx",
+    "trade_name": "Commissioning Agent (Cx)",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "construction_manager_cm_at_risk",
+    "trade_name": "Construction Manager / CM-at-Risk",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "general_trades_carpentry_gc_self_perform",
+    "trade_name": "General Trades / Carpentry (GC self-perform)",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "jobsite_logistics_temporary_facilities",
+    "trade_name": "Jobsite Logistics / Temporary Facilities",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "owner_s_rep_program_manager",
+    "trade_name": "Owner's Rep / Program Manager",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "quality_control_qa_qc",
+    "trade_name": "Quality Control / QA-QC",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "safety_site_safety_officer",
+    "trade_name": "Safety / Site Safety Officer",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "scanning_reality_capture",
+    "trade_name": "Scanning / Reality Capture",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "survey_layout",
+    "trade_name": "Survey & Layout",
+    "trade_category": "01_Precon_General_Conditions",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "asphalt_paving",
+    "trade_name": "Asphalt Paving",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_paving_flatwork_exterior",
+    "trade_name": "Concrete Paving / Flatwork (Exterior)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_restoration_exterior",
+    "trade_name": "Concrete Restoration (Exterior)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "curb_gutter_machine_form",
+    "trade_name": "Curb & Gutter (Machine/Form)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "demolition_site",
+    "trade_name": "Demolition (Site)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "dewatering",
+    "trade_name": "Dewatering",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "directional_boring_hdd",
+    "trade_name": "Directional Boring / HDD",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "earthwork_mass_excavation",
+    "trade_name": "Earthwork / Mass Excavation",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "erosion_sediment_control",
+    "trade_name": "Erosion & Sediment Control",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fencing_gates",
+    "trade_name": "Fencing & Gates",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "gas_utility_civil",
+    "trade_name": "Gas Utility (Civil)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "grading_fine_grading",
+    "trade_name": "Grading / Fine Grading",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hardscape_pavers",
+    "trade_name": "Hardscape / Pavers",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "irrigation",
+    "trade_name": "Irrigation",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "landscaping",
+    "trade_name": "Landscaping",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "retaining_walls_segmental_concrete",
+    "trade_name": "Retaining Walls (Segmental/Concrete)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sanitary_sewer_civil",
+    "trade_name": "Sanitary Sewer (Civil)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "shoring_excavation_support",
+    "trade_name": "Shoring / Excavation Support",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "site_clearing_grubbing",
+    "trade_name": "Site Clearing & Grubbing",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "site_lighting_electrical",
+    "trade_name": "Site Lighting (Electrical)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "soil_stabilization",
+    "trade_name": "Soil Stabilization",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "storm_drain_civil",
+    "trade_name": "Storm Drain (Civil)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "striping_pavement_markings",
+    "trade_name": "Striping / Pavement Markings",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "telecom_duct_bank_civil",
+    "trade_name": "Telecom / Duct Bank (Civil)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "traffic_control",
+    "trade_name": "Traffic Control",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "tree_removal_arborist",
+    "trade_name": "Tree Removal / Arborist",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "trenching_backfill",
+    "trade_name": "Trenching & Backfill",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "waterline_civil",
+    "trade_name": "Waterline (Civil)",
+    "trade_category": "02_Site_Civil",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "caissons_drilled_piers",
+    "trade_name": "Caissons / Drilled Piers",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_cast_in_place",
+    "trade_name": "Concrete (Cast-in-Place)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_decorative_stamped",
+    "trade_name": "Concrete (Decorative / Stamped)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_foundations",
+    "trade_name": "Concrete (Foundations)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_polished",
+    "trade_name": "Concrete (Polished)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_structural_elevated",
+    "trade_name": "Concrete (Structural / Elevated)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_tilt_up",
+    "trade_name": "Concrete (Tilt-Up)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_repair_restoration",
+    "trade_name": "Concrete Repair / Restoration",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "formwork_shoring",
+    "trade_name": "Formwork & Shoring",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "helical_piles",
+    "trade_name": "Helical Piles",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "masonry_brick",
+    "trade_name": "Masonry (Brick)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "masonry_cmu",
+    "trade_name": "Masonry (CMU)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "masonry_stone",
+    "trade_name": "Masonry (Stone)",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "masonry_restoration_tuckpointing",
+    "trade_name": "Masonry Restoration / Tuckpointing",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "micropiles",
+    "trade_name": "Micropiles",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "post_tensioning",
+    "trade_name": "Post-Tensioning",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "precast_concrete_erection",
+    "trade_name": "Precast Concrete Erection",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "rebar_installation",
+    "trade_name": "Rebar Installation",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "shotcrete_gunite",
+    "trade_name": "Shotcrete / Gunite",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "underpinning",
+    "trade_name": "Underpinning",
+    "trade_category": "03_Concrete_Structural",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "bollards_protective_metals",
+    "trade_name": "Bollards / Protective Metals",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "handrails_guardrails",
+    "trade_name": "Handrails & Guardrails",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "metal_deck_floor_roof",
+    "trade_name": "Metal Deck (Floor/Roof)",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "metal_fabrication_shop",
+    "trade_name": "Metal Fabrication Shop",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "miscellaneous_metals",
+    "trade_name": "Miscellaneous Metals",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "ornamental_metals",
+    "trade_name": "Ornamental Metals",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "rigging_crane_services",
+    "trade_name": "Rigging / Crane Services",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sheet_metal_architectural",
+    "trade_name": "Sheet Metal (Architectural)",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "stairs_railings",
+    "trade_name": "Stairs & Railings",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "structural_steel_erection",
+    "trade_name": "Structural Steel Erection",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "structural_steel_supply",
+    "trade_name": "Structural Steel Supply",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "welding_field_welding",
+    "trade_name": "Welding / Field Welding",
+    "trade_category": "04_Steel_Metals",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "acoustical_wood_ceilings",
+    "trade_name": "Acoustical Wood Ceilings",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "blocking_backing",
+    "trade_name": "Blocking & Backing",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "cabinetry_casework_install",
+    "trade_name": "Cabinetry / Casework Install",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "decks_porches",
+    "trade_name": "Decks & Porches",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "doors_trim_carpentry",
+    "trade_name": "Doors & Trim (Carpentry)",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "finish_carpentry",
+    "trade_name": "Finish Carpentry",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "heavy_timber",
+    "trade_name": "Heavy Timber",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "millwork_install",
+    "trade_name": "Millwork Install",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "rough_carpentry_wood_framing",
+    "trade_name": "Rough Carpentry (Wood Framing)",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sheathing_nail_base",
+    "trade_name": "Sheathing & Nail Base",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "stair_carpentry",
+    "trade_name": "Stair Carpentry",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "trusses_supply_set",
+    "trade_name": "Trusses (Supply & Set)",
+    "trade_category": "05_Framing_Carpentry",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "air_barrier_wrb",
+    "trade_name": "Air Barrier / WRB",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "canopies_awnings",
+    "trade_name": "Canopies / Awnings",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "damp_proofing",
+    "trade_name": "Damp Proofing",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "eifs",
+    "trade_name": "EIFS",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "exterior_louvers_screens",
+    "trade_name": "Exterior Louvers / Screens",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_safing_insulation",
+    "trade_name": "Fire/Safing Insulation",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "flashing_sheet_metal_roof",
+    "trade_name": "Flashing & Sheet Metal (Roof)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fluid_applied_membranes",
+    "trade_name": "Fluid-Applied Membranes",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "gutters_downspouts",
+    "trade_name": "Gutters & Downspouts",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "insulation_thermal",
+    "trade_name": "Insulation (Thermal)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "metal_roofing",
+    "trade_name": "Metal Roofing",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "roof_accessories_coping_edge_walkpads",
+    "trade_name": "Roof Accessories (Coping/Edge/Walkpads)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "roofing_modified_bitumen_bur",
+    "trade_name": "Roofing (Modified Bitumen/BUR)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "roofing_shingle",
+    "trade_name": "Roofing (Shingle)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "roofing_tpo_pvc_epdm",
+    "trade_name": "Roofing (TPO/PVC/EPDM)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sealants_caulking",
+    "trade_name": "Sealants & Caulking",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "siding_fiber_cement",
+    "trade_name": "Siding (Fiber Cement)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "siding_metal_panels",
+    "trade_name": "Siding (Metal Panels)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "siding_vinyl_engineered_wood",
+    "trade_name": "Siding (Vinyl/Engineered Wood)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "stucco",
+    "trade_name": "Stucco",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "waterproofing_below_grade",
+    "trade_name": "Waterproofing (Below Grade)",
+    "trade_category": "06_Building_Envelope",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "access_control_doors",
+    "trade_name": "Access Control (Doors)",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "automatic_doors",
+    "trade_name": "Automatic Doors",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "curtain_wall",
+    "trade_name": "Curtain Wall",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "glass_railings",
+    "trade_name": "Glass Railings",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "glazing_interior_exterior",
+    "trade_name": "Glazing (Interior/Exterior)",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hardware_locksets",
+    "trade_name": "Hardware & Locksets",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hollow_metal_doors_frames",
+    "trade_name": "Hollow Metal Doors & Frames",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "loading_dock_equipment",
+    "trade_name": "Loading Dock Equipment",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "overhead_doors",
+    "trade_name": "Overhead Doors",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "skylights",
+    "trade_name": "Skylights",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "storefront_aluminum",
+    "trade_name": "Storefront (Aluminum)",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "windows_residential_light_comm",
+    "trade_name": "Windows (Residential/Light Comm)",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "wood_doors_frames",
+    "trade_name": "Wood Doors & Frames",
+    "trade_category": "07_Openings_Glazing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "acoustical_ceilings_act",
+    "trade_name": "Acoustical Ceilings (ACT)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "drywall_finishing_tape_mud",
+    "trade_name": "Drywall Finishing (Tape/Mud)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "drywall_hanging",
+    "trade_name": "Drywall Hanging",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "firestopping",
+    "trade_name": "Firestopping",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "gypsum_ceilings_soffits",
+    "trade_name": "Gypsum Ceilings / Soffits",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "metal_stud_framing_interior",
+    "trade_name": "Metal Stud Framing (Interior)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "movable_partitions",
+    "trade_name": "Movable Partitions",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "plaster_veneer_plaster",
+    "trade_name": "Plaster / Veneer Plaster",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "shaftwall_area_separation_walls",
+    "trade_name": "Shaftwall / Area Separation Walls",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "soundproofing_acoustics",
+    "trade_name": "Soundproofing / Acoustics",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "specialties_install_boards_accessories",
+    "trade_name": "Specialties Install (Boards/Accessories)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "spray_fireproofing_sfrm_intumescent",
+    "trade_name": "Spray Fireproofing (SFRM/Intumescent)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "toilet_partitions",
+    "trade_name": "Toilet Partitions",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "wall_protection_frp_corner_guards",
+    "trade_name": "Wall Protection (FRP/Corner Guards)",
+    "trade_category": "08_Interiors_Drywall_Ceilings",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "carpet",
+    "trade_name": "Carpet",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_sealer_coatings",
+    "trade_name": "Concrete Sealer / Coatings",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "countertops_quartz_granite_solid_surface",
+    "trade_name": "Countertops (Quartz/Granite/Solid Surface)",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "epoxy_resinous_floors",
+    "trade_name": "Epoxy / Resinous Floors",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hardwood_engineered_wood",
+    "trade_name": "Hardwood / Engineered Wood",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "lvt_lvp",
+    "trade_name": "LVT/LVP",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "laminate_flooring",
+    "trade_name": "Laminate Flooring",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "painting_interior_exterior",
+    "trade_name": "Painting (Interior/Exterior)",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "polished_concrete_finish_trade",
+    "trade_name": "Polished Concrete (Finish Trade)",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "rubber_flooring",
+    "trade_name": "Rubber Flooring",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "specialty_coatings_intumescent_high_perf",
+    "trade_name": "Specialty Coatings (Intumescent/High-Perf)",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "stone_tile",
+    "trade_name": "Stone Tile",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "terrazzo",
+    "trade_name": "Terrazzo",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "tile_ceramic_porcelain",
+    "trade_name": "Tile (Ceramic/Porcelain)",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "vct_sheet_vinyl",
+    "trade_name": "VCT/Sheet Vinyl",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "wallcovering",
+    "trade_name": "Wallcovering",
+    "trade_category": "09_Finishes",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "backflow_testing",
+    "trade_name": "Backflow / Testing",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "gas_piping",
+    "trade_name": "Gas Piping",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "grease_interceptor",
+    "trade_name": "Grease Interceptor",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hydronics_pipefitting_mechanical",
+    "trade_name": "Hydronics (Pipefitting - Mechanical)",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "lab_acid_waste",
+    "trade_name": "Lab / Acid Waste",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "medical_gas",
+    "trade_name": "Medical Gas",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "plumbing_commercial_service",
+    "trade_name": "Plumbing (Commercial Service)",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "plumbing_finish_fixtures",
+    "trade_name": "Plumbing (Finish Fixtures)",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "plumbing_rough_in",
+    "trade_name": "Plumbing (Rough-In)",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "site_plumbing_tie_ins",
+    "trade_name": "Site Plumbing Tie-Ins",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "steam_piping",
+    "trade_name": "Steam Piping",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sump_ejector_pumps",
+    "trade_name": "Sump / Ejector Pumps",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "water_heaters_tank_tankless",
+    "trade_name": "Water Heaters (Tank/Tankless)",
+    "trade_category": "10_MEP_Plumbing",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "bas_controls",
+    "trade_name": "BAS Controls",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_boilers",
+    "trade_name": "HVAC (Boilers)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_chillers",
+    "trade_name": "HVAC (Chillers)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_commercial_rtu",
+    "trade_name": "HVAC (Commercial RTU)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_ductwork_sheet_metal",
+    "trade_name": "HVAC (Ductwork / Sheet Metal)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_equipment_install",
+    "trade_name": "HVAC (Equipment Install)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_exhaust_ventilation",
+    "trade_name": "HVAC (Exhaust / Ventilation)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_refrigerant_vrf",
+    "trade_name": "HVAC (Refrigerant / VRF)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hvac_vav_terminal_units",
+    "trade_name": "HVAC (VAV / Terminal Units)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "insulation_mechanical",
+    "trade_name": "Insulation (Mechanical)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "kitchen_hoods_make_up_air",
+    "trade_name": "Kitchen Hoods / Make-Up Air",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "testing_adjusting_balancing_tab",
+    "trade_name": "Testing, Adjusting & Balancing (TAB)",
+    "trade_category": "11_MEP_HVAC",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "ev_charging",
+    "trade_name": "EV Charging",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "electrical_branch_rough_in",
+    "trade_name": "Electrical (Branch / Rough-In)",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "electrical_devices_trim",
+    "trade_name": "Electrical (Devices & Trim)",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "electrical_service_distribution",
+    "trade_name": "Electrical (Service & Distribution)",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "emergency_lighting_egress",
+    "trade_name": "Emergency Lighting / Egress",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "generator_ats",
+    "trade_name": "Generator & ATS",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "grounding_bonding",
+    "trade_name": "Grounding & Bonding",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "lighting_controls",
+    "trade_name": "Lighting & Controls",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "lightning_protection",
+    "trade_name": "Lightning Protection",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "site_electrical",
+    "trade_name": "Site Electrical",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "solar_pv",
+    "trade_name": "Solar PV",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "ups_power_conditioning",
+    "trade_name": "UPS / Power Conditioning",
+    "trade_category": "12_MEP_Electrical",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "a_v_commercial",
+    "trade_name": "A/V (Commercial)",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "access_control_panels_readers",
+    "trade_name": "Access Control (Panels/Readers)",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "bms_network_integration",
+    "trade_name": "BMS Network Integration",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "cctv_video_surveillance",
+    "trade_name": "CCTV / Video Surveillance",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fiber_optics",
+    "trade_name": "Fiber Optics",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_alarm_fa",
+    "trade_name": "Fire Alarm (FA)",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "intercom_paging",
+    "trade_name": "Intercom / Paging",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "intrusion_alarm",
+    "trade_name": "Intrusion Alarm",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "low_voltage_structured_cabling",
+    "trade_name": "Low Voltage (Structured Cabling)",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "nurse_call",
+    "trade_name": "Nurse Call",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sound_masking",
+    "trade_name": "Sound Masking",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "wireless_das",
+    "trade_name": "Wireless / DAS",
+    "trade_category": "13_LowVoltage_Security_Fire",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_extinguishers_install_service",
+    "trade_name": "Fire Extinguishers (Install/Service)",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_pump",
+    "trade_name": "Fire Pump",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_sprinkler_dry_preaction",
+    "trade_name": "Fire Sprinkler (Dry/Preaction)",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "fire_sprinkler_wet",
+    "trade_name": "Fire Sprinkler (Wet)",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "special_hazards_clean_agent_deluge",
+    "trade_name": "Special Hazards (Clean Agent/Deluge)",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "standpipe",
+    "trade_name": "Standpipe",
+    "trade_category": "14_Fire_Protection",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "bleachers_athletic_equipment",
+    "trade_name": "Bleachers / Athletic Equipment",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "conveyors_warehouse",
+    "trade_name": "Conveyors (Warehouse)",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "dock_levelers",
+    "trade_name": "Dock Levelers",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "elevators_traction_hydraulic",
+    "trade_name": "Elevators (Traction/Hydraulic)",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "modular_buildings",
+    "trade_name": "Modular Buildings",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "operable_walls",
+    "trade_name": "Operable Walls",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "overhead_crane_systems",
+    "trade_name": "Overhead Crane Systems",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "playground_equipment",
+    "trade_name": "Playground Equipment",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "pool_spa",
+    "trade_name": "Pool / Spa",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "pre_engineered_metal_buildings_pemb",
+    "trade_name": "Pre-Engineered Metal Buildings (PEMB)",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "residential_lift",
+    "trade_name": "Residential Lift",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "septic_systems",
+    "trade_name": "Septic Systems",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "signage_interior_exterior",
+    "trade_name": "Signage (Interior/Exterior)",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "solar_thermal",
+    "trade_name": "Solar Thermal",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "specialty_equipment_install",
+    "trade_name": "Specialty Equipment Install",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "wayfinding_graphics",
+    "trade_name": "Wayfinding Graphics",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "well_drilling",
+    "trade_name": "Well Drilling",
+    "trade_category": "15_Specialty_Systems",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "asbestos_abatement",
+    "trade_name": "Asbestos Abatement",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "contaminated_soil_remediation",
+    "trade_name": "Contaminated Soil Remediation",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "hazmat_regulated_waste_handling",
+    "trade_name": "Hazmat / Regulated Waste Handling",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "lead_abatement",
+    "trade_name": "Lead Abatement",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "mold_remediation",
+    "trade_name": "Mold Remediation",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "tank_removal_ust_ast",
+    "trade_name": "Tank Removal (UST/AST)",
+    "trade_category": "16_Environmental_Remediation",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "concrete_joint_sealing",
+    "trade_name": "Concrete Joint Sealing",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "crack_injection",
+    "trade_name": "Crack Injection",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "handyman_general_repair",
+    "trade_name": "Handyman / General Repair",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "punchlist_crew",
+    "trade_name": "Punchlist Crew",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "roof_repair_leak_response",
+    "trade_name": "Roof Repair / Leak Response",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  },
+  {
+    "trade_id": "sealcoating",
+    "trade_name": "Sealcoating",
+    "trade_category": "17_Maintenance_Repairs",
+    "aliases": [],
+    "default_scope_tags": []
+  }
+]

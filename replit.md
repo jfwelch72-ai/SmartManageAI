@@ -40,6 +40,16 @@ The platform utilizes a modern web stack with a multi-tenant architecture, prior
 *   **Custom KPI Management System**: Org-level custom KPI definitions, assignment to employees with targets, and performance tracking over time.
 *   **QuickBooks Online Integration (Expanded)**: Full-featured QBO sync with 8 operations, OAuth 2.0 connection flow, Cost Code to QBO Account Mapping, and Automatic Sync Scheduling.
 
+*   **Contractor Onboarding Library**: Hard-coded normalized reference data system at `server/data/onboarding/` powering the AI onboarding flow:
+    *   **5 Core Pillars**: `trades.json` (230 trades, 17 categories), `scopes.json` (2,946 scopes), `materials.json` (126 material families, 17 groups), `formulas.json` (39 formulas), `line_item_grammar.json` (naming rules, UOM codes, qualifier rules)
+    *   **3 Extension Files**: `trade_components.json` (982 components across 229 trades), `variant_expansions.json` (113 variants across 19 component families), `calibration_rates.json` (15 calibration rate stubs)
+    *   **TypeScript Module**: `server/data/onboarding/index.ts` — typed accessors with Map-based O(1) lookups, `validateLibraryIntegrity()` for runtime assertions
+    *   **AI Integration**: Feeds `tradeDiscoveryService.ts` (230-trade taxonomy for trade matching), `scopePredictionEngine.ts` (supplements DB scopes with library's 2,946 scopes), `buildOnboardingSystemPrompt()` (extended taxonomy + 126 material families in prompt)
+    *   **Trade Mapping**: `shared/tradeTypeUtils.ts` exports `EXTENDED_TRADE_REGISTRY` (maps 110+ library trade_ids to 22 legacy TradeType values), `mapOnboardingTradeIdToLegacy()`, `normalizeToOnboardingTradeId()`
+    *   **API Endpoints**: `server/onboardingLibraryRoutes.ts` — `GET /api/onboarding-library/trades`, `/trades/:tradeId/scopes`, `/trades/:tradeId/components`, `/materials`, `/formulas`, `/grammar`, `/calibration/:scopeId`, `/integrity`
+    *   **GC Logic**: `general_contractor_gc` has 0 scopes by design; `getScopesByTradeId('general_contractor_gc')` returns ALL 2,946 scopes
+    *   **Extending**: Add trades to `trades.json`, scopes to `scopes.json` (update `EXPECTED_*` counts in `index.ts`); add calibration rates by scope_id; all cross-references validated at load time
+
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
 *   **Replit Object Storage (Google Cloud Storage backend)**: For file storage.

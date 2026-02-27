@@ -1,0 +1,57 @@
+{
+  "naming_format": "{Action} {System/Component} - {Qualifier1} {Qualifier2} ({UOM})",
+  "examples": [
+    "Furnish & Install Slab on Grade - 4 in 4000 PSI broom (SF)",
+    "Install Domestic Water Piping - PEX 1 in insulated (LF)",
+    "Remove & Dispose Gypsum Board (Walls) - 1/2 in (SF)",
+    "Furnish & Install Conduit - EMT 3/4 in (LF)"
+  ],
+  "actions": [
+    "Furnish & Install",
+    "Install",
+    "Remove & Dispose",
+    "Demo & Dispose",
+    "Repair",
+    "Patch",
+    "Seal",
+    "Prime & Paint",
+    "Test",
+    "Commission",
+    "Excavate & Backfill"
+  ],
+  "uom_codes": [
+    "EA", "LF", "SF", "SY", "CY", "TON", "GAL", "BAG", "LS", "AC", "DAY", "SQ", "BF", "LB"
+  ],
+  "qualifier_rules": {
+    "size": {
+      "description": "Always include size (diameter, thickness, gauge) where applicable",
+      "examples": ["4 in", "3/4 in", "1/2 in", "12 ga", "6 in"]
+    },
+    "performance_class": {
+      "description": "Always include performance class where applicable",
+      "examples": ["4000 PSI", "1-hr rated", "150 psi class"]
+    },
+    "finish": {
+      "description": "Always include finish where applicable",
+      "examples": ["broom", "steel trowel", "eggshell", "satin", "matte"]
+    },
+    "location_tag": {
+      "description": "Optional location tag — does not change pricing logic; improves organization",
+      "format": "@ {Level}/{Room}/{Area}",
+      "examples": ["@ Level 1/Lobby", "@ Roof/Mechanical Room"]
+    }
+  },
+  "mapping_rules": {
+    "step_1": "User selects Trade → default scopes load",
+    "step_2": "For each selected scope: enforce required parameters based on UOM + scope parameters",
+    "step_3": "Choose quantity formula ID (from formulas.json)",
+    "step_4": "Choose labor formula ID (L_LABOR_QTY_OVER_RATE by default)",
+    "step_5": "Map to material families (materials.json)"
+  },
+  "gc_logic": {
+    "description": "If role == GC: trade access = ALL trades, scope access = ALL scopes",
+    "onboarding_question": "What scopes do you self-perform?",
+    "self_perform_behavior": "Multi-select from all scopes",
+    "subcontracted_behavior": "Remaining scopes default to subcontracted (still visible for bid & schedule)"
+  }
+}
