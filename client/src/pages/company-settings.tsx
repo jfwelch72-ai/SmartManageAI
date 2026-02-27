@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { mapOnboardingTradeIdToLegacy, formatTradeCategoryLabel, getTradeDisplayName } from "@shared/tradeTypeUtils";
+import type { Trade } from "@/hooks/use-library-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -157,6 +159,7 @@ export default function CompanySettings() {
   const [selectedDocType, setSelectedDocType] = useState<string>("");
   const [historyDocType, setHistoryDocType] = useState<string>("");
   const [selectedTradeType, setSelectedTradeType] = useState<string>("");
+  const [selectedTradeId, setSelectedTradeId] = useState<string>("");
   const [tradeName, setTradeName] = useState("");
   const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
   const [showInviteHustlerDialog, setShowInviteHustlerDialog] = useState(false);
@@ -208,6 +211,29 @@ export default function CompanySettings() {
     queryKey: ["/api/payroll/settings"],
     enabled: !!user && ["SUPER_ADMIN", "ADMIN", "OFFICE_MANAGER"].includes(user.role)
   });
+
+  const { data: allTradesData } = useQuery<{ categories: string[]; trades: Trade[] }>({
+    queryKey: ["/api/onboarding-library/trades"],
+    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "HUSTLER"].includes(user.role),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const groupedLibraryTrades = useMemo(() => {
+    if (!allTradesData?.trades) return [];
+    const groups: Record<string, Trade[]> = {};
+    for (const trade of allTradesData.trades) {
+      const cat = trade.trade_category;
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(trade);
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([category, trades]) => ({
+        category,
+        label: formatTradeCategoryLabel(category),
+        trades: trades.sort((a, b) => a.trade_name.localeCompare(b.trade_name)),
+      }));
+  }, [allTradesData?.trades]);
 
   const [payrollForm, setPayrollForm] = useState({
     workWeekStartDay: "SUNDAY" as PayrollSettings["workWeekStartDay"],
@@ -278,6 +304,7 @@ export default function CompanySettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/organization/trade-config"] });
       toast({ title: "Trade type updated successfully" });
       setSelectedTradeType("");
+      setSelectedTradeId("");
       setTradeName("");
     },
     onError: (error: any) => {
@@ -687,11 +714,11 @@ export default function CompanySettings() {
                         }`}
                         data-testid="badge-trade-type"
                       >
-                        {tradeConfig.organization.tradeType.replace(/_/g, ' ')}
+                        {tradeConfig.organization.tradeName || getTradeDisplayName(tradeConfig.organization.tradeType as any)}
                       </Badge>
                       {tradeConfig.organization.tradeName && (
                         <span className="text-sm text-muted-foreground">
-                          ({tradeConfig.organization.tradeName})
+                          ({getTradeDisplayName(tradeConfig.organization.tradeType as any)})
                         </span>
                       )}
                     </div>
@@ -711,50 +738,84 @@ export default function CompanySettings() {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="trade-type">New Trade Type</Label>
-                      <Select
-                        value={selectedTradeType || tradeConfig.organization.tradeType}
-                        onValueChange={(value) => setSelectedTradeType(value)}
-                      >
-                        <SelectTrigger data-testid="select-trade-type">
-                          <SelectValue placeholder="Select trade type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tradeConfig.tradeTypes.map(t => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {groupedLibraryTrades.length > 0 ? (
+                        <Select
+                          value={selectedTradeId ? `${selectedTradeId}::${tradeName}` : ""}
+                          onValueChange={(compositeValue) => {
+                            const [tradeId, tradeDisplayName] = compositeValue.split("::");
+                            const legacyType = mapOnboardingTradeIdToLegacy(tradeId);
+                            setSelectedTradeId(tradeId);
+                            setSelectedTradeType(legacyType);
+                            setTradeName(tradeDisplayName || "");
+                          }}
+                        >
+                          <SelectTrigger data-testid="select-trade-type">
+                            <SelectValue placeholder="Select a trade specialization">
+                              {tradeName || (selectedTradeType ? getTradeDisplayName(selectedTradeType as any) : "Select a trade specialization")}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="max-h-80">
+                            {groupedLibraryTrades.map((group) => (
+                              <SelectGroup key={group.category}>
+                                <SelectLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  {group.label}
+                                </SelectLabel>
+                                {group.trades.map((trade) => (
+                                  <SelectItem
+                                    key={trade.trade_id}
+                                    value={`${trade.trade_id}::${trade.trade_name}`}
+                                    data-testid={`select-trade-item-${trade.trade_id}`}
+                                  >
+                                    {trade.trade_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select
+                          value={selectedTradeType || tradeConfig.organization.tradeType}
+                          onValueChange={(value) => setSelectedTradeType(value)}
+                        >
+                          <SelectTrigger data-testid="select-trade-type">
+                            <SelectValue placeholder="Select trade type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {tradeConfig.tradeTypes.map(t => (
+                              <SelectItem key={t.value} value={t.value}>
+                                {t.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
 
-                    {selectedTradeType === 'OTHER' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="trade-name">Trade Name</Label>
-                        <Input
-                          id="trade-name"
-                          value={tradeName}
-                          onChange={(e) => setTradeName(e.target.value)}
-                          placeholder="Enter your custom trade name"
-                          data-testid="input-trade-name"
-                        />
+                    {selectedTradeType && tradeName && (
+                      <div className="text-sm text-muted-foreground">
+                        Maps to legacy type: <Badge variant="outline" className="text-xs">{getTradeDisplayName(selectedTradeType as any)}</Badge>
                       </div>
                     )}
 
                     <Button
                       onClick={() => {
-                        const newType = selectedTradeType || tradeConfig.organization.tradeType;
-                        if (newType !== tradeConfig.organization.tradeType) {
+                        if (selectedTradeType && selectedTradeType !== tradeConfig.organization.tradeType) {
                           updateTradeTypeMutation.mutate({ 
-                            tradeType: newType,
-                            tradeName: newType === 'OTHER' ? tradeName : undefined
+                            tradeType: selectedTradeType,
+                            tradeName: tradeName || undefined
+                          });
+                        } else if (selectedTradeType && tradeName !== tradeConfig.organization.tradeName) {
+                          updateTradeTypeMutation.mutate({ 
+                            tradeType: selectedTradeType,
+                            tradeName: tradeName || undefined
                           });
                         }
                       }}
                       disabled={
                         updateTradeTypeMutation.isPending || 
-                        (!selectedTradeType || selectedTradeType === tradeConfig.organization.tradeType) ||
-                        (selectedTradeType === 'OTHER' && !tradeName.trim())
+                        !selectedTradeType ||
+                        (selectedTradeType === tradeConfig.organization.tradeType && tradeName === (tradeConfig.organization.tradeName || ""))
                       }
                       data-testid="button-update-trade"
                     >

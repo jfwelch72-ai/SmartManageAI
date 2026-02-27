@@ -469,3 +469,43 @@ export function getTradeDisplayName(tradeType: TradeType): string {
   
   return displayNames[tradeType] || tradeType;
 }
+
+const LEGACY_TRADE_CATEGORIES: Record<TradeType, string> = {
+  GENERAL_CONTRACTOR: '01_Precon_General_Conditions',
+  CONCRETE: '03_Concrete_Structural',
+  EARTHWORK: '02_Site_Civil',
+  ASPHALT_PAVING: '02_Site_Civil',
+  ROOFING: '06_Building_Envelope',
+  ELECTRICAL: '12_MEP_Electrical',
+  PLUMBING: '10_MEP_Plumbing',
+  HVAC: '11_MEP_HVAC',
+  FRAMING: '05_Framing_Carpentry',
+  DRYWALL: '08_Interiors_Drywall_Ceilings',
+  PAINTING: '09_Finishes',
+  FLOORING: '09_Finishes',
+  LANDSCAPING: '02_Site_Civil',
+  DEMOLITION: '02_Site_Civil',
+  MASONRY: '03_Concrete_Structural',
+  INSULATION: '06_Building_Envelope',
+  WINDOWS_DOORS: '07_Openings_Glazing',
+  SIDING: '06_Building_Envelope',
+  TILE: '09_Finishes',
+  CABINETRY: '05_Framing_Carpentry',
+  COUNTERTOPS: '09_Finishes',
+  FENCING: '02_Site_Civil',
+  DECKING: '05_Framing_Carpentry',
+  SOLAR: '12_MEP_Electrical',
+  STEEL_ERECTION: '04_Steel_Metals',
+  FIRE_PROTECTION: '14_Fire_Protection',
+  LOW_VOLTAGE: '13_LowVoltage_Security_Fire',
+  WATERPROOFING: '06_Building_Envelope',
+  OTHER: '15_Specialty_Systems',
+};
+
+export function getTradeCategory(tradeType: TradeType): string {
+  return LEGACY_TRADE_CATEGORIES[tradeType] || '15_Specialty_Systems';
+}
+
+export function formatTradeCategoryLabel(category: string): string {
+  return category.replace(/^\d+_/, '').replace(/_/g, ' ');
+}

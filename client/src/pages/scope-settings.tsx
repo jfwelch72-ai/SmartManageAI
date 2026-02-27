@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench, ChevronDown, ChevronRight, Search, Library, CheckSquare, Square, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { getTradeDisplayName } from "@shared/tradeTypeUtils";
 import { useLibraryData, type Scope } from "@/hooks/use-library-data";
 
 interface WorkTypeCategory {
@@ -250,22 +251,37 @@ export default function ScopeSettings() {
     setSelectedSubCategory("");
   };
   
-  // Get available trades from the mapping
-  const availableTrades = Object.keys(TRADE_SUBCATEGORIES).sort();
+  const { trades: libraryTrades, scopes: libraryAllScopes, isLoading: loadingLibrary } = useLibraryData();
+
+  const availableTrades = useMemo(() => {
+    const libraryTradeNames = libraryTrades.map(t => t.trade_name);
+    const legacyKeys = Object.keys(TRADE_SUBCATEGORIES).map(k => k.replace(/_/g, " "));
+    const merged = new Set([...libraryTradeNames, ...legacyKeys]);
+    return Array.from(merged).sort();
+  }, [libraryTrades]);
+
+  const availableSubCategories = useMemo(() => {
+    if (!selectedTrade) return [];
+    const matchingLibTrade = libraryTrades.find(t => t.trade_name === selectedTrade);
+    if (matchingLibTrade) {
+      const categories = new Set<string>();
+      libraryAllScopes
+        .filter(s => s.trade_id === matchingLibTrade.trade_id)
+        .forEach(s => categories.add(s.category));
+      const sorted = Array.from(categories).sort();
+      return ["General", ...sorted];
+    }
+    const legacyKey = selectedTrade.replace(/\s+/g, "_").toUpperCase();
+    if (TRADE_SUBCATEGORIES[legacyKey]) {
+      return ["General", ...TRADE_SUBCATEGORIES[legacyKey]];
+    }
+    return ["General"];
+  }, [selectedTrade, libraryTrades, libraryAllScopes]);
   
-  // Get sub-categories for selected trade (always include "General" as first option for fallback)
-  const availableSubCategories = selectedTrade 
-    ? ["General", ...(TRADE_SUBCATEGORIES[selectedTrade] || [])] 
-    : [];
-  
-  // Find category info based on trade + subcategory selection
-  // Returns both categoryId and categoryName for robust mapping
   const findCategoryInfo = (trade: string, subCategory: string): { id: string; name: string } | null => {
-    // Format trade name for comparison (underscores to spaces for display matching)
-    const tradeFormatted = trade.replace(/_/g, " ");
+    const tradeLower = trade.toLowerCase();
     
-    // Strategy 1: Try exact match with "TRADE - SubCategory" pattern
-    const targetName = `${tradeFormatted} - ${subCategory}`;
+    const targetName = `${trade} - ${subCategory}`;
     const exactMatch = workTypeCategories.find(cat => 
       cat.name.toLowerCase() === targetName.toLowerCase()
     );
@@ -273,7 +289,6 @@ export default function ScopeSettings() {
       return { id: exactMatch.id, name: exactMatch.name };
     }
     
-    // Strategy 2: Try matching just the subcategory name alone (handles standalone categories like "Curb & Gutter")
     if (subCategory && subCategory !== "General") {
       const standaloneMatch = workTypeCategories.find(cat => 
         cat.name.toLowerCase() === subCategory.toLowerCase()
@@ -283,18 +298,15 @@ export default function ScopeSettings() {
       }
     }
     
-    // Strategy 3: If subCategory is "General" or empty, try to find category that just matches the trade name
     if (!subCategory || subCategory === "General") {
       const tradeCategory = workTypeCategories.find(cat => 
-        cat.name.toLowerCase() === trade.toLowerCase() ||
-        cat.name.toLowerCase() === tradeFormatted.toLowerCase()
+        cat.name.toLowerCase() === tradeLower
       );
       if (tradeCategory) {
         return { id: tradeCategory.id, name: tradeCategory.name };
       }
     }
     
-    // No match found
     return null;
   };
   
@@ -346,8 +358,7 @@ export default function ScopeSettings() {
 
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
 
-  const { scopes: libraryScopes, isLoading: loadingLibrary } = useLibraryData();
-
+  const libraryScopes = libraryAllScopes;
   const filteredLibraryScopes = useMemo(() => {
     if (!librarySearchTerm.trim()) return libraryScopes;
     const lower = librarySearchTerm.toLowerCase();
@@ -476,19 +487,18 @@ export default function ScopeSettings() {
       displayOrder: workType.displayOrder
     });
     
-    // Parse category name to set trade and sub-category for editing
     const category = workTypeCategories.find(cat => cat.id === workType.categoryId);
     if (category) {
       const dashIndex = category.name.indexOf(" - ");
       if (dashIndex > 0) {
-        const trade = category.name.substring(0, dashIndex).trim().toUpperCase().replace(/\s+/g, "_");
+        const tradePart = category.name.substring(0, dashIndex).trim();
         const subCat = category.name.substring(dashIndex + 3).trim();
-        setSelectedTrade(trade);
+        const matchedTrade = availableTrades.find(t => t.toLowerCase() === tradePart.toLowerCase());
+        setSelectedTrade(matchedTrade || tradePart);
         setSelectedSubCategory(subCat);
       } else {
-        // No dash - use full name as trade, set "General" as sub-category
-        const trade = category.name.toUpperCase().replace(/\s+/g, "_");
-        setSelectedTrade(trade);
+        const matchedTrade = availableTrades.find(t => t.toLowerCase() === category.name.toLowerCase());
+        setSelectedTrade(matchedTrade || category.name);
         setSelectedSubCategory("General");
       }
     }
@@ -511,15 +521,14 @@ export default function ScopeSettings() {
     if (editingWorkType) {
       updateWorkTypeMutation.mutate({ id: editingWorkType.id, ...workTypeForm });
     } else {
-      // Get category info - either existing category name or generate new one
+      const tradeName = selectedTrade;
       const existingCategoryInfo = findCategoryInfo(selectedTrade, selectedSubCategory);
       const categoryName = existingCategoryInfo?.name 
-        || `${selectedTrade.replace(/_/g, " ")} - ${selectedSubCategory}`;
+        || `${tradeName} - ${selectedSubCategory}`;
       
       createWorkTypeMutation.mutate({
         ...workTypeForm,
-        tradeName: selectedTrade,
-        // Always send categoryName for robust backend handling (no index-based mapping)
+        tradeName: tradeName,
         categoryName: categoryName,
       });
     }
@@ -627,7 +636,7 @@ export default function ScopeSettings() {
                   data-testid="badge-scope-trade-type"
                 >
                   <Wrench className="h-3 w-3 mr-1" />
-                  {tradeConfig.organization.tradeType.replace(/_/g, ' ')}
+                  {getTradeDisplayName(tradeConfig.organization.tradeType as any)}
                 </Badge>
               )}
             </div>
@@ -871,7 +880,7 @@ export default function ScopeSettings() {
                   <SelectContent>
                     {availableTrades.map((trade) => (
                       <SelectItem key={trade} value={trade}>
-                        {trade.replace(/_/g, " ")}
+                        {trade}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -903,7 +912,7 @@ export default function ScopeSettings() {
               <div className="p-3 rounded-lg border border-primary/50 bg-primary/10 text-sm">
                 <span className="font-medium text-primary">New category will be created:</span>
                 <span className="text-muted-foreground ml-1">
-                  A new category "{selectedTrade.replace(/_/g, " ")} - {selectedSubCategory}" will be automatically created for this work type.
+                  A new category "{selectedTrade} - {selectedSubCategory}" will be automatically created for this work type.
                 </span>
               </div>
             )}

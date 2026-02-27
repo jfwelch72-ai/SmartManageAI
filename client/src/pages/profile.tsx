@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { getTradeDisplayName } from "@shared/tradeTypeUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,7 +102,7 @@ export default function ProfilePage() {
     enabled: !!user,
   });
   const orgTradeType = tradeConfig?.organization?.tradeType || "";
-  const orgTradeLabel = orgTradeType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const orgTradeLabel = orgTradeType ? getTradeDisplayName(orgTradeType as any) : "";
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
