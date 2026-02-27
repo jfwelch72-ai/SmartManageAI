@@ -96,6 +96,13 @@ export default function ProfilePage() {
   const { user, organizationName } = useAuth();
   const { toast } = useToast();
 
+  const { data: tradeConfig } = useQuery<{ organization: { tradeType: string } }>({
+    queryKey: ["/api/organization/trade-config"],
+    enabled: !!user,
+  });
+  const orgTradeType = tradeConfig?.organization?.tradeType || "";
+  const orgTradeLabel = orgTradeType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -413,6 +420,12 @@ export default function ProfilePage() {
               <p className="text-xs text-muted-foreground">Organization</p>
               <p className="text-sm font-medium">{organizationName || "Not specified"}</p>
             </div>
+            {orgTradeLabel && (
+              <div>
+                <p className="text-xs text-muted-foreground">Trade</p>
+                <p className="text-sm font-medium" data-testid="text-org-trade-type">{orgTradeLabel}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-muted-foreground">Role</p>
               <p className="text-sm font-medium">{roleDisplay}</p>
