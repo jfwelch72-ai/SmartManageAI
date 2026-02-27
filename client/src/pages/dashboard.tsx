@@ -6,7 +6,7 @@ import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Plus, Sun, Moon, Sunset } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { hasManagementAccess, isSuperAdmin, isHustler } from "@/lib/rbac";
@@ -57,6 +57,7 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <Avatar className="h-12 w-12 sm:h-16 sm:w-16">
+                {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={`${user.firstName} ${user.lastName}`} />}
                 <AvatarFallback className="text-base sm:text-lg bg-primary text-primary-foreground">
                   {user?.firstName?.[0]}{user?.lastName?.[0]}
                 </AvatarFallback>
