@@ -599,7 +599,7 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
         topic: aiTopic,
         tone: form.tone,
       });
-      return res;
+      return res.json();
     },
     onSuccess: (data: any) => {
       setAiResult(data);
