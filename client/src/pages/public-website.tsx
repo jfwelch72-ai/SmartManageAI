@@ -1,22 +1,42 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useSearch } from "wouter";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
+import { Eye } from "lucide-react";
 
-export default function PublicWebsite() {
+export default function PublicWebsite({ isStaging = false }: { isStaging?: boolean }) {
   const params = useParams<{ subdomain: string }>();
   const subdomain = params.subdomain;
+  const searchString = useSearch();
+  const searchParams = new URLSearchParams(searchString);
+  const token = searchParams.get("token");
+
+  const apiUrl = isStaging
+    ? `/api/website/staging/${subdomain}?token=${encodeURIComponent(token || "")}`
+    : `/api/website/public/${subdomain}`;
 
   const { data, isLoading, error } = useQuery<any>({
-    queryKey: ["/api/website/public", subdomain],
+    queryKey: isStaging ? ["/api/website/staging", subdomain, token] : ["/api/website/public", subdomain],
     queryFn: async () => {
-      const response = await fetch(`/api/website/public/${subdomain}`);
+      const response = await fetch(apiUrl);
       if (!response.ok) {
-        throw new Error("Website not found");
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "Website not found");
       }
       return response.json();
     },
-    enabled: !!subdomain,
+    enabled: !!subdomain && (!isStaging || !!token),
   });
+
+  if (isStaging && !token) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" data-testid="error-staging-no-token">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Invalid Staging Link</h1>
+          <p className="text-gray-600">This staging preview link is missing the access token.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -34,7 +54,11 @@ export default function PublicWebsite() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50" data-testid="error-public-website">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-gray-800 mb-4">Website Not Found</h1>
-          <p className="text-gray-600">The website you're looking for doesn't exist or hasn't been published yet.</p>
+          <p className="text-gray-600">
+            {isStaging
+              ? "This staging link is invalid or has expired. Please request a new link from your administrator."
+              : "The website you're looking for doesn't exist or hasn't been published yet."}
+          </p>
         </div>
       </div>
     );
@@ -126,12 +150,20 @@ export default function PublicWebsite() {
 
   return (
     <div className="min-h-screen" data-testid="public-website-container">
-      <WebsitePreviewRenderer
-        data={previewData}
-        deviceType="desktop"
-        websiteId={data.website.id}
-        trackingEnabled={true}
-      />
+      {isStaging && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-amber-500 text-white text-center py-1.5 px-4 text-sm font-medium shadow-md flex items-center justify-center gap-2" data-testid="staging-banner">
+          <Eye className="h-4 w-4" />
+          <span>Staging Preview — This is a draft version and may not reflect the published site</span>
+        </div>
+      )}
+      <div style={isStaging ? { paddingTop: '36px' } : undefined}>
+        <WebsitePreviewRenderer
+          data={previewData}
+          deviceType="desktop"
+          websiteId={data.website.id}
+          trackingEnabled={!isStaging}
+        />
+      </div>
     </div>
   );
 }

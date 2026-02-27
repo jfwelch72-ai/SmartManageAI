@@ -2831,6 +2831,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   customDomain: text("custom_domain"),
   customDomainVerified: boolean("custom_domain_verified").default(false),
   sslEnabled: boolean("ssl_enabled").default(true),
+  stagingToken: text("staging_token"),
   
   // Theme & Branding
   primaryColor: text("primary_color"),

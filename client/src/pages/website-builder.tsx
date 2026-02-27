@@ -361,6 +361,29 @@ function PublishingTab({ website, onPublish, publishPending }: { website: Websit
     enabled: !!website,
   });
 
+  const stagingTokenQuery = useQuery<{ token: string | null; subdomain: string }>({
+    queryKey: ["/api/website/staging-token"],
+    queryFn: async () => {
+      const res = await fetch("/api/website/staging-token", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch staging token");
+      return res.json();
+    },
+    enabled: !!website,
+  });
+
+  const generateStagingTokenMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/website/staging-token", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/staging-token"] });
+      toast({ title: "Staging link generated", description: "You can now share this link for preview." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to generate staging link", description: error.message, variant: "destructive" });
+    },
+  });
+
   const unpublishMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", "/api/website/unpublish", {});
@@ -622,6 +645,90 @@ function PublishingTab({ website, onPublish, publishPending }: { website: Websit
           </CardContent>
         </Card>
       </div>
+
+      {hasSubdomain && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2" data-testid="text-staging-title">
+              <Eye className="h-5 w-5" />
+              Staging Preview
+            </CardTitle>
+            <CardDescription>Share a private preview link to review your website before publishing</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {stagingTokenQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading staging link...
+              </div>
+            ) : stagingTokenQuery.isError ? (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>Failed to load staging link. Please try refreshing the page.</span>
+              </div>
+            ) : stagingTokenQuery.data?.token ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 flex items-center gap-2 p-2.5 rounded-md border bg-background font-mono text-sm">
+                    <Eye className="h-4 w-4 text-amber-500 shrink-0" />
+                    <span className="truncate" data-testid="text-staging-url">
+                      {`${window.location.origin}/site/${stagingTokenQuery.data.subdomain}/staging?token=${stagingTokenQuery.data.token}`}
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const url = `${window.location.origin}/site/${stagingTokenQuery.data!.subdomain}/staging?token=${stagingTokenQuery.data!.token}`;
+                      navigator.clipboard.writeText(url);
+                      toast({ title: "Staging URL copied!" });
+                    }}
+                    data-testid="button-copy-staging-url"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" asChild data-testid="button-visit-staging">
+                    <a
+                      href={`/site/${stagingTokenQuery.data.subdomain}/staging?token=${stagingTokenQuery.data.token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateStagingTokenMutation.mutate()}
+                    disabled={generateStagingTokenMutation.isPending}
+                    data-testid="button-regenerate-staging"
+                  >
+                    {generateStagingTokenMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    Regenerate Link
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Regenerating invalidates the previous link</p>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Generate a private staging link to preview your website. Anyone with the link can view it, even if the site isn't published yet.
+                </p>
+                <Button
+                  onClick={() => generateStagingTokenMutation.mutate()}
+                  disabled={generateStagingTokenMutation.isPending}
+                  data-testid="button-generate-staging"
+                >
+                  {generateStagingTokenMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
+                  Generate Staging Link
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

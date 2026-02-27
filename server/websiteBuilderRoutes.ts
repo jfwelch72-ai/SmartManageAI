@@ -2519,6 +2519,156 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/website/staging-token - Get current staging token
+router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const orgId = user.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.organizationId, orgId),
+    });
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    res.json({ token: website.stagingToken || null, subdomain: website.subdomain });
+  } catch (error) {
+    console.error("Error fetching staging token:", error);
+    res.status(500).json({ error: "Failed to fetch staging token" });
+  }
+});
+
+// POST /api/website/staging-token - Generate or regenerate staging token
+router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const orgId = user.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.organizationId, orgId),
+    });
+    if (!website) return res.status(404).json({ error: "Website not found" });
+
+    const token = randomUUID();
+    await db.update(organizationWebsites)
+      .set({ stagingToken: token })
+      .where(eq(organizationWebsites.id, website.id));
+
+    res.json({ token, subdomain: website.subdomain });
+  } catch (error) {
+    console.error("Error generating staging token:", error);
+    res.status(500).json({ error: "Failed to generate staging token" });
+  }
+});
+
+// GET /api/website/staging/:subdomain - Get website data for staging preview (no auth, token-protected)
+router.get("/staging/:subdomain", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+    const token = req.query.token as string;
+
+    if (!subdomain) {
+      return res.status(400).json({ error: "Subdomain is required" });
+    }
+    if (!token) {
+      return res.status(403).json({ error: "Staging token is required" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: eq(organizationWebsites.subdomain, subdomain),
+    });
+
+    if (!website) {
+      return res.status(404).json({ error: "Website not found" });
+    }
+
+    if (!website.stagingToken || website.stagingToken !== token) {
+      return res.status(403).json({ error: "Invalid staging token" });
+    }
+
+    const orgId = website.organizationId;
+
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+    });
+
+    const allPages = await db.query.organizationWebsitePages.findMany({
+      where: eq(organizationWebsitePages.organizationId, orgId),
+      orderBy: [asc(organizationWebsitePages.navigationOrder)],
+    });
+
+    const blogPostsResult = await db.execute(sql`
+      SELECT id, website_id, organization_id, slug, title, excerpt,
+             author_id, author_name, status, category, tags, 
+             meta_title, meta_description, keywords, published_at, 
+             view_count, cover_image_url, content_json, content_html, 
+             created_at, updated_at
+      FROM website_blog_posts 
+      WHERE organization_id = ${orgId}
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT 6
+    `);
+    const blogPosts = blogPostsResult.rows;
+
+    const projectsResult = await db.execute(sql`
+      SELECT id, website_id, organization_id, slug, title, short_description,
+             full_description, project_type, service_type, location,
+             completion_date, cover_image_url, before_image_url, after_image_url,
+             featured, status, view_count, meta_title, meta_description,
+             created_at, updated_at
+      FROM website_projects 
+      WHERE organization_id = ${orgId}
+      ORDER BY completion_date DESC NULLS LAST
+      LIMIT 6
+    `);
+    const projects = projectsResult.rows;
+
+    const socialLinks = await db.query.organizationSocialLinks.findFirst({
+      where: eq(organizationSocialLinks.organizationId, orgId),
+    });
+
+    res.json({
+      website: {
+        ...website,
+        logoUrl: orgLogoProxyUrl(orgId, website.logoUrl),
+      },
+      organization: org ? {
+        name: org.name,
+        tradeType: org.tradeType,
+        region: org.region,
+        logoUrl: orgLogoProxyUrl(orgId, org.logoUrl),
+      } : null,
+      pages: allPages,
+      blogPosts,
+      projects,
+      socialLinks,
+      headerConfig: website.headerComponentsConfig || null,
+      footerConfig: website.footerComponentsConfig || null,
+      bodyConfig: website.bodyComponentsConfig || null,
+      headerLayoutSettings: {
+        headerType: website.headerType || 'static',
+        headerHeight: website.headerHeight || 80,
+        sectionSettings: website.headerSectionSettings || null,
+      },
+      footerLayoutSettings: {
+        footerColumns: website.footerColumns || 3,
+        sectionSettings: website.footerSectionSettings || null,
+      },
+      isStaging: true,
+    });
+  } catch (error) {
+    console.error("Error fetching staging website:", error);
+    res.status(500).json({ error: "Failed to fetch staging website" });
+  }
+});
+
 // GET /api/website/preview - Get all data needed for website preview
 router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
   try {

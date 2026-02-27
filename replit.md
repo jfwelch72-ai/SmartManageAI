@@ -26,7 +26,7 @@ The platform utilizes a modern web stack with a multi-tenant architecture, prior
 *   **Production Rate Tracking**: Analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM).
 *   **Unified SOW Tracking System**: Ensures consistent linking of scope of work items across the project lifecycle.
 *   **Communication & Collaboration**: Unified Messaging System (Team Messages, Portal Chat), Client Portal Chat, and Subcontractor Portal System.
-*   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, and publishing controls.
+*   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, and **Staging Preview Links** (token-protected URLs for sharing draft previews before publishing).
 *   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, and GDPR compliance tooling, managed by feature flags and a 4-tier subscription model.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, including expanded QuickBooks Online integration.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, source tracking, and UI for history and comparison.

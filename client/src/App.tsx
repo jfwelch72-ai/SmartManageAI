@@ -193,6 +193,7 @@ function Router() {
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/register" component={RegisterPage} />
       <Route path="/impersonate" component={ImpersonatePage} />
+      <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
       <Route path="/portal/:projectId" component={ClientPortalPublic} />
