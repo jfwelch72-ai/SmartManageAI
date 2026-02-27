@@ -2500,6 +2500,18 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
       blogPosts,
       projects,
       socialLinks,
+      headerConfig: website.headerComponentsConfig || null,
+      footerConfig: website.footerComponentsConfig || null,
+      bodyConfig: website.bodyComponentsConfig || null,
+      headerLayoutSettings: {
+        headerType: website.headerType || 'static',
+        headerHeight: website.headerHeight || 80,
+        sectionSettings: website.headerSectionSettings || null,
+      },
+      footerLayoutSettings: {
+        footerColumns: website.footerColumns || 3,
+        sectionSettings: website.footerSectionSettings || null,
+      },
     });
   } catch (error) {
     console.error("Error fetching public website:", error);
