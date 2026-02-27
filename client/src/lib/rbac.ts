@@ -323,6 +323,7 @@ export const RoutePermissions = {
   TM_BILLING: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   CRM: (role?: string) => hasCrmAccess(role),
+  SCOPE_LIBRARY: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
   
@@ -671,6 +672,12 @@ export const NavigationConfig = {
       label: "Report Locks",
       testId: "nav-report-locks",
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/scope-library",
+      label: "Scope Library",
+      testId: "nav-scope-library",
+      visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
     },
     {
       href: "/scope-settings",

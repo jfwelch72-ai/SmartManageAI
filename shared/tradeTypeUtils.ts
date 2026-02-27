@@ -372,6 +372,16 @@ export function mapOnboardingTradeIdToLegacy(onboardingTradeId: string): TradeTy
   return EXTENDED_TRADE_REGISTRY[onboardingTradeId] || 'OTHER';
 }
 
+export function getLibraryTradeIdsForLegacy(legacyTradeType: string): string[] {
+  const result: string[] = [];
+  for (const [tradeId, legacy] of Object.entries(EXTENDED_TRADE_REGISTRY)) {
+    if (legacy === legacyTradeType) {
+      result.push(tradeId);
+    }
+  }
+  return result;
+}
+
 export function normalizeToOnboardingTradeId(input: string | null | undefined): string | null {
   if (!input) return null;
   const lower = input.toLowerCase().trim().replace(/\s+/g, '_');

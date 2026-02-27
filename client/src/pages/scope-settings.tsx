@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,10 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench, ChevronDown, ChevronRight, Search, Library, CheckSquare, Square, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useLibraryData, type Scope } from "@/hooks/use-library-data";
 
 interface WorkTypeCategory {
   id: string;
@@ -326,6 +330,140 @@ export default function ScopeSettings() {
     });
   };
 
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [librarySearchTerm, setLibrarySearchTerm] = useState("");
+  const [selectedScopeIds, setSelectedScopeIds] = useState<Set<string>>(new Set());
+  const [libraryStep, setLibraryStep] = useState<"select" | "review">("select");
+
+  interface ReviewItem {
+    scopeId: string;
+    name: string;
+    code: string;
+    defaultUnit: string;
+    tradeName: string;
+    categoryName: string;
+  }
+
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+
+  const { scopes: libraryScopes, isLoading: loadingLibrary } = useLibraryData();
+
+  const filteredLibraryScopes = useMemo(() => {
+    if (!librarySearchTerm.trim()) return libraryScopes;
+    const lower = librarySearchTerm.toLowerCase();
+    return libraryScopes.filter(
+      s =>
+        s.scope_name.toLowerCase().includes(lower) ||
+        s.category.toLowerCase().includes(lower) ||
+        s.trade_name.toLowerCase().includes(lower) ||
+        s.scope_id.toLowerCase().includes(lower)
+    );
+  }, [libraryScopes, librarySearchTerm]);
+
+  const groupedLibraryScopes = useMemo(() => {
+    const groups: Record<string, { trade_name: string; category: string; scopes: Scope[] }> = {};
+    filteredLibraryScopes.forEach(s => {
+      const key = `${s.trade_id}__${s.category}`;
+      if (!groups[key]) {
+        groups[key] = { trade_name: s.trade_name, category: s.category, scopes: [] };
+      }
+      groups[key].scopes.push(s);
+    });
+    return Object.entries(groups)
+      .map(([key, data]) => ({ key, ...data }))
+      .sort((a, b) => a.trade_name.localeCompare(b.trade_name) || a.category.localeCompare(b.category));
+  }, [filteredLibraryScopes]);
+
+  const toggleScopeSelection = (scopeId: string) => {
+    setSelectedScopeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(scopeId)) {
+        next.delete(scopeId);
+      } else {
+        next.add(scopeId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allIds = filteredLibraryScopes.map(s => s.scope_id);
+    setSelectedScopeIds(new Set(allIds));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedScopeIds(new Set());
+  };
+
+  const handleProceedToReview = () => {
+    const items: ReviewItem[] = libraryScopes
+      .filter(s => selectedScopeIds.has(s.scope_id))
+      .map(s => ({
+        scopeId: s.scope_id,
+        name: s.scope_name,
+        code: s.scope_id,
+        defaultUnit: s.uom,
+        tradeName: s.trade_id,
+        categoryName: s.category,
+      }));
+    setReviewItems(items);
+    setLibraryStep("review");
+  };
+
+  const updateReviewItem = (index: number, field: keyof ReviewItem, value: string) => {
+    setReviewItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const removeReviewItem = (index: number) => {
+    setReviewItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const batchCreateMutation = useMutation({
+    mutationFn: async (items: ReviewItem[]) => {
+      const results = [];
+      for (const item of items) {
+        const result = await apiRequest("POST", "/api/scope/work-types", {
+          categoryId: "",
+          name: item.name,
+          code: item.code,
+          defaultUnit: item.defaultUnit,
+          requiresDimensions: false,
+          dimensionType: "",
+          displayOrder: 100,
+          tradeName: item.tradeName,
+          categoryName: item.categoryName,
+        });
+        results.push(result);
+      }
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/scope/work-types"] });
+      toast({ title: `${reviewItems.length} work type(s) added from library` });
+      closeLibraryModal();
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to add work types from library", variant: "destructive" });
+    },
+  });
+
+  const handleBatchCreate = () => {
+    if (reviewItems.length === 0) return;
+    batchCreateMutation.mutate(reviewItems);
+  };
+
+  const closeLibraryModal = () => {
+    setShowLibraryModal(false);
+    setLibrarySearchTerm("");
+    setSelectedScopeIds(new Set());
+    setLibraryStep("select");
+    setReviewItems([]);
+  };
+
   const handleEditWorkType = (workType: WorkType) => {
     setEditingWorkType(workType);
     setWorkTypeForm({
@@ -514,17 +652,35 @@ export default function ScopeSettings() {
 
         <TabsContent value="work-types">
           <div className="flex justify-end mb-4">
-            <Button
-              onClick={() => {
-                resetWorkTypeForm();
-                setEditingWorkType(null);
-                setShowWorkTypeDialog(true);
-              }}
-              data-testid="button-add-work-type"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Work Type
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-testid="button-add-work-type">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Work Type
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => {
+                    resetWorkTypeForm();
+                    setEditingWorkType(null);
+                    setShowWorkTypeDialog(true);
+                  }}
+                  data-testid="menu-add-manually"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Manually
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setShowLibraryModal(true)}
+                  data-testid="menu-select-from-library"
+                >
+                  <Library className="h-4 w-4 mr-2" />
+                  Select From Library
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {loadingWorkTypes ? (
@@ -911,6 +1067,180 @@ export default function ScopeSettings() {
               {editingModifier ? "Update" : "Create"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLibraryModal} onOpenChange={(open) => { if (!open) closeLibraryModal(); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle data-testid="text-library-modal-title">
+              {libraryStep === "select" ? "Select Scopes From Library" : "Review Selected Work Types"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {libraryStep === "select" && (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={librarySearchTerm}
+                    onChange={(e) => setLibrarySearchTerm(e.target.value)}
+                    placeholder="Search scopes by name, category, or trade..."
+                    className="pl-9"
+                    data-testid="input-library-search"
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={handleSelectAll} data-testid="button-select-all">
+                  <CheckSquare className="h-4 w-4 mr-1" />
+                  All
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDeselectAll} data-testid="button-deselect-all">
+                  <Square className="h-4 w-4 mr-1" />
+                  None
+                </Button>
+              </div>
+
+              <ScrollArea className="flex-1 min-h-0 max-h-[50vh] border rounded-md">
+                {loadingLibrary ? (
+                  <div className="text-center py-8 text-muted-foreground" data-testid="text-library-loading">Loading library data...</div>
+                ) : filteredLibraryScopes.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground" data-testid="text-library-empty">No scopes found matching your search.</div>
+                ) : (
+                  <div className="p-3 space-y-4">
+                    {groupedLibraryScopes.map((group) => (
+                      <div key={group.key}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-semibold">{group.trade_name}</span>
+                          <Badge variant="outline" className="text-xs">{group.category}</Badge>
+                          <Badge variant="secondary" className="text-xs">{group.scopes.length}</Badge>
+                        </div>
+                        <div className="space-y-1 ml-2">
+                          {group.scopes.map((scope) => (
+                            <label
+                              key={scope.scope_id}
+                              className="flex items-center gap-3 p-2 rounded-md hover-elevate cursor-pointer"
+                              data-testid={`library-scope-${scope.scope_id}`}
+                            >
+                              <Checkbox
+                                checked={selectedScopeIds.has(scope.scope_id)}
+                                onCheckedChange={() => toggleScopeSelection(scope.scope_id)}
+                                data-testid={`checkbox-scope-${scope.scope_id}`}
+                              />
+                              <span className="flex-1 text-sm">{scope.scope_name}</span>
+                              <Badge variant="outline" className="text-xs">{scope.uom}</Badge>
+                              {scope.material_families.length > 0 && (
+                                <span className="text-xs text-muted-foreground">{scope.material_families.length} material(s)</span>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+
+              <DialogFooter className="flex items-center justify-between gap-2">
+                <span className="text-sm text-muted-foreground" data-testid="text-selected-count">
+                  {selectedScopeIds.size} scope(s) selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={closeLibraryModal}>Cancel</Button>
+                  <Button
+                    onClick={handleProceedToReview}
+                    disabled={selectedScopeIds.size === 0}
+                    data-testid="button-proceed-review"
+                  >
+                    Review Selected
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
+
+          {libraryStep === "review" && (
+            <>
+              <ScrollArea className="flex-1 min-h-0 max-h-[55vh]">
+                <div className="space-y-3 p-1">
+                  {reviewItems.map((item, index) => (
+                    <div key={item.scopeId} className="flex items-start gap-3 p-3 border rounded-md" data-testid={`review-item-${index}`}>
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Name</Label>
+                          <Input
+                            value={item.name}
+                            onChange={(e) => updateReviewItem(index, "name", e.target.value)}
+                            data-testid={`input-review-name-${index}`}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Code</Label>
+                          <Input
+                            value={item.code}
+                            onChange={(e) => updateReviewItem(index, "code", e.target.value.toLowerCase().replace(/\s+/g, "_"))}
+                            data-testid={`input-review-code-${index}`}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Unit</Label>
+                          <Select
+                            value={item.defaultUnit}
+                            onValueChange={(val) => updateReviewItem(index, "defaultUnit", val)}
+                          >
+                            <SelectTrigger data-testid={`select-review-unit-${index}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {unitOptions.map((u) => (
+                                <SelectItem key={u} value={u}>{u}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-end gap-1">
+                          <Badge variant="secondary" className="text-xs mb-1">{item.tradeName.replace(/_/g, " ")}</Badge>
+                          <Badge variant="outline" className="text-xs mb-1">{item.categoryName}</Badge>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeReviewItem(index)}
+                        data-testid={`button-remove-review-${index}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              <DialogFooter className="flex items-center justify-between gap-2">
+                <span className="text-sm text-muted-foreground" data-testid="text-review-count">
+                  {reviewItems.length} work type(s) to add
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setLibraryStep("select")}
+                    data-testid="button-back-to-select"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleBatchCreate}
+                    disabled={reviewItems.length === 0 || batchCreateMutation.isPending}
+                    data-testid="button-add-selected"
+                  >
+                    {batchCreateMutation.isPending ? "Adding..." : `Add ${reviewItems.length} Work Type(s)`}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

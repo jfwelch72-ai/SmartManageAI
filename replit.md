@@ -45,9 +45,12 @@ The platform utilizes a modern web stack with a multi-tenant architecture, prior
     *   **3 Extension Files**: `trade_components.json` (982 components across 229 trades), `variant_expansions.json` (113 variants across 19 component families), `calibration_rates.json` (15 calibration rate stubs)
     *   **TypeScript Module**: `server/data/onboarding/index.ts` — typed accessors with Map-based O(1) lookups, `validateLibraryIntegrity()` for runtime assertions
     *   **AI Integration**: Feeds `tradeDiscoveryService.ts` (230-trade taxonomy for trade matching), `scopePredictionEngine.ts` (supplements DB scopes with library's 2,946 scopes), `buildOnboardingSystemPrompt()` (extended taxonomy + 126 material families in prompt)
-    *   **Trade Mapping**: `shared/tradeTypeUtils.ts` exports `EXTENDED_TRADE_REGISTRY` (maps 110+ library trade_ids to 22 legacy TradeType values), `mapOnboardingTradeIdToLegacy()`, `normalizeToOnboardingTradeId()`
-    *   **API Endpoints**: `server/onboardingLibraryRoutes.ts` — `GET /api/onboarding-library/trades`, `/trades/:tradeId/scopes`, `/trades/:tradeId/components`, `/materials`, `/formulas`, `/grammar`, `/calibration/:scopeId`, `/integrity`
+    *   **Trade Mapping**: `shared/tradeTypeUtils.ts` exports `EXTENDED_TRADE_REGISTRY` (maps 110+ library trade_ids to 22 legacy TradeType values), `mapOnboardingTradeIdToLegacy()`, `normalizeToOnboardingTradeId()`, `getLibraryTradeIdsForLegacy()` (reverse mapping: legacy trade type → library trade_ids)
+    *   **API Endpoints**: `server/onboardingLibraryRoutes.ts` — `GET /api/onboarding-library/trades`, `/trades/:tradeId/scopes`, `/trades/:tradeId/components`, `/materials`, `/formulas`, `/grammar`, `/calibration/:scopeId`, `/integrity`, `/for-org` (org-filtered library data)
     *   **GC Logic**: `general_contractor_gc` has 0 scopes by design; `getScopesByTradeId('general_contractor_gc')` returns ALL 2,946 scopes
+    *   **Frontend Access**: `client/src/hooks/use-library-data.ts` — `useLibraryData()` hook provides org-trade-filtered library data (trades, scopes, components, materials) via TanStack Query; `useLibraryScopes(searchTerm?)` for filtered scope access with real-time search
+    *   **Scope Library Browser**: `client/src/pages/scope-library.tsx` at route `/scope-library` — searchable catalog page with Scopes/Components/Materials tabs, filtered by org trade type, accessible to ADMIN/MANAGER/ESTIMATOR
+    *   **Select From Library Flow**: Scope Settings page (`/scope-settings`) "Add Work Type" button upgraded to dropdown with "Add Manually" (existing) and "Select From Library" (new multi-select modal with search, review/edit step, and batch creation)
     *   **Extending**: Add trades to `trades.json`, scopes to `scopes.json` (update `EXPECTED_*` counts in `index.ts`); add calibration rates by scope_id; all cross-references validated at load time
 
 ## External Dependencies
