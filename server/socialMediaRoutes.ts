@@ -5,10 +5,9 @@ import { socialAccounts, socialMediaPosts, socialPostAnalytics, organizations } 
 import { requireAuth, type AuthRequest } from "./auth";
 import { randomUUID } from "crypto";
 import crypto from "crypto";
-import OpenAI from "openai";
+import { openai } from "./ai/openaiClient";
 
 const router = Router();
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 const ENCRYPTION_KEY = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || "";
 
@@ -525,7 +524,6 @@ router.post("/posts/generate", requireAuth, async (req: AuthRequest, res: Respon
 
     const { platform, topic, tone, saveAsDraft } = req.body;
     if (!platform || !topic) return res.status(400).json({ error: "Platform and topic are required" });
-    if (!openai) return res.status(503).json({ error: "AI generation is not configured. Please set up the OpenAI API key." });
 
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
