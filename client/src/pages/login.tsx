@@ -6,7 +6,7 @@ import { isSuperAdmin } from "@/lib/rbac";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Wrench, Truck, Zap, Sparkles } from "lucide-react";
+import { Loader2, FlaskConical, Shield, Users, HardHat, Calculator, Building2, Clock, Wrench, Truck, Zap, Sparkles, DollarSign, Megaphone, ShieldAlert, UserCog, Cog, Compass, ShoppingCart, Radio } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,6 +21,14 @@ const DEV_ROLES = [
   { role: "MAINTENANCE_MANAGER", label: "Maintenance", icon: Wrench, description: "Equipment management" },
   { role: "VENDOR", label: "Vendor", icon: Truck, description: "Supplier access" },
   { role: "HUSTLER", label: "Hustler", icon: Zap, description: "Multi-org access" },
+  { role: "SALES", label: "Sales", icon: DollarSign, description: "CRM & pipeline" },
+  { role: "MARKETING", label: "Marketing", icon: Megaphone, description: "Campaigns & leads" },
+  { role: "SAFETY_MANAGER", label: "Safety Manager", icon: ShieldAlert, description: "Safety & compliance" },
+  { role: "HR_MANAGER", label: "HR Manager", icon: UserCog, description: "HR & onboarding" },
+  { role: "EQUIPMENT_MANAGER", label: "Equipment Mgr", icon: Cog, description: "Equipment registry" },
+  { role: "PROJECT_ENGINEER", label: "Project Engineer", icon: Compass, description: "RFIs & submittals" },
+  { role: "PROCUREMENT_MANAGER", label: "Procurement Mgr", icon: ShoppingCart, description: "POs & vendors" },
+  { role: "DISPATCHER", label: "Dispatcher", icon: Radio, description: "Crew scheduling" },
 ];
 
 export default function LoginPage() {

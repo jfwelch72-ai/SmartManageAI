@@ -142,6 +142,14 @@ const ROLE_OPTIONS = [
   { value: "OFFICE_MANAGER", label: "Office Manager" },
   { value: "HOURLY_EMPLOYEE", label: "Hourly Employee" },
   { value: "MAINTENANCE_MANAGER", label: "Maintenance Manager" },
+  { value: "SALES", label: "Sales" },
+  { value: "MARKETING", label: "Marketing" },
+  { value: "SAFETY_MANAGER", label: "Safety Manager" },
+  { value: "HR_MANAGER", label: "HR Manager" },
+  { value: "EQUIPMENT_MANAGER", label: "Equipment Manager" },
+  { value: "PROJECT_ENGINEER", label: "Project Engineer" },
+  { value: "PROCUREMENT_MANAGER", label: "Procurement Manager" },
+  { value: "DISPATCHER", label: "Dispatcher" },
 ];
 
 const EMPLOYMENT_TYPE_OPTIONS = [
@@ -159,6 +167,14 @@ const ROLE_LABELS: Record<string, string> = {
   OFFICE_MANAGER: "Office Manager",
   HOURLY_EMPLOYEE: "Hourly Employee",
   MAINTENANCE_MANAGER: "Maintenance Manager",
+  SALES: "Sales",
+  MARKETING: "Marketing",
+  SAFETY_MANAGER: "Safety Manager",
+  HR_MANAGER: "HR Manager",
+  EQUIPMENT_MANAGER: "Equipment Manager",
+  PROJECT_ENGINEER: "Project Engineer",
+  PROCUREMENT_MANAGER: "Procurement Manager",
+  DISPATCHER: "Dispatcher",
 };
 
 const ATTENDANCE_COLORS: Record<string, string> = {

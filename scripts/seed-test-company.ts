@@ -3,7 +3,7 @@
  * 
  * Creates:
  * - RealTest Construction (main test organization with enterprise tier + all add-ons)
- * - All 10 user roles with @realtest.com emails
+ * - All 18 user roles with @realtest.com emails
  * - RealTest Subcontractors (subcontractor organization for invite testing)
  * 
  * Run with: npm run seed:test-company
@@ -29,7 +29,7 @@ interface TestUser {
   firstName: string;
   lastName: string;
   email: string;
-  role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER";
+  role: "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER" | "SALES" | "MARKETING" | "SAFETY_MANAGER" | "HR_MANAGER" | "EQUIPMENT_MANAGER" | "PROJECT_ENGINEER" | "PROCUREMENT_MANAGER" | "DISPATCHER";
   phone?: string;
 }
 
@@ -44,6 +44,14 @@ const MAIN_ORG_USERS: TestUser[] = [
   { firstName: "Equipment", lastName: "Manager", email: "maintenance@realtest.com", role: "MAINTENANCE_MANAGER", phone: "555-100-0008" },
   { firstName: "Vendor", lastName: "Contact", email: "vendor@realtest.com", role: "VENDOR", phone: "555-100-0009" },
   { firstName: "Business", lastName: "Owner", email: "hustler@realtest.com", role: "HUSTLER", phone: "555-100-0010" },
+  { firstName: "Sales", lastName: "Rep", email: "sales@realtest.com", role: "SALES", phone: "555-100-0011" },
+  { firstName: "Marketing", lastName: "Lead", email: "marketing@realtest.com", role: "MARKETING", phone: "555-100-0012" },
+  { firstName: "Safety", lastName: "Manager", email: "safety@realtest.com", role: "SAFETY_MANAGER", phone: "555-100-0013" },
+  { firstName: "HR", lastName: "Manager", email: "hr@realtest.com", role: "HR_MANAGER", phone: "555-100-0014" },
+  { firstName: "Equipment", lastName: "Manager", email: "equipment@realtest.com", role: "EQUIPMENT_MANAGER", phone: "555-100-0015" },
+  { firstName: "Project", lastName: "Engineer", email: "engineer@realtest.com", role: "PROJECT_ENGINEER", phone: "555-100-0016" },
+  { firstName: "Procurement", lastName: "Manager", email: "procurement@realtest.com", role: "PROCUREMENT_MANAGER", phone: "555-100-0017" },
+  { firstName: "Fleet", lastName: "Dispatcher", email: "dispatcher@realtest.com", role: "DISPATCHER", phone: "555-100-0018" },
 ];
 
 const SUB_ORG_USERS: TestUser[] = [

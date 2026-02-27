@@ -124,7 +124,7 @@ router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequ
   }
 });
 
-router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const userId = req.user!.id;
@@ -215,7 +215,7 @@ router.get("/inspections/:id", requireAuth, async (req: AuthRequest, res: Respon
   }
 });
 
-router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -285,7 +285,7 @@ router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "S
   }
 });
 
-router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -332,7 +332,7 @@ router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -375,7 +375,7 @@ router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -421,7 +421,7 @@ router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const inspection = await getInspectionById(req.params.id);
@@ -499,7 +499,7 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
   }
 });
 
-router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 
@@ -576,7 +576,7 @@ router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADM
   }
 });
 
-router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUSTLER", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const inspection = await getInspectionById(req.params.id);
 

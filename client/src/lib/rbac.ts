@@ -3,7 +3,7 @@
  * 
  * This module defines permission checks for different user roles in the SmartManageAI Construction Management Platform.
  * 
- * Role Hierarchy:
+ * Role Hierarchy (18 roles):
  * - SUPER_ADMIN: Platform administrator - monitors all organizations, analytics, support tools (NO contractor features)
  * - ADMIN: Organization admin - full access to everything within their organization including user management
  * - MANAGER, SUPERINTENDENT, ESTIMATOR, OFFICE_MANAGER: Full access except user management
@@ -11,9 +11,17 @@
  * - HOURLY_EMPLOYEE: Limited access to active projects, daily notes, calendar, time clock (no finances/budgets)
  * - VENDOR: External vendor portal access - submit pricing to enrolled clients, view enrollments (NO contractor features)
  * - HUSTLER: Multi-organization role - can switch between linked organizations with management-level access
+ * - SALES: CRM, leads, pipeline, proposals — no payroll/banking/full financials
+ * - MARKETING: Marketing campaigns, lead sources, CRM analytics — no payroll/banking
+ * - SAFETY_MANAGER: Safety logs, incidents, training, certifications, job site roster — no payroll/banking
+ * - HR_MANAGER: Hiring, onboarding, employee profiles, certifications, performance — no banking/invoices
+ * - EQUIPMENT_MANAGER: Equipment registry, assignments, maintenance, utilization — no payroll/banking
+ * - PROJECT_ENGINEER: RFIs, submittals, docs, drawings, change events — no payroll/banking
+ * - PROCUREMENT_MANAGER: Material requests, POs, vendor catalogs, deliveries — no payroll/banking
+ * - DISPATCHER: Crew/tech schedules, assignments, daily plans, dispatch — no payroll/banking
  */
 
-export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "SUPERINTENDENT" | "ESTIMATOR" | "OFFICE_MANAGER" | "HOURLY_EMPLOYEE" | "MAINTENANCE_MANAGER" | "VENDOR" | "HUSTLER" | "SALES" | "MARKETING" | "SAFETY_MANAGER" | "HR_MANAGER" | "EQUIPMENT_MANAGER" | "PROJECT_ENGINEER" | "PROCUREMENT_MANAGER" | "DISPATCHER";
 
 /**
  * Check if user is a super admin (platform level - NO contractor features)
@@ -67,22 +75,30 @@ export function isHustler(role?: string): boolean {
 /**
  * Check if user has contractor-level access (excludes SUPER_ADMIN who only does platform admin)
  * HUSTLER role has contractor access to work across their organizations
+ * All org-level roles (including new specialized roles) have contractor access
  */
 export function hasContractorAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
          role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "MAINTENANCE_MANAGER" ||
-         role === "HOURLY_EMPLOYEE" || role === "HUSTLER";
+         role === "HOURLY_EMPLOYEE" || role === "HUSTLER" ||
+         role === "SALES" || role === "MARKETING" || role === "SAFETY_MANAGER" ||
+         role === "HR_MANAGER" || role === "EQUIPMENT_MANAGER" || role === "PROJECT_ENGINEER" ||
+         role === "PROCUREMENT_MANAGER" || role === "DISPATCHER";
 }
 
 /**
  * Check if user has management-level access within an organization (not hourly employee, not super admin)
  * HUSTLER role has management access to work across their organizations
  * Note: MAINTENANCE_MANAGER has specialized access to equipment only - use hasEquipmentAccess() for them
+ * New specialized roles: SAFETY_MANAGER, HR_MANAGER, EQUIPMENT_MANAGER, PROJECT_ENGINEER, PROCUREMENT_MANAGER have management access
+ * SALES, MARKETING, DISPATCHER have scoped access (not full management)
  */
 export function hasManagementAccess(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
          role === "ESTIMATOR" || role === "OFFICE_MANAGER" ||
-         role === "HUSTLER";
+         role === "HUSTLER" ||
+         role === "SAFETY_MANAGER" || role === "HR_MANAGER" || role === "EQUIPMENT_MANAGER" ||
+         role === "PROJECT_ENGINEER" || role === "PROCUREMENT_MANAGER";
 }
 
 /**
@@ -90,7 +106,18 @@ export function hasManagementAccess(role?: string): boolean {
  * Use this for features like CRM contacts that maintenance managers can view but not financial features
  */
 export function hasExtendedManagementAccess(role?: string): boolean {
-  return hasManagementAccess(role) || role === "MAINTENANCE_MANAGER";
+  return hasManagementAccess(role) || role === "MAINTENANCE_MANAGER" || 
+         role === "SALES" || role === "MARKETING" || role === "DISPATCHER";
+}
+
+/**
+ * Check if user has financial access (budget, estimates, receipts, payroll, banking)
+ * Only core management roles — excludes new specialized roles per design
+ */
+export function hasFinancialAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" ||
+         role === "HUSTLER";
 }
 
 /**
@@ -104,7 +131,42 @@ export function isMaintenanceManager(role?: string): boolean {
  * Check if user has equipment access (organization level only)
  */
 export function hasEquipmentAccess(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "MAINTENANCE_MANAGER" || role === "EQUIPMENT_MANAGER";
+}
+
+/**
+ * Check if user has safety module access
+ */
+export function hasSafetyAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "SAFETY_MANAGER";
+}
+
+/**
+ * Check if user has procurement module access
+ */
+export function hasProcurementAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "PROCUREMENT_MANAGER";
+}
+
+/**
+ * Check if user has HR module access
+ */
+export function hasHRAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "HR_MANAGER";
+}
+
+/**
+ * Check if user has dispatch/scheduling access
+ */
+export function hasDispatchAccess(role?: string): boolean {
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "DISPATCHER";
+}
+
+/**
+ * Check if user has CRM/sales access
+ */
+export function hasCrmAccess(role?: string): boolean {
+  return hasManagementAccess(role) || role === "SALES" || role === "MARKETING";
 }
 
 /**
@@ -120,7 +182,8 @@ export function isSuperintendent(role?: string): boolean {
  */
 export function canAccessBids(role?: string): boolean {
   return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || 
-         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER";
+         role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER" ||
+         role === "PROJECT_ENGINEER";
 }
 
 /**
@@ -206,7 +269,7 @@ export function canEditProjectHandoff(role?: string, userId?: string, projectSup
  * Check if user can create CRM contacts (Admin/Manager/Estimator/Superintendent)
  */
 export function canCreateCrmContact(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT";
+  return role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "SALES" || role === "PROCUREMENT_MANAGER";
 }
 
 /**
@@ -221,7 +284,7 @@ export function canCreateChangeOrder(role?: string): boolean {
  * Note: OFFICE_MANAGER can view but not approve
  */
 export function canViewTimeApprovals(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || role === "HR_MANAGER" || role === "DISPATCHER";
 }
 
 /**
@@ -252,14 +315,14 @@ export const RoutePermissions = {
   // Management routes (blocked for hourly employees, maintenance managers, and SUPER_ADMIN)
   BIDS: (role?: string) => canAccessBids(role),
   BID_DETAIL: (role?: string) => canAccessBids(role),
-  TIME_ENTRY: (role?: string) => hasManagementAccess(role),
-  TIME_CLOCK_MANAGER: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+  TIME_ENTRY: (role?: string) => hasManagementAccess(role) || role === "DISPATCHER",
+  TIME_CLOCK_MANAGER: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || role === "HR_MANAGER" || role === "DISPATCHER",
   AI_PM: (role?: string) => hasManagementAccess(role),
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
   TM_BILLING: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
-  CRM: (role?: string) => hasManagementAccess(role),
+  CRM: (role?: string) => hasCrmAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   EQUIPMENT: (role?: string) => hasEquipmentAccess(role),
   
@@ -281,9 +344,9 @@ export const RoutePermissions = {
   MESSAGES: (role?: string) => hasContractorAccess(role),
   
   // Delay Claims routes (management access)
-  DELAY_CLAIMS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  DELAY_CLAIMS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
   DAILY_REPORT_LOCKS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-  PHOTO_CUSTODY: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+  PHOTO_CUSTODY: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
   
   // Bid Network routes
   BID_NETWORK_GC: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
@@ -295,32 +358,32 @@ export const RoutePermissions = {
   // Payroll Management
   PAYROLL_MANAGEMENT: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
 
-  // KPI Management (ADMIN, MANAGER, SUPERINTENDENT, HUSTLER)
-  KPI_MANAGEMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
+  // KPI Management (ADMIN, MANAGER, SUPERINTENDENT, HUSTLER, HR_MANAGER)
+  KPI_MANAGEMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" || role === "HR_MANAGER",
 };
 
 /**
  * Feature permissions for different sections within pages
  */
 export const FeaturePermissions = {
-  // Dashboard features
-  VIEW_BUDGET_METRICS: (role?: string) => hasManagementAccess(role),
-  VIEW_FINANCIAL_KPIs: (role?: string) => hasManagementAccess(role),
+  // Dashboard features — financial metrics restricted to core management
+  VIEW_BUDGET_METRICS: (role?: string) => hasFinancialAccess(role),
+  VIEW_FINANCIAL_KPIs: (role?: string) => hasFinancialAccess(role),
 
   // Project features
   CREATE_PROJECT: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
   EDIT_PROJECT: (role?: string) => hasManagementAccess(role),
-  VIEW_PROJECT_BUDGET: (role?: string) => hasManagementAccess(role),
-  VIEW_PROJECT_FINANCIALS: (role?: string) => hasManagementAccess(role),
+  VIEW_PROJECT_BUDGET: (role?: string) => hasFinancialAccess(role),
+  VIEW_PROJECT_FINANCIALS: (role?: string) => hasFinancialAccess(role),
   CONVERT_BID_TO_PROJECT: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
 
-  // Project detail tabs - Financial tabs (restricted from hourly)
-  VIEW_BUDGET_TAB: (role?: string) => hasManagementAccess(role),
-  VIEW_ESTIMATES_TAB: (role?: string) => hasManagementAccess(role),
-  VIEW_PROCUREMENT_TAB: (role?: string) => hasManagementAccess(role),
-  VIEW_RECEIPTS_TAB: (role?: string) => hasManagementAccess(role),
-  VIEW_TIME_ENTRIES_TAB: (role?: string) => hasManagementAccess(role),
-  VIEW_SUBCONTRACTORS_TAB: (role?: string) => hasManagementAccess(role),
+  // Project detail tabs - Financial tabs restricted to core management roles
+  VIEW_BUDGET_TAB: (role?: string) => hasFinancialAccess(role),
+  VIEW_ESTIMATES_TAB: (role?: string) => hasFinancialAccess(role),
+  VIEW_PROCUREMENT_TAB: (role?: string) => hasFinancialAccess(role) || role === "PROCUREMENT_MANAGER",
+  VIEW_RECEIPTS_TAB: (role?: string) => hasFinancialAccess(role),
+  VIEW_TIME_ENTRIES_TAB: (role?: string) => hasFinancialAccess(role) || role === "HR_MANAGER",
+  VIEW_SUBCONTRACTORS_TAB: (role?: string) => hasFinancialAccess(role),
 
   // Always accessible tabs for contractor users
   VIEW_OVERVIEW_TAB: (role?: string) => hasContractorAccess(role),
@@ -436,7 +499,7 @@ export const NavigationConfig = {
       href: "/time-clock-manager",
       label: "Manage Time Clock",
       testId: "nav-manage-time-clock",
-      visible: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+      visible: (role?: string) => isAdminOrManager(role) || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || role === "HR_MANAGER" || role === "DISPATCHER",
     },
     {
       href: "/tm-daily",
@@ -457,31 +520,31 @@ export const NavigationConfig = {
       href: "/delay-claims",
       label: "Daily Claims",
       testId: "nav-delay-claims",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
     },
     {
       href: "/rfis",
       label: "RFIs",
       testId: "nav-rfis",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
     },
     {
       href: "/transmittals",
       label: "Transmittals",
       testId: "nav-transmittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
     },
     {
       href: "/submittals",
       label: "Submittals",
       testId: "nav-submittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
     },
     {
       href: "/photo-custody",
       label: "Photo Custody",
       testId: "nav-photo-custody",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
     },
   ],
 
@@ -679,7 +742,7 @@ export const NavigationConfig = {
       href: "/kpi-management",
       label: "KPI Management",
       testId: "nav-kpi-management",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" || role === "HR_MANAGER",
     },
   ],
 
@@ -700,7 +763,7 @@ export const NavigationConfig = {
       href: "/crm",
       label: "CRM",
       testId: "nav-crm",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string) => hasCrmAccess(role),
     },
     {
       href: "/mobile-sync",

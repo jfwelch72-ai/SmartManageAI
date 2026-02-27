@@ -696,7 +696,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Get pending shift approvals (managers, superintendents, and office managers for viewing)
-  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       // Get all shifts that are clocked out and pending approval
       const pendingShifts = await db
@@ -744,7 +744,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Get active shifts (managers, superintendents, office managers)
-  app.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       // Get all shifts that are currently clocked in (no clock out time)
       const activeShifts = await db
@@ -823,7 +823,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Adjust shift (managers, superintendents, office managers)
-  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -1008,7 +1008,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Approve shift (managers, superintendents, office managers)
-  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const schema = z.object({
         createTimeEntry: z.boolean().optional(),
@@ -1126,7 +1126,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Reject shift (managers, superintendents, office managers)
-  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       // SECURITY: Sanitize text inputs for data integrity
       const sanitizedBody = {
@@ -1374,7 +1374,7 @@ export function registerTimeClockRoutes(app: Express): void {
   // ============================================
 
   // Get pending time entry approvals (managers, superintendents, office managers for viewing) - with mustDenyAccess pattern
-  app.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1446,7 +1446,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Approve time entry (managers, superintendents, office managers)
-  app.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1513,7 +1513,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Reject time entry (managers, superintendents, office managers)
-  app.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1672,7 +1672,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Export time entries as CSV
-  app.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) {
@@ -1913,7 +1913,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Get approval summary by project for a date range (managers, superintendents, office managers)
-  app.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -2131,7 +2131,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Get pending overtime requests (for managers/superintendents)
-  app.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const orgId = req.user!.organizationId;
       const requests = await db.select().from(overtimeRequests)
@@ -2183,7 +2183,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Approve overtime request
-  app.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const { approvedHours } = req.body;
@@ -2215,7 +2215,7 @@ export function registerTimeClockRoutes(app: Express): void {
   });
 
   // Reject overtime request
-  app.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+  app.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
       const { reason } = req.body;

@@ -18,7 +18,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
-router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -70,7 +70,7 @@ router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANA
   }
 });
 
-router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -112,7 +112,7 @@ router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
   }
 });
 
-router.get("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -191,7 +191,7 @@ router.get("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
   }
 });
 
-router.post("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -263,7 +263,7 @@ router.post("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MAN
   }
 });
 
-router.patch("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -324,7 +324,7 @@ router.patch("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
   }
 });
 
-router.post("/submittals/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -667,7 +667,7 @@ router.post("/submittals/:id/revise", requireAuth, requireRole("SUPER_ADMIN", "A
   }
 });
 
-router.post("/submittals/:id/resubmit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/resubmit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -744,7 +744,7 @@ router.post("/submittals/:id/resubmit", requireAuth, requireRole("SUPER_ADMIN", 
   }
 });
 
-router.post("/submittals/:id/link-rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/link-rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -807,7 +807,7 @@ router.post("/submittals/:id/link-rfi", requireAuth, requireRole("SUPER_ADMIN", 
   }
 });
 
-router.post("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -857,7 +857,7 @@ router.post("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", 
   }
 });
 
-router.get("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -937,7 +937,7 @@ router.delete("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
   }
 });
 
-router.post("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1020,7 +1020,7 @@ router.post("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "AD
   }
 });
 
-router.get("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -1058,7 +1058,7 @@ router.get("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADM
   }
 });
 
-router.delete("/submittals/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
