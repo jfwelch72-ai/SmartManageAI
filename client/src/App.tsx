@@ -355,9 +355,15 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal');
+
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
-  ) || location.startsWith('/site/') || location.startsWith('/sub-portal');
+  ) || isStandaloneRoute;
+
+  if (isStandaloneRoute) {
+    return <Router />;
+  }
   
   if (isPublicRoute && !user) {
     return <Router />;
