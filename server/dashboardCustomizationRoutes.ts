@@ -712,7 +712,6 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
     const orgId = req.user!.organizationId;
     const role = req.user!.role;
 
-    // Admins always have full permissions
     if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
       return res.json({
         canCustomizeDashboard: true,
@@ -734,8 +733,8 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
       ));
 
     res.json({
-      canCustomizeDashboard: permission?.canCustomizeDashboard || false,
-      canCustomizeColorScheme: permission?.canCustomizeColorScheme || false,
+      canCustomizeDashboard: permission?.canCustomizeDashboard ?? true,
+      canCustomizeColorScheme: permission?.canCustomizeColorScheme ?? true,
     });
   } catch (error) {
     console.error('Error fetching user permissions:', error);
@@ -805,7 +804,6 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: 'Organization required' });
     }
 
-    // Check permissions (admins always allowed)
     if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
       const [permission] = await db.select().from(userDashboardPermissions)
         .where(and(
@@ -813,7 +811,7 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
           eq(userDashboardPermissions.userId, userId)
         ));
 
-      if (!permission?.canCustomizeDashboard) {
+      if (permission && !permission.canCustomizeDashboard) {
         return res.status(403).json({ error: 'Dashboard customization not permitted' });
       }
     }
@@ -1002,7 +1000,6 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
       return res.status(403).json({ error: 'Organization required' });
     }
 
-    // Check permissions
     if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
       const [permission] = await db.select().from(userDashboardPermissions)
         .where(and(
@@ -1010,7 +1007,7 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
           eq(userDashboardPermissions.userId, userId)
         ));
 
-      if (!permission?.canCustomizeColorScheme) {
+      if (permission && !permission.canCustomizeColorScheme) {
         return res.status(403).json({ error: 'Color scheme customization not permitted' });
       }
     }
