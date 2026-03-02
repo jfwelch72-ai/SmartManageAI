@@ -186,7 +186,7 @@ router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest
   }
 });
 
-router.post("/api/documents", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
   try {
     const validationResult = insertPlanDocumentSchema.extend({
       uploadedById: z.string().optional(),
@@ -257,7 +257,7 @@ router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest
       return;
     }
 
-    const canDelete = userRole === "ADMIN" || userRole === "MANAGER";
+    const canDelete = userRole === "SUPER_ADMIN" || userRole === "ADMIN" || userRole === "MANAGER";
     
     if (!canDelete) {
       res.status(403).json({ error: "Only administrators and managers can delete documents" });
