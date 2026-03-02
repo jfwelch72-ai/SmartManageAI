@@ -82,10 +82,10 @@ const TOOL_CONFIG = [
   { id: "volume", icon: Box, label: "Volume", color: "primary", shortcut: "V" },
   { id: "count", icon: MapPin, label: "Count", color: "primary", shortcut: "C" },
   { id: "note", icon: StickyNote, label: "Note", color: "default", shortcut: "N" },
-  { id: "linear_with_drop", icon: MoveVertical, label: "Linear + Drop", color: "primary", shortcut: null },
-  { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: null },
-  { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: null },
-  { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: null },
+  { id: "linear_with_drop", icon: MoveVertical, label: "Linear + Drop", color: "primary", shortcut: "D" },
+  { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: "P" },
+  { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: "T" },
+  { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: "G" },
 ] as const;
 
 // Common architectural, civil, and structural scales
@@ -1594,6 +1594,22 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           case 'r':
             event.preventDefault();
             setActiveTool("arc");
+            break;
+          case 'd':
+            event.preventDefault();
+            setActiveTool("linear_with_drop");
+            break;
+          case 'p':
+            event.preventDefault();
+            setActiveTool("pitched_linear");
+            break;
+          case 't':
+            event.preventDefault();
+            setActiveTool("pitched_area");
+            break;
+          case 'g':
+            event.preventDefault();
+            setActiveTool("surface_area");
             break;
         }
       }
@@ -3529,6 +3545,22 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 <div className="flex items-center justify-between p-2 rounded hover-elevate">
                   <span className="text-sm">Note Tool</span>
                   <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">N</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Linear + Drop</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">D</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Pitched Linear</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">P</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Pitched Area</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">T</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Surface Area</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">G</kbd>
                 </div>
               </div>
             </div>
