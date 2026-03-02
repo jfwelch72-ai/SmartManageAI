@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Undo2, Redo2 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Undo2, Redo2, Triangle, Scaling, MoveVertical, Grid3x3 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import AssemblyPanel from "@/components/AssemblyPanel";
@@ -35,6 +35,9 @@ import {
   inchesToFeet,
   createArcSegment,
   sampleArcPoints,
+  computePitchedLinearFt,
+  computePitchedAreaFt2,
+  computeLinearWithDropFt,
   type Point,
   type ArcSegment
 } from "@shared/utils/geometry";
@@ -55,9 +58,13 @@ type Tool =
   | "area" 
   | "volume" 
   | "count" 
-  | "note";
+  | "note"
+  | "linear_with_drop"
+  | "pitched_area"
+  | "pitched_linear"
+  | "surface_area";
 
-type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE";
+type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE" | "LINEAR_WITH_DROP" | "PITCHED_AREA" | "PITCHED_LINEAR" | "SURFACE_AREA";
 
 interface TakeoffWorkspaceProps {
   projectId: string;
@@ -75,6 +82,10 @@ const TOOL_CONFIG = [
   { id: "volume", icon: Box, label: "Volume", color: "primary", shortcut: "V" },
   { id: "count", icon: MapPin, label: "Count", color: "primary", shortcut: "C" },
   { id: "note", icon: StickyNote, label: "Note", color: "default", shortcut: "N" },
+  { id: "linear_with_drop", icon: MoveVertical, label: "Linear + Drop", color: "primary", shortcut: null },
+  { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: null },
+  { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: null },
+  { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: null },
 ] as const;
 
 // Common architectural, civil, and structural scales
@@ -146,6 +157,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [notePosition, setNotePosition] = useState<{ x: number; y: number } | null>(null);
   const [noteText, setNoteText] = useState("");
   
+  const [pitchRatio, setPitchRatio] = useState("6:12");
+  const [dropDistance, setDropDistance] = useState("");
+
   // PHASE 2.4: Keyboard shortcuts help dialog
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   
@@ -297,7 +311,6 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     enabled: !!selectedSheet,
   });
 
-  // Mutation for creating measurements
   const createMeasurementMutation = useMutation({
     mutationFn: async (data: {
       sheetId: string;
@@ -306,6 +319,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       label?: string;
       depthFeet?: number;
       categoryId?: string | null;
+      pitchRatio?: string;
+      costCodeId?: string;
+      unitCost?: number;
+      computedSurfaceAreaFt2?: number;
+      computedLengthFt?: number;
     }) => {
       const res = await apiRequest("POST", "/api/takeoff/measurements", data);
       return res.json();
@@ -319,6 +337,19 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to save measurement", variant: "destructive" });
+    },
+  });
+
+  const updateMeasurementMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update measurement", variant: "destructive" });
     },
   });
 
@@ -472,13 +503,16 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
   // PERFORMANCE OPTIMIZATION: Single comprehensive aggregation - O(N) once per measurements change
   const aggregatedMeasurements = useMemo(() => {
-    const byType = { linear: [] as TakeoffMeasurement[], area: [] as TakeoffMeasurement[], volume: [] as TakeoffMeasurement[], count: [] as TakeoffMeasurement[] };
+    const byType = { 
+      linear: [] as TakeoffMeasurement[], area: [] as TakeoffMeasurement[], volume: [] as TakeoffMeasurement[], count: [] as TakeoffMeasurement[],
+      linearWithDrop: [] as TakeoffMeasurement[], pitchedLinear: [] as TakeoffMeasurement[], pitchedArea: [] as TakeoffMeasurement[], surfaceArea: [] as TakeoffMeasurement[],
+    };
     const byCategory: Record<string, TakeoffMeasurement[]> = {};
     const uncategorized: TakeoffMeasurement[] = [];
     let linearTotal = 0, areaTotal = 0, volumeTotal = 0, countTotal = 0;
+    let pitchedLinearTotal = 0, pitchedAreaTotal = 0, surfaceAreaTotal = 0, linearWithDropTotal = 0;
 
     measurements.forEach(m => {
-      // Group by type
       if (m.type === "LINEAR") { 
         byType.linear.push(m);
         const val = Number(m.computedLengthFt);
@@ -494,9 +528,24 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       } else if (m.type === "COUNT") {
         byType.count.push(m);
         countTotal += 1;
+      } else if (m.type === "LINEAR_WITH_DROP") {
+        byType.linearWithDrop.push(m);
+        const val = Number(m.computedLengthFt);
+        linearWithDropTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "PITCHED_LINEAR") {
+        byType.pitchedLinear.push(m);
+        const val = Number(m.computedLengthFt);
+        pitchedLinearTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "PITCHED_AREA") {
+        byType.pitchedArea.push(m);
+        const val = Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2);
+        pitchedAreaTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "SURFACE_AREA") {
+        byType.surfaceArea.push(m);
+        const val = Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2);
+        surfaceAreaTotal += Number.isFinite(val) ? val : 0;
       }
 
-      // Group by category
       if (m.categoryId) {
         if (!byCategory[m.categoryId]) byCategory[m.categoryId] = [];
         byCategory[m.categoryId].push(m);
@@ -509,7 +558,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       byType,
       byCategory,
       uncategorized,
-      grandTotals: { linearTotal, areaTotal, volumeTotal, countTotal }
+      grandTotals: { linearTotal, areaTotal, volumeTotal, countTotal, pitchedLinearTotal, pitchedAreaTotal, surfaceAreaTotal, linearWithDropTotal }
     };
   }, [measurements]);
 
@@ -867,6 +916,48 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           description: `${lengthFt.toFixed(2)} LF` 
         });
       }
+    } else if (activeTool === "linear_with_drop" || activeTool === "pitched_linear") {
+      if (!selectedSheet) {
+        toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
+        return;
+      }
+      if (!currentSheet?.scalePxPerFoot) {
+        toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" });
+        return;
+      }
+      if (!isDrawing) {
+        setIsDrawing(true);
+        setDrawingPoints([point]);
+      } else {
+        const newPoints = [...drawingPoints, point];
+        const baseLengthFt = computeDistanceInFeet(newPoints, currentSheet.scalePxPerFoot);
+        let finalLength = baseLengthFt;
+        let measureType: MeasurementType = activeTool === "linear_with_drop" ? "LINEAR_WITH_DROP" : "PITCHED_LINEAR";
+
+        if (activeTool === "linear_with_drop") {
+          const drop = parseFloat(dropDistance) || 0;
+          finalLength = computeLinearWithDropFt(baseLengthFt, drop);
+        } else {
+          finalLength = computePitchedLinearFt(baseLengthFt, pitchRatio);
+        }
+
+        createMeasurementMutation.mutate({
+          sheetId: selectedSheet,
+          type: measureType,
+          points: newPoints,
+          label: `${activeTool === "linear_with_drop" ? "Drop" : "Pitched"} Line ${measurements.length + 1}`,
+          categoryId: selectedCategoryId,
+          pitchRatio: activeTool === "pitched_linear" ? pitchRatio : undefined,
+          computedLengthFt: finalLength,
+        });
+
+        setIsDrawing(false);
+        setDrawingPoints([]);
+        toast({
+          title: "Measurement Created",
+          description: `${finalLength.toFixed(2)} LF (${activeTool === "linear_with_drop" ? `drop: ${dropDistance || 0} ft` : `pitch: ${pitchRatio}`})`,
+        });
+      }
     } else if (activeTool === "arc") {
       // PHASE 2.3a: Arc tool - 3-point arc (start, middle, end)
       console.log(`[Arc Tool] Click detected. isDrawing=${isDrawing}, drawingPoints.length=${drawingPoints.length}`);
@@ -952,7 +1043,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           description: `${arcSegment.arcLength.toFixed(2)} LF` 
         });
       }
-    } else if (activeTool === "area" || activeTool === "volume") {
+    } else if (activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") {
       if (!selectedSheet) {
         toast({ title: "Error", description: "Select a sheet first", variant: "destructive" });
         return;
@@ -1216,8 +1307,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         description: `${areaFt2.toFixed(2)} SF` 
       });
     } else if (activeTool === "volume") {
-      // For volume, calculate both area and volume with default depth
-      const defaultDepthInches = 12; // 12" default
+      const defaultDepthInches = 12;
       const depthFt = inchesToFeet(defaultDepthInches);
       const volumeCy = computeVolumeInCY(areaFt2, depthFt);
       
@@ -1233,6 +1323,36 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       toast({ 
         title: "Volume Measurement Created", 
         description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` 
+      });
+    } else if (activeTool === "pitched_area") {
+      const pitchedArea = computePitchedAreaFt2(areaFt2, pitchRatio);
+      createMeasurementMutation.mutate({
+        sheetId: selectedSheet,
+        type: "PITCHED_AREA",
+        points: drawingPoints,
+        label: `Pitched Area ${measurements.length + 1}`,
+        categoryId: selectedCategoryId,
+        pitchRatio,
+        computedSurfaceAreaFt2: pitchedArea,
+      });
+      toast({
+        title: "Pitched Area Created",
+        description: `Flat: ${areaFt2.toFixed(2)} SF → Pitched (${pitchRatio}): ${pitchedArea.toFixed(2)} SF`,
+      });
+    } else if (activeTool === "surface_area") {
+      const surfaceArea = computePitchedAreaFt2(areaFt2, pitchRatio);
+      createMeasurementMutation.mutate({
+        sheetId: selectedSheet,
+        type: "SURFACE_AREA",
+        points: drawingPoints,
+        label: `Surface ${measurements.length + 1}`,
+        categoryId: selectedCategoryId,
+        pitchRatio,
+        computedSurfaceAreaFt2: surfaceArea,
+      });
+      toast({
+        title: "Surface Area Created",
+        description: `Flat: ${areaFt2.toFixed(2)} SF → Surface (${pitchRatio}): ${surfaceArea.toFixed(2)} SF`,
       });
     }
     
@@ -1558,32 +1678,36 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     <div ref={workspaceRef} className="flex h-screen">
       {/* Left Toolbar */}
       <div className="w-20 bg-card border-r flex flex-col items-center py-4 gap-2">
-        {TOOL_CONFIG.map((tool) => {
+        {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
+          const showSeparator = tool.id === "linear_with_drop";
           return (
-            <Tooltip key={tool.id}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={activeTool === tool.id ? tool.color as any : "ghost"}
-                  size="icon"
-                  onClick={() => handleToolSelect(tool.id as Tool)}
-                  data-testid={`button-tool-${tool.id}`}
-                  className="toggle-elevate"
-                >
-                  <Icon className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <div className="flex items-center gap-2">
-                  <span>{tool.label}</span>
-                  {tool.shortcut && (
-                    <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">
-                      {tool.shortcut}
-                    </kbd>
-                  )}
-                </div>
-              </TooltipContent>
-            </Tooltip>
+            <div key={tool.id} className="flex flex-col items-center">
+              {showSeparator && <Separator className="my-1 w-12" />}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activeTool === tool.id ? tool.color as any : "ghost"}
+                    size="icon"
+                    onClick={() => handleToolSelect(tool.id as Tool)}
+                    data-testid={`button-tool-${tool.id}`}
+                    className="toggle-elevate"
+                  >
+                    <Icon className="w-5 h-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <div className="flex items-center gap-2">
+                    <span>{tool.label}</span>
+                    {tool.shortcut && (
+                      <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">
+                        {tool.shortcut}
+                      </kbd>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           );
         })}
         <Separator className="my-2 w-12" />
@@ -1822,7 +1946,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               onMouseUp={handleStageMouseUp}
               onMouseMove={handleStageMouseMove}
               onDblClick={(e) => {
-                if ((activeTool === "area" || activeTool === "volume") && isDrawing && drawingPoints.length >= 3) {
+                if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
                   completePolygon();
                 }
@@ -1865,8 +1989,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
                   const categoryColor = validateHexColor(category?.color);
                   const baseColor = categoryColor || (
-                    m.type === "LINEAR" ? "#2563eb" : 
-                    m.type === "AREA" ? "#16a34a" : 
+                    m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" ? "#2563eb" : 
+                    m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA" ? "#16a34a" : 
                     m.type === "VOLUME" ? "#ea580c" : 
                     m.type === "COUNT" ? "#dc2626" : "#f59e0b"
                   );
@@ -1879,7 +2003,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                     }
                   };
                   
-                  if (m.type === "LINEAR" && points.length >= 2) {
+                  if ((m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && points.length >= 2) {
                     // PHASE 2.3a: Check if this is an arc (3 points) or straight line (2 points)
                     if (points.length === 3 && currentSheet?.scalePxPerFoot) {
                       // Render as arc
@@ -1921,7 +2045,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         onTap={handleMeasurementClick}
                       />
                     );
-                  } else if (m.type === "AREA" && points.length >= 3) {
+                  } else if ((m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && points.length >= 3) {
                     const flatPoints = points.flatMap((p: any) => [p.x, p.y]);
                     return (
                       <Line
@@ -2005,20 +2129,20 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 {isDrawing && drawingPoints.length > 0 && (
                   <>
                     {/* LAYER 1: Fill for polygon preview (when 3+ points) - drawn first as background */}
-                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 3 && (
+                    {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && drawingPoints.length >= 3 && (
                       <Line
                         points={drawingPoints.flatMap(p => [p.x, p.y])}
-                        fill={hexToRgba(activeTool === "area" ? "#16a34a" : "#ea580c", 0.15)}
+                        fill={hexToRgba(activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : "#ea580c", 0.15)}
                         closed={true}
                         strokeWidth={0}
                       />
                     )}
                     
                     {/* LAYER 2: Dashed outline - drawn on top of fill */}
-                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 2 && (
+                    {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && drawingPoints.length >= 2 && (
                       <Line
                         points={drawingPoints.flatMap(p => [p.x, p.y])}
-                        stroke={activeTool === "area" ? "#16a34a" : "#ea580c"}
+                        stroke={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : "#ea580c"}
                         strokeWidth={2}
                         dash={[5, 5]}
                       />
@@ -2045,19 +2169,19 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         x={point.x}
                         y={point.y}
                         radius={6}
-                        fill={activeTool === "area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
+                        fill={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
                         stroke="white"
                         strokeWidth={2}
                       />
                     ))}
                     
                     {/* LAYER 4: Highlight first point when drawing polygon with 3+ points - top layer */}
-                    {(activeTool === "area" || activeTool === "volume") && drawingPoints.length >= 3 && (
+                    {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && drawingPoints.length >= 3 && (
                       <Circle
                         x={drawingPoints[0].x}
                         y={drawingPoints[0].y}
                         radius={10}
-                        stroke={activeTool === "area" ? "#16a34a" : "#ea580c"}
+                        stroke={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : "#ea580c"}
                         strokeWidth={3}
                         fill="transparent"
                         dash={[3, 3]}
@@ -2384,7 +2508,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             )}
 
             {/* Active Drawing Tool Settings */}
-            {(activeTool === "linear" || activeTool === "area" || activeTool === "volume" || activeTool === "count") && (
+            {(activeTool === "linear" || activeTool === "area" || activeTool === "volume" || activeTool === "count" || activeTool === "linear_with_drop" || activeTool === "pitched_linear" || activeTool === "pitched_area" || activeTool === "surface_area") && (
               <Card>
                 <CardContent className="pt-6 space-y-4">
                   <h3 className="font-semibold text-sm">Drawing Settings</h3>
@@ -2416,6 +2540,55 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                       Measurements will be color-coded and grouped by category
                     </p>
                   </div>
+
+                  {(activeTool === "pitched_linear" || activeTool === "pitched_area" || activeTool === "surface_area") && (
+                    <div className="space-y-2">
+                      <Label htmlFor="pitch-ratio">Pitch Ratio</Label>
+                      <Select
+                        value={pitchRatio}
+                        onValueChange={setPitchRatio}
+                      >
+                        <SelectTrigger id="pitch-ratio" data-testid="select-pitch-ratio">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent container={workspaceRef.current}>
+                          <SelectItem value="1:12">1:12 (low slope)</SelectItem>
+                          <SelectItem value="2:12">2:12</SelectItem>
+                          <SelectItem value="3:12">3:12</SelectItem>
+                          <SelectItem value="4:12">4:12</SelectItem>
+                          <SelectItem value="5:12">5:12</SelectItem>
+                          <SelectItem value="6:12">6:12 (standard)</SelectItem>
+                          <SelectItem value="7:12">7:12</SelectItem>
+                          <SelectItem value="8:12">8:12</SelectItem>
+                          <SelectItem value="9:12">9:12</SelectItem>
+                          <SelectItem value="10:12">10:12</SelectItem>
+                          <SelectItem value="12:12">12:12 (45°)</SelectItem>
+                          <SelectItem value="14:12">14:12 (steep)</SelectItem>
+                          <SelectItem value="16:12">16:12</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Rise:Run ratio — adjusts measured lengths and areas for slope
+                      </p>
+                    </div>
+                  )}
+
+                  {activeTool === "linear_with_drop" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="drop-distance">Drop Distance (ft)</Label>
+                      <Input
+                        id="drop-distance"
+                        type="number"
+                        value={dropDistance}
+                        onChange={(e) => setDropDistance(e.target.value)}
+                        placeholder="Vertical drop in feet"
+                        data-testid="input-drop-distance"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Vertical distance added to horizontal measurement (√(h² + v²))
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -2462,20 +2635,24 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
-                        {(m.computedLengthFt || m.computedAreaFt2 || m.computedVolumeCy || m.type === "COUNT" || m.type === "NOTE") && (
-                          <p className="text-sm text-muted-foreground">
-                            {m.type === "LINEAR" && m.computedLengthFt 
-                              ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF`
-                              : m.type === "AREA" && m.computedAreaFt2
-                              ? `${(Number.isFinite(m.computedAreaFt2) ? m.computedAreaFt2 : 0).toFixed(2)} SF`
-                              : m.type === "VOLUME" && m.computedVolumeCy
-                              ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
-                              : m.type === "COUNT"
-                              ? "Count marker"
-                              : m.type === "NOTE"
-                              ? "Note"
-                              : ""}
-                          </p>
+                        <p className="text-sm text-muted-foreground">
+                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt 
+                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : m.type === "VOLUME" && m.computedVolumeCy
+                            ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                            : m.type === "COUNT"
+                            ? "Count marker"
+                            : m.type === "NOTE"
+                            ? "Note"
+                            : ""}
+                        </p>
+                        {(m as any).costCodeId && (
+                          <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>
+                        )}
+                        {(m as any).unitCost && (
+                          <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>
                         )}
                       </div>
                     ))}
@@ -2483,6 +2660,98 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                 )}
               </CardContent>
             </Card>
+
+            {selectedMeasurementId && (() => {
+              const selM = measurements.find(m => m.id === selectedMeasurementId);
+              if (!selM) return null;
+              return (
+                <Card>
+                  <CardContent className="pt-6 space-y-3">
+                    <h3 className="font-semibold text-sm">Measurement Properties</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type:</span>
+                        <Badge variant="outline">{selM.type}</Badge>
+                      </div>
+                      {selM.computedLengthFt && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Length:</span>
+                          <span>{Number(selM.computedLengthFt).toFixed(2)} LF</span>
+                        </div>
+                      )}
+                      {selM.computedAreaFt2 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Area:</span>
+                          <span>{Number(selM.computedAreaFt2).toFixed(2)} SF</span>
+                        </div>
+                      )}
+                      {(selM as any).computedSurfaceAreaFt2 && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Surface Area:</span>
+                          <span>{Number((selM as any).computedSurfaceAreaFt2).toFixed(2)} SF</span>
+                        </div>
+                      )}
+                      {selM.computedVolumeCy && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Volume:</span>
+                          <span>{Number(selM.computedVolumeCy).toFixed(2)} CY</span>
+                        </div>
+                      )}
+                      {(selM as any).pitchRatio && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Pitch:</span>
+                          <span>{(selM as any).pitchRatio}</span>
+                        </div>
+                      )}
+                    </div>
+                    <Separator />
+                    <div className="space-y-2">
+                      <Label className="text-xs">Cost Code</Label>
+                      <Input
+                        placeholder="Enter cost code..."
+                        defaultValue={(selM as any).costCodeId || ""}
+                        onBlur={(e) => {
+                          const val = e.target.value.trim();
+                          if (val !== ((selM as any).costCodeId || "")) {
+                            updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined });
+                          }
+                        }}
+                        className="h-8 text-sm"
+                        data-testid="input-cost-code"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Unit Cost ($)</Label>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        defaultValue={(selM as any).unitCost || ""}
+                        onBlur={(e) => {
+                          const val = parseFloat(e.target.value) || undefined;
+                          if (val !== (selM as any).unitCost) {
+                            updateMeasurementMutation.mutate({ id: selM.id, unitCost: val });
+                          }
+                        }}
+                        className="h-8 text-sm"
+                        data-testid="input-unit-cost"
+                      />
+                    </div>
+                    {(selM as any).unitCost && (selM.computedLengthFt || selM.computedAreaFt2 || (selM as any).computedSurfaceAreaFt2) && (
+                      <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded text-sm">
+                        <div className="flex justify-between font-medium">
+                          <span>Estimated Total:</span>
+                          <span className="text-green-600 dark:text-green-400">
+                            ${(Number((selM as any).unitCost) * Number(
+                              (selM as any).computedSurfaceAreaFt2 || selM.computedLengthFt || selM.computedAreaFt2 || 0
+                            )).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* Quantity Summary by Category */}
             <Card>
@@ -2615,6 +2884,12 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             <span>{aggregatedMeasurements.uncategorized.filter(m => m.type === "COUNT").length}</span>
                           </div>
                         )}
+                        {aggregatedMeasurements.uncategorized.filter(m => m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA").length > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Pitched/Surface:</span>
+                            <span>{aggregatedMeasurements.uncategorized.filter(m => m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA").length} items</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2648,6 +2923,38 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             {aggregatedMeasurements.grandTotals.countTotal}
                           </span>
                         </div>
+                        {aggregatedMeasurements.grandTotals.linearWithDropTotal > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Linear+Drop:</span>
+                            <span className="font-medium">
+                              {aggregatedMeasurements.grandTotals.linearWithDropTotal.toFixed(2)} LF
+                            </span>
+                          </div>
+                        )}
+                        {aggregatedMeasurements.grandTotals.pitchedLinearTotal > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Pitched Linear:</span>
+                            <span className="font-medium">
+                              {aggregatedMeasurements.grandTotals.pitchedLinearTotal.toFixed(2)} LF
+                            </span>
+                          </div>
+                        )}
+                        {aggregatedMeasurements.grandTotals.pitchedAreaTotal > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Pitched Area:</span>
+                            <span className="font-medium">
+                              {aggregatedMeasurements.grandTotals.pitchedAreaTotal.toFixed(2)} SF
+                            </span>
+                          </div>
+                        )}
+                        {aggregatedMeasurements.grandTotals.surfaceAreaTotal > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Surface Area:</span>
+                            <span className="font-medium">
+                              {aggregatedMeasurements.grandTotals.surfaceAreaTotal.toFixed(2)} SF
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

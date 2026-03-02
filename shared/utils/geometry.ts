@@ -332,6 +332,42 @@ export function computeAreaWithArcs(
 }
 
 /**
+ * Parse a pitch ratio string (e.g., "6:12") and return the pitch multiplier
+ * Pitch multiplier = sqrt(1 + (rise/run)^2) for converting horizontal to slope distance
+ */
+export function parsePitchRatio(pitchRatio: string): { rise: number; run: number; multiplier: number } {
+  const parts = pitchRatio.split(":");
+  const rise = parseFloat(parts[0]) || 0;
+  const run = parseFloat(parts[1]) || 12;
+  const multiplier = Math.sqrt(1 + (rise / run) * (rise / run));
+  return { rise, run, multiplier };
+}
+
+/**
+ * Compute pitched linear distance (slope distance from horizontal measurement)
+ */
+export function computePitchedLinearFt(horizontalFt: number, pitchRatio: string): number {
+  const { multiplier } = parsePitchRatio(pitchRatio);
+  return horizontalFt * multiplier;
+}
+
+/**
+ * Compute pitched area (actual surface area from flat/plan area)
+ */
+export function computePitchedAreaFt2(flatAreaFt2: number, pitchRatio: string): number {
+  const { multiplier } = parsePitchRatio(pitchRatio);
+  return flatAreaFt2 * multiplier;
+}
+
+/**
+ * Compute linear-with-drop total distance
+ * Combines horizontal run with vertical drop
+ */
+export function computeLinearWithDropFt(horizontalFt: number, dropFt: number): number {
+  return Math.sqrt(horizontalFt * horizontalFt + dropFt * dropFt);
+}
+
+/**
  * Format a measurement value for display
  * 
  * @param value - Numeric value

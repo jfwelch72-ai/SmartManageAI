@@ -1193,6 +1193,42 @@ router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequ
   }
 });
 
+router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { folderGroup } = req.body;
+    const { takeoffSheets, projects } = await import("@shared/schema");
+
+    if (!folderGroup || typeof folderGroup !== "string" || folderGroup.trim().length === 0) {
+      res.status(400).json({ error: "folderGroup is required" });
+      return;
+    }
+
+    const [sheet] = await db
+      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
+      .from(takeoffSheets)
+      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
+      .where(and(eq(takeoffSheets.id, id), eq(projects.orgId, req.user!.orgId)))
+      .limit(1);
+
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(takeoffSheets)
+      .set({ folderGroup: folderGroup.trim(), updatedAt: new Date() })
+      .where(eq(takeoffSheets.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Error updating sheet folder group:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Reorder sheets (batch update sheetIndex)
 router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res) => {
   try {
