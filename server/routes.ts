@@ -437,6 +437,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);
 
+  // Marketing Document PDF
+  const marketingPdfRoute = (await import("./marketingPdfRoute")).default;
+  app.use("/api", marketingPdfRoute);
+
   const { registerPerformanceRoutes } = await import("./performanceRoutes");
   registerPerformanceRoutes(app);
 
