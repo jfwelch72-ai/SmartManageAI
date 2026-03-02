@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Undo2, Redo2 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import AssemblyPanel from "@/components/AssemblyPanel";
@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
@@ -115,6 +116,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null); // PHASE 2.3a: Track tool that initiated drawing
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const takeoffHistory = useTakeoffHistory(selectedSheet);
+  const prevSheetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevSheetRef.current !== null && prevSheetRef.current !== selectedSheet) {
+      takeoffHistory.clear();
+    }
+    prevSheetRef.current = selectedSheet;
+  }, [selectedSheet, takeoffHistory]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [calibrationMode, setCalibrationMode] = useState<"idle" | "first-point" | "second-point">("idle");
   const [calibrationPoints, setCalibrationPoints] = useState<{ x: number; y: number }[]>([]);
@@ -298,10 +307,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       depthFeet?: number;
       categoryId?: string | null;
     }) => {
-      return await apiRequest("POST", "/api/takeoff/measurements", data);
+      const res = await apiRequest("POST", "/api/takeoff/measurements", data);
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: TakeoffMeasurement) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      if (selectedSheet) {
+        takeoffHistory.pushAction("CREATE", data, selectedSheet);
+      }
       toast({ title: "Success", description: "Measurement saved" });
     },
     onError: () => {
@@ -311,12 +324,16 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
   // Mutation for deleting measurements
   const deleteMeasurementMutation = useMutation({
-    mutationFn: async (measurementId: string) => {
-      return await apiRequest("DELETE", `/api/takeoff/measurements/${measurementId}`);
+    mutationFn: async (measurement: TakeoffMeasurement) => {
+      await apiRequest("DELETE", `/api/takeoff/measurements/${measurement.id}`);
+      return measurement;
     },
-    onSuccess: () => {
+    onSuccess: (deleted: TakeoffMeasurement) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       setSelectedMeasurementId(null);
+      if (selectedSheet) {
+        takeoffHistory.pushAction("DELETE", deleted, selectedSheet);
+      }
       toast({ title: "Success", description: "Measurement deleted" });
     },
     onError: () => {
@@ -1483,6 +1500,18 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         setShortcutsDialogOpen(true);
       }
       
+      // Ctrl+Z - Undo, Ctrl+Y or Ctrl+Shift+Z - Redo
+      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        takeoffHistory.undo();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        takeoffHistory.redo();
+        return;
+      }
+
       // + or = - Zoom in (navigation shortcut, works during calibration, excludes browser zoom)
       if ((key === '+' || key === '=') && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) {
         event.preventDefault();
@@ -1498,7 +1527,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode]);
+  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory]);
 
   // Update Stage dimensions when container size changes
   useLayoutEffect(() => {
@@ -1557,6 +1586,47 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             </Tooltip>
           );
         })}
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => takeoffHistory.undo()}
+              disabled={!takeoffHistory.canUndo || takeoffHistory.isPending}
+              data-testid="button-undo"
+              className="toggle-elevate"
+            >
+              <Undo2 className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Undo</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Z</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => takeoffHistory.redo()}
+              disabled={!takeoffHistory.canRedo || takeoffHistory.isPending}
+              data-testid="button-redo"
+              className="toggle-elevate"
+            >
+              <Redo2 className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Redo</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Y</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
         <Separator className="my-2 w-12" />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2385,7 +2455,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                             className="h-7 w-7"
                             onClick={(e) => {
                               e.stopPropagation();
-                              deleteMeasurementMutation.mutate(m.id);
+                              deleteMeasurementMutation.mutate(m);
                             }}
                             data-testid={`button-delete-measurement-${m.id}`}
                           >
@@ -3185,6 +3255,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             <div>
               <h3 className="font-semibold mb-3">Actions</h3>
               <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Undo</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">Ctrl+Z</kbd>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded hover-elevate">
+                  <span className="text-sm">Redo</span>
+                  <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">Ctrl+Y</kbd>
+                </div>
                 <div className="flex items-center justify-between p-2 rounded hover-elevate">
                   <span className="text-sm">Cancel Drawing</span>
                   <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">ESC</kbd>
