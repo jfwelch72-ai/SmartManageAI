@@ -383,8 +383,8 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
       {/* Filter and Actions Bar - Always visible */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[200px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap gap-4 lg:items-end">
+            <div className="sm:col-span-2 lg:flex-1 lg:min-w-[200px]">
               <Label htmlFor="search">Search SOW (Scope of Work)</Label>
               <Input
                 id="search"
@@ -394,7 +394,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
                 data-testid="input-search-scope"
               />
             </div>
-            <div className="w-[180px]">
+            <div className="lg:w-[180px]">
               <Label htmlFor="unit-filter">Filter by Unit</Label>
               <Select value={unitFilter} onValueChange={setUnitFilter}>
                 <SelectTrigger id="unit-filter" data-testid="select-unit-filter">
@@ -408,7 +408,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-[180px]">
+            <div className="lg:w-[180px]">
               <Label htmlFor="status-filter">Filter by Status</Label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger id="status-filter" data-testid="select-status-filter">
@@ -425,6 +425,7 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
             <Button
               onClick={() => setShowNewScopeDialog(true)}
               data-testid="button-new-scope-item"
+              className="sm:col-span-2 lg:col-span-1 w-full lg:w-auto"
             >
               <Plus className="h-4 w-4 mr-2" />
               New Scope Item
@@ -444,23 +445,94 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10"></TableHead>
-                <TableHead>SOW (Scope of Work)</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead className="text-right">Total Qty</TableHead>
-                <TableHead className="text-right">Completed</TableHead>
-                <TableHead className="text-right">Billed</TableHead>
-                <TableHead className="text-right">Remaining</TableHead>
-                <TableHead>Billing Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredScopeItems.map((item) => {
+        <>
+          {/* Desktop Table - hidden on mobile */}
+          <div className="rounded-md border hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10"></TableHead>
+                  <TableHead>SOW (Scope of Work)</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Total Qty</TableHead>
+                  <TableHead className="text-right">Completed</TableHead>
+                  <TableHead className="text-right">Billed</TableHead>
+                  <TableHead className="text-right">Remaining</TableHead>
+                  <TableHead>Billing Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredScopeItems.map((item) => {
+                const total = parseFloat(item.totalQuantity);
+                const completed = parseFloat(item.completedQuantity || "0");
+                const billed = parseFloat(item.billedQuantity || "0");
+                const remaining = total - completed;
+                const isExpanded = expandedItems.has(item.id);
+
+                return (
+                  <Fragment key={item.id}>
+                    <TableRow data-testid={`row-scope-${item.id}`}>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleExpand(item.id)}
+                          data-testid={`button-expand-${item.id}`}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="font-medium">{item.description}</TableCell>
+                      <TableCell>{item.unit}</TableCell>
+                      <TableCell className="text-right font-mono">{total.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">{completed.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">{billed.toLocaleString()}</TableCell>
+                      <TableCell className="text-right font-mono">{remaining.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            item.billingStatus === "BILLED" ? "default" :
+                            item.billingStatus === "READY_TO_BILL" ? "destructive" :
+                            "secondary"
+                          }
+                          data-testid={`badge-billing-${item.id}`}
+                        >
+                          {item.billingStatus?.replace("_", " ") || "NOT READY"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openProgressDialog(item)}
+                          data-testid={`button-add-progress-${item.id}`}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add Progress
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <ScopeItemProgressRow 
+                        scopeItemId={item.id}
+                        onDelete={(progressId) => handleDeleteProgress(item.id, progressId)}
+                      />
+                    )}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+
+          {/* Mobile Card Layout - shown only on mobile */}
+          <div className="md:hidden space-y-3">
+            {filteredScopeItems.map((item) => {
               const total = parseFloat(item.totalQuantity);
               const completed = parseFloat(item.completedQuantity || "0");
               const billed = parseFloat(item.billedQuantity || "0");
@@ -468,64 +540,86 @@ export default function ScopeProgressTracker({ scopeItems, isLoading, projectCod
               const isExpanded = expandedItems.has(item.id);
 
               return (
-                <Fragment key={item.id}>
-                  <TableRow data-testid={`row-scope-${item.id}`}>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleExpand(item.id)}
-                        data-testid={`button-expand-${item.id}`}
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="font-medium">{item.description}</TableCell>
-                    <TableCell>{item.unit}</TableCell>
-                    <TableCell className="text-right font-mono">{total.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-mono">{completed.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-mono">{billed.toLocaleString()}</TableCell>
-                    <TableCell className="text-right font-mono">{remaining.toLocaleString()}</TableCell>
-                    <TableCell>
+                <Card key={item.id} data-testid={`card-scope-mobile-${item.id}`}>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 mt-0.5"
+                          onClick={() => toggleExpand(item.id)}
+                          data-testid={`button-expand-mobile-${item.id}`}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm leading-tight">{item.description}</p>
+                          <Badge variant="outline" className="mt-1 text-xs">{item.unit}</Badge>
+                        </div>
+                      </div>
                       <Badge
                         variant={
                           item.billingStatus === "BILLED" ? "default" :
                           item.billingStatus === "READY_TO_BILL" ? "destructive" :
                           "secondary"
                         }
-                        data-testid={`badge-billing-${item.id}`}
+                        className="shrink-0 text-xs"
+                        data-testid={`badge-billing-mobile-${item.id}`}
                       >
                         {item.billingStatus?.replace("_", " ") || "NOT READY"}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openProgressDialog(item)}
-                        data-testid={`button-add-progress-${item.id}`}
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Add Progress
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  {isExpanded && (
-                    <ScopeItemProgressRow 
-                      scopeItemId={item.id}
-                      onDelete={(progressId) => handleDeleteProgress(item.id, progressId)}
-                    />
-                  )}
-                </Fragment>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-muted/50 rounded-md p-2">
+                        <span className="text-muted-foreground">Total Qty</span>
+                        <p className="font-mono font-medium">{total.toLocaleString()}</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-md p-2">
+                        <span className="text-muted-foreground">Completed</span>
+                        <p className="font-mono font-medium text-green-600 dark:text-green-400">{completed.toLocaleString()}</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-md p-2">
+                        <span className="text-muted-foreground">Billed</span>
+                        <p className="font-mono font-medium text-blue-600 dark:text-blue-400">{billed.toLocaleString()}</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-md p-2">
+                        <span className="text-muted-foreground">Remaining</span>
+                        <p className="font-mono font-medium text-orange-600 dark:text-orange-400">{remaining.toLocaleString()}</p>
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => openProgressDialog(item)}
+                      data-testid={`button-add-progress-mobile-${item.id}`}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Progress
+                    </Button>
+
+                    {isExpanded && (
+                      <div className="pt-2 border-t">
+                        <ScopeItemProgressRow
+                          scopeItemId={item.id}
+                          onDelete={(progressId) => handleDeleteProgress(item.id, progressId)}
+                          isMobile
+                        />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               );
             })}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
       )}
 
       {/* Add Progress Dialog */}
