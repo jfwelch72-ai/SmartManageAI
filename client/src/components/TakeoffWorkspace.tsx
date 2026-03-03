@@ -51,7 +51,6 @@ import {
 type Tool = 
   | "select" 
   | "pan" 
-  | "zoom" 
   | "calibrate" 
   | "linear" 
   | "arc"
@@ -74,7 +73,6 @@ interface TakeoffWorkspaceProps {
 const TOOL_CONFIG = [
   { id: "select", icon: MousePointer2, label: "Select", color: "default", shortcut: "S" },
   { id: "pan", icon: Hand, label: "Pan", color: "default", shortcut: "H" },
-  { id: "zoom", icon: ZoomIn, label: "Zoom", color: "default", shortcut: null },
   { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary", shortcut: null },
   { id: "linear", icon: Ruler, label: "Linear", color: "primary", shortcut: "L" },
   { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary", shortcut: "R" },
@@ -1757,6 +1755,25 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
+              data-testid="button-zoom-in"
+              className="toggle-elevate"
+            >
+              <ZoomIn className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Zoom In</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">+</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
               data-testid="button-zoom-out"
               className="toggle-elevate"
@@ -1771,6 +1788,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             </div>
           </TooltipContent>
         </Tooltip>
+        <Separator className="my-2 w-12" />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -2418,12 +2436,22 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           <Button
             variant="ghost"
             size="icon"
+            onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
+            data-testid="button-zoom-in-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
             data-testid="button-zoom-out-mobile"
             className="h-8 w-8 shrink-0"
           >
             <ZoomOut className="w-4 h-4" />
           </Button>
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
           <Button
             variant={selectedMeasurementId ? "destructive" : "ghost"}
             size="icon"
