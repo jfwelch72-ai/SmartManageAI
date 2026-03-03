@@ -5529,3 +5529,137 @@ export const insertSocialPostAnalyticsSchema = createInsertSchema(socialPostAnal
 export type InsertSocialPostAnalytics = z.infer<typeof insertSocialPostAnalyticsSchema>;
 export type SocialPostAnalytics = typeof socialPostAnalytics.$inferSelect;
 
+// ==========================================
+// Libraries System - Items, Assemblies, Custom Libraries
+// ==========================================
+
+export const customLibraries = pgTable("custom_libraries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("custom_libraries_org_idx").on(table.organizationId),
+}));
+
+export const insertCustomLibrarySchema = createInsertSchema(customLibraries).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCustomLibrary = z.infer<typeof insertCustomLibrarySchema>;
+export type CustomLibrary = typeof customLibraries.$inferSelect;
+
+export const libraryItems = pgTable("library_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  itemNumber: varchar("item_number", { length: 50 }),
+  measuredCoverage: doublePrecision("measured_coverage").notNull().default(1),
+  unitOfMeasure: varchar("unit_of_measure", { length: 20 }).notNull(),
+  purchaseCoverage: doublePrecision("purchase_coverage").notNull().default(1),
+  purchaseUnit: varchar("purchase_unit", { length: 50 }).notNull(),
+  description: varchar("description", { length: 255 }),
+  costTypes: text("cost_types").array().notNull().default(sql`ARRAY['material']::text[]`),
+  accountingCodes: json("accounting_codes"),
+  unitCosts: json("unit_costs"),
+  notes: text("notes"),
+  libraryId: varchar("library_id").references(() => customLibraries.id, { onDelete: "set null" }),
+  sourceId: varchar("source_id"),
+  isPrebuilt: boolean("is_prebuilt").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("library_items_org_idx").on(table.organizationId),
+  libraryIdx: index("library_items_library_idx").on(table.libraryId),
+}));
+
+export const insertLibraryItemSchema = createInsertSchema(libraryItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLibraryItem = z.infer<typeof insertLibraryItemSchema>;
+export type LibraryItem = typeof libraryItems.$inferSelect;
+
+export const libraryAssemblies = pgTable("library_assemblies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  assemblyNumber: varchar("assembly_number", { length: 50 }),
+  unitOfMeasure: varchar("unit_of_measure", { length: 20 }).notNull(),
+  description: varchar("description", { length: 255 }),
+  libraryId: varchar("library_id").references(() => customLibraries.id, { onDelete: "set null" }),
+  sourceId: varchar("source_id"),
+  isPrebuilt: boolean("is_prebuilt").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("library_assemblies_org_idx").on(table.organizationId),
+  libraryIdx: index("library_assemblies_library_idx").on(table.libraryId),
+}));
+
+export const insertLibraryAssemblySchema = createInsertSchema(libraryAssemblies).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLibraryAssembly = z.infer<typeof insertLibraryAssemblySchema>;
+export type LibraryAssembly = typeof libraryAssemblies.$inferSelect;
+
+export const libraryAssemblyItems = pgTable("library_assembly_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assemblyId: varchar("assembly_id").notNull().references(() => libraryAssemblies.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").references(() => libraryItems.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  formula: text("formula").notNull().default("1"),
+  wasteFactor: doublePrecision("waste_factor").notNull().default(0),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  unit: varchar("unit", { length: 20 }),
+  displayOrder: integer("display_order").notNull().default(0),
+}, (table) => ({
+  assemblyIdx: index("library_assembly_items_assembly_idx").on(table.assemblyId),
+}));
+
+export const insertLibraryAssemblyItemSchema = createInsertSchema(libraryAssemblyItems).omit({ id: true });
+export type InsertLibraryAssemblyItem = z.infer<typeof insertLibraryAssemblyItemSchema>;
+export type LibraryAssemblyItem = typeof libraryAssemblyItems.$inferSelect;
+
+export const libraryAssemblyItemGroups = pgTable("library_assembly_item_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assemblyId: varchar("assembly_id").notNull().references(() => libraryAssemblies.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+}, (table) => ({
+  assemblyIdx: index("library_assembly_item_groups_assembly_idx").on(table.assemblyId),
+}));
+
+export const insertLibraryAssemblyItemGroupSchema = createInsertSchema(libraryAssemblyItemGroups).omit({ id: true });
+export type InsertLibraryAssemblyItemGroup = z.infer<typeof insertLibraryAssemblyItemGroupSchema>;
+export type LibraryAssemblyItemGroup = typeof libraryAssemblyItemGroups.$inferSelect;
+
+export const libraryAssemblyItemGroupMembers = pgTable("library_assembly_item_group_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().references(() => libraryAssemblyItemGroups.id, { onDelete: "cascade" }),
+  itemId: varchar("item_id").references(() => libraryItems.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  formula: text("formula").notNull().default("1"),
+  displayOrder: integer("display_order").notNull().default(0),
+}, (table) => ({
+  groupIdx: index("library_assembly_group_members_group_idx").on(table.groupId),
+}));
+
+export const insertLibraryAssemblyItemGroupMemberSchema = createInsertSchema(libraryAssemblyItemGroupMembers).omit({ id: true });
+export type InsertLibraryAssemblyItemGroupMember = z.infer<typeof insertLibraryAssemblyItemGroupMemberSchema>;
+export type LibraryAssemblyItemGroupMember = typeof libraryAssemblyItemGroupMembers.$inferSelect;
+
+export const savedTakeoffs = pgTable("saved_takeoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  projectId: integer("project_id"),
+  sheetId: varchar("sheet_id"),
+  measurementData: json("measurement_data"),
+  libraryId: varchar("library_id").references(() => customLibraries.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("saved_takeoffs_org_idx").on(table.organizationId),
+}));
+
+export const insertSavedTakeoffSchema = createInsertSchema(savedTakeoffs).omit({ id: true, createdAt: true });
+export type InsertSavedTakeoff = z.infer<typeof insertSavedTakeoffSchema>;
+export type SavedTakeoff = typeof savedTakeoffs.$inferSelect;
+

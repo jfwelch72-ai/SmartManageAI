@@ -26,13 +26,14 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import LibraryPanel from "@/components/LibraryPanel";
 
 interface PlansTabProps {
   projectCode: string;
   project: any;
 }
 
-type SubTab = "plans" | "addenda";
+type SubTab = "plans" | "addenda" | "libraries";
 
 interface DocGroup {
   name: string;
@@ -267,6 +268,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
         >
           Addenda
         </Button>
+        <Button
+          variant={subTab === "libraries" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setSubTab("libraries")}
+          data-testid="tab-libraries"
+        >
+          Libraries
+        </Button>
       </div>
 
       {subTab === "addenda" && project && (
@@ -276,6 +285,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             projectCode={project.code}
             userRole={user?.role || ""}
           />
+        </div>
+      )}
+
+      {subTab === "libraries" && project && (
+        <div className="flex-1 min-h-0">
+          <LibraryPanel projectId={project.id} />
         </div>
       )}
 

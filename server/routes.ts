@@ -94,6 +94,7 @@ import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import emailAiRoutes from "./emailAiRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
+import libraryRoutes from "./libraryRoutes";
 import opsRoutes from "./opsRoutes";
 import hustlerRoutes from "./hustlerRoutes";
 import bidNetworkRoutes from "./bidNetworkRoutes";
@@ -246,6 +247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Dashboard Customization routes
   app.use("/api/dashboard", dashboardCustomizationRoutes);
+
+  app.use(libraryRoutes);
 
   // Register Hustler Multi-Organization routes
   app.use("/api", hustlerRoutes);
