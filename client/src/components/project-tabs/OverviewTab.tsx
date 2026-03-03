@@ -323,13 +323,13 @@ export default function OverviewTab({
               <div className="text-center py-4 text-muted-foreground">Loading financial data...</div>
             ) : financials ? (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div className="p-4 rounded-lg border bg-card">
                     <div className="flex items-center gap-2 mb-2">
                       <DollarSign className="w-4 h-4 text-muted-foreground" />
                       <p className="text-sm font-medium text-muted-foreground">Budget</p>
                     </div>
-                    <p className="text-2xl font-bold font-mono" data-testid="text-budget">
+                    <p className="text-xl sm:text-2xl font-bold font-mono" data-testid="text-budget">
                       ${financials.budget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Direct cost to complete the work</p>
@@ -340,20 +340,20 @@ export default function OverviewTab({
                       <DollarSign className="w-4 h-4 text-muted-foreground" />
                       <p className="text-sm font-medium text-muted-foreground">Contract Amount</p>
                     </div>
-                    <p className="text-2xl font-bold font-mono" data-testid="text-contract-amount">
+                    <p className="text-xl sm:text-2xl font-bold font-mono" data-testid="text-contract-amount">
                       ${financials.originalContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Budget + overhead + profit</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div className="p-4 rounded-lg border bg-amber-50 dark:bg-amber-950/30">
                     <div className="flex items-center gap-2 mb-2">
                       <DollarSign className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       <p className="text-sm font-medium text-amber-600 dark:text-amber-400">COs & T&M</p>
                     </div>
-                    <p className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400" data-testid="text-contract-additions">
+                    <p className="text-xl sm:text-2xl font-bold font-mono text-amber-600 dark:text-amber-400" data-testid="text-contract-additions">
                       {(financials.contractAdditions || 0) >= 0 ? '+' : ''}${(financials.contractAdditions || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <div className="text-xs text-muted-foreground mt-2 space-y-0.5">
@@ -387,7 +387,7 @@ export default function OverviewTab({
                       <DollarSign className="w-4 h-4 text-primary" />
                       <p className="text-sm font-medium text-primary">Adjusted Contract</p>
                     </div>
-                    <p className="text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
+                    <p className="text-xl sm:text-2xl font-bold font-mono text-primary" data-testid="text-adjusted-contract-amount">
                       ${financials.adjustedContract.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
@@ -396,13 +396,13 @@ export default function OverviewTab({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div className="p-4 rounded-lg border bg-green-50 dark:bg-green-950/30">
                     <div className="flex items-center gap-2 mb-2">
                       <DollarSign className="w-4 h-4 text-green-600 dark:text-green-400" />
                       <p className="text-sm font-medium text-green-600 dark:text-green-400">Projected Profit</p>
                     </div>
-                    <p className="text-2xl font-bold font-mono text-green-600 dark:text-green-400" data-testid="text-projected-profit">
+                    <p className="text-xl sm:text-2xl font-bold font-mono text-green-600 dark:text-green-400" data-testid="text-projected-profit">
                       ${financials.projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Expected profit (contract - budget)</p>
@@ -413,7 +413,7 @@ export default function OverviewTab({
                       <DollarSign className={`w-4 h-4 ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
                       <p className={`text-sm font-medium ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>Actual Profit</p>
                     </div>
-                    <p className={`text-2xl font-bold font-mono ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} data-testid="text-actual-profit">
+                    <p className={`text-xl sm:text-2xl font-bold font-mono ${financials.actualProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} data-testid="text-actual-profit">
                       ${financials.actualProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Real-time (adjusted contract - actual costs)</p>
