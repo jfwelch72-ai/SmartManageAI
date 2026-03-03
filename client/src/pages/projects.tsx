@@ -302,16 +302,16 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="flex items-center justify-between mb-8">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
               {specialFilter === "pendingChangeOrders" ? "Projects with Pending Change Orders" :
                specialFilter === "missingBudget" ? "Projects Missing Budget Data" : 
                statusFilter !== "ALL" ? `${statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()} Projects` :
                "All Projects"}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {specialFilter === "pendingChangeOrders" ? "Projects with change orders awaiting client response" :
                specialFilter === "missingBudget" ? "Projects that need budget information added" :
                "View and manage all awarded construction projects"}
@@ -344,7 +344,7 @@ export default function ProjectsPage() {
               </div>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <AIAnalysisButton showDropdown />
             {FeaturePermissions.CREATE_PROJECT(user?.role) && (
               <>
@@ -352,7 +352,7 @@ export default function ProjectsPage() {
                   View Bids
                 </Button>
                 <Button onClick={() => setShowCreateDialog(true)} data-testid="button-new-project">
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4 mr-1 sm:mr-2" />
                   New Project
                 </Button>
               </>
