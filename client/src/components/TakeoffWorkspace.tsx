@@ -701,54 +701,76 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     }
   };
 
-  // PHASE 2.1: Mouse down handler - record position to detect click vs drag
+  // Track last input type to prevent duplicate events from touch+mouse emulation
+  const lastInputTypeRef = useRef<"mouse" | "touch" | null>(null);
+  const lastInputTimeRef = useRef<number>(0);
+
+  // PHASE 2.1: Mouse/Touch down handler - record position to detect click vs drag
   const handleStageMouseDown = (e: any) => {
+    const isTouchEvent = e.evt && (e.evt.type === "touchstart" || e.evt.touches);
+    const now = Date.now();
+
+    if (isTouchEvent) {
+      e.evt.preventDefault();
+      lastInputTypeRef.current = "touch";
+      lastInputTimeRef.current = now;
+    } else {
+      if (lastInputTypeRef.current === "touch" && now - lastInputTimeRef.current < 500) {
+        return;
+      }
+      lastInputTypeRef.current = "mouse";
+    }
+
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     
-    // Guard against null - cursor may be outside canvas
     if (!pointerPosition) {
       return;
     }
     
-    // Store screen position (not transformed) to measure actual pixel movement
     setMouseDownPosition(pointerPosition);
   };
 
-  // PHASE 2.1: Mouse up handler - only register as click if movement < threshold
+  // PHASE 2.1: Mouse/Touch up handler - only register as click if movement < threshold
   const handleStageMouseUp = (e: any) => {
-    // Guard against missing mousedown or cursor outside canvas
+    const isTouchEvent = e.evt && (e.evt.type === "touchend" || e.evt.changedTouches);
+    const now = Date.now();
+
+    if (isTouchEvent) {
+      e.evt.preventDefault();
+      lastInputTypeRef.current = "touch";
+      lastInputTimeRef.current = now;
+    } else {
+      if (lastInputTypeRef.current === "touch" && now - lastInputTimeRef.current < 500) {
+        return;
+      }
+      lastInputTypeRef.current = "mouse";
+    }
+
     if (!mouseDownPosition) {
-      return; // No mousedown recorded, ignore
+      return;
     }
 
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     
-    // Clear mousedown position first (before any early returns)
     setMouseDownPosition(null);
     
-    // Guard against null - cursor may have left canvas before release
     if (!pointerPosition) {
-      return; // Cursor outside canvas, treat as cancelled interaction
-    }
-    
-    // PHASE 2.1 FIX: Suppress clicks if Stage drag occurred (pan operation)
-    if (isDraggingStage) {
-      // User was panning - don't trigger click handlers
       return;
     }
     
-    // Calculate pixel distance moved since mousedown
+    if (isDraggingStage) {
+      return;
+    }
+    
     const deltaX = pointerPosition.x - mouseDownPosition.x;
     const deltaY = pointerPosition.y - mouseDownPosition.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     
-    // Only register as a click if movement is below threshold
     if (distance < CLICK_DRAG_THRESHOLD) {
       handleStageClick(e);
     }
-    // Otherwise it was a drag (pan) - ignore
   };
 
   // PHASE 2.1 FIX: Track Stage drag lifecycle to suppress clicks during pan
@@ -794,6 +816,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
   const handleStageMouseMove = useCallback(
     (e: any) => {
+      if (e.evt && (e.evt.type === "touchmove" || e.evt.touches)) {
+        e.evt.preventDefault();
+      }
       const stage = e.target.getStage();
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
@@ -1961,7 +1986,16 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               onMouseDown={handleStageMouseDown}
               onMouseUp={handleStageMouseUp}
               onMouseMove={handleStageMouseMove}
+              onTouchStart={handleStageMouseDown}
+              onTouchEnd={handleStageMouseUp}
+              onTouchMove={handleStageMouseMove}
               onDblClick={(e) => {
+                if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
+                  e.evt.preventDefault();
+                  completePolygon();
+                }
+              }}
+              onDblTap={(e: any) => {
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
                   completePolygon();
