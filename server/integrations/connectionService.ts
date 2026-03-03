@@ -3,6 +3,8 @@ import { integrationConnections, integrationSyncState } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { logInfo, logWarn, logError } from "../utils/logger";
 import { getProvider } from "./registry";
+import { encryptMetadata, decryptMetadata, isEncrypted } from "./encryption";
+import { logIntegrationAudit } from "./audit";
 import type { TokenSet } from "./types";
 
 export async function listConnections(orgId: string) {
@@ -13,6 +15,15 @@ export async function getConnection(id: string, orgId: string) {
   const [connection] = await db.select().from(integrationConnections)
     .where(and(eq(integrationConnections.id, id), eq(integrationConnections.organizationId, orgId)));
   return connection || null;
+}
+
+export async function getDecryptedConnection(id: string, orgId: string) {
+  const connection = await getConnection(id, orgId);
+  if (!connection || !connection.metadata) return connection;
+  return {
+    ...connection,
+    metadata: decryptMetadata(connection.metadata as Record<string, any>),
+  };
 }
 
 export async function createConnection(orgId: string, provider: string, displayName: string, userId: string) {
@@ -37,7 +48,7 @@ export async function updateConnectionStatus(id: string, orgId: string, status: 
 }
 
 export async function storeConnectionTokens(id: string, orgId: string, tokens: TokenSet) {
-  const safeMetadata = { 
+  const rawMetadata = { 
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken || null,
     tokenType: tokens.tokenType, 
@@ -45,16 +56,18 @@ export async function storeConnectionTokens(id: string, orgId: string, tokens: T
     expiresAt: tokens.expiresAt?.toISOString(),
     ...(tokens.raw || {}),
   };
+  const encryptedMetadata = encryptMetadata(rawMetadata);
   const [updated] = await db.update(integrationConnections)
-    .set({ status: "active" as any, metadata: safeMetadata, updatedAt: new Date() })
+    .set({ status: "active" as any, metadata: encryptedMetadata, updatedAt: new Date() })
     .where(and(eq(integrationConnections.id, id), eq(integrationConnections.organizationId, orgId)))
     .returning();
-  logInfo("Connection tokens stored", { connectionId: id, orgId });
+  logIntegrationAudit("security.tokens_encrypted", { orgId, connectionId: id, meta: { event: "tokens_stored_encrypted" } });
+  logInfo("Connection tokens stored (encrypted)", { connectionId: id, orgId });
   return updated;
 }
 
 export async function disconnectConnection(id: string, orgId: string) {
-  const connection = await getConnection(id, orgId);
+  const connection = await getDecryptedConnection(id, orgId);
   if (!connection) return null;
   
   const provider = getProvider(connection.provider);
@@ -67,9 +80,10 @@ export async function disconnectConnection(id: string, orgId: string) {
   }
   
   const [updated] = await db.update(integrationConnections)
-    .set({ status: "disconnected" as any, updatedAt: new Date() })
+    .set({ status: "disconnected" as any, metadata: {}, updatedAt: new Date() })
     .where(and(eq(integrationConnections.id, id), eq(integrationConnections.organizationId, orgId)))
     .returning();
+  logIntegrationAudit("security.tokens_cleared", { orgId, connectionId: id, meta: { event: "tokens_cleared_on_disconnect" } });
   logInfo("Connection disconnected", { connectionId: id, orgId });
   return updated;
 }
@@ -79,4 +93,41 @@ export async function deleteConnection(id: string, orgId: string) {
   await db.delete(integrationConnections)
     .where(and(eq(integrationConnections.id, id), eq(integrationConnections.organizationId, orgId)));
   logInfo("Connection deleted", { connectionId: id, orgId });
+}
+
+function getTokenStatus(metadata: Record<string, any> | null): "valid" | "expired" | "missing" {
+  if (!metadata) return "missing";
+  const accessToken = metadata.accessToken;
+  if (!accessToken) return "missing";
+  const expiresAt = metadata.expiresAt;
+  if (expiresAt && new Date(expiresAt) < new Date()) return "expired";
+  return "valid";
+}
+
+export function sanitizeConnection(connection: any) {
+  if (!connection) return connection;
+
+  const metadata = (connection.metadata as Record<string, any>) || {};
+  const tokenStatus = getTokenStatus(metadata);
+  const hasAccessToken = !!metadata.accessToken;
+  const tokensEncrypted = hasAccessToken && isEncrypted(metadata.accessToken);
+
+  const sanitizedMetadata: Record<string, any> = {};
+  const safeFields = ["tokenType", "scope", "expiresAt", "realmId", "devMode", "simulatedAt"];
+  for (const field of safeFields) {
+    if (metadata[field] !== undefined) {
+      sanitizedMetadata[field] = metadata[field];
+    }
+  }
+
+  return {
+    ...connection,
+    metadata: sanitizedMetadata,
+    tokenStatus,
+    tokensEncrypted,
+  };
+}
+
+export function sanitizeConnections(connections: any[]) {
+  return connections.map(sanitizeConnection);
 }

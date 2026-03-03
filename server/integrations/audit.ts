@@ -16,7 +16,27 @@ export type IntegrationAuditAction =
   | "webhook.failed"
   | "event.enqueued"
   | "event.sent"
-  | "event.dead_letter";
+  | "event.dead_letter"
+  | "security.tokens_encrypted"
+  | "security.tokens_decrypted"
+  | "security.tokens_cleared"
+  | "security.token_refresh_success"
+  | "security.token_refresh_failed"
+  | "security.auth_attempt_failed"
+  | "security.credentials_changed";
+
+export interface SecurityAuditEntry {
+  action: string;
+  timestamp: string;
+  connectionId?: string;
+  provider?: string;
+  userId?: string;
+  success: boolean;
+  details?: string;
+}
+
+const securityAuditLog: SecurityAuditEntry[] = [];
+const MAX_SECURITY_LOG_SIZE = 500;
 
 export function logIntegrationAudit(
   action: IntegrationAuditAction | string,
@@ -39,4 +59,24 @@ export function logIntegrationAudit(
   } else {
     logInfo(message, details);
   }
+
+  if (action.startsWith("security.") || action.includes("authorized") || action.includes("disconnected")) {
+    const entry: SecurityAuditEntry = {
+      action,
+      timestamp: new Date().toISOString(),
+      connectionId: details.connectionId,
+      provider: details.provider,
+      userId: details.userId,
+      success: !action.includes("failed"),
+      details: details.meta ? JSON.stringify(details.meta) : details.error || undefined,
+    };
+    securityAuditLog.unshift(entry);
+    if (securityAuditLog.length > MAX_SECURITY_LOG_SIZE) {
+      securityAuditLog.length = MAX_SECURITY_LOG_SIZE;
+    }
+  }
+}
+
+export function getSecurityAuditLog(limit: number = 50): SecurityAuditEntry[] {
+  return securityAuditLog.slice(0, limit);
 }

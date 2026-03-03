@@ -28,7 +28,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Communication & Collaboration**: Unified Messaging System (Team Messages, Portal Chat), Client Portal Chat, and Subcontractor Portal System.
 *   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, and token-protected staging preview links.
 *   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, and GDPR compliance tooling, managed by feature flags and a 4-tier subscription model.
-*   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, including expanded QuickBooks Online integration.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, including expanded QuickBooks Online integration. Security hardened with AES-256-GCM token encryption at rest (`server/integrations/encryption.ts`), token stripping from API responses via `sanitizeConnection()`, separate `getDecryptedConnection()` for internal server-side operations, security audit logging, and UI trust indicators (security banner, token status badges, security details panel, security audit log).
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, source tracking, and UI for history and comparison.
 *   **Addenda Tracking System**: Full addenda lifecycle management per project.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs with snapshot trending.

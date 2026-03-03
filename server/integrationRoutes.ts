@@ -5,7 +5,7 @@ import * as connectionService from "./integrations/connectionService";
 import * as outboxService from "./integrations/outboxService";
 import * as webhookService from "./integrations/webhookService";
 import * as importExportService from "./integrations/importExportService";
-import { logIntegrationAudit } from "./integrations/audit";
+import { logIntegrationAudit, getSecurityAuditLog } from "./integrations/audit";
 import { logInfo, logError } from "./utils/logger";
 import { db } from "./db";
 import { integrationSyncState, zapierWebhooks, ZAPIER_EVENT_TYPES, qboAccountMappings, qboSyncSchedules } from "@shared/schema";
@@ -31,7 +31,7 @@ router.get("/connections", requireAuth, async (req, res) => {
   try {
     const orgId = (req as any).user.organizationId;
     const connections = await connectionService.listConnections(orgId);
-    res.json(connections);
+    res.json(connectionService.sanitizeConnections(connections));
   } catch (err) {
     logError("Failed to list connections", { error: String(err) });
     res.status(500).json({ error: "Failed to list connections" });
@@ -60,12 +60,12 @@ router.post("/connections", requireAuth, async (req, res) => {
         raw: { devMode: true, simulatedAt: new Date().toISOString() },
       });
       logIntegrationAudit("connection.dev_activated", { orgId: user.organizationId, connectionId: connection.id, provider, userId: user.id });
-      const updated = await connectionService.getConnection(connection.id, user.organizationId);
-      return res.status(201).json(updated);
+      const updated = await connectionService.getConnection(connection.id, user.organizationId); 
+      return res.status(201).json(connectionService.sanitizeConnection(updated));
     }
 
     logIntegrationAudit("connection.created", { orgId: user.organizationId, connectionId: connection.id, provider, userId: user.id });
-    res.status(201).json(connection);
+    res.status(201).json(connectionService.sanitizeConnection(connection));
   } catch (err) {
     logError("Failed to create connection", { error: String(err) });
     res.status(500).json({ error: "Failed to create connection" });
@@ -78,7 +78,7 @@ router.post("/connections/:id/authorize", requireAuth, async (req, res) => {
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    const connection = await connectionService.getDecryptedConnection(req.params.id, user.organizationId);
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
@@ -98,7 +98,7 @@ router.get("/connections/:id/callback", async (req, res) => {
     if (!code || !state) return res.status(400).json({ error: "Missing code or state" });
     const stateData = JSON.parse(Buffer.from(state as string, "base64url").toString());
     const { connectionId, orgId } = stateData;
-    const connection = await connectionService.getConnection(connectionId, orgId);
+    const connection = await connectionService.getDecryptedConnection(connectionId, orgId);
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
@@ -121,7 +121,7 @@ router.post("/connections/:id/disconnect", requireAuth, async (req, res) => {
     const updated = await connectionService.disconnectConnection(req.params.id, user.organizationId);
     if (!updated) return res.status(404).json({ error: "Connection not found" });
     logIntegrationAudit("connection.disconnected", { orgId: user.organizationId, connectionId: req.params.id, userId: user.id });
-    res.json(updated);
+    res.json(connectionService.sanitizeConnection(updated));
   } catch (err) {
     logError("Failed to disconnect", { error: String(err) });
     res.status(500).json({ error: "Failed to disconnect" });
@@ -220,6 +220,21 @@ router.get("/audit", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/security-log", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const limit = parseInt(req.query.limit as string) || 50;
+    const entries = getSecurityAuditLog(Math.min(limit, 200));
+    res.json(entries);
+  } catch (err) {
+    logError("Failed to get security audit log", { error: String(err) });
+    res.status(500).json({ error: "Failed to get security log" });
+  }
+});
+
 const syncSchema = z.object({
   operation: z.enum(["chart_of_accounts", "customers", "invoices", "payment_status"]),
   dryRun: z.boolean().optional().default(false),
@@ -233,7 +248,7 @@ router.post("/connections/:id/sync", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
 
-    let connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    let connection = await connectionService.getDecryptedConnection(req.params.id, user.organizationId);
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     if (connection.status !== "active") {
       return res.status(400).json({ error: "Connection must be active to sync" });
@@ -257,9 +272,11 @@ router.post("/connections/:id/sync", requireAuth, async (req, res) => {
         try {
           const newTokens = await provider.refreshToken(connection);
           await connectionService.storeConnectionTokens(connection.id, user.organizationId, newTokens);
-          connection = (await connectionService.getConnection(connection.id, user.organizationId))!;
+          connection = (await connectionService.getDecryptedConnection(connection.id, user.organizationId))!;
+          logIntegrationAudit("security.token_refresh_success", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id });
           logInfo("Token refreshed before sync", { connectionId: connection.id });
         } catch (refreshErr) {
+          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: String(refreshErr) });
           logError("Token refresh failed before sync", { error: String(refreshErr) });
           return res.status(401).json({ error: "Token expired and refresh failed. Please reconnect." });
         }
@@ -405,7 +422,7 @@ router.post("/connections/:id/test", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" });
     }
 
-    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    const connection = await connectionService.getDecryptedConnection(req.params.id, user.organizationId);
     if (!connection) return res.status(404).json({ error: "Connection not found" });
 
     const provider = getProvider(connection.provider);

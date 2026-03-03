@@ -13,7 +13,8 @@ import {
   Upload, FileText, CreditCard, Clock, AlertCircle, ArrowDownToLine,
   ArrowUpFromLine, Activity, ChevronDown, ChevronUp, Zap, Plus,
   Trash2, Send, Globe, ToggleLeft, ToggleRight, Banknote, HardHat,
-  Package, ArrowLeftRight, CalendarClock, MapPin
+  Package, ArrowLeftRight, CalendarClock, MapPin, Shield, ShieldCheck,
+  ShieldAlert, Lock, KeyRound, Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -33,6 +34,25 @@ interface Connection {
   lastSyncAt: string | null;
   lastSyncError: string | null;
   createdAt: string;
+  tokenStatus?: "valid" | "expired" | "missing";
+  tokensEncrypted?: boolean;
+  metadata?: {
+    scope?: string;
+    expiresAt?: string;
+    realmId?: string;
+    tokenType?: string;
+    devMode?: boolean;
+  };
+}
+
+interface SecurityAuditEntry {
+  action: string;
+  timestamp: string;
+  connectionId?: string;
+  provider?: string;
+  userId?: string;
+  success: boolean;
+  details?: string;
 }
 
 interface SyncLogEntry {
@@ -1050,6 +1070,195 @@ function ZapierWebhookPanel({ connection }: { connection: Connection }) {
   );
 }
 
+function SecurityBanner() {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Card className="border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20" data-testid="card-security-banner">
+      <CardContent className="py-3 px-4">
+        <button
+          className="w-full flex items-center justify-between text-left"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="button-toggle-security-banner"
+        >
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+            <span className="font-medium text-sm text-green-800 dark:text-green-300">Integration Security Active</span>
+          </div>
+          {expanded ? <ChevronUp className="h-4 w-4 text-green-600" /> : <ChevronDown className="h-4 w-4 text-green-600" />}
+        </button>
+        {expanded && (
+          <div className="mt-3 space-y-2 text-sm text-green-700 dark:text-green-400">
+            <div className="flex items-center gap-2">
+              <Lock className="h-4 w-4 shrink-0" />
+              <span>All integration credentials are encrypted at rest using AES-256-GCM</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 shrink-0" />
+              <span>Tokens are never exposed to your browser — only metadata is transmitted</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 shrink-0" />
+              <span>Access is restricted to administrators only</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TokenStatusBadge({ status, encrypted }: { status?: string; encrypted?: boolean }) {
+  if (status === "valid") {
+    return (
+      <div className="flex items-center gap-1.5" data-testid="badge-token-valid">
+        <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
+        <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+          {encrypted ? "Encrypted" : "Valid"}
+        </span>
+      </div>
+    );
+  }
+  if (status === "expired") {
+    return (
+      <div className="flex items-center gap-1.5" data-testid="badge-token-expired">
+        <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
+        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Expired</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5" data-testid="badge-token-missing">
+      <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">No Token</span>
+    </div>
+  );
+}
+
+function SecurityDetailsPanel({ connection }: { connection: Connection }) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = connection.metadata || {};
+
+  return (
+    <div className="mt-2" data-testid={`panel-security-details-${connection.id}`}>
+      <button
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        onClick={() => setExpanded(!expanded)}
+        data-testid={`button-toggle-security-details-${connection.id}`}
+      >
+        <Info className="h-3 w-3" />
+        <span>Security Details</span>
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {expanded && (
+        <div className="mt-2 p-3 bg-muted/50 rounded-lg text-xs space-y-1.5" data-testid={`security-details-content-${connection.id}`}>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Encryption</span>
+            <span className="font-medium">{connection.tokensEncrypted ? "AES-256-GCM" : "N/A"}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Token Status</span>
+            <span className="font-medium capitalize">{connection.tokenStatus || "unknown"}</span>
+          </div>
+          {meta.expiresAt && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Token Expiry</span>
+              <span className="font-medium">{new Date(meta.expiresAt).toLocaleString()}</span>
+            </div>
+          )}
+          {meta.scope && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Scopes</span>
+              <span className="font-medium truncate max-w-[200px]">{meta.scope}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Created</span>
+            <span className="font-medium">{new Date(connection.createdAt).toLocaleDateString()}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SecurityAuditPanel() {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: auditEntries, isLoading } = useQuery<SecurityAuditEntry[]>({
+    queryKey: ["/api/integrations/security-log"],
+    enabled: expanded,
+  });
+
+  const ACTION_LABELS: Record<string, string> = {
+    "security.tokens_encrypted": "Tokens Encrypted",
+    "security.tokens_cleared": "Tokens Cleared",
+    "security.token_refresh_success": "Token Refreshed",
+    "security.token_refresh_failed": "Token Refresh Failed",
+    "security.auth_attempt_failed": "Auth Attempt Failed",
+    "security.credentials_changed": "Credentials Changed",
+    "connection.authorized": "Connection Authorized",
+    "connection.disconnected": "Connection Disconnected",
+  };
+
+  return (
+    <Card data-testid="card-security-audit">
+      <CardHeader className="pb-3">
+        <button
+          className="flex items-center justify-between w-full text-left"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="button-toggle-security-audit"
+        >
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            <CardTitle className="text-lg">Security Log</CardTitle>
+          </div>
+          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        <CardDescription>Security events for integration credentials</CardDescription>
+      </CardHeader>
+      {expanded && (
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !auditEntries?.length ? (
+            <div className="py-6 text-center">
+              <Shield className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground" data-testid="text-no-security-events">No security events recorded yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+              {auditEntries.map((entry, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 text-sm"
+                  data-testid={`security-log-entry-${idx}`}
+                >
+                  <div className="flex items-center gap-2">
+                    {entry.success ? (
+                      <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                    ) : (
+                      <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    )}
+                    <span className="font-medium">{ACTION_LABELS[entry.action] || entry.action}</span>
+                    {entry.provider && (
+                      <Badge variant="outline" className="text-xs">{entry.provider}</Badge>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function IntegrationsPage() {
   const { toast } = useToast();
 
@@ -1117,6 +1326,8 @@ export default function IntegrationsPage() {
         </p>
       </div>
 
+      <SecurityBanner />
+
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {(providers || []).map((provider) => {
           const conn = getConnectionForProvider(provider.key);
@@ -1140,6 +1351,9 @@ export default function IntegrationsPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">{PROVIDER_DESCRIPTIONS[provider.key] || provider.displayName}</p>
+                {isConnected && conn && (
+                  <TokenStatusBadge status={conn.tokenStatus} encrypted={conn.tokensEncrypted} />
+                )}
                 {conn ? (
                   <Button
                     variant="outline"
@@ -1234,34 +1448,40 @@ export default function IntegrationsPage() {
           <div className="space-y-3">
             {activeConnections.map((connection) => (
               <Card key={connection.id} data-testid={`card-connection-${connection.id}`}>
-                <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <Settings className="h-4 w-4 text-primary" />
+                <CardContent className="py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Settings className="h-4 w-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium" data-testid={`text-connection-name-${connection.id}`}>{connection.displayName || connection.provider}</p>
+                        <p className="text-sm text-muted-foreground" data-testid={`text-connection-sync-${connection.id}`}>
+                          {connection.lastSyncAt
+                            ? `Last synced: ${new Date(connection.lastSyncAt).toLocaleString()}`
+                            : "Never synced"}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium" data-testid={`text-connection-name-${connection.id}`}>{connection.displayName || connection.provider}</p>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-connection-sync-${connection.id}`}>
-                        {connection.lastSyncAt
-                          ? `Last synced: ${new Date(connection.lastSyncAt).toLocaleString()}`
-                          : "Never synced"}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <TokenStatusBadge status={connection.tokenStatus} encrypted={connection.tokensEncrypted} />
+                      <Badge
+                        variant={connection.status === "active" ? "default" : connection.status === "error" ? "destructive" : "secondary"}
+                        data-testid={`badge-connection-status-${connection.id}`}
+                      >
+                        {connection.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={connection.status === "active" ? "default" : connection.status === "error" ? "destructive" : "secondary"}
-                      data-testid={`badge-connection-status-${connection.id}`}
-                    >
-                      {connection.status}
-                    </Badge>
-                  </div>
+                  <SecurityDetailsPanel connection={connection} />
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      <SecurityAuditPanel />
     </div>
   );
 }
