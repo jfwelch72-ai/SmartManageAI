@@ -1691,9 +1691,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   }, [isFullscreen, selectedSheet]);
 
   return (
-    <div ref={workspaceRef} className="flex h-full relative">
-      {/* Left Toolbar */}
-      <div className="w-11 sm:w-20 bg-card border-r flex flex-col items-center py-2 sm:py-4 gap-1 sm:gap-2 overflow-y-auto">
+    <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative">
+      {/* Left Toolbar - vertical on desktop, hidden on mobile (shown as bottom bar instead) */}
+      <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-4 gap-2 overflow-y-auto shrink-0">
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
           const showSeparator = tool.id === "linear_with_drop";
@@ -1836,7 +1836,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       </div>
 
       {/* Center Canvas */}
-      <div className="flex-1 flex flex-col bg-muted/30">
+      <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
         {/* Sheet Selector */}
         <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
@@ -2321,6 +2321,84 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </div>
             </div>
           )}
+        </div>
+
+        {/* Mobile Bottom Toolbar */}
+        <div className="sm:hidden bg-card border-t flex items-center gap-1 px-2 py-1.5 overflow-x-auto shrink-0">
+          {TOOL_CONFIG.map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <Button
+                key={tool.id}
+                variant={activeTool === tool.id ? tool.color as any : "ghost"}
+                size="icon"
+                onClick={() => handleToolSelect(tool.id as Tool)}
+                data-testid={`button-tool-mobile-${tool.id}`}
+                className="h-8 w-8 shrink-0"
+              >
+                <Icon className="w-4 h-4" />
+              </Button>
+            );
+          })}
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => takeoffHistory.undo()}
+            disabled={!takeoffHistory.canUndo || takeoffHistory.isPending}
+            data-testid="button-undo-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Undo2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => takeoffHistory.redo()}
+            disabled={!takeoffHistory.canRedo || takeoffHistory.isPending}
+            data-testid="button-redo-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Redo2 className="w-4 h-4" />
+          </Button>
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
+          <Button
+            variant={snapEnabled ? "secondary" : "ghost"}
+            size="icon"
+            onClick={() => setSnapEnabled(!snapEnabled)}
+            data-testid="button-toggle-snap-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Magnet className="w-4 h-4" />
+          </Button>
+          <Button
+            variant={orthoLock ? "secondary" : "ghost"}
+            size="icon"
+            onClick={() => setOrthoLock(!orthoLock)}
+            data-testid="button-toggle-ortho-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <CornerDownRight className="w-4 h-4" />
+          </Button>
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setUploadDialogOpen(true)}
+            data-testid="button-upload-plan-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Upload className="w-4 h-4" />
+          </Button>
+          <Button
+            variant={aiPanelOpen ? "secondary" : "ghost"}
+            size="icon"
+            onClick={() => setAiPanelOpen(!aiPanelOpen)}
+            data-testid="button-ai-takeoff-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Sparkles className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
