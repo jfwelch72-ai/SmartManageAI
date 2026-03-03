@@ -123,23 +123,25 @@ function ProjectEmailTab({ projectId, projectCode, userRole }: ProjectEmailTabPr
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="w-5 h-5" />
-              Project Emails
-            </CardTitle>
-            <CardDescription>
-              Email threads linked to project {projectCode}
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" asChild data-testid="link-email-assistant">
-              <Link href="/email-assistant">
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Open Email Assistant
-              </Link>
-            </Button>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="w-5 h-5" />
+                Project Emails
+              </CardTitle>
+              <CardDescription>
+                Email threads linked to project {projectCode}
+              </CardDescription>
+            </div>
+            <div className="w-full sm:w-auto flex gap-2">
+              <Button variant="outline" size="sm" asChild data-testid="link-email-assistant" className="w-full sm:w-auto">
+                <Link href="/email-assistant">
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Open Email Assistant
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -471,28 +473,30 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Ruler className="h-5 w-5" />
-              Equipment Plan
-            </CardTitle>
-            <CardDescription>
-              Planned equipment for this project (from bid or manually added)
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            {totalPlannedCost > 0 && (
-              <Badge variant="secondary" className="text-base">
-                Total: ${totalPlannedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Badge>
-            )}
-            {canManagePlans && (
-              <Button size="sm" onClick={() => setShowAddPlanDialog(true)} data-testid="button-add-equipment-plan">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Equipment
-              </Button>
-            )}
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Ruler className="h-5 w-5" />
+                Equipment Plan
+              </CardTitle>
+              <CardDescription>
+                Planned equipment for this project (from bid or manually added)
+              </CardDescription>
+            </div>
+            <div className="w-full sm:w-auto flex flex-wrap gap-2">
+              {totalPlannedCost > 0 && (
+                <Badge variant="secondary" className="text-base">
+                  Total: ${totalPlannedCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Badge>
+              )}
+              {canManagePlans && (
+                <Button size="sm" onClick={() => setShowAddPlanDialog(true)} data-testid="button-add-equipment-plan" className="w-full sm:w-auto">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Equipment
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -507,142 +511,278 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
               )}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Equipment</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Planned Days</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Planned Cost</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canManagePlans && <TableHead>Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {equipmentPlans.map((plan: any) => (
-                  <TableRow key={plan.id}>
-                    <TableCell className="font-medium">{plan.equipmentName}</TableCell>
-                    <TableCell>
+            <>
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Equipment</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Planned Days</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Planned Cost</TableHead>
+                    <TableHead>Status</TableHead>
+                    {canManagePlans && <TableHead>Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {equipmentPlans.map((plan: any) => (
+                    <TableRow key={plan.id}>
+                      <TableCell className="font-medium">{plan.equipmentName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{plan.equipmentType}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={plan.source === "OWNED" ? "default" : "secondary"}>
+                          {plan.source}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{plan.plannedDays || plan.plannedHours ? `${plan.plannedDays || "-"} days / ${plan.plannedHours || "-"} hrs` : "-"}</TableCell>
+                      <TableCell>
+                        {plan.dailyRate ? `$${Number(plan.dailyRate).toFixed(2)}/day` : plan.hourlyRate ? `$${Number(plan.hourlyRate).toFixed(2)}/hr` : "-"}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={plan.status}
+                          onValueChange={(value) => updatePlanStatus.mutate({ planId: plan.id, status: value })}
+                          disabled={!canManagePlans || updatePlanStatus.isPending}
+                        >
+                          <SelectTrigger className="w-32" data-testid={`select-plan-status-${plan.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PLANNED">Planned</SelectItem>
+                            <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                            <SelectItem value="RENTAL_BOOKED">Rental Booked</SelectItem>
+                            <SelectItem value="RENTAL_ACTIVE">Rental Active</SelectItem>
+                            <SelectItem value="COMPLETED">Completed</SelectItem>
+                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      {canManagePlans && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {plan.source === "OWNED" && plan.status === "PLANNED" && !plan.equipmentId && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPlanForAssignment(plan);
+                                  setShowAssignDialog(true);
+                                }}
+                                data-testid={`button-assign-plan-${plan.id}`}
+                              >
+                                <Link2 className="h-4 w-4 mr-1" />
+                                Assign
+                              </Button>
+                            )}
+                            {plan.source === "RENTAL" && plan.status === "PLANNED" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPlanForRental(plan);
+                                  setShowRentalBookingDialog(true);
+                                }}
+                                data-testid={`button-book-rental-${plan.id}`}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                Book
+                              </Button>
+                            )}
+                            {plan.source === "RENTAL" && (plan.status === "RENTAL_BOOKED" || plan.status === "RENTAL_ACTIVE") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPlanForRental(plan);
+                                  setShowRentalTrackingDialog(true);
+                                }}
+                                data-testid={`button-track-rental-${plan.id}`}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Track
+                              </Button>
+                            )}
+                            {plan.equipmentId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                asChild
+                                data-testid={`button-view-equipment-${plan.id}`}
+                              >
+                                <Link href={`/equipment/${plan.equipmentCode || plan.equipmentId}`}>
+                                  <Eye className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            )}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" data-testid={`button-delete-plan-${plan.id}`}>
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="md:hidden space-y-3">
+              {equipmentPlans.map((plan: any) => (
+                <div key={plan.id} className="border rounded-md p-4 space-y-3" data-testid={`card-equipment-plan-mobile-${plan.id}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-medium">{plan.equipmentName}</span>
+                    <div className="flex items-center gap-1 shrink-0">
                       <Badge variant="outline">{plan.equipmentType}</Badge>
-                    </TableCell>
-                    <TableCell>
                       <Badge variant={plan.source === "OWNED" ? "default" : "secondary"}>
                         {plan.source}
                       </Badge>
-                    </TableCell>
-                    <TableCell>{plan.plannedDays || plan.plannedHours ? `${plan.plannedDays || "-"} days / ${plan.plannedHours || "-"} hrs` : "-"}</TableCell>
-                    <TableCell>
-                      {plan.dailyRate ? `$${Number(plan.dailyRate).toFixed(2)}/day` : plan.hourlyRate ? `$${Number(plan.hourlyRate).toFixed(2)}/hr` : "-"}
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={plan.status}
-                        onValueChange={(value) => updatePlanStatus.mutate({ planId: plan.id, status: value })}
-                        disabled={!canManagePlans || updatePlanStatus.isPending}
-                      >
-                        <SelectTrigger className="w-32" data-testid={`select-plan-status-${plan.id}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PLANNED">Planned</SelectItem>
-                          <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                          <SelectItem value="RENTAL_BOOKED">Rental Booked</SelectItem>
-                          <SelectItem value="RENTAL_ACTIVE">Rental Active</SelectItem>
-                          <SelectItem value="COMPLETED">Completed</SelectItem>
-                          <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    {canManagePlans && (
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {plan.source === "OWNED" && plan.status === "PLANNED" && !plan.equipmentId && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedPlanForAssignment(plan);
-                                setShowAssignDialog(true);
-                              }}
-                              data-testid={`button-assign-plan-${plan.id}`}
-                            >
-                              <Link2 className="h-4 w-4 mr-1" />
-                              Assign
-                            </Button>
-                          )}
-                          {plan.source === "RENTAL" && plan.status === "PLANNED" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedPlanForRental(plan);
-                                setShowRentalBookingDialog(true);
-                              }}
-                              data-testid={`button-book-rental-${plan.id}`}
-                            >
-                              <ExternalLink className="h-4 w-4 mr-1" />
-                              Book
-                            </Button>
-                          )}
-                          {plan.source === "RENTAL" && (plan.status === "RENTAL_BOOKED" || plan.status === "RENTAL_ACTIVE") && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedPlanForRental(plan);
-                                setShowRentalTrackingDialog(true);
-                              }}
-                              data-testid={`button-track-rental-${plan.id}`}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Track
-                            </Button>
-                          )}
-                          {plan.equipmentId && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              asChild
-                              data-testid={`button-view-equipment-${plan.id}`}
-                            >
-                              <Link href={`/equipment/${plan.equipmentCode || plan.equipmentId}`}>
-                                <Eye className="h-4 w-4" />
-                              </Link>
-                            </Button>
-                          )}
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" data-testid={`button-delete-plan-${plan.id}`}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Planned Days/Hrs</span>
+                      <p>{plan.plannedDays || plan.plannedHours ? `${plan.plannedDays || "-"} days / ${plan.plannedHours || "-"} hrs` : "-"}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Rate</span>
+                      <p>{plan.dailyRate ? `$${Number(plan.dailyRate).toFixed(2)}/day` : plan.hourlyRate ? `$${Number(plan.hourlyRate).toFixed(2)}/hr` : "-"}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Planned Cost</span>
+                      <p className="font-medium">{plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Status</span>
+                      <div className="mt-1">
+                        <Select
+                          value={plan.status}
+                          onValueChange={(value) => updatePlanStatus.mutate({ planId: plan.id, status: value })}
+                          disabled={!canManagePlans || updatePlanStatus.isPending}
+                        >
+                          <SelectTrigger className="w-full" data-testid={`select-plan-status-mobile-${plan.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PLANNED">Planned</SelectItem>
+                            <SelectItem value="ASSIGNED">Assigned</SelectItem>
+                            <SelectItem value="RENTAL_BOOKED">Rental Booked</SelectItem>
+                            <SelectItem value="RENTAL_ACTIVE">Rental Active</SelectItem>
+                            <SelectItem value="COMPLETED">Completed</SelectItem>
+                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                  {canManagePlans && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {plan.source === "OWNED" && plan.status === "PLANNED" && !plan.equipmentId && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPlanForAssignment(plan);
+                            setShowAssignDialog(true);
+                          }}
+                          data-testid={`button-assign-plan-mobile-${plan.id}`}
+                        >
+                          <Link2 className="h-4 w-4 mr-1" />
+                          Assign
+                        </Button>
+                      )}
+                      {plan.source === "RENTAL" && plan.status === "PLANNED" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPlanForRental(plan);
+                            setShowRentalBookingDialog(true);
+                          }}
+                          data-testid={`button-book-rental-mobile-${plan.id}`}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-1" />
+                          Book
+                        </Button>
+                      )}
+                      {plan.source === "RENTAL" && (plan.status === "RENTAL_BOOKED" || plan.status === "RENTAL_ACTIVE") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPlanForRental(plan);
+                            setShowRentalTrackingDialog(true);
+                          }}
+                          data-testid={`button-track-rental-mobile-${plan.id}`}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Track
+                        </Button>
+                      )}
+                      {plan.equipmentId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          asChild
+                          data-testid={`button-view-equipment-mobile-${plan.id}`}
+                        >
+                          <Link href={`/equipment/${plan.equipmentCode || plan.equipmentId}`}>
+                            <Eye className="h-4 w-4 mr-1" />
+                            View
+                          </Link>
+                        </Button>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" data-testid={`button-delete-plan-mobile-${plan.id}`}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Equipment Plan?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Remove "{plan.equipmentName}" from the equipment plan. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deletePlan.mutate(plan.id)}>
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            </>
           )}
 
           {equipmentPlans.length > 0 && (
@@ -673,24 +813,26 @@ function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipm
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Truck className="h-5 w-5" />
-              Assigned Equipment
-            </CardTitle>
-            <CardDescription>
-              Equipment currently assigned to this project
-            </CardDescription>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5" />
+                Assigned Equipment
+              </CardTitle>
+              <CardDescription>
+                Equipment currently assigned to this project
+              </CardDescription>
+            </div>
+            {canManageEquipment && (
+              <Button asChild size="sm" data-testid="button-manage-equipment" className="w-full sm:w-auto">
+                <Link href="/equipment">
+                  <Settings2 className="h-4 w-4 mr-2" />
+                  Manage Equipment
+                </Link>
+              </Button>
+            )}
           </div>
-          {canManageEquipment && (
-            <Button asChild size="sm" data-testid="button-manage-equipment">
-              <Link href="/equipment">
-                <Settings2 className="h-4 w-4 mr-2" />
-                Manage Equipment
-              </Link>
-            </Button>
-          )}
         </CardHeader>
         <CardContent>
           {assignedEquipment.length === 0 ? (

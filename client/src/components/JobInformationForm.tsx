@@ -139,36 +139,39 @@ export default function JobInformationForm({ bidCode, projectCode, readOnly = fa
 
   return (
     <Card data-testid="card-job-information">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="w-5 h-5" />
-            Job Information
-          </CardTitle>
-          <CardDescription>
-            Estimator handoff packet for QuickBooks setup
-          </CardDescription>
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Job Information
+            </CardTitle>
+            <CardDescription>
+              Estimator handoff packet for QuickBooks setup
+            </CardDescription>
+          </div>
+          {!readOnly && (
+            <Button 
+              onClick={handleSave} 
+              disabled={saveMutation.isPending}
+              size="sm"
+              data-testid="button-save-job-info"
+              className="w-full sm:w-auto"
+            >
+              {saveMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          )}
         </div>
-        {!readOnly && (
-          <Button 
-            onClick={handleSave} 
-            disabled={saveMutation.isPending}
-            size="sm"
-            data-testid="button-save-job-info"
-          >
-            {saveMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" />
-                Save Changes
-              </>
-            )}
-          </Button>
-        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Section 1: Job Overview */}

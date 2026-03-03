@@ -170,7 +170,7 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
   return (
     <div className="space-y-4">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card data-testid="card-total-shifts">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Shifts</CardTitle>
@@ -228,7 +228,7 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
           <CardTitle>Filters & Sorting</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="space-y-2">
               <Label htmlFor="filter-time-period">Time Period</Label>
               <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
@@ -379,7 +379,8 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
               <p className="text-sm">Time entries will appear here once employees clock in/out for this project</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -440,6 +441,75 @@ export default function ProjectLaborHours({ projectId, projectCode }: ProjectLab
                 </TableBody>
               </Table>
             </div>
+
+            <div className="md:hidden space-y-3">
+              {filteredShifts.map((shift) => (
+                <div
+                  key={shift.id}
+                  className="border rounded-md p-3 space-y-2"
+                  data-testid={`row-shift-${shift.id}-mobile`}
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <div className="font-medium" data-testid={`text-employee-name-${shift.id}-mobile`}>{shift.userName}</div>
+                      <div className="text-xs text-muted-foreground">{shift.userRole}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground text-xs">Clock In</span>
+                      <div data-testid={`text-clock-in-${shift.id}-mobile`}>
+                        {format(new Date(shift.clockIn), "MM/dd/yy h:mm a")}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Clock Out</span>
+                      <div data-testid={`text-clock-out-${shift.id}-mobile`}>
+                        {shift.clockOut ? (
+                          <span>
+                            {format(new Date(shift.clockOut), "MM/dd/yy h:mm a")}
+                            {shift.autoClockOut && (
+                              <Badge variant="secondary" className="ml-1 text-xs">Auto</Badge>
+                            )}
+                          </span>
+                        ) : (
+                          <Badge variant="secondary">Active</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Hours</span>
+                      <div className="font-mono" data-testid={`text-hours-${shift.id}-mobile`}>
+                        {shift.totalHours ? parseFloat(shift.totalHours).toFixed(2) : "0.00"}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Rate</span>
+                      <div className="font-mono" data-testid={`text-rate-${shift.id}-mobile`}>
+                        ${shift.hourlyRate.toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Cost</span>
+                      <div className="font-semibold" data-testid={`text-cost-${shift.id}-mobile`}>
+                        ${shift.laborCost.toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Status</span>
+                      <div>{getApprovalBadge(shift.approvalStatus)}</div>
+                    </div>
+                  </div>
+                  {shift.notes && (
+                    <div className="text-xs text-muted-foreground" data-testid={`text-notes-${shift.id}-mobile`}>
+                      {shift.notes}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </CardContent>
       </Card>

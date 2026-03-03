@@ -562,66 +562,126 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table data-testid="proj-table-rfis">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>RFI #</TableHead>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Submitted By</TableHead>
-                  <TableHead>Date Submitted</TableHead>
-                  <TableHead>Date Required</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRFIs.map((rfi) => (
-                  <TableRow
-                    key={rfi.id}
-                    className="cursor-pointer"
-                    onClick={() => openDetail(rfi)}
-                    data-testid={`proj-row-rfi-${rfi.id}`}
-                  >
-                    <TableCell className="font-medium" data-testid={`proj-text-rfi-number-${rfi.id}`}>
-                      {rfi.rfiNumber}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate" data-testid={`proj-text-rfi-subject-${rfi.id}`}>
-                      {rfi.subject}
-                    </TableCell>
-                    <TableCell data-testid={`proj-badge-rfi-priority-${rfi.id}`}>
-                      {getPriorityBadge(rfi.priority)}
-                    </TableCell>
-                    <TableCell data-testid={`proj-badge-rfi-status-${rfi.id}`}>
-                      {getStatusBadge(rfi.status)}
-                    </TableCell>
-                    <TableCell data-testid={`proj-text-rfi-submitter-${rfi.id}`}>
-                      {rfi.submittedByName || "—"}
-                    </TableCell>
-                    <TableCell data-testid={`proj-text-rfi-submitted-date-${rfi.id}`}>
-                      {rfi.dateSubmitted ? format(new Date(rfi.dateSubmitted), "MMM d, yyyy") : "—"}
-                    </TableCell>
-                    <TableCell data-testid={`proj-text-rfi-required-date-${rfi.id}`}>
-                      {rfi.dateRequired ? format(new Date(rfi.dateRequired), "MMM d, yyyy") : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDetail(rfi);
-                        }}
-                        data-testid={`proj-button-view-rfi-${rfi.id}`}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
-                    </TableCell>
+            <div className="hidden md:block">
+              <Table data-testid="proj-table-rfis">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>RFI #</TableHead>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Submitted By</TableHead>
+                    <TableHead>Date Submitted</TableHead>
+                    <TableHead>Date Required</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredRFIs.map((rfi) => (
+                    <TableRow
+                      key={rfi.id}
+                      className="cursor-pointer"
+                      onClick={() => openDetail(rfi)}
+                      data-testid={`proj-row-rfi-${rfi.id}`}
+                    >
+                      <TableCell className="font-medium" data-testid={`proj-text-rfi-number-${rfi.id}`}>
+                        {rfi.rfiNumber}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate" data-testid={`proj-text-rfi-subject-${rfi.id}`}>
+                        {rfi.subject}
+                      </TableCell>
+                      <TableCell data-testid={`proj-badge-rfi-priority-${rfi.id}`}>
+                        {getPriorityBadge(rfi.priority)}
+                      </TableCell>
+                      <TableCell data-testid={`proj-badge-rfi-status-${rfi.id}`}>
+                        {getStatusBadge(rfi.status)}
+                      </TableCell>
+                      <TableCell data-testid={`proj-text-rfi-submitter-${rfi.id}`}>
+                        {rfi.submittedByName || "—"}
+                      </TableCell>
+                      <TableCell data-testid={`proj-text-rfi-submitted-date-${rfi.id}`}>
+                        {rfi.dateSubmitted ? format(new Date(rfi.dateSubmitted), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell data-testid={`proj-text-rfi-required-date-${rfi.id}`}>
+                        {rfi.dateRequired ? format(new Date(rfi.dateRequired), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDetail(rfi);
+                          }}
+                          data-testid={`proj-button-view-rfi-${rfi.id}`}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="md:hidden space-y-3 p-3">
+              {filteredRFIs.map((rfi) => (
+                <div
+                  key={rfi.id}
+                  className="border rounded-md p-3 space-y-2 cursor-pointer"
+                  onClick={() => openDetail(rfi)}
+                  data-testid={`proj-row-rfi-mobile-${rfi.id}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm" data-testid={`proj-text-rfi-number-mobile-${rfi.id}`}>
+                      {rfi.rfiNumber}
+                    </span>
+                    <span className="shrink-0" data-testid={`proj-badge-rfi-status-mobile-${rfi.id}`}>
+                      {getStatusBadge(rfi.status)}
+                    </span>
+                  </div>
+                  <div className="text-sm truncate" data-testid={`proj-text-rfi-subject-mobile-${rfi.id}`}>
+                    {rfi.subject}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <div data-testid={`proj-badge-rfi-priority-mobile-${rfi.id}`}>
+                      <span className="block mb-1">Priority</span>
+                      {getPriorityBadge(rfi.priority)}
+                    </div>
+                    <div data-testid={`proj-text-rfi-submitter-mobile-${rfi.id}`}>
+                      <span className="block mb-1">Submitted By</span>
+                      <span className="text-foreground text-sm">{rfi.submittedByName || "—"}</span>
+                    </div>
+                    <div data-testid={`proj-text-rfi-submitted-date-mobile-${rfi.id}`}>
+                      <span className="block mb-1">Date Submitted</span>
+                      <span className="text-foreground text-sm">
+                        {rfi.dateSubmitted ? format(new Date(rfi.dateSubmitted), "MMM d, yyyy") : "—"}
+                      </span>
+                    </div>
+                    <div data-testid={`proj-text-rfi-required-date-mobile-${rfi.id}`}>
+                      <span className="block mb-1">Date Required</span>
+                      <span className="text-foreground text-sm">
+                        {rfi.dateRequired ? format(new Date(rfi.dateRequired), "MMM d, yyyy") : "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openDetail(rfi);
+                    }}
+                    data-testid={`proj-button-view-rfi-mobile-${rfi.id}`}
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    View
+                  </Button>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

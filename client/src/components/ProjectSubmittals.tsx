@@ -376,7 +376,7 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -476,50 +476,103 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
                 </CardContent>
               </Card>
             ) : (
-              <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>SUB #</TableHead>
-                        <TableHead>Subject</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Phase</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Rev #</TableHead>
-                        <TableHead>Submitted By</TableHead>
-                        <TableHead>Date Submitted</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {submittals.map(s => (
-                        <TableRow key={s.id} data-testid={`proj-sub-row-submittal-${s.id}`}>
-                          <TableCell className="font-medium" data-testid={`proj-sub-text-submittal-number-${s.id}`}>{s.submittalNumber}</TableCell>
-                          <TableCell data-testid={`proj-sub-text-submittal-subject-${s.id}`}>{s.subject}</TableCell>
-                          <TableCell>{getTypeBadge(s.submittalType)}</TableCell>
-                          <TableCell>{getPhaseBadge(s.phase)}</TableCell>
-                          <TableCell>{getStatusBadge(s.status)}</TableCell>
-                          <TableCell data-testid={`proj-sub-text-revision-${s.id}`}>{s.revision}</TableCell>
-                          <TableCell className="text-muted-foreground">{s.submittedByName || "-"}</TableCell>
-                          <TableCell className="text-muted-foreground">{s.dateSubmitted ? format(new Date(s.dateSubmitted), "MMM d, yyyy") : "-"}</TableCell>
-                          <TableCell>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openDetailDialog(s)}
-                              data-testid={`proj-sub-button-view-submittal-${s.id}`}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
-                          </TableCell>
+              <>
+              <div className="hidden md:block">
+                <Card>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>SUB #</TableHead>
+                          <TableHead>Subject</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Phase</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Rev #</TableHead>
+                          <TableHead>Submitted By</TableHead>
+                          <TableHead>Date Submitted</TableHead>
+                          <TableHead>Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {submittals.map(s => (
+                          <TableRow key={s.id} data-testid={`proj-sub-row-submittal-${s.id}`}>
+                            <TableCell className="font-medium" data-testid={`proj-sub-text-submittal-number-${s.id}`}>{s.submittalNumber}</TableCell>
+                            <TableCell data-testid={`proj-sub-text-submittal-subject-${s.id}`}>{s.subject}</TableCell>
+                            <TableCell>{getTypeBadge(s.submittalType)}</TableCell>
+                            <TableCell>{getPhaseBadge(s.phase)}</TableCell>
+                            <TableCell>{getStatusBadge(s.status)}</TableCell>
+                            <TableCell data-testid={`proj-sub-text-revision-${s.id}`}>{s.revision}</TableCell>
+                            <TableCell className="text-muted-foreground">{s.submittedByName || "-"}</TableCell>
+                            <TableCell className="text-muted-foreground">{s.dateSubmitted ? format(new Date(s.dateSubmitted), "MMM d, yyyy") : "-"}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openDetailDialog(s)}
+                                data-testid={`proj-sub-button-view-submittal-${s.id}`}
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="md:hidden space-y-3">
+                {submittals.map(s => (
+                  <div
+                    key={s.id}
+                    className="border rounded-md p-3 space-y-2 cursor-pointer"
+                    onClick={() => openDetailDialog(s)}
+                    data-testid={`proj-sub-row-submittal-mobile-${s.id}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm" data-testid={`proj-sub-text-submittal-number-mobile-${s.id}`}>{s.submittalNumber}</span>
+                      <span className="shrink-0">{getStatusBadge(s.status)}</span>
+                    </div>
+                    <p className="text-sm truncate" data-testid={`proj-sub-text-submittal-subject-mobile-${s.id}`}>{s.subject}</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-muted-foreground text-xs">Type</span>
+                        <div>{getTypeBadge(s.submittalType)}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-xs">Phase</span>
+                        <div>{getPhaseBadge(s.phase)}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-xs">Revision</span>
+                        <div data-testid={`proj-sub-text-revision-mobile-${s.id}`}>{s.revision}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-xs">Submitted By</span>
+                        <div>{s.submittedByName || "-"}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground text-xs">Date Submitted</span>
+                        <div>{s.dateSubmitted ? format(new Date(s.dateSubmitted), "MMM d, yyyy") : "-"}</div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={(e) => { e.stopPropagation(); openDetailDialog(s); }}
+                      data-testid={`proj-sub-button-view-submittal-mobile-${s.id}`}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              </>
             )}
           </TabsContent>
         ))}

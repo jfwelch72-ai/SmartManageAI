@@ -194,19 +194,19 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">AI Jobsite Analysis</h2>
           <p className="text-muted-foreground">
             Safety monitoring and progress tracking
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-analysis">
+        <div className="w-full sm:w-auto flex gap-2">
+          <Button variant="outline" className="w-full sm:w-auto" onClick={() => refetch()} data-testid="button-refresh-analysis">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
-          <Button onClick={() => analyzeMutation.mutate([])} disabled={analyzeMutation.isPending} data-testid="button-analyze-photos">
+          <Button className="w-full sm:w-auto" onClick={() => analyzeMutation.mutate([])} disabled={analyzeMutation.isPending} data-testid="button-analyze-photos">
             {analyzeMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -222,7 +222,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">

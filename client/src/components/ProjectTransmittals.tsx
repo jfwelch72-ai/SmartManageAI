@@ -314,7 +314,7 @@ export default function ProjectTransmittals({ projectId, projectCode, userRole }
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -391,63 +391,131 @@ export default function ProjectTransmittals({ projectId, projectCode, userRole }
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table data-testid="proj-tx-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>TX #</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Document Type</TableHead>
-                <TableHead>Revision</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date Sent</TableHead>
-                <TableHead>Recipients</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transmittals.map(tx => (
-                <TableRow key={tx.id} data-testid={`proj-tx-row-${tx.id}`}>
-                  <TableCell className="font-medium" data-testid={`proj-tx-number-${tx.id}`}>{tx.transmittalNumber}</TableCell>
-                  <TableCell data-testid={`proj-tx-subject-${tx.id}`}>{tx.subject}</TableCell>
-                  <TableCell data-testid={`proj-tx-doctype-${tx.id}`}>{tx.documentType || "-"}</TableCell>
-                  <TableCell data-testid={`proj-tx-revision-${tx.id}`}>{tx.revisionNumber || "-"}</TableCell>
-                  <TableCell data-testid={`proj-tx-status-${tx.id}`}>{getStatusBadge(tx.status)}</TableCell>
-                  <TableCell data-testid={`proj-tx-date-${tx.id}`}>{tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" data-testid={`proj-tx-recipients-${tx.id}`}>
-                      <Users className="h-3 w-3 mr-1" />
-                      {tx.recipientCount ?? tx.recipients?.length ?? 0}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openDetailDialog(tx)}
-                        data-testid={`proj-tx-button-view-${tx.id}`}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
-                      {tx.status === "DRAFT" && (
+        <>
+        <div className="hidden md:block">
+          <Card>
+            <Table data-testid="proj-tx-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>TX #</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Document Type</TableHead>
+                  <TableHead>Revision</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date Sent</TableHead>
+                  <TableHead>Recipients</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transmittals.map(tx => (
+                  <TableRow key={tx.id} data-testid={`proj-tx-row-${tx.id}`}>
+                    <TableCell className="font-medium" data-testid={`proj-tx-number-${tx.id}`}>{tx.transmittalNumber}</TableCell>
+                    <TableCell data-testid={`proj-tx-subject-${tx.id}`}>{tx.subject}</TableCell>
+                    <TableCell data-testid={`proj-tx-doctype-${tx.id}`}>{tx.documentType || "-"}</TableCell>
+                    <TableCell data-testid={`proj-tx-revision-${tx.id}`}>{tx.revisionNumber || "-"}</TableCell>
+                    <TableCell data-testid={`proj-tx-status-${tx.id}`}>{getStatusBadge(tx.status)}</TableCell>
+                    <TableCell data-testid={`proj-tx-date-${tx.id}`}>{tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" data-testid={`proj-tx-recipients-${tx.id}`}>
+                        <Users className="h-3 w-3 mr-1" />
+                        {tx.recipientCount ?? tx.recipients?.length ?? 0}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => openEditDialog(tx)}
-                          data-testid={`proj-tx-button-edit-${tx.id}`}
+                          onClick={() => openDetailDialog(tx)}
+                          data-testid={`proj-tx-button-view-${tx.id}`}
                         >
-                          <Edit className="h-4 w-4" />
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
                         </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+                        {tx.status === "DRAFT" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditDialog(tx)}
+                            data-testid={`proj-tx-button-edit-${tx.id}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
+
+        <div className="md:hidden space-y-3">
+          {transmittals.map(tx => (
+            <div
+              key={tx.id}
+              className="border rounded-md p-4 space-y-3"
+              onClick={() => openDetailDialog(tx)}
+              data-testid={`proj-tx-row-mobile-${tx.id}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium" data-testid={`proj-tx-number-mobile-${tx.id}`}>{tx.transmittalNumber}</span>
+                <span className="shrink-0" data-testid={`proj-tx-status-mobile-${tx.id}`}>{getStatusBadge(tx.status)}</span>
+              </div>
+              <p className="text-sm" data-testid={`proj-tx-subject-mobile-${tx.id}`}>{tx.subject}</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Document Type</span>
+                  <p data-testid={`proj-tx-doctype-mobile-${tx.id}`}>{tx.documentType || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Revision</span>
+                  <p data-testid={`proj-tx-revision-mobile-${tx.id}`}>{tx.revisionNumber || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Date Sent</span>
+                  <p data-testid={`proj-tx-date-mobile-${tx.id}`}>{tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "-"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Recipients</span>
+                  <div>
+                    <Badge variant="outline" data-testid={`proj-tx-recipients-mobile-${tx.id}`}>
+                      <Users className="h-3 w-3 mr-1" />
+                      {tx.recipientCount ?? tx.recipients?.length ?? 0}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={(e) => { e.stopPropagation(); openDetailDialog(tx); }}
+                  data-testid={`proj-tx-button-view-mobile-${tx.id}`}
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  View
+                </Button>
+                {tx.status === "DRAFT" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={(e) => { e.stopPropagation(); openEditDialog(tx); }}
+                    data-testid={`proj-tx-button-edit-mobile-${tx.id}`}
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        </>
       )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

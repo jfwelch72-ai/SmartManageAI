@@ -1054,7 +1054,8 @@ export default function ProjectEstimate() {
               <p className="text-sm mt-2">Import from takeoff or add manual line items to get started</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1129,6 +1130,72 @@ export default function ProjectEstimate() {
                 </TableBody>
               </Table>
             </div>
+
+            <div className="md:hidden space-y-3">
+              {estimate.lineItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="border rounded-md p-3 space-y-2"
+                  data-testid={`row-line-item-mobile-${item.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-medium text-sm" data-testid={`text-description-mobile-${item.id}`}>{item.description}</span>
+                    <Badge variant="outline" className="text-xs shrink-0" data-testid={`badge-category-mobile-${item.id}`}>
+                      {item.category}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-xs text-muted-foreground">Qty / Unit</span>
+                      <p data-testid={`text-qty-mobile-${item.id}`}>{item.quantity.toLocaleString()} {item.unit}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Material</span>
+                      <p data-testid={`text-material-mobile-${item.id}`}>${Number(item.materialCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Labor</span>
+                      <p data-testid={`text-labor-mobile-${item.id}`}>${Number(item.laborCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Labor Hours</span>
+                      <p data-testid={`text-hours-mobile-${item.id}`}>{Number(item.laborHours).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Equipment</span>
+                      <p data-testid={`text-equipment-mobile-${item.id}`}>${Number(item.equipmentCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">Subcontract</span>
+                      <p data-testid={`text-subcontract-mobile-${item.id}`}>${Number(item.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Total</span>
+                    <span className="font-semibold" data-testid={`text-total-mobile-${item.id}`}>
+                      ${Number(item.totalCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {estimate.status === "DRAFT" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => deleteLineItemMutation.mutate({
+                        estimateId: estimate.id,
+                        lineItemId: item.id
+                      })}
+                      disabled={deleteLineItemMutation.isPending}
+                      data-testid={`button-delete-mobile-${item.id}`}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </CardContent>
       </Card>
