@@ -1691,9 +1691,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   }, [isFullscreen, selectedSheet]);
 
   return (
-    <div ref={workspaceRef} className="flex h-screen">
+    <div ref={workspaceRef} className="flex h-full relative">
       {/* Left Toolbar */}
-      <div className="w-20 bg-card border-r flex flex-col items-center py-4 gap-2">
+      <div className="w-11 sm:w-20 bg-card border-r flex flex-col items-center py-2 sm:py-4 gap-1 sm:gap-2 overflow-y-auto">
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
           const showSeparator = tool.id === "linear_with_drop";
@@ -1838,11 +1838,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       {/* Center Canvas */}
       <div className="flex-1 flex flex-col bg-muted/30">
         {/* Sheet Selector */}
-        <div className="h-14 bg-card border-b px-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Sheet:</Label>
+        <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+            <Label className="text-xs sm:text-sm font-medium shrink-0">Sheet:</Label>
             <Select value={selectedSheet || ""} onValueChange={setSelectedSheet}>
-              <SelectTrigger className="w-64" data-testid="select-sheet">
+              <SelectTrigger className="w-32 sm:w-64" data-testid="select-sheet">
                 <SelectValue placeholder="Select a sheet..." />
               </SelectTrigger>
               <SelectContent container={workspaceRef.current}>
@@ -2326,8 +2326,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
       {/* AI Takeoff Panel - Slide out panel */}
       {aiPanelOpen && (
-        <div className="w-80 bg-card border-l flex flex-col">
-          <div className="h-14 bg-card border-b px-4 flex items-center justify-between">
+        <div className="absolute right-0 top-0 bottom-0 z-30 w-72 sm:w-80 sm:relative sm:z-auto bg-card border-l flex flex-col">
+          <div className="h-12 sm:h-14 bg-card border-b px-3 sm:px-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
               <span className="font-semibold">AI Auto-Takeoff</span>
@@ -2355,7 +2355,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       )}
 
       {/* Right Sidebar */}
-      <div className={cn("w-80 bg-card border-l flex flex-col", aiPanelOpen && "hidden md:flex")}>
+      <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col", aiPanelOpen && "hidden md:flex")}>
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
             {/* Calibration Panel */}

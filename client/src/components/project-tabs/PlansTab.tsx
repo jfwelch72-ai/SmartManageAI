@@ -66,7 +66,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [groups, setGroups] = useState(DEFAULT_GROUPS);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [sheetFolderGroups, setSheetFolderGroups] = useState<Record<string, boolean>>({ Plans: true, "Supporting Documents": true });
   const [draggedSheetId, setDraggedSheetId] = useState<string | null>(null);
@@ -295,11 +295,20 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       )}
 
       {subTab === "plans" && project && (
-        <div className="flex flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 relative">
           {!leftPanelCollapsed && (
-            <div className="w-64 bg-card border-r flex flex-col shrink-0">
+            <div className="absolute inset-0 z-20 md:relative md:inset-auto w-full md:w-64 bg-card border-r flex flex-col shrink-0">
               <div className="p-2 border-b space-y-2">
                 <div className="flex items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 md:hidden"
+                    onClick={() => setLeftPanelCollapsed(true)}
+                    data-testid="button-close-panel-mobile"
+                  >
+                    <ChevronDown className="w-4 h-4 rotate-90" />
+                  </Button>
                   <div className="relative flex-1">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                     <Input
@@ -694,7 +703,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-2 left-2 z-10 h-7 w-7"
+                className="absolute top-2 left-2 z-10 h-7 w-7 hidden md:flex"
                 onClick={() => setLeftPanelCollapsed(true)}
                 data-testid="button-collapse-panel"
               >
