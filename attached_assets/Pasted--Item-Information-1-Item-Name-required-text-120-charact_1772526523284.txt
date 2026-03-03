@@ -1,0 +1,81 @@
+
+Item Information
+1 - Item Name(required, text - 120 characters max)
+Example: Drywall or 4 X 8 Drywall
+TIP: Once you save an item, a link icon will appear next to the item name. It allows you to copy a link to that item's information screen.
+2 - Item Number (optional)
+A number of your choosing to reference the item. The Item Number can be used in the Search Items bar in the Library to help you locate the item.
+3 - Measured Coverage (required, numeric)^
+Shows how many Units of Measure are in a Purchase Unit.
+4 - Unit of Measure (required, dropdown)^
+This is the type of measurement output intended for the item Takeoff Measurement Type. This field determines which type of takeoff can use this item. You must choose one of the listed values from the dropdown.
+5 - Purchase Coverage (required, numeric)^
+Shows how many purchase units it takes to cover the listed Measured Coverage. (The number entered is usually 1.)
+6 - Purchase Unit (required, dropdown)^
+How you purchase the material. Example: Gallon, case, box, bundle, sq ft, 5-foot section, etc.
+STACK provides a list of the most common purchase units, but you can create a custom purchase unit.
+TIP: If you want to be able to estimate the labor hours needed for a job, you must have an item with a Purchase Unit of Hours. 
+
+^The ratio of the Measured Coverage & Unit of Measure (numbers 3 & 4) to the Purchase Coverage & Purchase Unit (numbers 5 & 6) is the Coverage Rate. The coverage rate represents the basic conversion the item makes to transition from the takeoff unit of measurement to the listed purchase unit.
+Coverage Rate Examples:
+•	375 sq ft = 1 gallon*
+•	5 lin ft = 1 (one) 5-foot section
+•	1 lin ft = 1 lin ft
+•	500 lin ft = 1 coil
+*For this example, say you're creating a "paint" item and selected sq ft as the Unit of Measure and entered gallon as the Purchase Unit; for Measured Coverage, you would enter how many sq ft (375) you can cover with one gallon of paint. (One would be the amount entered for Purchase Coverage.)
+7 - Item Description (optional, text - 255 characters max)
+You can enter a description of the item, how it functions, or any requirements/specifications. This description will only appear on the Item Information screen, not on reports or estimates.
+8 - Cost Type (required, checkbox)
+Identifies the type of item created. Check the box next to each Cost Type that you want to apply to the item. You must select at least one, but can apply multiple cost types to each item.* Equipment, labor, material, and subcontractor are preloaded options, but you can also create custom Company Cost types make a set up in the Company Settings.
+9 - Accounting Code(optional, text or numeric - 255 characters max)
+This could be a code assigned by your billing or accounting department, QuickBooks Online Item info, a part number, SKU number, or any code you want associated with the item. You can enter a different code for each cost type you choose.
+10 - Unit Cost (optional, numeric)
+The default price of the item. This is typically your purchase price, but you can include markup in the amount. You can enter a different unit cost for each cost type you choose.
+11 - Notes  (optional, text or numeric)
+You can enter any additional information about the item that you want to document You can format the notes -change the text size, bold or italicize text, create bulleted or numbered lists, and include hyperlinks. Notes will only appear on the Item Information screen, not on reports or estimates.
+12 - Assemblies (auto-populates)
+This lists any assemblies using the item. You can click on any listed assembly to open it.
+-	User can be able to Create, Edit or delete Custom Items, 
+-	Can Add or Remove Items form a Takeoff 
+-	Import Items and bulk import custom items
+Assemblies - subsection explains how to create, manage, and reuse assemblies made up of multiple items, helping you standardize pricing and speed up takeoffs and estimates across projects.
+
+1 - Assembly Name (required, text - 120 characters max)
+This is the name of the Assembly. The Assembly Name is located at the top of the item information screen. When you create an assembly, the default name will be New Assembly and it will be highlighted in blue. Click on the name and type in the name you want. The name can be as general or specific as your needs require.
+TIP: Once you save an assembly, a link icon will appear next to the assembly name. It allows you to copy a link to that assembly's information screen.
+2 - Assembly Number (optional)
+A number of your choosing to reference the assembly. 
+3 - Unit of Measure (required, dropdown)*
+This is the type of measurement output intended for the assembly Takeoff Measurement type. You must choose one of the listed values from the dropdown.
+NOTE: For data to compute properly on your estimates, the items added to an assembly must have a unit of measure that matches/is compatible with the assembly unit of measure.
+4 - Assembly Description (optional, text - 255 characters max)
+You can enter a description of the assembly, how it functions, or any requirements/specifications. This description will only appear on the Assembly Information screen, not on reports or estimates.
+
+Required Items
+5 - Name (auto-populates)
+Shows the names of the items that have been added to the assembly as a Required Item.
+TIP: Hovering over the info icon next to each Required Item will show the item's coverage rate and clicking the arrow icon will take you to the item's information screen.   
+6 - Item Formula (auto-populates, editable)
+Shows the formula for the item. Formulas are the calculation performed to quantify the item by converting a takeoff variable into the purchase unit of the item. By default, the item’s assigned Coverage Rate will be used but you can create a custom formula for items in an assembly you create.
+TIP: Click the edit (pencil) icon to access the Formula Editor and change the Item Formula or click the trash icon to remove a Required Item from the assembly.
+
+
+Item Groups
+7 - Item Group Name (required, text)
+Shows the names of the Item Groups that have been added to the assembly. You choose and enter the name when you add the Item Group. If you want to change it, you can click on the name and type in a new one.
+8 - Item Group Description (optional, text)
+You can enter a description of the Item Group or any instructions/requirements/specifications. This description will only appear on the Assembly Information screen, not on reports or estimates.
+9 - Name (auto-populates)
+Shows the names of the items that have been added to the Item Group.
+TIP: Clicking the info icon next to an item will show the item's coverage rate and clicking the arrow icon will take you to the item's information screen.   
+10 - Item Formula (auto-populates, editable)
+Shows the formula for the item. Formulas are the calculation performed to quantify the item by converting a takeoff variable into the purchase unit of the item. By default, the item’s assigned Coverage Rate will be used but you can create a custom formula for items in assemblies you create.
+TIP: Click the edit (pencil) icon to access the Formula Editor and change the Item Formula or click the trash icon to remove an item from the Item Group.
+
+-	User can use a prebuilt assemblies from the app (the app should generate prebuilt assemblies )
+-	Can Create, Edit, or Delete Custom Assemblies
+-	Can Add or Remove Assemblies from a Takeoff 
+-	Working with Item formulas in Assemblies 
+-	Ensuring Mastering Custom Formulas
+-	Has Standard Concrete Assemblies
+
