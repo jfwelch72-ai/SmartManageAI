@@ -232,17 +232,19 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div>
-            <CardTitle>Material Budget vs Actual</CardTitle>
-            <CardDescription>
-              Track material usage against bid quantities. Alerts trigger at 90% to allow time for change orders.
-            </CardDescription>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle>Material Budget vs Actual</CardTitle>
+              <CardDescription>
+                Track material usage against bid quantities. Alerts trigger at 90% to allow time for change orders.
+              </CardDescription>
+            </div>
+            <Button onClick={() => openAddUsageDialog()} data-testid="button-add-material-usage" className="w-full sm:w-auto shrink-0">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Usage
+            </Button>
           </div>
-          <Button onClick={() => openAddUsageDialog()} data-testid="button-add-material-usage">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Usage
-          </Button>
         </CardHeader>
         <CardContent>
           {budgets.length === 0 ? (
@@ -263,9 +265,9 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
                     className="border rounded-lg p-4 space-y-3"
                     data-testid={`card-material-budget-${budget.id}`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <h4 className="font-medium">{budget.description}</h4>
                           {budget.alertTriggered && (
                             <Badge variant="destructive" className="text-xs">
@@ -281,13 +283,14 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
                         variant="outline"
                         onClick={() => openAddUsageDialog(budget.id, budget.scopeItemId)}
                         data-testid={`button-add-usage-${budget.id}`}
+                        className="w-full sm:w-auto shrink-0"
                       >
                         <Plus className="h-3 w-3 mr-1" />
                         Add Usage
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                       <div>
                         <p className="text-muted-foreground">Budgeted</p>
                         <p className="font-medium font-mono">{Number(budget.budgetedQuantity).toLocaleString()} {budget.unit}</p>
@@ -344,10 +347,10 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
               {usageEntries.slice(0, 10).map(({ usage, scopeItem, createdBy }) => (
                 <div 
                   key={usage.id} 
-                  className="flex items-center justify-between border-b pb-3 last:border-0"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-3 last:border-0 gap-1"
                   data-testid={`row-usage-${usage.id}`}
                 >
-                  <div className="flex-1">
+                  <div className="min-w-0">
                     <p className="font-medium">{usage.description}</p>
                     <p className="text-sm text-muted-foreground">
                       {format(new Date(usage.usageDate), "MMM d, yyyy")} • 
@@ -355,7 +358,7 @@ export default function MaterialBudgetTracker({ projectId, projectCode, scopeIte
                       {usage.vendorName && ` • ${usage.vendorName}`}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="sm:text-right shrink-0">
                     <p className="font-medium font-mono">{Number(usage.quantityUsed).toLocaleString()} {usage.unit}</p>
                     <p className="text-sm text-muted-foreground">${Number(usage.totalCost).toLocaleString()}</p>
                   </div>
