@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { 
   MousePointer2, Hand, ZoomIn, Ruler, Square, Circle as CircleIcon, 
-  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Undo2, Redo2, Triangle, Scaling, MoveVertical, Grid3x3 
+  Box, MapPin, StickyNote, Upload, Trash2, Save, Download, Sparkles, Maximize, Minimize, Plus, Pencil, Keyboard, ChevronLeft, ChevronRight, FileText, Loader2, Magnet, CornerDownRight, MoreVertical, Copy, ArrowUp, ArrowDown, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Undo2, Redo2, Triangle, Scaling, MoveVertical, Grid3x3, ZoomOut, Eraser 
 } from "lucide-react";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import AssemblyPanel from "@/components/AssemblyPanel";
@@ -1757,6 +1757,46 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
+              data-testid="button-zoom-out"
+              className="toggle-elevate"
+            >
+              <ZoomOut className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Zoom Out</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">-</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={selectedMeasurementId ? "destructive" : "ghost"}
+              size="icon"
+              onClick={() => {
+                const m = measurements.find(m => m.id === selectedMeasurementId);
+                if (m) deleteMeasurementMutation.mutate(m);
+              }}
+              disabled={!selectedMeasurementId || deleteMeasurementMutation.isPending}
+              data-testid="button-clear-selected"
+              className="toggle-elevate"
+            >
+              <Eraser className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{selectedMeasurementId ? "Delete Selected" : "Select a measurement to delete"}</p>
+          </TooltipContent>
+        </Tooltip>
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => takeoffHistory.undo()}
               disabled={!takeoffHistory.canUndo || takeoffHistory.isPending}
               data-testid="button-undo"
@@ -2374,6 +2414,29 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </Button>
             );
           })}
+          <Separator orientation="vertical" className="h-6 mx-0.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
+            data-testid="button-zoom-out-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </Button>
+          <Button
+            variant={selectedMeasurementId ? "destructive" : "ghost"}
+            size="icon"
+            onClick={() => {
+              const m = measurements.find(m => m.id === selectedMeasurementId);
+              if (m) deleteMeasurementMutation.mutate(m);
+            }}
+            disabled={!selectedMeasurementId || deleteMeasurementMutation.isPending}
+            data-testid="button-clear-selected-mobile"
+            className="h-8 w-8 shrink-0"
+          >
+            <Eraser className="w-4 h-4" />
+          </Button>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
           <Button
             variant="ghost"
