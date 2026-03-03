@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, Fragment } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text } from "react-konva";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1720,6 +1720,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
           const showSeparator = tool.id === "linear_with_drop";
+          const showZoomAfter = tool.id === "pan";
           return (
             <div key={tool.id} className="flex flex-col items-center">
               {showSeparator && <Separator className="my-1 w-12" />}
@@ -1746,48 +1747,51 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                   </div>
                 </TooltipContent>
               </Tooltip>
+              {showZoomAfter && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
+                        data-testid="button-zoom-in"
+                        className="toggle-elevate mt-2"
+                      >
+                        <ZoomIn className="w-5 h-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      <div className="flex items-center gap-2">
+                        <span>Zoom In</span>
+                        <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">+</kbd>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
+                        data-testid="button-zoom-out"
+                        className="toggle-elevate mt-1"
+                      >
+                        <ZoomOut className="w-5 h-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      <div className="flex items-center gap-2">
+                        <span>Zoom Out</span>
+                        <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">-</kbd>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </>
+              )}
             </div>
           );
         })}
-        <Separator className="my-2 w-12" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
-              data-testid="button-zoom-in"
-              className="toggle-elevate"
-            >
-              <ZoomIn className="w-5 h-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <div className="flex items-center gap-2">
-              <span>Zoom In</span>
-              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">+</kbd>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
-              data-testid="button-zoom-out"
-              className="toggle-elevate"
-            >
-              <ZoomOut className="w-5 h-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            <div className="flex items-center gap-2">
-              <span>Zoom Out</span>
-              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">-</kbd>
-            </div>
-          </TooltipContent>
-        </Tooltip>
         <Separator className="my-2 w-12" />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2420,37 +2424,41 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           {TOOL_CONFIG.map((tool) => {
             const Icon = tool.icon;
             return (
-              <Button
-                key={tool.id}
-                variant={activeTool === tool.id ? tool.color as any : "ghost"}
-                size="icon"
-                onClick={() => handleToolSelect(tool.id as Tool)}
-                data-testid={`button-tool-mobile-${tool.id}`}
-                className="h-8 w-8 shrink-0"
-              >
-                <Icon className="w-4 h-4" />
-              </Button>
+              <Fragment key={tool.id}>
+                <Button
+                  variant={activeTool === tool.id ? tool.color as any : "ghost"}
+                  size="icon"
+                  onClick={() => handleToolSelect(tool.id as Tool)}
+                  data-testid={`button-tool-mobile-${tool.id}`}
+                  className="h-8 w-8 shrink-0"
+                >
+                  <Icon className="w-4 h-4" />
+                </Button>
+                {tool.id === "pan" && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
+                      data-testid="button-zoom-in-mobile"
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
+                      data-testid="button-zoom-out-mobile"
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
+              </Fragment>
             );
           })}
-          <Separator orientation="vertical" className="h-6 mx-0.5" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
-            data-testid="button-zoom-in-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
-            data-testid="button-zoom-out-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </Button>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
           <Button
             variant={selectedMeasurementId ? "destructive" : "ghost"}
