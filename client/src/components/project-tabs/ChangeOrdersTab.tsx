@@ -134,21 +134,22 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   return (
     <>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <CardTitle>Change Orders</CardTitle>
-          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-            <DialogTrigger asChild>
-              <Button size="sm" data-testid="button-new-change-order">
-                <Plus className="w-4 h-4 mr-2" />
-                New Change Order
-              </Button>
-            </DialogTrigger>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <CardTitle>Change Orders</CardTitle>
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button size="sm" data-testid="button-new-change-order" className="w-full sm:w-auto">
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Change Order
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
               <DialogHeader>
                 <DialogTitle>Create Change Order</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="co-number">Change Order Number</Label>
                     <Input
@@ -242,6 +243,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

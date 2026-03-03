@@ -193,7 +193,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
@@ -203,14 +203,14 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
             Generate change order drafts from delays, inspections, or scope changes
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => refetch()} size="sm" data-testid="button-refresh-drafts">
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={() => refetch()} size="sm" data-testid="button-refresh-drafts" className="flex-1 sm:flex-none">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
           <Dialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" data-testid="button-generate-co">
+              <Button size="sm" data-testid="button-generate-co" className="flex-1 sm:flex-none">
                 <Zap className="w-4 h-4 mr-2" />
                 Generate Draft
               </Button>
