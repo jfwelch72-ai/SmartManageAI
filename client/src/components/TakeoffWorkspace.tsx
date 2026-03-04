@@ -1801,9 +1801,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   }, [isFullscreen, selectedSheet]);
 
   return (
-    <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative">
+    <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative overflow-hidden">
       {/* Left Toolbar - vertical on desktop, hidden on mobile (shown as bottom bar instead) */}
-      <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-4 gap-2 overflow-y-auto shrink-0">
+      <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-4 gap-2 overflow-y-auto scrollbar-hide shrink-0">
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
           const showSeparator = tool.id === "linear_with_drop";
@@ -2800,7 +2800,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       )}
 
       {/* Right Sidebar */}
-      <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col", aiPanelOpen && "hidden md:flex")}>
+      <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0", aiPanelOpen && "hidden md:flex")}>
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-4">
             {/* Calibration Panel */}

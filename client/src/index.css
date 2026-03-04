@@ -309,3 +309,11 @@
 .dashboard-grid .react-resizable-handle::after {
   border-color: hsl(var(--primary) / 0.5) !important;
 }
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
